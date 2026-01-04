@@ -1,3 +1,9 @@
+<script>
+export default {
+  name: 'TrackingView'
+}
+</script>
+
 <script setup>
 import { onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
@@ -12,9 +18,10 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Progress } from '@/components/ui/progress'
 import {
-  Search, Download, ShoppingCart, 
-  AlertCircle, ChevronRight, Plus, ExternalLink, Box, CheckCircle2, Layers
+  Search, Download, ShoppingCart, Loader2,
+  AlertCircle, ChevronRight, Plus, ExternalLink, Box, CheckCircle2, Layers, Calculator
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -23,139 +30,241 @@ const router = useRouter()
 const groupedProcurement = ref([]) 
 const isLoading = ref(true)
 const searchQuery = ref('')
-const expandedGroups = ref([]) // Untuk accordion detail HSO
+const expandedGroups = ref([]) 
 
-// --- HELPER: LOGIC PARSER CATATAN (CORE LOGIC) ---
-const calculateShortageFromNote = (note, qty_sisa, system_available) => {
-    // 1. Jika sudah lunas, tidak ada shortage
-    if (qty_sisa <= 0) return 0;
+// --- 1. LOGIC HITUNG KEKURANGAN (CORE) ---
+const calculateNeeds = (qty_order, qty_shipped, note) => {
+    // A. Sisa yang belum dikirim ke customer
+    const qty_sisa = qty_order - qty_shipped;
+    
+    if (qty_sisa <= 0) return { shortage: 0, stock_in_note: 0 };
 
+    // B. Cek Stok yang "Diakui" di Catatan
+    let stock_in_note = 0;
     const cleanNote = note ? note.toUpperCase() : '';
-    let admin_recognized_stock = null;
 
     if (cleanNote) {
-        // A. Cek "NO STOCK" / "INDENT" -> Stok dianggap 0
         if (cleanNote.includes('NO STOCK') || cleanNote.includes('INDENT') || cleanNote.includes('KOSONG')) {
-            admin_recognized_stock = 0;
-        } 
-        // B. Cek "STOCK" diikuti Angka -> Stok dianggap sesuai angka
-        else {
+            stock_in_note = 0;
+        } else {
+            // Cari angka di catatan (Misal: "Stock 5", "Sisa 2")
             const match = cleanNote.match(/(?:STOCK|READY|SISA|QTY)[\s:.]*(\d+)/);
             if (match) {
-                admin_recognized_stock = parseInt(match[1]);
-            } 
-            // C. Cek "STOCK" tanpa angka -> Stok dianggap Cukup (Sama dengan Sisa)
-            else if (cleanNote.includes('STOCK') || cleanNote.includes('READY')) {
-                admin_recognized_stock = qty_sisa; 
+                stock_in_note = parseInt(match[1]);
+            } else if (cleanNote.includes('STOCK') || cleanNote.includes('READY')) {
+                // Jika cuma tulis "STOCK" tanpa angka, asumsikan cukup (Full)
+                stock_in_note = qty_sisa; 
             }
         }
-    }
-
-    // --- KEPUTUSAN FINAL ---
-    let final_stock = 0;
-
-    if (admin_recognized_stock !== null) {
-        // Jika ada catatan admin, PAKAI ITU (Override System)
-        final_stock = admin_recognized_stock;
     } else {
-        // Jika tidak ada catatan, PAKAI SYSTEM ACCURATE
-        final_stock = system_available;
+        // Jika TIDAK ADA catatan sama sekali, kita asumsikan stok 0 (Aman untuk procurement)
+        // Atau asumsikan Full? Tergantung kebijakan. 
+        // Disini kita asumsi: Kosong = Perlu dicek/dianggap 0 agar aman.
+        stock_in_note = 0; 
     }
 
-    // Shortage = Yang Diminta - Yang Ada
-    const shortage = qty_sisa - final_stock;
-    return shortage > 0 ? shortage : 0;
+    // C. Hitung Kekurangan (Yang harus dibeli)
+    // Rumus: Sisa Kirim - Stok yang ada di Note
+    let shortage = qty_sisa - stock_in_note;
+    if (shortage < 0) shortage = 0;
+
+    return { 
+        shortage, // Ini yang masuk List Procurement
+        stock_in_note,
+        qty_sisa
+    };
 }
 
 // --- DATA FETCHING ---
+// Progress state for loading bar
+const loadingProgress = ref(0)
+const loadingMessage = ref('')
+const totalHSOLoaded = ref(0)
+
 const fetchProcurementData = async () => {
   isLoading.value = true
-  groupedProcurement.value = [] // Reset
+  loadingProgress.value = 0
+  loadingMessage.value = 'Mengambil data HSO...'
+  groupedProcurement.value = []
+  totalHSOLoaded.value = 0
 
   try {
-    // 1. DEFINISIKAN FIELD WAJIB AGAR DATA MUNCUL
-    const fieldsToFetch = 'id,number,transDate,customer,statusName,detailItem.item,detailItem.quantity,detailItem.quantityShipped,detailItem.detailNotes,detailItem.availableQuantity,detailItem.itemUnit'
+    let allSOs = []
+    let currentPage = 1
+    let totalPages = 1
+    const pageSize = 50
 
-    // 2. Request ke Backend (yang sudah diperbaiki)
-    const { data: accData, error } = await supabase.functions.invoke('accurate-list-so', {
-        body: { 
-            limit: 100, // Ambil 100 SO terakhir
-            sort: 'transDate desc',
-            fields: fieldsToFetch // <-- PENTING: Backend akan baca ini
-        } 
-    })
+    // Fetch all pages with progress
+    while (currentPage <= totalPages) {
+      loadingMessage.value = `Mengambil halaman ${currentPage}...`
+      
+      const { data: accData, error } = await supabase.functions.invoke('accurate-list-tracking-so', {
+        body: { page: currentPage, pageSize: pageSize }
+      })
 
-    if (error) throw error
+      if (error) throw error
 
-    // Debugging: Cek di console apakah detailItem masuk
-    console.log("Data Accurate:", accData?.d);
+      if (accData?.pagination) {
+        totalPages = accData.pagination.totalPages
+      }
+
+      const pageSOs = accData?.d || []
+      allSOs = allSOs.concat(pageSOs)
+      totalHSOLoaded.value = allSOs.length
+      
+      // Update progress (0-80% for fetching)
+      loadingProgress.value = Math.min(80, Math.round((currentPage / totalPages) * 80))
+      loadingMessage.value = `Mengambil halaman ${currentPage}/${totalPages} (${allSOs.length} HSO)`
+
+      currentPage++
+    }
+
+    loadingProgress.value = 85
+    loadingMessage.value = `Memproses ${allSOs.length} HSO...`
+
+    // Fetch shipments from Supabase
+    const soIds = allSOs.map(so => String(so.id))
+    let shipmentsMap = {}
+    
+    if (soIds.length > 0) {
+      loadingMessage.value = 'Mengambil status shipment...'
+      const { data: shipments, error: shipErr } = await supabase
+        .from('shipments')
+        .select('so_id, item_code, current_status, hpo_number, status_date, admin_notes')
+        .in('so_id', soIds)
+      
+      if (!shipErr && shipments) {
+        shipments.forEach(s => {
+          const key = `${s.so_id}|${s.item_code}`
+          shipmentsMap[key] = s
+        })
+      }
+    }
+
+    loadingProgress.value = 90
+    loadingMessage.value = 'Menganalisa kebutuhan procurement...'
+
+    loadingProgress.value = 90
+    loadingMessage.value = 'Menganalisa kebutuhan procurement...'
 
     const tempGroups = {}
 
-    // 3. Loop Semua SO & Cari Barang Kurang
-    if (accData?.d) {
-        accData.d.forEach(so => {
-            // Skip jika SO Dibatalkan/Closed
-            if (['Closed', 'Dibatalkan'].includes(so.statusName)) return
+    if (allSOs.length > 0) {
+        allSOs.forEach(so => {
+            // Skip SO yang sudah closed/batal
+            if (['Closed', 'Dibatalkan'].includes(so.statusName)) return;
 
-            if (so.detailItem && Array.isArray(so.detailItem)) {
-                so.detailItem.forEach(d => {
-                    const qty_sisa = (d.quantity || 0) - (d.quantityShipped || 0);
-                    const note = d.detailNotes || '';
-                    const system_avail = d.availableQuantity || 0;
+            if (!so.detailItem || !Array.isArray(so.detailItem)) return;
 
-                    // Hitung kekurangan pakai Logic Admin
-                    const qty_shortage = calculateShortageFromNote(note, qty_sisa, system_avail);
+            so.detailItem.forEach(d => {
+                if (!d.item || !d.item.no) return;
 
-                    // Jika ada kekurangan, masukkan ke daftar belanja
-                    if (qty_shortage > 0) {
-                        const code = d.item?.no || 'N/A';
-                        
-                        if (!tempGroups[code]) {
-                            tempGroups[code] = {
-                                code: code,
-                                name: d.item?.name || d.detailName || 'Unknown Product',
-                                unit: d.itemUnit?.name || 'Pcs',
-                                total_shortage: 0,
-                                hso_list: []
-                            }
+                const qty_order = d.quantity || 0;
+                const qty_shipped = d.quantityShipped || 0;
+                const note = d.detailNotes || '';
+                const code = d.item.no;
+
+                // HITUNG KEBUTUHAN
+                const { shortage, stock_in_note, qty_sisa } = calculateNeeds(qty_order, qty_shipped, note);
+
+                // Cari status dari Supabase shipments
+                const shipmentKey = `${so.id}|${code}`
+                const shipment = shipmentsMap[shipmentKey] || null
+                const logisticsStatus = shipment?.current_status || 'Pending Process'
+                const hpoNumber = shipment?.hpo_number || null
+                const adminNotes = shipment?.admin_notes || null
+
+                // LOGIC FILTER BARU (User Request): 
+                // 1. Skip jika logistics_status sudah diproses (bukan Pending/Hold)
+                //    Artinya barang sudah dalam penanganan (sudah ETA, On Delivery, dll), tidak perlu masuk list procurement lagi.
+                const isProcessed = !['Pending Process', 'Hold by Customer', 'Follow up to factory'].includes(logisticsStatus)
+                if (isProcessed) return;
+
+                // 2. Skip jika tidak ada shortage (sudah cukup stock)
+                if (shortage <= 0) return;
+
+                // Tampilkan: hanya yang ada shortage (perlu order)
+                if (shortage > 0) {
+                    
+                    if (!tempGroups[code]) {
+                        tempGroups[code] = {
+                            code: code,
+                            name: d.item.name || d.detailName,
+                            unit: d.itemUnit?.name || 'Pcs',
+                            total_shortage: 0,
+                            hso_list: []
                         }
-
-                        // Akumulasi Total
-                        tempGroups[code].total_shortage += qty_shortage;
-
-                        // Simpan Detail HSO
-                        tempGroups[code].hso_list.push({
-                            id: Math.random(),
-                            so_id: so.id,
-                            so_number: so.number,
-                            customer: so.customer?.name || '-',
-                            date: so.transDate,
-                            qty_order: d.quantity,
-                            qty_sisa: qty_sisa,
-                            note: note, // Bukti catatan admin
-                            shortage_per_so: qty_shortage
-                        });
                     }
-                })
-            }
+
+                    // Akumulasi Total Beli (hanya yang perlu order)
+                    tempGroups[code].total_shortage += shortage;
+
+                    // Detail HSO dengan STATUS dari Supabase
+                    tempGroups[code].hso_list.push({
+                        id: Math.random(),
+                        so_id: so.id,
+                        so_number: so.number,
+                        customer: so.customer?.name || '-',
+                        date: so.transDate,
+                        
+                        qty_order: qty_order,
+                        qty_sisa: qty_sisa,
+                        stock_note: stock_in_note,
+                        qty_buy: shortage,
+                        
+                        note: note,
+                        
+                        // STATUS dari Supabase
+                        logistics_status: logisticsStatus,
+                        hpo_number: hpoNumber,
+                        admin_notes: adminNotes
+                    });
+                }
+            })
         })
     }
 
-    // Convert Object -> Array & Sort by Urgency
-    groupedProcurement.value = Object.values(tempGroups).sort((a, b) => b.total_shortage - a.total_shortage);
+    // Urutkan dari yang paling banyak kurangnya
+    // Dan sort hso_list per group berdasarkan tanggal (terbaru dulu)
+    const sortedGroups = Object.values(tempGroups).map((group) => {
+        // Sort hso_list by date descending (newest first)
+        group.hso_list.sort((a, b) => {
+            // Parse date format "dd/mm/yyyy" to Date object
+            const parseDate = (dateStr) => {
+                if (!dateStr) return new Date(0);
+                const parts = dateStr.split('/');
+                if (parts.length === 3) {
+                    return new Date(parts[2], parts[1] - 1, parts[0]);
+                }
+                return new Date(dateStr);
+            };
+            return parseDate(b.date) - parseDate(a.date);
+        });
+        return group;
+    });
+    
+    groupedProcurement.value = sortedGroups.sort((a, b) => b.total_shortage - a.total_shortage);
 
   } catch (err) {
-    console.error("Error fetching procurement:", err)
-    alert("Gagal memuat data. Pastikan Backend 'accurate-list-so' sudah diperbarui.")
+    console.error("Gagal Analisa:", err)
+    alert("Terjadi kesalahan saat menarik data.")
   } finally {
     isLoading.value = false
   }
 }
 
-onMounted(() => fetchProcurementData())
+onMounted(() => {
+    // Cache Check: Hanya fetch jika data kosong
+    if (groupedProcurement.value.length === 0) {
+        fetchProcurementData()
+    }
+})
 
-// --- COMPUTED: SEARCH FILTER ---
+// --- COMPUTED & ACTION ---
+// Pagination state
+const currentPage = ref(1)
+const itemsPerPage = 20
+
 const filteredGroups = computed(() => {
     if (!searchQuery.value) return groupedProcurement.value;
     const q = searchQuery.value.toLowerCase();
@@ -165,7 +274,27 @@ const filteredGroups = computed(() => {
     );
 })
 
-// --- ACTIONS ---
+// Paginated groups for display
+const paginatedGroups = computed(() => {
+    const start = (currentPage.value - 1) * itemsPerPage;
+    const end = start + itemsPerPage;
+    return filteredGroups.value.slice(start, end);
+})
+
+const totalPages = computed(() => Math.ceil(filteredGroups.value.length / itemsPerPage))
+
+const goToPage = (page) => {
+    if (page >= 1 && page <= totalPages.value) {
+        currentPage.value = page;
+        expandedGroups.value = []; // Collapse all when changing page
+    }
+}
+
+// Reset to page 1 when search changes
+const onSearchChange = () => {
+    currentPage.value = 1;
+}
+
 const toggleGroup = (code) => {
   const idx = expandedGroups.value.indexOf(code)
   if (idx === -1) expandedGroups.value.push(code)
@@ -173,22 +302,38 @@ const toggleGroup = (code) => {
 }
 
 const exportProcurement = () => {
-  const data = filteredGroups.value.map(g => ({
-    "Kode Barang": g.code,
-    "Nama Barang": g.name,
-    "Total Kekurangan": g.total_shortage,
-    "Satuan": g.unit,
-    "Jumlah HSO": g.hso_list.length
-  }))
+  const data = []
+  filteredGroups.value.forEach(g => {
+      g.hso_list.forEach(h => {
+          data.push({
+              "Kode Barang": g.code,
+              "Nama Barang": g.name,
+              "No HSO": h.so_number,
+              "Customer": h.customer,
+              "Order": h.qty_order,
+              "Sisa Kirim": h.qty_sisa,
+              "Stok (Note)": h.stock_note,
+              "Wajib Beli": h.qty_buy,
+              "Satuan": g.unit
+          })
+      })
+  })
   const ws = XLSX.utils.json_to_sheet(data)
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, "Procurement Plan")
-  XLSX.writeFile(wb, `Procurement_Plan_${new Date().toISOString().split('T')[0]}.xlsx`)
+  XLSX.writeFile(wb, `Plan_Pembelian_${new Date().toISOString().split('T')[0]}.xlsx`)
 }
 
 const openSiePortal = (code) => {
     if(!code || code === '-') return;
     window.open(`https://sieportal.siemens.com/en-id/products-services/detail/${code}?tree=CatalogTree`, '_blank');
+}
+
+const openDetail = (soId, itemCode) => {
+    router.push({ 
+        path: `/sales-orders/${soId}`, 
+        query: { highlight: itemCode } 
+    })
 }
 </script>
 
@@ -201,7 +346,7 @@ const openSiePortal = (code) => {
             <ShoppingCart class="w-6 h-6 text-red-600"/> Procurement Plan
         </h2>
         <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">
-            Akumulasi barang <b>NO STOCK</b> & <b>PARTIAL</b> dari 100 HSO terakhir.
+           Saran Barang dipesan
         </p>
       </div>
       <div class="flex gap-2 w-full md:w-auto">
@@ -210,63 +355,43 @@ const openSiePortal = (code) => {
         </Button>
         <Button class="gap-2 bg-red-600 hover:bg-red-700 text-white" @click="fetchProcurementData" :disabled="isLoading">
             <Loader2 v-if="isLoading" class="w-4 h-4 animate-spin"/>
-            <span v-else>Refresh Data</span>
+            <span v-else>Analisa Ulang</span>
         </Button>
       </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card class="bg-red-50 dark:bg-red-900/10 border-red-100 dark:border-red-900/30">
-            <CardContent class="p-4 flex items-center justify-between">
-                <div>
-                    <p class="text-xs font-bold text-red-600 dark:text-red-400 uppercase">Item Harus Dibeli</p>
-                    <p class="text-2xl font-bold text-slate-900 dark:text-white mt-1">{{ filteredGroups.length }} <span class="text-sm font-normal text-slate-500">SKU Unik</span></p>
-                </div>
-                <AlertCircle class="w-8 h-8 text-red-500 opacity-50"/>
-            </CardContent>
-        </Card>
-        <Card class="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-            <CardContent class="p-4 flex items-center justify-between">
-                <div>
-                    <p class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Total Unit Kurang</p>
-                    <p class="text-2xl font-bold text-slate-900 dark:text-white mt-1">
-                        {{ filteredGroups.reduce((acc, g) => acc + g.total_shortage, 0).toLocaleString() }} 
-                        <span class="text-sm font-normal text-slate-500">Pcs</span>
-                    </p>
-                </div>
-                <Box class="w-8 h-8 text-slate-400 opacity-50"/>
-            </CardContent>
-        </Card>
-        <Card class="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-            <CardContent class="p-4 flex items-center justify-between">
-                <div>
-                    <p class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">HSO Terdampak</p>
-                    <p class="text-2xl font-bold text-slate-900 dark:text-white mt-1">
-                        {{ new Set(filteredGroups.flatMap(g => g.hso_list.map(h => h.so_number))).size }}
-                        <span class="text-sm font-normal text-slate-500">Dokumen</span>
-                    </p>
-                </div>
-                <FileText class="w-8 h-8 text-slate-400 opacity-50"/>
-            </CardContent>
-        </Card>
+    <!-- Progress Bar -->
+    <div v-if="isLoading" class="space-y-2">
+        <div class="flex justify-between text-xs text-slate-500">
+            <span>{{ loadingMessage }}</span>
+            <span>{{ loadingProgress }}%</span>
+        </div>
+        <Progress :model-value="loadingProgress" class="h-2" />
     </div>
 
-    <div class="relative">
+    <div class="relative" v-if="!isLoading">
         <Search class="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
         <Input 
             v-model="searchQuery"
+            @input="onSearchChange"
             placeholder="Cari Kode Barang / Nama Barang..." 
             class="pl-9 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" 
         />
     </div>
 
+    <!-- Pagination Info -->
+    <div v-if="filteredGroups.length > 0 && !isLoading" class="flex justify-between items-center text-sm text-slate-500">
+        <span>Menampilkan {{ (currentPage - 1) * itemsPerPage + 1 }} - {{ Math.min(currentPage * itemsPerPage, filteredGroups.length) }} dari {{ filteredGroups.length }} produk</span>
+        <span>Halaman {{ currentPage }} / {{ totalPages }}</span>
+    </div>
+
     <div class="space-y-4">
         <div v-if="filteredGroups.length === 0 && !isLoading" class="text-center py-12 text-slate-500 border-2 border-dashed border-slate-200 rounded-xl">
             <CheckCircle2 class="w-12 h-12 mx-auto mb-2 text-emerald-500 opacity-50"/>
-            <p>Tidak ada kekurangan stok (Semua HSO Aman).</p>
+            <p>Semua stok aman sesuai catatan (Tidak ada yang perlu dibeli).</p>
         </div>
 
-        <div v-for="group in filteredGroups" :key="group.code" class="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm hover:shadow-md transition-all">
+        <div v-for="group in paginatedGroups" :key="group.code" class="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden shadow-sm hover:shadow-md transition-all">
             
             <div 
                 class="p-4 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
@@ -281,15 +406,15 @@ const openSiePortal = (code) => {
                             <h3 class="font-bold text-lg text-slate-900 dark:text-white hover:text-red-600 transition-colors" @click.stop="openSiePortal(group.code)">{{ group.name }}</h3>
                             <Badge variant="outline" class="text-xs font-mono bg-slate-50 dark:bg-slate-900 text-slate-500">{{ group.code }}</Badge>
                         </div>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                            Dibutuhkan di <span class="font-bold text-slate-700 dark:text-slate-300">{{ group.hso_list.length }} HSO</span> berbeda
-                        </p>
+                        <div class="flex gap-4 mt-2 text-xs text-slate-500 dark:text-slate-400">
+                            <span>Dibutuhkan oleh: <b>{{ group.hso_list.length }} HSO</b></span>
+                        </div>
                     </div>
                 </div>
 
                 <div class="flex items-center gap-6 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 pt-3 md:pt-0 border-slate-100 dark:border-slate-700">
                     <div class="text-right">
-                        <p class="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider">Total Kekurangan</p>
+                        <p class="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider">Total Harus Dipesan</p>
                         <p class="text-2xl font-bold text-red-600 dark:text-red-400">{{ group.total_shortage }} <span class="text-sm text-slate-400 font-medium">{{ group.unit }}</span></p>
                     </div>
                     <Button size="sm" class="bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-200">
@@ -299,36 +424,84 @@ const openSiePortal = (code) => {
             </div>
 
             <div v-if="expandedGroups.includes(group.code)" class="border-t border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/30 p-4 animate-in slide-in-from-top-2 duration-200">
-                <h4 class="text-xs font-bold text-slate-500 mb-3 uppercase flex items-center gap-2"><Layers class="w-3 h-3"/> Detail HSO yang Kekurangan</h4>
+                <div class="flex items-center gap-2 mb-3">
+                    <Calculator class="w-4 h-4 text-slate-500"/>
+                    <span class="text-xs font-bold text-slate-500 uppercase">Rincian Perhitungan (Selisih)</span>
+                </div>
+
                 <div class="bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
                     <Table>
                         <TableHeader class="bg-slate-50 dark:bg-slate-900">
                             <TableRow class="border-b border-slate-200 dark:border-slate-700">
-                                <TableHead class="text-xs h-8">No. HSO</TableHead>
-                                <TableHead class="text-xs h-8">Customer</TableHead>
-                                <TableHead class="text-xs h-8 text-center">Tgl Order</TableHead>
-                                <TableHead class="text-xs h-8">Catatan Admin</TableHead>
-                                <TableHead class="text-xs h-8 text-center">Sisa Kirim</TableHead>
-                                <TableHead class="text-xs h-8 text-right text-red-600 font-bold bg-red-50/50">Kurang</TableHead>
+                                <TableHead class="text-xs h-8 font-bold">No. HSO / Customer</TableHead>
+                                <TableHead class="text-xs h-8 font-bold text-center">Status</TableHead>
+                                <TableHead class="text-xs h-8 font-bold text-center bg-blue-50 dark:bg-blue-900/20 text-blue-700">Order</TableHead>
+                                <TableHead class="text-xs h-8 font-bold text-center bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700">Stock</TableHead>
+                                <TableHead class="text-xs h-8 font-bold text-center bg-red-50 dark:bg-red-900/20 text-red-700">Saran Order</TableHead>
                                 <TableHead class="text-xs h-8 w-[50px]"></TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             <TableRow v-for="hso in group.hso_list" :key="hso.id" class="border-b border-slate-100 dark:border-slate-700 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                                <TableCell class="font-medium text-slate-700 dark:text-slate-300 text-xs">{{ hso.so_number }}</TableCell>
-                                <TableCell class="text-slate-600 dark:text-slate-400 text-xs">{{ hso.customer }}</TableCell>
-                                <TableCell class="text-center text-xs text-slate-500">{{ hso.date }}</TableCell>
+                                <TableCell class="py-3">
+                                    <div class="font-bold text-slate-700 dark:text-slate-300 text-xs">{{ hso.so_number }}</div>
+                                    <div class="text-[10px] text-slate-500">{{ hso.customer }}</div>
+                                    <div class="text-[9px] text-blue-500 font-medium mt-0.5">📅 {{ hso.date }}</div>
+                                </TableCell>
                                 
-                                <TableCell class="text-xs">
-                                    <Badge v-if="hso.note" variant="outline" class="font-normal text-[10px] text-slate-500 bg-slate-50">{{ hso.note }}</Badge>
-                                    <span v-else class="text-slate-300 italic text-[10px]">Auto System</span>
+                                <TableCell class="text-center">
+                                    <Badge 
+                                        class="text-[10px] font-bold px-2 py-0.5"
+                                        :class="{
+                                            'bg-gray-100 text-gray-600 border-gray-300': hso.logistics_status === 'Pending Process',
+                                            'bg-amber-100 text-amber-700 border-amber-300': hso.logistics_status === 'Follow up to factory',
+                                            'bg-orange-100 text-orange-700 border-orange-300': hso.logistics_status === 'Follow up with our forwarder',
+                                            'bg-blue-100 text-blue-700 border-blue-300': hso.logistics_status === 'ETA Port JKT',
+                                            'bg-cyan-100 text-cyan-700 border-cyan-300': hso.logistics_status === 'Already in siemens Warehouse',
+                                            'bg-indigo-100 text-indigo-700 border-indigo-300': hso.logistics_status === 'Already in Hokiindo Raya',
+                                            'bg-blue-200 text-blue-800 border-blue-400': hso.logistics_status === 'On Delivery',
+                                            'bg-emerald-100 text-emerald-700 border-emerald-300': hso.logistics_status === 'Completed',
+                                            'bg-purple-100 text-purple-700 border-purple-300': hso.logistics_status === 'Hold by Customer'
+                                        }"
+                                    >
+                                        {{ hso.logistics_status === 'Pending Process' ? 'PENDING' :
+                                           hso.logistics_status === 'Follow up to factory' ? 'ORDER' :
+                                           hso.logistics_status === 'Follow up with our forwarder' ? 'EX-WORKS' :
+                                           hso.logistics_status === 'ETA Port JKT' ? 'TRANSIT' :
+                                           hso.logistics_status === 'Already in siemens Warehouse' ? 'WH DUNEX' :
+                                           hso.logistics_status === 'Already in Hokiindo Raya' ? 'WH HOKI' :
+                                           hso.logistics_status === 'On Delivery' ? 'KIRIM' :
+                                           hso.logistics_status === 'Completed' ? 'SELESAI' :
+                                           hso.logistics_status === 'Hold by Customer' ? 'HOLD' :
+                                           hso.logistics_status }}
+                                    </Badge>
+                                    <!-- HPO Indicator -->
+                                    <div v-if="hso.hpo_number" class="text-[9px] text-green-600 mt-0.5 font-mono font-bold">
+                                        HPO: {{ hso.hpo_number }}
+                                    </div>
+                                </TableCell>
+                                
+                                <!-- Order (Qty Pesanan Client) -->
+                                <TableCell class="text-center text-xs font-bold text-blue-700 bg-blue-50/30 dark:bg-blue-900/10">
+                                    {{ hso.qty_sisa }}
+                                </TableCell>
+                                
+                                <!-- Stock -->
+                                <TableCell class="text-center text-xs font-bold bg-emerald-50/30 dark:bg-emerald-900/10">
+                                    <span v-if="hso.stock_note === 0" class="text-red-600">No Stock</span>
+                                    <span v-else class="text-emerald-600">{{ hso.stock_note }}</span>
+                                </TableCell>
+                                
+                                <!-- Saran Order -->
+                                <TableCell class="text-center">
+                                    <Badge variant="solid" class="bg-red-600 text-white hover:bg-red-700 border-0 text-xs px-3">
+                                        {{ hso.qty_buy }}
+                                    </Badge>
                                 </TableCell>
 
-                                <TableCell class="text-center text-xs font-medium">{{ hso.qty_sisa }}</TableCell>
-                                <TableCell class="text-right font-bold text-red-600 dark:text-red-400 bg-red-50/50 dark:bg-red-900/10 text-xs">- {{ hso.shortage_per_so }}</TableCell>
-                                <TableCell class="text-right">
-                                    <Button variant="ghost" size="sm" class="h-6 w-6 p-0" @click="router.push(`/sales-orders/${hso.so_id}`)" title="Lihat Detail SO">
-                                        <ExternalLink class="w-3 h-3 text-slate-400 hover:text-slate-700"/>
+                                <TableCell>
+                                    <Button variant="ghost" size="icon" class="h-6 w-6 text-slate-400 hover:text-blue-600" @click.stop="openDetail(hso.so_id, group.code)">
+                                        <ExternalLink class="w-3 h-3" />
                                     </Button>
                                 </TableCell>
                             </TableRow>
@@ -337,6 +510,52 @@ const openSiePortal = (code) => {
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- Pagination Controls -->
+    <div v-if="totalPages > 1" class="flex justify-center items-center gap-4 mt-6 pb-4">
+        <Button 
+            variant="outline" 
+            size="sm" 
+            :disabled="currentPage <= 1"
+            @click="goToPage(currentPage - 1)"
+            class="border-slate-300 dark:border-slate-600"
+        >
+            ← Sebelumnya
+        </Button>
+        
+        <div class="flex items-center gap-2">
+            <Button 
+                v-for="page in Math.min(5, totalPages)" 
+                :key="page"
+                variant="outline" 
+                size="sm"
+                :class="currentPage === page ? 'bg-red-600 text-white border-red-600 hover:bg-red-700' : 'border-slate-300 dark:border-slate-600'"
+                @click="goToPage(page)"
+            >
+                {{ page }}
+            </Button>
+            <span v-if="totalPages > 5" class="text-slate-400">...</span>
+            <Button 
+                v-if="totalPages > 5"
+                variant="outline" 
+                size="sm"
+                :class="currentPage === totalPages ? 'bg-red-600 text-white border-red-600' : 'border-slate-300 dark:border-slate-600'"
+                @click="goToPage(totalPages)"
+            >
+                {{ totalPages }}
+            </Button>
+        </div>
+        
+        <Button 
+            variant="outline" 
+            size="sm" 
+            :disabled="currentPage >= totalPages"
+            @click="goToPage(currentPage + 1)"
+            class="border-slate-300 dark:border-slate-600"
+        >
+            Selanjutnya →
+        </Button>
     </div>
 
   </div>

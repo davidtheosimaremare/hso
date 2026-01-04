@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, ref, computed, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
 import jsPDF from 'jspdf'
@@ -28,10 +28,11 @@ import {
   Search, RefreshCw, FileText, ArrowRight, Loader2, 
   Calendar as CalendarIcon, XCircle, ChevronLeft, ChevronRight, 
   Download, FileSpreadsheet, File as FileIcon, Filter,
-  ChevronsUpDown, ArrowUp, ArrowDown
+  ChevronsUpDown, ArrowUp, ArrowDown, Check, X
 } from 'lucide-vue-next'
 
 const router = useRouter()
+const route = useRoute()
 
 // --- STATE ---
 const salesOrders = ref([])
@@ -43,13 +44,46 @@ const itemsPerPage = ref(10)
 const searchQuery = ref('')
 const startDate = ref('')
 const endDate = ref('')
-const statusFilter = ref('ALL')
+const statusFilter = ref([]) 
+
+// Opsi Status Accurate
+const availableStatuses = [
+  'Diajukan', 'Disetujui', 'Ditutup', 'Draf', 
+  'Menunggu diproses', 'Sebagian diproses', 'Terproses', 'Ditolak'
+]
 
 // --- SORTING STATE ---
 const sortKey = ref('date') 
 const sortOrder = ref('desc')
 
-// --- FETCH DATA ---
+// --- URL PERSISTENCE ---
+const loadFiltersFromUrl = () => {
+  const q = route.query
+  if (q.search) searchQuery.value = q.search
+  if (q.start) startDate.value = q.start
+  if (q.end) endDate.value = q.end
+  if (q.status) statusFilter.value = q.status.split(',')
+  if (q.page) currentPage.value = parseInt(q.page)
+  if (q.sort) sortKey.value = q.sort
+  if (q.order) sortOrder.value = q.order
+  if (q.limit) itemsPerPage.value = parseInt(q.limit)
+}
+
+const updateUrlParams = () => {
+  const query = {}
+  if (searchQuery.value) query.search = searchQuery.value
+  if (startDate.value) query.start = startDate.value
+  if (endDate.value) query.end = endDate.value
+  if (statusFilter.value.length > 0) query.status = statusFilter.value.join(',')
+  if (currentPage.value > 1) query.page = currentPage.value
+  if (sortKey.value !== 'date') query.sort = sortKey.value
+  if (sortOrder.value !== 'desc') query.order = sortOrder.value
+  if (itemsPerPage.value !== 10) query.limit = itemsPerPage.value
+
+  router.replace({ query })
+}
+
+// --- DATA FETCHING ---
 const fetchOrders = async () => {
   isLoading.value = true
   const { data, error } = await supabase.functions.invoke('accurate-list-so')
@@ -71,10 +105,11 @@ const fetchOrders = async () => {
 }
 
 onMounted(() => {
+  loadFiltersFromUrl()
   fetchOrders()
 })
 
-// --- HELPERS FORMATTING ---
+// --- HELPERS ---
 const parseAccurateDate = (dateStr) => {
   if (!dateStr) return new Date(0)
   const parts = dateStr.split('/')
@@ -88,15 +123,29 @@ const formatShortDate = (dateStr) => {
 }
 
 const formatCurrency = (val) => {
-    return new Intl.NumberFormat('id-ID', { 
-        style: 'currency', 
-        currency: 'IDR', 
-        minimumFractionDigits: 0, 
-        maximumFractionDigits: 0 
-    }).format(val)
+    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val)
 }
 
-// --- FILTERING & SORTING LOGIC ---
+// --- LOGIC MULTI SELECT ---
+const toggleStatus = (status) => {
+  if (statusFilter.value.includes(status)) {
+    statusFilter.value = statusFilter.value.filter(s => s !== status)
+  } else {
+    statusFilter.value.push(status)
+  }
+}
+
+const removeStatus = (status) => {
+    statusFilter.value = statusFilter.value.filter(s => s !== status)
+}
+
+const isStatusSelected = (status) => statusFilter.value.includes(status)
+
+const hasActiveFilters = computed(() => {
+    return searchQuery.value || startDate.value || endDate.value || statusFilter.value.length > 0
+})
+
+// --- FILTERING & SORTING CORE ---
 const toggleSort = (key) => {
   if (sortKey.value === key) {
     sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
@@ -109,7 +158,6 @@ const toggleSort = (key) => {
 const filteredAndSortedOrders = computed(() => {
   let result = [...salesOrders.value]
 
-  // Filter Text
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase()
     result = result.filter(so => 
@@ -118,7 +166,6 @@ const filteredAndSortedOrders = computed(() => {
     )
   }
 
-  // Filter Tanggal
   if (startDate.value || endDate.value) {
     result = result.filter(so => {
       const itemDate = parseAccurateDate(so.date)
@@ -136,12 +183,10 @@ const filteredAndSortedOrders = computed(() => {
     })
   }
 
-  // Filter Status
-  if (statusFilter.value !== 'ALL') {
-    result = result.filter(so => so.status === statusFilter.value)
+  if (statusFilter.value.length > 0) {
+    result = result.filter(so => statusFilter.value.includes(so.status))
   }
 
-  // Sorting
   result.sort((a, b) => {
     let valA = a[sortKey.value]
     let valB = b[sortKey.value]
@@ -165,7 +210,13 @@ const filteredAndSortedOrders = computed(() => {
   return result
 })
 
-watch([searchQuery, startDate, endDate, statusFilter], () => { currentPage.value = 1 })
+watch([searchQuery, startDate, endDate, statusFilter, currentPage, sortKey, sortOrder, itemsPerPage], () => {
+  updateUrlParams()
+}, { deep: true })
+
+watch([searchQuery, startDate, endDate, statusFilter], () => { 
+  if (currentPage.value !== 1) currentPage.value = 1 
+})
 
 // Pagination
 const totalPages = computed(() => Math.ceil(filteredAndSortedOrders.value.length / itemsPerPage.value))
@@ -199,7 +250,6 @@ const setDateFilter = (type) => {
     const startOfWeek = new Date(now)
     if (day !== 1) startOfWeek.setHours(-24 * (day - 1))
     startDate.value = formatDate(startOfWeek)
-    
     const endOfWeek = new Date(startOfWeek)
     endOfWeek.setDate(startOfWeek.getDate() + 6)
     endDate.value = formatDate(endOfWeek)
@@ -223,7 +273,7 @@ const resetFilter = () => {
     searchQuery.value = ''
     startDate.value = '' 
     endDate.value = ''
-    statusFilter.value = 'ALL'
+    statusFilter.value = [] 
     sortKey.value = 'date'
     sortOrder.value = 'desc' 
 }
@@ -249,7 +299,6 @@ const exportToPDF = () => {
   doc.save(getFilename('pdf'))
 }
 
-// --- STATUS COLOR LOGIC (ADAPTIVE DARK MODE) ---
 const getStatusColor = (status) => {
   switch (status) {
     case 'Terproses': return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800'
@@ -297,7 +346,6 @@ const getStatusColor = (status) => {
       </div>
       
       <div class="flex flex-col md:flex-row gap-3">
-        
         <div class="relative flex-1">
           <Search class="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
           <Input 
@@ -308,7 +356,6 @@ const getStatusColor = (status) => {
         </div>
 
         <div class="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
-            
             <DropdownMenu>
                 <DropdownMenuTrigger as-child>
                     <Button 
@@ -341,33 +388,70 @@ const getStatusColor = (status) => {
                 </DropdownMenuContent>
             </DropdownMenu>
 
-            <Select v-model="statusFilter">
-                <SelectTrigger class="h-10 w-full sm:w-[160px] bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-300">
-                    <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent class="dark:bg-slate-800 dark:border-slate-700">
-                    <SelectItem value="ALL" class="dark:text-slate-300 dark:focus:bg-slate-700">Semua Status</SelectItem>
-                    <SelectItem value="Diajukan" class="dark:text-slate-300 dark:focus:bg-slate-700">Diajukan</SelectItem>
-                    <SelectItem value="Disetujui" class="dark:text-slate-300 dark:focus:bg-slate-700">Disetujui</SelectItem>
-                    <SelectItem value="Ditutup" class="dark:text-slate-300 dark:focus:bg-slate-700">Ditutup</SelectItem>
-                    <SelectItem value="Draf" class="dark:text-slate-300 dark:focus:bg-slate-700">Draf</SelectItem>
-                    <SelectItem value="Menunggu diproses" class="dark:text-slate-300 dark:focus:bg-slate-700">Menunggu diproses</SelectItem>
-                    <SelectItem value="Sebagian diproses" class="dark:text-slate-300 dark:focus:bg-slate-700">Sebagian diproses</SelectItem>
-                    <SelectItem value="Terproses" class="dark:text-slate-300 dark:focus:bg-slate-700">Terproses</SelectItem>
-                </SelectContent>
-            </Select>
+            <DropdownMenu>
+                <DropdownMenuTrigger as-child>
+                    <Button 
+                        variant="outline" 
+                        class="h-10 w-full sm:w-[180px] justify-between bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-300"
+                        :class="{'border-red-300 text-red-600 dark:border-red-800 dark:text-red-400': statusFilter.length > 0}"
+                    >
+                        <span class="truncate">
+                            {{ statusFilter.length === 0 ? 'Semua Status' : `${statusFilter.length} Status Dipilih` }}
+                        </span>
+                        <ChevronDown class="w-4 h-4 opacity-50" />
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent class="w-[220px] dark:bg-slate-800 dark:border-slate-700 p-2" align="end">
+                    <DropdownMenuLabel class="text-xs mb-1 text-slate-500">Pilih Status (Bisa Banyak)</DropdownMenuLabel>
+                    
+                    <div v-for="status in availableStatuses" :key="status" 
+                         class="flex items-center gap-3 px-2 py-2 rounded-sm hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer text-sm dark:text-slate-200 transition-colors"
+                         @click.prevent="toggleStatus(status)">
+                        
+                        <div class="w-4 h-4 border rounded flex items-center justify-center transition-colors" 
+                             :class="isStatusSelected(status) ? 'bg-slate-900 border-slate-900 dark:bg-white dark:border-white' : 'border-slate-300 dark:border-slate-500 bg-white dark:bg-slate-900'">
+                            <Check v-if="isStatusSelected(status)" class="w-3 h-3 text-white dark:text-slate-900" stroke-width="3" />
+                        </div>
+                        
+                        <span>{{ status }}</span>
+                    </div>
 
-            <Button 
-                v-if="startDate || endDate || searchQuery || statusFilter !== 'ALL'" 
-                variant="ghost" size="icon"
-                @click="resetFilter" 
-                class="h-10 w-10 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 border border-dashed border-red-200 dark:border-red-800 rounded-md"
-                title="Reset Filter"
-            >
-                <XCircle class="w-4 h-4"/> 
-            </Button>
+                    <DropdownMenuSeparator class="my-2 dark:bg-slate-700"/>
+                    <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        class="w-full text-xs h-8 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                        @click="statusFilter = []"
+                        :disabled="statusFilter.length === 0"
+                    >
+                        Reset Pilihan Status
+                    </Button>
+                </DropdownMenuContent>
+            </DropdownMenu>
         </div>
       </div>
+
+      <div v-if="hasActiveFilters" class="flex flex-wrap items-center gap-2 pt-2 border-t border-dashed border-slate-200 dark:border-slate-700">
+          <span class="text-xs font-bold text-slate-400 uppercase mr-1">Active Filters:</span>
+          
+          <Badge v-if="searchQuery" variant="secondary" class="bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200 flex items-center gap-1">
+              Search: {{ searchQuery }}
+              <X class="w-3 h-3 cursor-pointer" @click="searchQuery = ''"/>
+          </Badge>
+
+          <Badge v-if="startDate || endDate" variant="secondary" class="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200 flex items-center gap-1">
+              Date: {{ dateRangeLabel }}
+              <X class="w-3 h-3 cursor-pointer" @click="{startDate=''; endDate=''}"/>
+          </Badge>
+
+          <Badge v-for="status in statusFilter" :key="status" variant="secondary" class="bg-orange-50 text-orange-700 hover:bg-orange-100 border-orange-200 flex items-center gap-1">
+              {{ status }}
+              <X class="w-3 h-3 cursor-pointer" @click="removeStatus(status)"/>
+          </Badge>
+
+          <button @click="resetFilter" class="text-xs text-red-600 hover:underline font-medium ml-2">Reset All</button>
+      </div>
+
     </div>
 
     <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-hidden transition-colors duration-300">
