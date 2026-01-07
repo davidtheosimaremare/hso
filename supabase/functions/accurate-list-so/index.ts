@@ -32,13 +32,13 @@ serve(async (req) => {
 
     // Default fields jika frontend tidak kirim (Backward compatibility)
     const fieldsParam = fields || 'id,number,transDate,customer,totalAmount,statusName,percentShipped'
-    const limitParam = limit || 100 // Default 100 item terbaru
+    const limitParam = limit || 10000 // Default 10000 - ambil semua SO
     const sortParam = sort || 'transDate|desc'
 
     // SETUP LOOPING VARIABLES
     let allData = []
     let page = 1
-    const pageSize = 100 
+    const pageSize = 100
     let hasMoreData = true
 
     // Generate Signature
@@ -55,7 +55,7 @@ serve(async (req) => {
     while (hasMoreData) {
       // Masukkan fieldsParam ke URL
       const url = `${LIST_SO_ENDPOINT}?fields=${fieldsParam}&sp.page=${page}&sp.pageSize=${pageSize}&sp.sort=${sortParam}`
-      
+
       const response = await fetch(url, {
         method: 'GET',
         headers: {
@@ -71,21 +71,21 @@ serve(async (req) => {
       }
 
       const json = await response.json()
-      
+
       if (json.d && Array.isArray(json.d)) {
         allData = allData.concat(json.d)
-        
+
         // Stop jika data sudah mencapai limit yang diminta frontend
         if (allData.length >= limitParam) {
-            hasMoreData = false;
-            // Potong array sesuai limit
-            allData = allData.slice(0, limitParam);
+          hasMoreData = false;
+          // Potong array sesuai limit
+          allData = allData.slice(0, limitParam);
         }
         // Stop jika data habis dari Accurate
         else if (json.d.length < pageSize) {
-          hasMoreData = false 
+          hasMoreData = false
         } else {
-          page++ 
+          page++
         }
       } else {
         hasMoreData = false
