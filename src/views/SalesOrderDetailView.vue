@@ -41,9 +41,12 @@ const isModalOpen = ref(false)
 const isSyncing = ref(false) // State untuk sync HPO dari PO
 const syncProgress = ref(0) // Progress sync HPO 0-100
 const hpoMapping = ref({}) // Mapping item_code -> HPO number dari Accurate PO
+const hpoDetails = ref([]) // Full PO details with quantities
+const hdoMapping = ref({}) // Mapping item_code -> HDO number dari Accurate DO
 const uniqueTrackingCode = ref(null)
 const isLinkCopied = ref(false)
 const errorMessage = ref(null)
+const syncMessage = ref('Sinkronisasi data...') // Pesan sync dynamic
 
 const selectedItemCodes = ref([]) 
 const isBulkMode = ref(false)    
@@ -60,9 +63,7 @@ const statusOptions = [
   { value: 'Follow up with our forwarder', label: 'Barang Ready (Ex-Works)', type: 'date', placeholder: 'Ex Work Date', dateLabel: 'Ex Work Date' },
   { value: 'ETA Port JKT', label: 'Sedang Transit (ETA JKT)', type: 'date', placeholder: 'Eta Port Date', dateLabel: 'ETA Port' },
   { value: 'Already in siemens Warehouse', label: 'Tiba di Gudang Dunex', type: 'date', placeholder: 'Date', dateLabel: 'Tiba Dunex' },
-  { value: 'Already in Hokiindo Raya', label: 'Tiba di Gudang Hokiindo', type: 'date', placeholder: 'Date', dateLabel: 'Tiba Hokiindo' },
-  { value: 'On Delivery', label: 'Sedang Dikirim ke Customer', type: 'hdo', placeholder: 'No. Surat Jalan / HDO', dateLabel: 'Tgl Jalan' },
-  { value: 'Completed', label: 'Selesai Diterima Customer', type: 'date', placeholder: 'Tanggal Diterima', dateLabel: 'Diterima Tgl' }
+  { value: 'Already in Hokiindo Raya', label: 'Tiba di Gudang Hokiindo', type: 'date', placeholder: 'Date', dateLabel: 'Tiba Hokiindo' }
 ]
 
 const getLocalDate = () => {
@@ -96,13 +97,20 @@ const isAllSelected = computed(() => {
 const itemsToPurchase = computed(() => {
     if (!soDetail.value || !soDetail.value.items) return []
     return soDetail.value.items.filter(item => {
-        // Tampilkan di card alert jika To Order > 0 DAN belum ada HPO
+        // Hanya tampilkan jika qty_to_order > 0 (no stock atau stock sebagian)
         if (item.qty_to_order <= 0) return false;
         
-        const hasHPO = item.logistics_hpo && item.logistics_hpo.trim().length > 0;
+        // Jangan tampilkan jika sudah selesai dikirim (sudah ada HDO dan fully shipped)
+        if (item.is_fully_shipped) return false;
+        
+        // Cek apakah sudah ada HPO dari database atau dari Accurate sync
+        const hasHpoInDb = item.logistics_hpo && item.logistics_hpo.trim().length > 0;
+        const hasHpoFromAccurate = hpoMapping.value[item.code] || (hpoDetails.value && hpoDetails.value.some(p => p.itemCode === item.code));
         const isProcessRunning = item.logistics_status !== 'Pending Process';
         
-        if (hasHPO || isProcessRunning) return false;
+        // Jangan tampilkan jika sudah ada HPO atau status bukan Pending
+        if (hasHpoInDb || hasHpoFromAccurate || isProcessRunning) return false;
+        
         return true;
     })
 })
@@ -115,7 +123,13 @@ const groupedShipments = computed(() => {
     if (soDetail.value.shipments) {
         soDetail.value.shipments.forEach(s => {
             const key = s.no.trim().toLowerCase();
-            shipmentsMap.set(key, { no: s.no, date: s.date, status: s.status, source: 'ACCURATE', items: [] });
+            shipmentsMap.set(key, { 
+                no: s.no, 
+                date: s.date, 
+                status: s.status, 
+                source: s.source || 'ACCURATE', 
+                items: s.items || [] // Use items from shipment if available
+            });
         });
     }
 
@@ -140,17 +154,23 @@ const parseStockFromNote = (note) => {
     if (!note) return { qty: 0, isReady: false, hasInfo: false };
     const lower = note.toLowerCase();
     
+    // No stock / kosong / indent
     if (lower.includes('no stock') || lower.includes('non stock') || lower.includes('kosong') || lower.includes('indent')) {
         return { qty: 0, isReady: false, hasInfo: true };
     }
+    
+    // Cek apakah ada angka setelah stock/stok
     const match = lower.match(/(?:stock|stok|sisa)\s*[:.]?\s*(\d+)/);
     if (match) {
+        // Ada angka = stock sebagian
         return { qty: parseInt(match[1]), isReady: false, hasInfo: true };
     }
+    
+    // Jika ada kata stock/stok/ready tapi TIDAK ada angka = ready stock
     if (lower.includes('stock') || lower.includes('stok') || lower.includes('ready')) {
-        // PERBAIKAN LOGIC: Jika Ready, kita tandai true, qty nanti diset sama dengan Order
         return { qty: 999999, isReady: true, hasInfo: true }; 
     }
+    
     return { qty: 0, isReady: false, hasInfo: false };
 }
 
@@ -176,6 +196,7 @@ const exportToExcel = () => {
 const fetchHpoInBackground = async (soNumber) => {
   try {
     isSyncing.value = true
+    syncMessage.value = 'Sinkronisasi status PO dari Accurate...'
     syncProgress.value = 0
     console.log(`Background: Fetching HPO for ${soNumber}...`)
     
@@ -202,12 +223,84 @@ const fetchHpoInBackground = async (soNumber) => {
       })
       
       hpoMapping.value = mapping
+      hpoDetails.value = items // Save full details including quantity
       console.log(`Background: Found ${Object.keys(mapping).length} HPO mappings`)
     }
     
     syncProgress.value = 100
   } catch (err) {
     console.warn('HPO fetch error:', err)
+  } finally {
+    isSyncing.value = false
+    syncProgress.value = 0
+  }
+}
+
+// --- BACKGROUND HDO FETCH ---
+const fetchHdoInBackground = async (doNumbers) => {
+  if (!doNumbers || doNumbers.length === 0) return
+
+  try {
+    isSyncing.value = true // Reuse sync indicator
+    syncMessage.value = 'Sinkronisasi No. Resi dari Accurate...'
+    syncProgress.value = 0 // Reset for HDO phase
+    console.log(`Background: Fetching HDO Details for ${doNumbers.join(', ')}...`)
+    
+    // Phase 1: Request
+    syncProgress.value = 30
+    
+    const { data: doData, error: doError } = await supabase.functions.invoke('accurate-sync-hdo', {
+      body: { doNumbers }
+    })
+    
+    if (!doError && doData?.d) {
+      const mapping = {}
+      const items = doData.d
+      
+      // Phase 2: Processing
+      syncProgress.value = 70
+      
+      items.forEach(mapItem => {
+        // mapItem structure: { itemCode, doNumber, doDate }
+        mapping[mapItem.itemCode] = mapItem.doNumber
+      })
+      
+      hdoMapping.value = { ...hdoMapping.value, ...mapping }
+      console.log(`Background: Found ${Object.keys(mapping).length} HDO mappings`)
+
+      // Phase 3: Merge DO details into shipments
+      if (doData.doDetails && Array.isArray(doData.doDetails)) {
+        console.log('DO Details received:', doData.doDetails)
+        // Update soDetail.shipments with item details from Accurate
+        if (soDetail.value && soDetail.value.shipments) {
+          const updatedShipments = soDetail.value.shipments.map(shipment => {
+            const doDetail = doData.doDetails.find(d => d.number === shipment.no)
+            if (doDetail) {
+              console.log(`Merging items for ${shipment.no}:`, doDetail.items)
+              return {
+                ...shipment,
+                items: doDetail.items,
+                source: 'ACCURATE' // Mark as from Accurate
+              }
+            }
+            return shipment
+          })
+          
+          // Force reactivity update
+          soDetail.value = {
+            ...soDetail.value,
+            shipments: updatedShipments
+          }
+          
+          console.log('Updated shipments:', soDetail.value.shipments)
+        }
+      }
+    }
+
+    syncProgress.value = 100
+
+  } catch (err) {
+    console.warn('HDO fetch error:', err)
   } finally {
     isSyncing.value = false
     syncProgress.value = 0
@@ -262,13 +355,13 @@ const fetchDetail = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     currentUser.value = user
 
-    const { data: linkData } = await supabase.from('so_tracking_links').select('unique_code').eq('so_id', String(soId)).maybeSingle()
-    uniqueTrackingCode.value = linkData?.unique_code || null
-
     const d = accData.d
     const history = d.processHistory || []
     const rawItems = d.detailItem || []
     const sortedItems = rawItems.sort((a, b) => (a.seq || 0) - (b.seq || 0))
+
+    const linkData = await supabase.from('so_tracking_links').select('unique_code').eq('so_id', String(soId)).maybeSingle()
+    uniqueTrackingCode.value = linkData.data?.unique_code || null
 
     soDetail.value = {
       id: d.id,
@@ -296,6 +389,7 @@ const fetchDetail = async () => {
         
         let qty_stock_admin = 0;
         let qty_to_order = 0;
+        let isReadyAdmin = stockInfo.isReady;
 
         if (stockInfo.isReady) {
             // JIKA READY: Stock dianggap PENUH (sesuai Order), To Order = 0
@@ -320,7 +414,7 @@ const fetchDetail = async () => {
           qty_shipped: qty_shipped,
           qty_remaining: qty_remaining,
           
-          parsed_stock_qty: stockInfo.isReady ? qty_stock_admin : qty_stock_admin, // Tampilkan Angka
+          parsed_stock_qty: isReadyAdmin ? qty_stock_admin : qty_stock_admin, // Tampilkan Angka
           qty_to_order: qty_to_order, 
           
           admin_note: note,
@@ -332,7 +426,6 @@ const fetchDetail = async () => {
           logistics_status: myShipment.current_status || 'Pending Process', 
           logistics_hpo: myShipment.hpo_number || null,
           logistics_date: myShipment.status_date || myShipment.updated_at || null, 
-          logistics_id: myShipment.id || null,
           logistics_id: myShipment.id || null,
           logistics_hdo: myShipment.hpo_number && ['On Delivery','Completed'].includes(myShipment.current_status) ? myShipment.hpo_number : null,
           logistics_note: myShipment.admin_notes || null
@@ -349,9 +442,20 @@ const fetchDetail = async () => {
     loadingProgress.value = 100
     isLoading.value = false
     
-    // Trigger HPO sync in background AFTER page is displayed
+    // Trigger HPO sync first, then HDO sync if applicable
     if (soDetail.value?.number) {
-      fetchHpoInBackground(soDetail.value.number)
+      // Start HPO Sync
+      fetchHpoInBackground(soDetail.value.number).then(() => {
+         // After HPO sync finishes, check for HDOs
+         if (soDetail.value?.shipments) {
+            // Check processHistory for DOs
+            // soDetail.value.shipments is already filtered for DOs
+            const doList = soDetail.value.shipments.map(s => s.no)
+            if (doList.length > 0) {
+               fetchHdoInBackground(doList)
+            }
+         }
+      })
     }
     
     // Auto scroll if highlight param exists
@@ -382,7 +486,18 @@ const fulfillmentPercentage = (items) => {
 }
 
 const getRowStatus = (item) => {
-  if (item.is_fully_shipped) return { text: 'SELESAI', class: 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700', icon: CheckCircle2 }
+  // Jika fully shipped (semua terkirim dan dikonfirmasi selesai)
+  if (item.is_fully_shipped) return { text: 'PRODUK SUDAH DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
+  
+  // Jika sudah ada pengiriman sebagian (masih ada sisa), status = DIKIRIM SEBAGIAN
+  if (item.qty_shipped > 0 && item.qty_remaining > 0) {
+    return { text: 'DIKIRIM SEBAGIAN', class: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800', icon: Truck }
+  }
+  
+  // Jika sudah dikirim semua (tidak ada sisa tapi belum dikonfirmasi fully_shipped)
+  if (item.qty_shipped > 0 && item.qty_remaining === 0) {
+    return { text: 'PRODUK SUDAH DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
+  }
   
   // Cek HPO dari Accurate
   const hpoFromAccurate = hpoMapping.value[item.code]
@@ -400,8 +515,13 @@ const getRowStatus = (item) => {
     return { text: 'SEGERA BUAT PO', class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: AlertCircle }
   }
   
+  // Jika ready stock (qty_to_order = 0) dan belum ada pengiriman, status = MENUNGGU PENGIRIMAN
+  if (status === 'Pending Process' && item.qty_to_order === 0) {
+    return { text: 'MENUNGGU PENGIRIMAN', class: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800', icon: Package }
+  }
+  
   switch (status) {
-    case 'Pending Process': return { text: 'MENUNGGU', class: 'bg-gray-100 text-gray-600 border-gray-200', icon: Hourglass }
+    case 'Pending Process': return { text: 'MENUNGGU', class: 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700', icon: Hourglass }
     case 'Follow up to factory': return { text: 'ORDER PABRIK', class: 'bg-amber-50 text-amber-700 border-amber-200', icon: FileText }
     case 'Follow up with our forwarder': return { text: 'EX-WORKS', class: 'bg-orange-50 text-orange-700 border-orange-200', icon: Factory }
     case 'ETA Port JKT': return { text: 'TRANSIT', class: 'bg-blue-50 text-blue-700 border-blue-200', icon: Anchor }
@@ -409,7 +529,7 @@ const getRowStatus = (item) => {
     case 'Already in Hokiindo Raya': return { text: 'WH HOKIINDO', class: 'bg-indigo-50 text-indigo-700 border-indigo-200', icon: MapPin }
     case 'On Delivery': return { text: 'KIRIM BARANG', class: 'bg-blue-100 text-blue-700 border-blue-200', icon: Truck }
     case 'Completed': return { text: 'DITERIMA', class: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: CheckCircle2 }
-    default: return { text: 'MENUNGGU', class: 'bg-gray-100 text-gray-600 border-gray-200', icon: Hourglass }
+    default: return { text: 'MENUNGGU', class: 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700', icon: Hourglass }
   }
 }
 
@@ -420,6 +540,33 @@ const getDaysSinceOrder = () => {
   const today = new Date()
   const diffTime = today.getTime() - orderDate.getTime()
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+}
+
+// Helper: Get quantity shipped in HDO for specific item
+const getHdoQty = (item) => {
+  const hdoNumber = hdoMapping.value[item.code] || item.logistics_hdo
+  if (!hdoNumber || !soDetail.value?.shipments) return null
+  
+  // Find the shipment/DO that matches this HDO number
+  const shipment = soDetail.value.shipments.find(s => s.no === hdoNumber)
+  if (!shipment || !shipment.items) return null
+  
+  // Find the item in this shipment
+  const shipmentItem = shipment.items.find(i => i.code === item.code)
+  return shipmentItem ? shipmentItem.qty_shipped : null
+}
+
+// Helper: Get all HPO entries for specific item (can have multiple POs with different notes)
+const getHpoEntries = (item) => {
+  if (!hpoDetails.value || hpoDetails.value.length === 0) return []
+  
+  // Find ALL PO items that match this item code
+  const poItems = hpoDetails.value.filter(p => p.itemCode === item.code)
+  return poItems.map(p => ({
+    poNumber: p.poNumber,
+    quantity: p.quantity,
+    description: p.description
+  }))
 }
 
 const openSiePortal = (item) => { const code = item.code ? item.code.trim() : ''; if(!code || code === '-') return; window.open(`https://sieportal.siemens.com/en-id/products-services/detail/${code}?tree=CatalogTree`, '_blank'); }
@@ -434,7 +581,6 @@ const openActionModal = (item) => {
   const currentStatus = item.logistics_status || ''
   const validStatuses = statusOptions.map(o => o.value)
   selectedTargetStatus.value = validStatuses.includes(currentStatus) ? currentStatus : 'Follow up with our forwarder'
-  if (item.is_fully_shipped) selectedTargetStatus.value = 'Completed'
   isModalOpen.value = true 
 }
 const openBulkEditModal = () => { if (selectedItemCodes.value.length === 0) return; isBulkMode.value = true; selectedItem.value = soDetail.value.items.find(i => i.code === selectedItemCodes.value[0]); formStatus.value = { hpo: '', hdo: '', date: getLocalDate(), notes: '', admin_notes: '', is_hold: false }; selectedTargetStatus.value = 'Follow up with our forwarder'; isModalOpen.value = true }
@@ -567,14 +713,16 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
           </CardHeader>
           <div class="overflow-x-auto">
             <Table>
-              <TableHeader class="bg-gray-50/50 dark:bg-slate-800/50">
-                <TableRow class="border-b border-gray-200 dark:border-slate-700">
-                  <TableHead class="w-[40px] text-center"><input type="checkbox" class="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer" :checked="isAllSelected" @change="toggleSelectAll"/></TableHead>
-                  <TableHead class="w-[25%] py-3 pl-2 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Produk</TableHead>
-                  
-                  <TableHead class="text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[8%]">Order</TableHead>
-                  <TableHead class="text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[8%]">Stock (Gudang)</TableHead>
-                  <TableHead class="text-center text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider w-[10%] bg-blue-50/30 dark:bg-blue-900/10">To Order</TableHead>
+              <TableHeader class="bg-gray-50 dark:bg-slate-900">
+                <TableRow>
+                  <TableHead class="w-[50px] text-center">
+                     <div class="flex items-center justify-center gap-1">
+                        <input type="checkbox" class="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer" :checked="isAllSelected" @change="toggleSelectAll"/>
+                     </div>
+                  </TableHead>
+                  <TableHead class="min-w-[250px] text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Nama Produk</TableHead>
+                  <TableHead class="text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[8%]">Qty Order</TableHead>
+                  <TableHead class="text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[8%]">Stok</TableHead>
                   <TableHead class="text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[8%]">Terkirim</TableHead>
                   <TableHead class="text-center text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider w-[10%] bg-red-50/30 dark:bg-red-900/10">Sisa (Kirim)</TableHead>
                   
@@ -585,6 +733,7 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
               <TableBody>
                 <TableRow 
                     v-for="(item, idx) in soDetail.items" 
+                    v-show="!isPurchaseExpanded || item.qty_to_order > 0"
                     :key="idx" 
                     class="group hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors border-b border-gray-100 dark:border-slate-700 last:border-0"
                     :class="{ 'bg-yellow-100 dark:bg-yellow-900/30 hover:bg-yellow-200 dark:hover:bg-yellow-900/50': route.query.highlight === item.code }"
@@ -606,15 +755,19 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                   </TableCell>
                   
                   <TableCell class="text-center align-top pt-4 bg-blue-50/30 dark:bg-blue-900/10">
-                      <div v-if="item.qty_to_order > 0"><span class="text-blue-600 dark:text-blue-400 font-bold text-sm">{{ item.qty_to_order }}</span></div>
-                      <div v-else class="text-gray-300 text-xs">-</div>
+                      <div class="flex flex-col items-center gap-1">
+                          <span class="font-bold text-blue-600 dark:text-blue-400">{{ item.qty_shipped }}</span>
+                          <!-- HDO (Resi) Display - di kolom terkirim -->
+                          <div v-if="hdoMapping[item.code] || (item.qty_shipped > 0 && item.logistics_hdo)">
+                              <span class="text-blue-600 dark:text-blue-400 font-mono text-[10px] font-bold inline-flex items-center gap-1 border border-blue-100 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800 px-1 py-0.5 rounded">
+                                  <Truck class="w-2.5 h-2.5"/> {{ hdoMapping[item.code] || item.logistics_hdo }} ({{ getHdoQty(item) || item.qty_shipped }} {{ item.unit }})
+                              </span>
+                          </div>
+                      </div>
                   </TableCell>
-
-                  <TableCell class="text-center align-top pt-4 text-gray-500 dark:text-gray-400">{{ item.qty_shipped }}</TableCell>
                   
                   <TableCell class="text-center align-top pt-4 bg-red-50/30 dark:bg-red-900/10">
-                    <div v-if="item.qty_remaining > 0"><span class="text-red-600 dark:text-red-400 font-bold text-sm">{{ item.qty_remaining }}</span></div>
-                    <div v-else><CheckCircle2 class="w-5 h-5 text-emerald-500 mx-auto" /></div>
+                      <span class="font-bold" :class="item.qty_remaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'">{{ item.qty_remaining }}</span>
                   </TableCell>
 
                   <TableCell class="pl-4 align-top pt-3">
@@ -623,15 +776,38 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                         <Loader2 class="w-4 h-4 animate-spin" />
                         <span class="text-xs font-medium">Cek PO...</span>
                     </div>
+                    <!-- Loading untuk item yang sudah dikirim (cek HDO) -->
+                    <div v-else-if="isSyncing && item.qty_shipped > 0 && !hdoMapping[item.code]" class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-blue-50 border border-blue-200 text-blue-700">
+                        <Loader2 class="w-4 h-4 animate-spin" />
+                        <span class="text-xs font-medium">Cek Resi...</span>
+                    </div>
+
                     <!-- Status tampil langsung jika stock cukup, atau setelah sync selesai -->
                     <div v-else>
                         <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md border text-xs font-bold shadow-sm mb-1" :class="getRowStatus(item).class"><component :is="getRowStatus(item).icon" class="w-3.5 h-3.5" />{{ getRowStatus(item).text }}</div>
-                        <!-- HPO dari Accurate atau Supabase -->
-                        <div v-if="hpoMapping[item.code] || item.logistics_hpo" class="mt-1.5">
-                            <span class="text-green-600 dark:text-green-400 font-mono text-sm font-bold">HPO: {{ hpoMapping[item.code] || item.logistics_hpo }}</span>
+                        
+                        <!-- HPO dari Accurate - show all entries if multiple POs -->
+                        <div v-if="!item.is_fully_shipped && getHpoEntries(item).length > 0" class="mt-1.5 space-y-1">
+                            <div v-for="(hpo, idx) in getHpoEntries(item)" :key="idx">
+                                <span class="text-green-600 dark:text-green-400 font-mono text-xs font-bold">
+                                    {{ hpo.poNumber }} ({{ hpo.quantity }} {{ item.unit }})
+                                </span>
+                            </div>
+                            
+                            <!-- Notifikasi kekurangan untuk partial shipment -->
+                            <div v-if="item.qty_shipped > 0 && item.qty_remaining > 0" class="text-[10px] text-orange-600 dark:text-orange-400 italic">
+                                ℹ️ Pemesanan Kekurangan ({{ item.qty_remaining }} {{ item.unit }})
+                            </div>
                         </div>
-                        <!-- Warning jika perlu PO tapi belum ada -->
-                        <div v-else-if="item.qty_to_order > 0 && !item.is_fully_shipped && !isSyncing" class="mt-1 text-xs text-red-600 dark:text-red-400">
+                        
+                        <!-- Warning jika dikirim sebagian tapi belum ada HPO untuk kekurangan -->
+                        <div v-else-if="item.qty_shipped > 0 && item.qty_remaining > 0 && !isSyncing" class="mt-1.5 text-[10px] text-red-600 dark:text-red-400 italic">
+                            ⚠️ Ada kekurangan yang belum dipesan ({{ item.qty_remaining }} {{ item.unit }})
+                        </div>
+
+
+                        <!-- Warning jika perlu PO tapi belum ada HPO -->
+                        <div v-else-if="item.qty_to_order > 0 && !item.is_fully_shipped && !isSyncing && getHpoEntries(item).length === 0" class="mt-1 text-xs text-red-600 dark:text-red-400">
                             ⚠️ Pesanan sudah {{ getDaysSinceOrder() }} hari
                         </div>
                     </div>
@@ -863,20 +1039,40 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                   </div>
               </div>
               
-              <p class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-2">Update Status Pengiriman</p>
-              <div class="space-y-2 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2">
-                  <div v-for="opt in statusOptions" :key="opt.value" class="bg-white dark:bg-[#2a2a2a] p-1 shadow-sm transition-all duration-200" :class="selectedTargetStatus === opt.value ? 'ring-2 ring-black dark:ring-white scale-[1.01]' : 'opacity-80 hover:opacity-100'">
-                      <div class="p-3 flex justify-between items-center cursor-pointer" @click="selectedTargetStatus = opt.value"><span class="text-sm font-medium text-black dark:text-white">{{ opt.label }}</span>
-                          <span v-if="(opt.type === 'hdo' && formStatus.hdo) && selectedTargetStatus !== opt.value" class="text-xs font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1">{{ formStatus.hdo }}</span>
-                      </div>
-                      <div v-if="selectedTargetStatus === opt.value" class="px-3 pb-3 animate-in slide-in-from-top-1 duration-200">
-                          <div v-if="opt.type === 'hdo'" class="flex gap-2"><div class="bg-[#1a1a1a] text-white px-3 py-2 text-xs flex items-center font-mono whitespace-nowrap min-w-[80px]">{{ opt.placeholder }}</div><input v-model="formStatus.hdo" type="text" class="flex-1 bg-[#333] text-white px-3 py-2 text-sm outline-none font-mono focus:bg-black transition-colors placeholder-gray-500" :placeholder="opt.placeholder"/></div>
-                          <div v-else-if="opt.type === 'date'" class="flex flex-col gap-2">
-                              <div v-if="selectedItem && hpoMapping[selectedItem.code]" class="text-[10px] text-green-600 font-mono flex items-center gap-1"><span class="font-bold">HPO:</span> {{ hpoMapping[selectedItem.code] }}</div>
-                              <div class="flex gap-2"><div class="bg-[#1a1a1a] text-white px-3 py-2 text-xs flex items-center font-mono whitespace-nowrap min-w-[80px]">{{ opt.placeholder }}</div><input v-model="formStatus.date" type="date" class="flex-1 bg-[#333] text-white px-3 py-2 text-sm outline-none font-mono focus:bg-black transition-colors"/></div>
-                          </div>
+              
+              <!-- SEMENTARA - LOGIC UNTUK ITEM READY -->
+              <div v-if="selectedItem && selectedItem.qty_to_order === 0" class="space-y-4">
+                  <div class="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800 flex items-start gap-3">
+                      <div class="bg-white dark:bg-slate-800 p-1.5 rounded-full shadow-sm"><CheckCircle2 class="w-5 h-5 text-blue-600"/></div>
+                      <div>
+                          <p class="text-sm font-bold text-blue-800 dark:text-blue-300">Barang Ready / Menunggu Pengiriman</p>
+                          <p class="text-xs text-blue-600 dark:text-blue-400 mt-1">Stok tersedia. Silakan update keterangan atau Hold jika ditunda.</p>
                       </div>
                   </div>
+
+                  <div class="flex items-center gap-3 p-3 bg-white dark:bg-[#2a2a2a] rounded border border-gray-200 dark:border-gray-700">
+                      <Switch :id="'hold-switch'" :checked="formStatus.is_hold" @update:checked="val => formStatus.is_hold = val" class="data-[state=checked]:bg-red-600"/>
+                      <label :for="'hold-switch'" class="text-sm font-bold text-black dark:text-white cursor-pointer select-none">Hold by Customer</label>
+                  </div>
+              </div>
+
+              <!-- LOGIC UNTUK ITEM YANG PERLU PROCESS (BELUM READY) -->
+              <div v-else>
+                <p class="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-2">Update Status Pengiriman</p>
+                <div class="space-y-2 max-h-[40vh] overflow-y-auto custom-scrollbar pr-2">
+                    <div v-for="opt in statusOptions" :key="opt.value" class="bg-white dark:bg-[#2a2a2a] p-1 shadow-sm transition-all duration-200" :class="selectedTargetStatus === opt.value ? 'ring-2 ring-black dark:ring-white scale-[1.01]' : 'opacity-80 hover:opacity-100'">
+                        <div class="p-3 flex justify-between items-center cursor-pointer" @click="selectedTargetStatus = opt.value"><span class="text-sm font-medium text-black dark:text-white">{{ opt.label }}</span>
+                            <span v-if="(opt.type === 'hdo' && formStatus.hdo) && selectedTargetStatus !== opt.value" class="text-xs font-mono bg-gray-100 dark:bg-gray-700 px-2 py-1">{{ formStatus.hdo }}</span>
+                        </div>
+                        <div v-if="selectedTargetStatus === opt.value" class="px-3 pb-3 animate-in slide-in-from-top-1 duration-200">
+                            <div v-if="opt.type === 'hdo'" class="flex gap-2"><div class="bg-[#1a1a1a] text-white px-3 py-2 text-xs flex items-center font-mono whitespace-nowrap min-w-[80px]">{{ opt.placeholder }}</div><input v-model="formStatus.hdo" type="text" class="flex-1 bg-[#333] text-white px-3 py-2 text-sm outline-none font-mono focus:bg-black transition-colors placeholder-gray-500" :placeholder="opt.placeholder"/></div>
+                            <div v-else-if="opt.type === 'date'" class="flex flex-col gap-2">
+                                <div v-if="selectedItem && hpoMapping[selectedItem.code]" class="text-[10px] text-green-600 font-mono flex items-center gap-1"><span class="font-bold">HPO:</span> {{ hpoMapping[selectedItem.code] }}</div>
+                                <div class="flex gap-2"><div class="bg-[#1a1a1a] text-white px-3 py-2 text-xs flex items-center font-mono whitespace-nowrap min-w-[80px]">{{ opt.placeholder }}</div><input v-model="formStatus.date" type="date" class="flex-1 bg-[#333] text-white px-3 py-2 text-sm outline-none font-mono focus:bg-black transition-colors"/></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
               </div>
               
               <div class="mt-4 px-1">
@@ -884,7 +1080,7 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                   <textarea v-model="formStatus.admin_notes" rows="2" class="w-full bg-white dark:bg-[#2a2a2a] border border-gray-200 dark:border-gray-700 p-3 text-sm focus:ring-2 ring-black dark:ring-white outline-none rounded-none placeholder-gray-400" placeholder="Tulis catatan internal di sini..."></textarea>
               </div>
 
-              <div class="flex items-center justify-between bg-white dark:bg-[#2a2a2a] p-3 border-l-4 mt-3" :class="formStatus.is_hold ? 'border-amber-500' : 'border-gray-300'"><span class="text-sm font-bold text-gray-700 dark:text-gray-300">Hold by Customer</span><Switch v-model:checked="formStatus.is_hold" class="data-[state=checked]:bg-amber-500"/></div>
+              <div v-if="!(selectedItem && selectedItem.qty_to_order === 0)" class="flex items-center justify-between bg-white dark:bg-[#2a2a2a] p-3 border-l-4 mt-3" :class="formStatus.is_hold ? 'border-amber-500' : 'border-gray-300'"><span class="text-sm font-bold text-gray-700 dark:text-gray-300">Hold by Customer</span><Switch v-model:checked="formStatus.is_hold" class="data-[state=checked]:bg-amber-500"/></div>
           </div>
           <div class="p-4 bg-white dark:bg-[#2a2a2a] border-t border-gray-200 dark:border-gray-700 flex justify-end items-center gap-4">
               <button @click="isModalOpen = false" class="text-gray-500 hover:text-black dark:hover:text-white text-sm font-bold px-4">BATAL</button>

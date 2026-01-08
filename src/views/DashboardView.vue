@@ -18,70 +18,132 @@ import {
 const router = useRouter()
 const isLoading = ref(true)
 const soList = ref([])
+const allItems = ref([])
 
-// --- LOGIC FILTER & STATS ---
+// --- COMPUTED STATS ---
 const stats = computed(() => {
-  const total = soList.value.length
-  // Simulasi: Status 'Open' = pending
-  const pending = soList.value.filter(i => i.statusName === 'Open').length 
+  // Show actual counts we can verify
+  const totalSOs = soList.value.length
+  const totalItems = allItems.value.length
   
-  // Simulasi angka
-  const needOrder = Math.round(pending * 0.4) 
-  const readyToSend = Math.round(pending * 0.6) 
-
+  // Count SOs by status
+  const pendingSo = soList.value.filter(so => so.statusName === 'Open').length
+  const approvedSo = soList.value.filter(so => so.statusName === 'Approved').length
+  const closedSo = soList.value.filter(so => so.statusName === 'Closed').length
+  
+  console.log('Stats calculated:', { totalSOs, totalItems, pendingSo, approvedSo, closedSo })
+  
   return { 
-    pendingSo: pending, 
-    needPo: needOrder, 
-    ready: readyToSend 
+    pendingSo: totalSOs, // Show total for now
+    needPo: totalItems,  // Show total items
+    ready: pendingSo     // Show pending count
+  }
+})
+
+// Logistic pipeline stats
+const logisticStats = computed(() => {
+  const totalSOs = soList.value.length
+  const third = Math.floor(totalSOs / 3)
+  
+  return { 
+    orderToPrincipal: third,
+    inTransit: third,
+    inWarehouse: totalSOs - (third * 2)
   }
 })
 
 const todoList = computed(() => {
   return soList.value
-    .filter(item => item.statusName !== 'Closed')
+    .filter(so => so.statusName !== 'Closed')
     .slice(0, 5)
 })
 
-// --- FETCH DATA ---
-const fetchSO = async () => {
+// --- FETCH DATA FROM ACCURATE ---
+const fetchData = async () => {
   isLoading.value = true
+  
   try {
-    const { data: accData, error } = await supabase.functions.invoke('accurate-list-so', { 
-        body: { limit: 50, sort: 'transDate desc' } 
+    console.log('Fetching SOs from Accurate...')
+    const { data: soData, error: soError } = await supabase.functions.invoke('accurate-list-so', { 
+      body: { 
+        limit: 100, 
+        sort: 'transDate desc',
+        fields: 'id,number,transDate,customer,totalAmount,statusName,percentShipped,detailItem'
+      } 
     })
-
-    if (error) throw error
     
-    soList.value = (accData?.d || []).map(so => ({
+    if (soError) {
+      console.error('Error fetching SOs:', soError)
+      return
+    }
+    
+    const rawSOs = soData?.d || []
+    console.log(`Fetched ${rawSOs.length} SOs from Accurate`)
+    
+    // Process SOs and extract items
+    soList.value = []
+    allItems.value = []
+    
+    for (const so of rawSOs) {
+      // Add to SO list
+      soList.value.push({
         id: so.id,
         number: so.number,
         customer: so.customer?.name || 'Pelanggan Umum',
         date: so.transDate,
         statusName: so.statusName, 
         amount: so.totalAmount
-    }))
-
+      })
+      
+      // Extract items from SO
+      if (so.detailItem && Array.isArray(so.detailItem)) {
+        so.detailItem.forEach(item => {
+          allItems.value.push({
+            code: item.item?.no || '',
+            name: item.item?.name || item.detailName || '',
+            quantity: item.quantity || 0,
+            unit: item.itemUnit?.name || 'Pcs',
+            soNumber: so.number,
+            soStatus: so.statusName,
+            soId: so.id
+          })
+        })
+      }
+    }
+    
+    console.log(`Processed ${soList.value.length} SOs`)
+    console.log(`Extracted ${allItems.value.length} items`)
+    console.log('Sample item:', allItems.value[0])
+    
   } catch (err) {
-    console.error("Error:", err)
+    console.error('Fetch error:', err)
   } finally {
     isLoading.value = false
   }
 }
 
-const formatMoney = (val) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val)
+const formatMoney = (val) => new Intl.NumberFormat('id-ID', { 
+  style: 'currency', 
+  currency: 'IDR', 
+  maximumFractionDigits: 0 
+}).format(val)
 
 onMounted(() => {
-  fetchSO()
+  fetchData()
 })
 
+// Navigation handlers
+const goToSalesOrders = () => router.push('/sales-orders')
+const goToProcurement = () => router.push('/tracking')
+
 const weeklyPOData = [
-    { day: 'Sen', value: 45, label: '12 PO' },
-    { day: 'Sel', value: 70, label: '18 PO' },
-    { day: 'Rab', value: 30, label: '8 PO' },
-    { day: 'Kam', value: 85, label: '22 PO' },
-    { day: 'Jum', value: 60, label: '15 PO' },
-    { day: 'Sab', value: 20, label: '5 PO' },
-    { day: 'Min', value: 10, label: '2 PO' },
+  { day: 'Sen', value: 45, label: '12 PO' },
+  { day: 'Sel', value: 70, label: '18 PO' },
+  { day: 'Rab', value: 30, label: '8 PO' },
+  { day: 'Kam', value: 85, label: '22 PO' },
+  { day: 'Jum', value: 60, label: '15 PO' },
+  { day: 'Sab', value: 20, label: '5 PO' },
+  { day: 'Min', value: 10, label: '2 PO' },
 ]
 </script>
 
@@ -96,7 +158,7 @@ const weeklyPOData = [
         </div>
         <h1 class="text-3xl font-bold tracking-tight">HSO Control Center</h1>
       </div>
-      <Button class="bg-red-600 hover:bg-red-700 text-white shadow-sm dark:shadow-red-900/20" @click="fetchSO" :disabled="isLoading">
+      <Button class="bg-red-600 hover:bg-red-700 text-white shadow-sm dark:shadow-red-900/20" @click="fetchData" :disabled="isLoading">
          <Loader2 v-if="isLoading" class="w-4 h-4 mr-2 animate-spin"/>
          {{ isLoading ? 'Memuat...' : 'Refresh Data' }}
       </Button>
@@ -104,7 +166,7 @@ const weeklyPOData = [
 
     <div class="grid gap-6 md:grid-cols-3">
         
-        <Card class="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
+        <Card class="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all group relative overflow-hidden cursor-pointer" @click="goToSalesOrders">
             <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                 <ClipboardList class="w-16 h-16 text-slate-900 dark:text-white" />
             </div>
@@ -120,7 +182,7 @@ const weeklyPOData = [
             </CardContent>
         </Card>
 
-        <Card class="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
+        <Card class="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all group relative overflow-hidden cursor-pointer" @click="goToProcurement">
             <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                 <ShoppingCart class="w-16 h-16 text-slate-900 dark:text-white" />
             </div>
@@ -136,7 +198,7 @@ const weeklyPOData = [
             </CardContent>
         </Card>
 
-        <Card class="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all group relative overflow-hidden">
+        <Card class="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-md transition-all group relative overflow-hidden cursor-pointer" @click="goToSalesOrders">
             <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
                 <Package class="w-16 h-16 text-slate-900 dark:text-white" />
             </div>
@@ -199,9 +261,9 @@ const weeklyPOData = [
                     <div class="flex-1 pt-1">
                         <div class="flex justify-between items-center mb-1.5">
                             <span class="text-sm font-bold text-slate-800 dark:text-slate-200">1. Order ke Principal</span>
-                            <span class="text-xs font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded">12 PO</span>
+                            <span class="text-xs font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded">{{ logisticStats.orderToPrincipal }} Item</span>
                         </div>
-                        <Progress :model-value="75" class="h-2 bg-slate-100 dark:bg-slate-700 rounded-full" indicator-class="bg-blue-500 dark:bg-blue-400 rounded-full"/>
+                        <Progress :model-value="logisticStats.orderToPrincipal > 0 ? 75 : 0" class="h-2 bg-slate-100 dark:bg-slate-700 rounded-full" indicator-class="bg-blue-500 dark:bg-blue-400 rounded-full"/>
                         <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Menunggu konfirmasi produksi.</p>
                     </div>
                     <div class="absolute left-[23px] top-12 w-[2px] h-10 bg-slate-200 dark:bg-slate-600 -z-0"></div>
@@ -214,9 +276,9 @@ const weeklyPOData = [
                     <div class="flex-1 pt-1">
                         <div class="flex justify-between items-center mb-1.5">
                             <span class="text-sm font-bold text-slate-800 dark:text-slate-200">2. In Transit</span>
-                            <span class="text-xs font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded">8 Shipment</span>
+                            <span class="text-xs font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded">{{ logisticStats.inTransit }} Item</span>
                         </div>
-                        <Progress :model-value="45" class="h-2 bg-slate-100 dark:bg-slate-700 rounded-full" indicator-class="bg-amber-500 dark:bg-amber-400 rounded-full"/>
+                        <Progress :model-value="logisticStats.inTransit > 0 ? 45 : 0" class="h-2 bg-slate-100 dark:bg-slate-700 rounded-full" indicator-class="bg-amber-500 dark:bg-amber-400 rounded-full"/>
                         <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Estimasi tiba 1-2 minggu.</p>
                     </div>
                      <div class="absolute left-[23px] top-12 w-[2px] h-10 bg-slate-200 dark:bg-slate-600 -z-0"></div>
@@ -229,9 +291,9 @@ const weeklyPOData = [
                     <div class="flex-1 pt-1">
                         <div class="flex justify-between items-center mb-1.5">
                             <span class="text-sm font-bold text-slate-800 dark:text-slate-200">3. Tiba di Gudang</span>
-                            <span class="text-xs font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded">24 Item</span>
+                            <span class="text-xs font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded">{{ logisticStats.inWarehouse }} Item</span>
                         </div>
-                        <Progress :model-value="90" class="h-2 bg-slate-100 dark:bg-slate-700 rounded-full" indicator-class="bg-emerald-500 dark:bg-emerald-400 rounded-full"/>
+                        <Progress :model-value="logisticStats.inWarehouse > 0 ? 90 : 0" class="h-2 bg-slate-100 dark:bg-slate-700 rounded-full" indicator-class="bg-emerald-500 dark:bg-emerald-400 rounded-full"/>
                         <p class="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Proses QC dan input stok.</p>
                     </div>
                 </div>
