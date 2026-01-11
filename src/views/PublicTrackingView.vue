@@ -35,11 +35,12 @@ const getStatusText = (item, type) => {
     const map = {
         'Follow up to factory': 'Produksi di Pabrik',
         'Follow up with our forwarder': 'Di Forwarder (Menunggu Kapal)',
-        'ETA Port JKT': 'Estimasi Tiba (Port JKT)',
-        'Already in siemens Warehouse': 'Gudang Transit (Siemens)',
-        'Already in Hokiindo Raya': 'Gudang Hokiindo (Ready)',
+        'ETA Port JKT': 'ETA Port Jakarta',
+        'Already in siemens Warehouse': 'Tiba di Gudang Dunex',
+        'Already in Hokiindo Raya': 'Ready Stock',
         'Completed': 'Selesai',
-        'NO ACTION': 'Proses ke Principle'
+        'NO ACTION': 'Menunggu Proses',
+        'Pending Process': 'Menunggu Proses'
     }
     return map[item.status] || item.status
 }
@@ -47,7 +48,20 @@ const getStatusText = (item, type) => {
 const getStatusColor = (status) => {
     if (['Completed', 'Already in Hokiindo Raya'].includes(status)) return 'text-green-600 bg-green-50 border-green-200'
     if (['ETA Port JKT', 'Follow up with our forwarder'].includes(status)) return 'text-blue-600 bg-blue-50 border-blue-200'
+    if (['Already in siemens Warehouse'].includes(status)) return 'text-cyan-600 bg-cyan-50 border-cyan-200'
+    if (['Follow up to factory'].includes(status)) return 'text-amber-600 bg-amber-50 border-amber-200'
     return 'text-slate-600 bg-slate-100 border-slate-200'
+}
+
+// Format date helper
+const formatDate = (dateStr) => {
+    if (!dateStr) return null
+    try {
+        const d = new Date(dateStr)
+        return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+    } catch {
+        return dateStr
+    }
 }
 
 // --- DATA FETCHING ---
@@ -67,10 +81,16 @@ const fetchTrackingData = async () => {
         const d = accData.d
 
         const { data: shipData } = await supabase
-            .from('shipments').select('item_code, current_status, hpo_number').eq('so_id', String(soId))
+            .from('shipments').select('item_code, current_status, hpo_number, exwork_date, eta_date, dunex_date').eq('so_id', String(soId))
 
         const shipmentsMap = (shipData || []).reduce((map, s) => {
-            map[s.item_code] = { status: s.current_status, hpo: s.hpo_number };
+            map[s.item_code] = { 
+                status: s.current_status, 
+                hpo: s.hpo_number,
+                exwork_date: s.exwork_date,
+                eta_date: s.eta_date,
+                dunex_date: s.dunex_date
+            };
             return map;
         }, {});
 
@@ -92,7 +112,10 @@ const fetchTrackingData = async () => {
                 qty_order: item.quantity,
                 qty_shipped: item.shipQuantity || 0,
                 status: logistik.status || 'NO ACTION',
-                hpo: logistik.hpo || null
+                hpo: logistik.hpo || null,
+                exwork_date: logistik.exwork_date || null,
+                eta_date: logistik.eta_date || null,
+                dunex_date: logistik.dunex_date || null
             }
         });
 
@@ -110,11 +133,10 @@ onMounted(() => {
 
 // --- COMPUTED GROUPING ---
 const groupedData = computed(() => {
-    if (!soItems.value.length) return { shipped: [], principleGroups: {}, pending: [] };
+    if (!soItems.value.length) return { shipped: [], processing: [], percentage: 0, countShipped: 0, countProcessing: 0 };
 
     const shipped = [];
-    const principleGroups = {};
-    const pending = [];
+    const processing = [];
     let totalItems = 0;
     let totalShipped = 0;
 
@@ -127,32 +149,19 @@ const groupedData = computed(() => {
             shipped.push({ ...item, displayQty: item.qty_shipped });
         }
 
-        // 2. Remaining
+        // 2. Remaining (Processing/In Process)
         const remainingQty = item.qty_order - item.qty_shipped;
         if (remainingQty > 0) {
-            if (item.hpo && item.hpo !== '-') {
-                if (!principleGroups[item.hpo]) {
-                    principleGroups[item.hpo] = [];
-                    // Auto-expand new HPO groups
-                    if (expandedSections.value[`hpo-${item.hpo}`] === undefined) {
-                        expandedSections.value[`hpo-${item.hpo}`] = true; 
-                    }
-                }
-                principleGroups[item.hpo].push({ ...item, displayQty: remainingQty });
-            } else {
-                pending.push({ ...item, displayQty: remainingQty });
-            }
+            processing.push({ ...item, displayQty: remainingQty });
         }
     });
 
     return { 
         shipped, 
-        principleGroups, 
-        pending,
+        processing,
         percentage: totalItems === 0 ? 0 : Math.round((totalShipped / totalItems) * 100),
         countShipped: shipped.reduce((acc, i) => acc + i.displayQty, 0),
-        countPrinciple: Object.values(principleGroups).flat().reduce((acc, i) => acc + i.displayQty, 0),
-        countPending: pending.reduce((acc, i) => acc + i.displayQty, 0)
+        countProcessing: processing.reduce((acc, i) => acc + i.displayQty, 0)
     };
 })
 </script>
@@ -174,8 +183,9 @@ const groupedData = computed(() => {
         <div v-else class="max-w-3xl mx-auto px-4 pt-8 md:pt-12">
             
             <div class="text-center md:text-left mb-8 border-b-2 border-slate-200 pb-6">
-                <div class="inline-flex items-center gap-2 mb-2 bg-red-600 text-white px-3 py-1 rounded text-xs font-bold tracking-widest">
-                    <Truck class="w-4 h-4" /> HSO TRACKER v2.0
+                <div class="inline-flex items-center gap-3 mb-4">
+                    <img src="https://hokiindo.co.id/wp-content/uploads/2025/09/cropped-fav-300x300.png" alt="Hokiindo Logo" class="w-12 h-12 rounded-lg shadow"/>
+                    <h2 class="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">HSO Tracking</h2>
                 </div>
                 <h1 class="text-3xl md:text-4xl font-bold mt-2 text-slate-900">{{ soHeader?.client }}</h1>
                 <div class="flex flex-col md:flex-row md:items-center gap-2 md:gap-6 mt-3 text-sm text-slate-500 font-medium">
@@ -185,27 +195,22 @@ const groupedData = computed(() => {
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                <!-- Card Sudah Dikirim -->
                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group">
                     <div class="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                        <Truck class="w-16 h-16 text-red-600"/>
+                        <Truck class="w-16 h-16 text-green-600"/>
                     </div>
-                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Sudah Dikirim</p>
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Barang Sudah Dikirim</p>
                     <p class="text-3xl font-bold text-slate-800 mt-1">{{ groupedData.countShipped }} <span class="text-sm text-slate-400">Unit</span></p>
                 </div>
+                <!-- Card Dalam Proses -->
                  <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group">
                      <div class="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                        <Package class="w-16 h-16 text-blue-600"/>
+                        <Clock class="w-16 h-16 text-blue-600"/>
                     </div>
-                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Proses Principle</p>
-                    <p class="text-3xl font-bold text-slate-800 mt-1">{{ groupedData.countPrinciple }} <span class="text-sm text-slate-400">Unit</span></p>
-                </div>
-                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group">
-                     <div class="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                        <Clock class="w-16 h-16 text-orange-600"/>
-                    </div>
-                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Menunggu</p>
-                    <p class="text-3xl font-bold text-slate-800 mt-1">{{ groupedData.countPending }} <span class="text-sm text-slate-400">Unit</span></p>
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Barang Dalam Proses</p>
+                    <p class="text-3xl font-bold text-slate-800 mt-1">{{ groupedData.countProcessing }} <span class="text-sm text-slate-400">Unit</span></p>
                 </div>
             </div>
 
@@ -255,70 +260,48 @@ const groupedData = computed(() => {
                     </div>
                 </div>
 
-                <div v-for="(items, hpo) in groupedData.principleGroups" :key="hpo" 
-                     class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                    
-                    <div @click="toggleSection(`hpo-${hpo}`)" class="cursor-pointer bg-slate-50 p-4 flex justify-between items-center border-b border-slate-100 select-none">
-                        <div class="flex items-center gap-3">
-                            <div class="bg-blue-100 p-2 rounded-lg text-blue-700">
-                                <Package class="w-5 h-5" />
-                            </div>
-                            <div>
-                                <h3 class="font-bold text-slate-800 text-sm md:text-base">ORDER PRINCIPLE / IMPORT</h3>
-                                <p class="text-xs text-blue-600 font-bold mt-0.5">HPO: {{ hpo }}</p>
-                            </div>
-                        </div>
-                        <component :is="expandedSections[`hpo-${hpo}`] ? ChevronUp : ChevronDown" class="w-5 h-5 text-slate-400"/>
-                    </div>
-                    
-                    <div v-show="expandedSections[`hpo-${hpo}`]" class="divide-y divide-slate-100">
-                        <div v-for="(item, idx) in items" :key="idx" class="p-4 hover:bg-slate-50 transition-colors flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-                            <div class="flex-1">
-                                <p class="font-bold text-sm text-slate-800">{{ item.name }}</p>
-                                <p class="text-xs text-slate-400 mt-1 font-mono">{{ item.code }}</p>
-                            </div>
-                            <div class="flex flex-col items-end gap-2 sm:gap-1">
-                                <span class="bg-slate-100 text-slate-600 px-3 py-1 rounded text-xs font-bold whitespace-nowrap">
-                                    Sisa: {{ item.displayQty }} Unit
-                                </span>
-                                <div class="text-right">
-                                    <div class="px-2 py-1 rounded border text-[10px] font-bold uppercase tracking-wide inline-block"
-                                        :class="getStatusColor(item.status)">
-                                        {{ getStatusText(item, 'principle') }}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div v-if="groupedData.pending.length > 0" class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+                <!-- SECTION 2: PROSES -->
+                <div v-if="groupedData.processing.length > 0" class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
                     
                     <div @click="toggleSection('pending')" class="cursor-pointer bg-slate-50 p-4 flex justify-between items-center border-b border-slate-100 select-none">
                         <div class="flex items-center gap-3">
-                            <div class="bg-orange-100 p-2 rounded-lg text-orange-700">
+                            <div class="bg-blue-100 p-2 rounded-lg text-blue-700">
                                 <Clock class="w-5 h-5" />
                             </div>
                             <div>
-                                <h3 class="font-bold text-slate-800 text-sm md:text-base">MENUNGGU PROSES</h3>
-                                <p class="text-xs text-slate-500 mt-0.5">Dalam antrian pengadaan</p>
+                                <h3 class="font-bold text-slate-800 text-sm md:text-base">BARANG DALAM PROSES (IN PROCESS)</h3>
+                                <p class="text-xs text-slate-500 mt-0.5">Produksi, Ex-Works, ETA, Dunex</p>
                             </div>
                         </div>
                         <component :is="expandedSections.pending ? ChevronUp : ChevronDown" class="w-5 h-5 text-slate-400"/>
                     </div>
                     
                     <div v-show="expandedSections.pending" class="divide-y divide-slate-100">
-                        <div v-for="(item, idx) in groupedData.pending" :key="idx" class="p-4 hover:bg-slate-50 transition-colors flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-                            <div class="flex-1">
-                                <p class="font-bold text-sm text-slate-800">{{ item.name }}</p>
-                                <p class="text-xs text-slate-400 mt-1 font-mono">{{ item.code }}</p>
-                            </div>
-                            <div class="flex items-center gap-4">
-                                <span class="bg-orange-50 text-orange-700 px-3 py-1 rounded text-xs font-bold">
-                                    {{ item.displayQty }} Unit
-                                </span>
-                                <div class="text-right">
-                                    <p class="text-xs font-bold text-slate-500">PENDING</p>
+                        <div v-for="(item, idx) in groupedData.processing" :key="idx" class="p-4 hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-b-0">
+                            <div class="flex justify-between items-start gap-4">
+                                <!-- Product Info -->
+                                <div class="flex-1">
+                                    <p class="font-bold text-sm text-slate-800">{{ item.name }}</p>
+                                    <p class="text-xs text-slate-400 font-mono mt-0.5">{{ item.code }}</p>
+                                    <span class="inline-block mt-2 bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs font-bold">
+                                        Qty: {{ item.displayQty }} Unit
+                                    </span>
+                                </div>
+                                
+                                <!-- Dates Timeline - Only show if date exists -->
+                                <div class="text-right text-xs space-y-1">
+                                    <div v-if="item.exwork_date" class="flex items-center justify-end gap-2">
+                                        <span class="text-slate-500">EXWORK</span>
+                                        <span class="font-bold text-amber-700">{{ formatDate(item.exwork_date) }}</span>
+                                    </div>
+                                    <div v-if="item.eta_date" class="flex items-center justify-end gap-2">
+                                        <span class="text-slate-500">ETA PORT JKT</span>
+                                        <span class="font-bold text-blue-700">{{ formatDate(item.eta_date) }}</span>
+                                    </div>
+                                    <div v-if="item.dunex_date" class="flex items-center justify-end gap-2">
+                                        <span class="text-slate-500">Tiba di DUNEX</span>
+                                        <span class="font-bold text-cyan-700">{{ formatDate(item.dunex_date) }}</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>

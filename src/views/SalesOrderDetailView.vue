@@ -48,6 +48,15 @@ const hdoMapping = ref({}) // Mapping item_code -> HDO number dari Accurate DO
 const uniqueTrackingCode = ref(null)
 const isLinkCopied = ref(false)
 const errorMessage = ref(null)
+
+// Helper: Generate unique code for tracking link
+const generateUUID = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0
+    const v = c === 'x' ? r : (r & 0x3 | 0x8)
+    return v.toString(16)
+  })
+}
 const syncMessage = ref('Sinkronisasi data...') // Pesan sync dynamic
 
 const selectedItemCodes = ref([]) 
