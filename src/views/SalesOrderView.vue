@@ -45,6 +45,7 @@ const searchQuery = ref('')
 const startDate = ref('')
 const endDate = ref('')
 const statusFilter = ref([]) 
+const isInitialLoad = ref(true) // Flag to prevent page reset on initial load
 
 // Opsi Status Accurate
 const availableStatuses = [
@@ -107,6 +108,10 @@ const fetchOrders = async () => {
 onMounted(() => {
   loadFiltersFromUrl()
   fetchOrders()
+  // Set flag to false after initial load completes
+  setTimeout(() => {
+    isInitialLoad.value = false
+  }, 100)
 })
 
 // --- HELPERS ---
@@ -215,7 +220,10 @@ watch([searchQuery, startDate, endDate, statusFilter, currentPage, sortKey, sort
 }, { deep: true })
 
 watch([searchQuery, startDate, endDate, statusFilter], () => { 
-  if (currentPage.value !== 1) currentPage.value = 1 
+  // Only reset to page 1 if not initial load (i.e., user is actively filtering)
+  if (!isInitialLoad.value && currentPage.value !== 1) {
+    currentPage.value = 1
+  }
 })
 
 // Pagination

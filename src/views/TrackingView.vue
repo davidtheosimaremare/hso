@@ -76,10 +76,14 @@ const calculateNeeds = (qty_order, qty_shipped, note) => {
 }
 
 // --- DATA FETCHING ---
-// Progress state for loading bar
 const loadingProgress = ref(0)
 const loadingMessage = ref('')
 const totalHSOLoaded = ref(0)
+
+// HPO Sync State
+const isHpoSyncing = ref(false)
+const hpoSyncProgress = ref(0)
+const hpoMapping = ref({}) // mapping: itemCode -> poNumber
 
 const fetchProcurementData = async () => {
   isLoading.value = true
@@ -87,6 +91,7 @@ const fetchProcurementData = async () => {
   loadingMessage.value = 'Mengambil data HSO...'
   groupedProcurement.value = []
   totalHSOLoaded.value = 0
+  hpoMapping.value = {} // Reset mapping
 
   try {
     let allSOs = []
@@ -109,12 +114,18 @@ const fetchProcurementData = async () => {
       }
 
       const pageSOs = accData?.d || []
-      allSOs = allSOs.concat(pageSOs)
+      // STRICT FILTER: Hanya ambil yang statusnya "Menunggu diproses" atau "Sebagian diproses"
+      const pendingSOs = pageSOs.filter(so => 
+          so.statusName === 'Menunggu diproses' || 
+          so.statusName === 'Sebagian diproses'
+      )
+
+      allSOs = allSOs.concat(pendingSOs)
       totalHSOLoaded.value = allSOs.length
       
       // Update progress (0-80% for fetching)
       loadingProgress.value = Math.min(80, Math.round((currentPage / totalPages) * 80))
-      loadingMessage.value = `Mengambil halaman ${currentPage}/${totalPages} (${allSOs.length} HSO)`
+      loadingMessage.value = `Mengambil halaman ${currentPage}/${totalPages} (${allSOs.length} HSO Pending)`
 
       currentPage++
     }
@@ -122,37 +133,39 @@ const fetchProcurementData = async () => {
     loadingProgress.value = 85
     loadingMessage.value = `Memproses ${allSOs.length} HSO...`
 
-    // Fetch shipments from Supabase
+    // Fetch shipments from Supabase for initial status
     const soIds = allSOs.map(so => String(so.id))
     let shipmentsMap = {}
     
     if (soIds.length > 0) {
       loadingMessage.value = 'Mengambil status shipment...'
-      const { data: shipments, error: shipErr } = await supabase
-        .from('shipments')
-        .select('so_id, item_code, current_status, hpo_number, status_date, admin_notes')
-        .in('so_id', soIds)
-      
-      if (!shipErr && shipments) {
-        shipments.forEach(s => {
-          const key = `${s.so_id}|${s.item_code}`
-          shipmentsMap[key] = s
-        })
+      // Chunk requests to avoid URL too long error if many IDs
+      const chunkSize = 50
+      for (let i = 0; i < soIds.length; i += chunkSize) {
+          const chunk = soIds.slice(i, i + chunkSize)
+          const { data: shipments, error: shipErr } = await supabase
+            .from('shipments')
+            .select('so_id, item_code, current_status, hpo_number, status_date, admin_notes')
+            .in('so_id', chunk)
+          
+          if (!shipErr && shipments) {
+            shipments.forEach(s => {
+              const key = `${s.so_id}|${s.item_code}`
+              shipmentsMap[key] = s
+            })
+          }
       }
     }
 
     loadingProgress.value = 90
     loadingMessage.value = 'Menganalisa kebutuhan procurement...'
 
-    loadingProgress.value = 90
-    loadingMessage.value = 'Menganalisa kebutuhan procurement...'
-
     const tempGroups = {}
+    const processedSoNumbers = new Set() // Track unique SO numbers for sync
 
     if (allSOs.length > 0) {
         allSOs.forEach(so => {
-            // Skip SO yang sudah closed/batal
-            if (['Closed', 'Dibatalkan'].includes(so.statusName)) return;
+            processedSoNumbers.add(so.number)
 
             if (!so.detailItem || !Array.isArray(so.detailItem)) return;
 
@@ -171,19 +184,15 @@ const fetchProcurementData = async () => {
                 const shipmentKey = `${so.id}|${code}`
                 const shipment = shipmentsMap[shipmentKey] || null
                 const logisticsStatus = shipment?.current_status || 'Pending Process'
-                const hpoNumber = shipment?.hpo_number || null
+                const hpoNumber = shipment?.hpo_number || null // HPO dari DB (backup)
                 const adminNotes = shipment?.admin_notes || null
 
-                // LOGIC FILTER BARU (User Request): 
-                // 1. Skip jika logistics_status sudah diproses (bukan Pending/Hold)
-                //    Artinya barang sudah dalam penanganan (sudah ETA, On Delivery, dll), tidak perlu masuk list procurement lagi.
-                const isProcessed = !['Pending Process', 'Hold by Customer', 'Follow up to factory'].includes(logisticsStatus)
-                if (isProcessed) return;
+                // REMOVED: Logic to skip processed items. User wants ALL data from pending/partial HSOs.
+                
+                // 2. Skip jika tidak ada shortage (sudah cukup stock) - OPTIONAL, user wants "seluruh HSO" but logic "need process" implies checking needs.
+                // Keeping shortage check for "Procurement Plan" context, but if user wants RAW data, we might need to relax this.
+                // For now, keeping shortage logic as it defines "Procurement Needs".
 
-                // 2. Skip jika tidak ada shortage (sudah cukup stock)
-                if (shortage <= 0) return;
-
-                // Tampilkan: hanya yang ada shortage (perlu order)
                 if (shortage > 0) {
                     
                     if (!tempGroups[code]) {
@@ -196,16 +205,17 @@ const fetchProcurementData = async () => {
                         }
                     }
 
-                    // Akumulasi Total Beli (hanya yang perlu order)
+                    // Akumulasi Total Beli
                     tempGroups[code].total_shortage += shortage;
 
-                    // Detail HSO dengan STATUS dari Supabase
+                    // Detail HSO
                     tempGroups[code].hso_list.push({
                         id: Math.random(),
                         so_id: so.id,
                         so_number: so.number,
                         customer: so.customer?.name || '-',
                         date: so.transDate,
+                        item_code: code, // Saved for mapping lookup
                         
                         qty_order: qty_order,
                         qty_sisa: qty_sisa,
@@ -214,9 +224,9 @@ const fetchProcurementData = async () => {
                         
                         note: note,
                         
-                        // STATUS dari Supabase
+                        // STATUS
                         logistics_status: logisticsStatus,
-                        hpo_number: hpoNumber,
+                        hpo_number: hpoNumber, // Initial value from DB
                         admin_notes: adminNotes
                     });
                 }
@@ -224,18 +234,13 @@ const fetchProcurementData = async () => {
         })
     }
 
-    // Urutkan dari yang paling banyak kurangnya
-    // Dan sort hso_list per group berdasarkan tanggal (terbaru dulu)
+    // Process Groups
     const sortedGroups = Object.values(tempGroups).map((group) => {
-        // Sort hso_list by date descending (newest first)
         group.hso_list.sort((a, b) => {
-            // Parse date format "dd/mm/yyyy" to Date object
             const parseDate = (dateStr) => {
                 if (!dateStr) return new Date(0);
                 const parts = dateStr.split('/');
-                if (parts.length === 3) {
-                    return new Date(parts[2], parts[1] - 1, parts[0]);
-                }
+                if (parts.length === 3) return new Date(parts[2], parts[1] - 1, parts[0]);
                 return new Date(dateStr);
             };
             return parseDate(b.date) - parseDate(a.date);
@@ -244,6 +249,9 @@ const fetchProcurementData = async () => {
     });
     
     groupedProcurement.value = sortedGroups.sort((a, b) => b.total_shortage - a.total_shortage);
+    
+    // Trigger Background Sync
+    syncHpoInBackground(Array.from(processedSoNumbers))
 
   } catch (err) {
     console.error("Gagal Analisa:", err)
@@ -251,6 +259,45 @@ const fetchProcurementData = async () => {
   } finally {
     isLoading.value = false
   }
+}
+
+// --- HPO SYNC LOGIC ---
+const syncHpoInBackground = async (soNumbers) => {
+    if (soNumbers.length === 0) return
+    
+    isHpoSyncing.value = true
+    hpoSyncProgress.value = 0
+    let processed = 0
+    const total = soNumbers.length
+    
+    // Process in chunks of 5 parallel requests to avoid overwhelming
+    const batchSize = 5
+    for (let i = 0; i < total; i += batchSize) {
+        const batch = soNumbers.slice(i, i + batchSize)
+        
+        await Promise.all(batch.map(async (soNumber) => {
+            try {
+                const { data: poData, error } = await supabase.functions.invoke('accurate-list-po', {
+                    body: { hsoNumber: soNumber }
+                })
+                
+                if (!error && poData?.d) {
+                    poData.d.forEach(poItem => {
+                        // Store mapping: SO_NUMBER|ITEM_CODE -> PO_NUMBER
+                        const key = `${soNumber}|${poItem.itemCode}`
+                        hpoMapping.value[key] = poItem.poNumber
+                    })
+                }
+            } catch (e) {
+                console.warn(`Failed to sync PO for ${soNumber}`, e)
+            } finally {
+                processed++
+                hpoSyncProgress.value = Math.round((processed / total) * 100)
+            }
+        }))
+    }
+    
+    isHpoSyncing.value = false
 }
 
 onMounted(() => {
@@ -369,6 +416,17 @@ const openDetail = (soId, itemCode) => {
         <Progress :model-value="loadingProgress" class="h-2" />
     </div>
 
+    <!-- HPO Sync Progress -->
+    <div v-if="isHpoSyncing" class="space-y-2 mb-4 bg-sky-50 dark:bg-sky-900/20 p-3 rounded-lg border border-sky-100 dark:border-sky-800">
+        <div class="flex justify-between text-xs text-sky-600 dark:text-sky-400 font-medium">
+            <span class="flex items-center gap-2">
+                <Loader2 class="w-3 h-3 animate-spin"/> Sinkronisasi PO dari Accurate...
+            </span>
+            <span>{{ hpoSyncProgress }}%</span>
+        </div>
+        <Progress :model-value="hpoSyncProgress" class="h-1.5 bg-sky-100 dark:bg-sky-900" indicator-class="bg-sky-500" />
+    </div>
+
     <div class="relative" v-if="!isLoading">
         <Search class="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
         <Input 
@@ -417,9 +475,6 @@ const openDetail = (soId, itemCode) => {
                         <p class="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold tracking-wider">Total Harus Dipesan</p>
                         <p class="text-2xl font-bold text-red-600 dark:text-red-400">{{ group.total_shortage }} <span class="text-sm text-slate-400 font-medium">{{ group.unit }}</span></p>
                     </div>
-                    <Button size="sm" class="bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 dark:hover:bg-slate-200">
-                        <Plus class="w-4 h-4 mr-1"/> Buat PO
-                    </Button>
                 </div>
             </div>
 
@@ -475,9 +530,12 @@ const openDetail = (soId, itemCode) => {
                                            hso.logistics_status === 'Hold by Customer' ? 'HOLD' :
                                            hso.logistics_status }}
                                     </Badge>
-                                    <!-- HPO Indicator -->
-                                    <div v-if="hso.hpo_number" class="text-[9px] text-green-600 mt-0.5 font-mono font-bold">
-                                        HPO: {{ hso.hpo_number }}
+                                    <!-- HPO Indicator: Priority from Sync Mapping, fallback to DB -->
+                                    <div v-if="hpoMapping[`${hso.so_number}|${hso.item_code}`] || hso.hpo_number" class="text-[9px] text-green-600 mt-0.5 font-mono font-bold flex items-center gap-1">
+                                        <CheckCircle2 v-if="hpoMapping[`${hso.so_number}|${hso.item_code}`]" class="w-3 h-3"/> HPO: {{ hpoMapping[`${hso.so_number}|${hso.item_code}`] || hso.hpo_number }}
+                                    </div>
+                                    <div v-else class="text-[9px] text-red-500 mt-0.5 font-mono font-bold italic">
+                                        Belum ada HPO
                                     </div>
                                 </TableCell>
                                 

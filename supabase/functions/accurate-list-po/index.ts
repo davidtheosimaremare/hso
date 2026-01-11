@@ -69,12 +69,14 @@ serve(async (req) => {
             signatureHeader = { 'X-Api-Timestamp': timestamp, 'X-Api-Signature': signature }
         }
 
-        // Fetch PO list
+        // Fetch PO list - NO DATE FILTER to ensure we catch all relevant POs
         const listUrl = new URL(`${BASE_API}/purchase-order/list.do`)
         listUrl.searchParams.append('fields', 'id,number,transDate,statusName')
         listUrl.searchParams.append('filter.statusName.op', 'NOT_IN')
         listUrl.searchParams.append('filter.statusName.val', 'Closed,Dibatalkan')
-        listUrl.searchParams.append('sp.pageSize', '50')
+
+        // Increase page size to 100 (old HSOs may reference old POs)
+        listUrl.searchParams.append('sp.pageSize', '100')
         listUrl.searchParams.append('sp.sort', 'transDate|desc')
 
         const listResponse = await fetch(listUrl.toString(), {
@@ -94,22 +96,31 @@ serve(async (req) => {
         const listJson = await listResponse.json()
         const poList = listJson.d || []
 
-        console.log(`Got ${poList.length} POs`)
+        console.log(`Got ${poList.length} POs to check for HSO ${filterHsoNumber}`)
 
         // Find matching items
         const hsoMappings: Array<{
             poId: number
             poNumber: string
             poDate: string
+            poStatus: string
             itemCode: string
             itemName: string
             quantity: number
             description: string
         }> = []
 
-        // Process POs in parallel
-        const BATCH_SIZE = 10
+        // Process POs in parallel batches - optimized for speed
+        const BATCH_SIZE = 15 // Increased for faster processing
+        const MAX_MATCHES = 100 // Ensure we don't miss items
+
         for (let i = 0; i < poList.length; i += BATCH_SIZE) {
+            // Early exit if we found enough matches
+            if (hsoMappings.length >= MAX_MATCHES) {
+                console.log(`Early exit: Found ${hsoMappings.length} matches (limit: ${MAX_MATCHES})`)
+                break
+            }
+
             const batch = poList.slice(i, i + BATCH_SIZE)
 
             const batchPromises = batch.map(async (po: any) => {
@@ -143,6 +154,7 @@ serve(async (req) => {
                                     poId: po.id,
                                     poNumber: po.number,
                                     poDate: po.transDate,
+                                    poStatus: po.statusName || 'Open', // Add PO status
                                     itemCode: itemCode,
                                     itemName: item.item?.name || item.detailName || '',
                                     quantity: item.quantity || 0,
@@ -157,8 +169,10 @@ serve(async (req) => {
             })
 
             await Promise.all(batchPromises)
-            if (i + BATCH_SIZE < poList.length) {
-                await new Promise(r => setTimeout(r, 50))
+
+            // Minimal delay between batches for faster processing
+            if (i + BATCH_SIZE < poList.length && hsoMappings.length < MAX_MATCHES) {
+                await new Promise(r => setTimeout(r, 20)) // Reduced for speed
             }
         }
 
