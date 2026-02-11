@@ -182,11 +182,80 @@ const triggerSync = async () => {
   }
 }
 
+const isSyncing = ref(false)
+const lastSyncTime = ref(localStorage.getItem('po_last_sync'))
+
+const checkAndTriggerAutoSync = async () => {
+    // Check if we should sync (e.g., every 60 minutes)
+    const now = Date.now()
+    const last = lastSyncTime.value ? parseInt(lastSyncTime.value) : 0
+    const diffMinutes = (now - last) / (1000 * 60)
+    
+    if (diffMinutes > 60 || !last) {
+        console.log("Auto-Sync PO Triggered (Last sync: " + (last ? diffMinutes.toFixed(0) + " mins ago" : "Never") + ")")
+        await runBackgroundSync()
+    }
+}
+
+const runBackgroundSync = async () => {
+    if (isSyncing.value) return
+    isSyncing.value = true
+    
+    // Non-blocking sync (mostly copied from triggerSync but without alerts/confirms)
+    let page = 1
+    let hasMore = true
+    let totalProcessed = 0
+    
+    try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const endpoint = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sync-accurate-pos'
+
+        while (hasMore) {
+             try {
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ page })
+                })
+                
+                if (!res.ok) throw new Error(await res.text())
+                const result = await res.json()
+                
+                totalProcessed += result.processed || 0
+                hasMore = result.hasMore
+                
+                if (hasMore) {
+                    page++
+                    await new Promise(r => setTimeout(r, 1000)) // Slower interval for background
+                }
+            } catch (pageErr) {
+                console.error(`Background Sync Error page ${page}:`, pageErr)
+                hasMore = false 
+            }
+        }
+        
+        // Success
+        lastSyncTime.value = Date.now().toString()
+        localStorage.setItem('po_last_sync', lastSyncTime.value)
+        console.log(`Background Sync Finished. Processed: ${totalProcessed}`)
+        await fetchOrders() // Refresh data silently
+        
+    } catch (e) {
+        console.error("Background Sync Failed:", e)
+    } finally {
+        isSyncing.value = false
+    }
+}
+
 onMounted(() => {
   loadFiltersFromUrl()
   fetchOrders()
   setTimeout(() => {
     isInitialLoad.value = false
+    checkAndTriggerAutoSync() // Trigger Lazy Sync
   }, 100)
 })
 
@@ -425,7 +494,11 @@ const getStatusColor = (status) => {
             <DropdownMenuItem @click="exportToPDF" class="dark:hover:bg-slate-700 dark:text-slate-300"><FileIcon class="w-4 h-4 mr-2 text-red-600" /> PDF</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button size="sm" @click="triggerSync" :disabled="isLoading" class="w-full md:w-auto bg-slate-900 hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 text-white">
+        <div v-if="isSyncing" class="flex items-center gap-2 mr-2 text-xs text-slate-500 animate-pulse">
+            <RefreshCw class="w-3 h-3 animate-spin"/>
+            Syncing...
+        </div>
+        <Button size="sm" @click="triggerSync" :disabled="isLoading || isSyncing" class="w-full md:w-auto bg-slate-900 hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 text-white">
           <RefreshCw class="w-4 h-4 mr-2" :class="{'animate-spin': isLoading}" /> 
           {{ isLoading ? 'Loading...' : 'Sync Accurate' }}
         </Button>
