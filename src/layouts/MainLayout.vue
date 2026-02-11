@@ -10,8 +10,13 @@ import {
   LogOut, 
   Moon, 
   Sun,
-  User
+  User,
+
+  ShoppingBag,
+  Truck
 } from 'lucide-vue-next'
+
+
 
 const route = useRoute()
 const router = useRouter()
@@ -50,6 +55,8 @@ onMounted(async () => {
 const menuItems = [
   { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
   { name: 'Sales Order', path: '/sales-orders', icon: FileText },
+  { name: 'Purchase Order', path: '/purchase-orders', icon: ShoppingBag },
+  { name: 'Delivery Order', path: '/delivery-orders', icon: Truck },
   { name: 'Procurement', path: '/tracking', icon: PackageSearch }, // Rename Tracking -> Procurement sesuai gambar
   { name: 'Manage Account', path: '/settings', icon: Settings },
 ]
@@ -87,6 +94,8 @@ const handleLogout = async () => {
         </RouterLink>
 
       </nav>
+
+
 
       <div class="p-4 border-t border-gray-200 dark:border-gray-800 space-y-2">
         
@@ -139,12 +148,16 @@ const handleLogout = async () => {
 
     </nav>
 
+    <!-- Sync Log Modal -->
+
+
   </div>
 </template>
 
 <style>
 /* Import Font */
 @import url('https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600;700&display=swap');
+/* ... */
 
 .font-source-code {
   font-family: 'Source Code Pro', monospace;

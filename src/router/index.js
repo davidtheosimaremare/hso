@@ -9,6 +9,10 @@ import SalesOrderView from '@/views/SalesOrderView.vue'
 import TrackingView from '@/views/TrackingView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import SalesOrderDetailView from '@/views/SalesOrderDetailView.vue'
+import PurchaseOrderListView from '@/views/PurchaseOrderListView.vue'
+import PurchaseOrderDetailView from '@/views/PurchaseOrderDetailView.vue'
+import DeliveryOrderListView from '@/views/DeliveryOrderListView.vue'
+import DeliveryOrderDetailView from '@/views/DeliveryOrderDetailView.vue'
 
 // Import Public
 import PublicLayout from '@/layouts/PublicLayout.vue'
@@ -33,6 +37,10 @@ const router = createRouter({
         { path: '/sales-orders', component: SalesOrderView },
         { path: '/sales-orders/:id', component: SalesOrderDetailView },
         { path: '/tracking', component: TrackingView },
+        { path: '/purchase-orders', component: PurchaseOrderListView },
+        { path: '/purchase-orders/:id', component: PurchaseOrderDetailView },
+        { path: '/delivery-orders', component: DeliveryOrderListView },
+        { path: '/delivery-orders/:id', component: DeliveryOrderDetailView },
         { path: '/settings', component: SettingsView },
       ]
     },
@@ -47,7 +55,7 @@ const router = createRouter({
     {
       path: '/public/tracking/:code', // <-- DAFTARKAN ROUTE DENGAN PARAMETER DINAMIS ':code'
       name: 'public-tracking',
-      component: PublicTrackingView 
+      component: PublicTrackingView
     }
   ]
 })

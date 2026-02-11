@@ -1,6 +1,5 @@
-// FILE: supabase/functions/accurate-list-po/index.ts
-// Fetches Purchase Orders from Supabase (synced from Accurate)
-// Format yang dicari: HSO/YY/MM/NNN (tanpa VAHANA)
+// FILE: supabase/functions/accurate-list-do/index.ts
+// Fetches Delivery Orders from Supabase (synced from Accurate)
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -9,10 +8,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
 const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 const supabase = createClient(supabaseUrl, supabaseKey)
-
-// Check if description contains the HSO number (Optimized for DB query usage)
-// NOTE: We will use ILIKE in DB, but exact matching logic in JS if needed.
-// For DB, we can just search for the number part if it includes "HSO" in text.
 
 serve(async (req) => {
     const corsHeaders = {
@@ -32,7 +27,7 @@ serve(async (req) => {
             // No body
         }
 
-        console.log(`Searching PO for HSO: ${filterHsoNumber}`)
+        console.log(`Searching DO for HSO: ${filterHsoNumber}`)
 
         if (!filterHsoNumber) {
             return new Response(JSON.stringify({
@@ -44,23 +39,13 @@ serve(async (req) => {
             })
         }
 
-        // Search logic:
-        // We want accurate_purchase_order_items where detail_notes ILIKE '%filterHsoNumber%'
-        // Also join with accurate_purchase_orders to get header info.
-
-        // The filterHsoNumber might be "HSO/25/01/001".
-        // The notes might be "Reference HSO/25/01/001" or just "25/01/001" (if user typed partial).
-        // Let's assume strict inclusive match for now.
-
-        // Clean up HSO number for search?
-        // If user sends "HSO/25/01/001", we search "%HSO/25/01/001%".
-
+        // Search logic in accurate_delivery_order_items
         const { data: items, error } = await supabase
-            .from('accurate_purchase_order_items')
+            .from('accurate_delivery_order_items')
             .select(`
                 *,
-                header:accurate_purchase_orders(
-                    id, number, trans_date, status_name, vendor_name
+                header:accurate_delivery_orders(
+                    id, number, trans_date, status_name, customer_name, ship_to, driver_name
                 )
             `)
             .ilike('detail_notes', `%${filterHsoNumber}%`)
@@ -71,15 +56,18 @@ serve(async (req) => {
 
         // Transform to expected format
         const hsoMappings = items.map((item: any) => ({
-            poId: item.header?.id,
-            poNumber: item.header?.number,
-            poDate: item.header?.trans_date,
-            poStatus: item.header?.status_name || 'Open',
+            doId: item.header?.id,
+            doNumber: item.header?.number,
+            doDate: item.header?.trans_date,
+            doStatus: item.header?.status_name || 'Open',
+            customerName: item.header?.customer_name,
+            shipTo: item.header?.ship_to,
+            driverName: item.header?.driver_name,
             itemCode: item.item_code,
             itemName: item.item_name,
             quantity: item.quantity,
             description: item.detail_notes,
-            vendorName: item.header?.vendor_name
+            unitName: item.unit_name
         }))
 
         console.log(`Found ${hsoMappings.length} matches from DB`)
@@ -102,4 +90,3 @@ serve(async (req) => {
         })
     }
 })
-
