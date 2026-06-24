@@ -106,12 +106,36 @@ const fetchTrackingData = async () => {
             const itemCode = item.item?.no || item.detailName;
             const logistik = shipmentsMap[itemCode] || {};
             
+            const note = item.detailNotes || '';
+            const lowerNote = note.toLowerCase();
+            let isReady = false;
+            
+            // 1. Cek dari logistik status
+            if (['Already in Hokiindo Raya', 'Already in siemens Warehouse'].includes(logistik.status)) {
+                isReady = true;
+            }
+            
+            // 2. Cek dari note (seperti di admin)
+            if (!lowerNote.includes('no stock') && !lowerNote.includes('non stock') && !lowerNote.includes('kosong') && !lowerNote.includes('indent')) {
+                const match = lowerNote.match(/(?:stock|stok|sisa)\s*[:.]?\s*(\d+)/);
+                if (!match && (lowerNote.includes('stock') || lowerNote.includes('stok') || lowerNote.includes('ready'))) {
+                    isReady = true;
+                } else if (match) {
+                    const stockQty = parseInt(match[1]);
+                    const qtyRemaining = item.quantity - (item.shipQuantity || 0);
+                    if (stockQty >= qtyRemaining && qtyRemaining > 0) {
+                        isReady = true;
+                    }
+                }
+            }
+            
             return {
                 name: item.item?.name || item.detailName,
                 code: itemCode,
                 qty_order: item.quantity,
                 qty_shipped: item.shipQuantity || 0,
                 status: logistik.status || 'NO ACTION',
+                is_ready: isReady,
                 hpo: logistik.hpo || null,
                 exwork_date: logistik.exwork_date || null,
                 eta_date: logistik.eta_date || null,
@@ -184,7 +208,7 @@ const groupedData = computed(() => {
             
             <div class="text-center md:text-left mb-8 border-b-2 border-slate-200 pb-6">
                 <div class="inline-flex items-center gap-3 mb-4">
-                    <img src="https://hokiindo.co.id/wp-content/uploads/2025/09/cropped-fav-300x300.png" alt="Hokiindo Logo" class="w-12 h-12 rounded-lg shadow"/>
+                    <img src="https://shop.hokiindo.co.id/favicon.ico" alt="Hokiindo Logo" class="w-12 h-12 rounded-lg shadow bg-white"/>
                     <h2 class="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">HSO Tracking</h2>
                 </div>
                 <h1 class="text-3xl md:text-4xl font-bold mt-2 text-slate-900">{{ soHeader?.client }}</h1>
@@ -290,6 +314,9 @@ const groupedData = computed(() => {
                                 
                                 <!-- Dates Timeline - Only show if date exists -->
                                 <div class="text-right text-xs space-y-1">
+                                    <div v-if="item.is_ready" class="flex items-center justify-end gap-2 mb-2">
+                                        <span class="inline-block bg-blue-100 text-blue-700 border border-blue-200 px-2 py-1 rounded font-bold uppercase tracking-wider shadow-sm">Siap Dikirim</span>
+                                    </div>
                                     <div v-if="item.exwork_date" class="flex items-center justify-end gap-2">
                                         <span class="text-slate-500">EXWORK</span>
                                         <span class="font-bold text-amber-700">{{ formatDate(item.exwork_date) }}</span>
