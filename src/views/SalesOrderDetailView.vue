@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, computed, watch } from 'vue'
+import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 
@@ -509,7 +509,46 @@ const fetchDetail = async (skipHpoSync = false) => {
   }
 }
 
-onMounted(() => fetchDetail())
+// --- REALTIME STATE ---
+const isRealtimeConnected = ref(false)
+let realtimeChannel = null
+
+onMounted(() => {
+  fetchDetail()
+
+  // --- Supabase Realtime for PO changes affecting this SO ---
+  realtimeChannel = supabase
+    .channel(`so-po-updates`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'accurate_purchase_order_items'
+      },
+      (payload) => {
+        const item = payload.new || payload.old
+        // Check if the updated PO item belongs to this Sales Order
+        if (item && soDetail.value?.number && item.hso_number === soDetail.value.number) {
+          console.log('[Realtime] Related PO updated, reloading HPO details...', payload)
+          // Re-fetch HPO mapping to update the UI
+          fetchHpoInBackground(soDetail.value.number)
+        }
+      }
+    )
+    .subscribe((status) => {
+      console.log('[Realtime SO] Channel status:', status)
+      isRealtimeConnected.value = status === 'SUBSCRIBED'
+    })
+})
+
+
+onUnmounted(() => {
+  if (realtimeChannel) {
+    supabase.removeChannel(realtimeChannel)
+    realtimeChannel = null
+  }
+})
 
 const formatCurrency = (val) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val || 0)
 const fulfillmentPercentage = (items) => {

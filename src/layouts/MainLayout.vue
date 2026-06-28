@@ -73,7 +73,7 @@ const handleLogout = async () => {
     <aside class="hidden md:flex w-[280px] bg-white dark:bg-[#1a1a1a] border-r border-gray-200 dark:border-gray-800 flex-col sticky top-0 h-screen transition-colors duration-300">
       
       <div class="p-6 flex items-center gap-3">
-        <img src="https://hokiindo.co.id/wp-content/uploads/2025/09/cropped-fav-300x300.png" alt="Hokiindo Logo" class="w-8 h-8 rounded-full object-cover" />
+        <img src="https://shop.hokiindo.co.id/favicon.ico" alt="Hokiindo Logo" class="w-8 h-8 object-contain" />
         <h1 class="text-xl font-bold text-black dark:text-white tracking-tight">HSO TRACKER</h1>
       </div>
       

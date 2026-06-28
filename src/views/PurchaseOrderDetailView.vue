@@ -1,5 +1,5 @@
-<script setup>
-import { onMounted, ref, computed } from 'vue'
+<script setup lang="ts">
+import { onMounted, onUnmounted, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 
@@ -9,7 +9,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
-import { AlertTriangle, Calendar, Building2, User, FileText, ArrowLeft, Loader2, Package } from 'lucide-vue-next'
+import { AlertTriangle, Calendar, Building2, User, FileText, ArrowLeft, Loader2, Package, RefreshCw, CheckCircle2, XCircle } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
@@ -19,6 +19,65 @@ const poId = route.params.id
 const poDetail = ref(null)
 const isLoading = ref(true)
 const errorMessage = ref(null)
+
+// --- REALTIME STATE ---
+const isRealtimeConnected = ref(false)
+const realtimeUpdatePulse = ref(false) // flashes briefly when update received
+let realtimeChannel: any = null
+
+const pulseUpdate = () => {
+    realtimeUpdatePulse.value = true
+    setTimeout(() => { realtimeUpdatePulse.value = false }, 2000)
+}
+
+// --- REFRESH (Webhook Single PO) ---
+const isRefreshing = ref(false)
+const refreshStatus = ref(null) // null | 'success' | 'error'
+const refreshMessage = ref('')
+
+const refreshSinglePO = async () => {
+    if (!poId || isRefreshing.value) return
+
+    isRefreshing.value = true
+    refreshStatus.value = null
+    refreshMessage.value = ''
+
+    try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const endpoint = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sync-accurate-po-single'
+
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ po_id: parseInt(poId) })
+        })
+
+        const result = await res.json()
+
+        if (!res.ok || !result.success) {
+            throw new Error(result.error || 'Refresh gagal, coba lagi.')
+        }
+
+        refreshStatus.value = 'success'
+        refreshMessage.value = result.message || `Berhasil: ${result.items_updated} item diperbarui.`
+
+        // Reload detail silently
+        await fetchDetail()
+
+        // Auto-clear message after 5s
+        setTimeout(() => { refreshStatus.value = null; refreshMessage.value = '' }, 5000)
+
+    } catch (err) {
+        console.error('[RefreshPO] Error:', err)
+        refreshStatus.value = 'error'
+        refreshMessage.value = err.message || 'Terjadi kesalahan saat refresh.'
+    } finally {
+        isRefreshing.value = false
+    }
+}
 
 // --- DATA FETCHING ---
 const fetchDetail = async () => {
@@ -60,6 +119,51 @@ const fetchDetail = async () => {
 
 onMounted(() => {
     fetchDetail()
+
+    // --- Supabase Realtime: auto-reload when items change ---
+    // This fires whenever cron sync updates this PO's items in the DB
+    realtimeChannel = supabase
+        .channel(`po-detail-${poId}`)
+        .on(
+            'postgres_changes',
+            {
+                event: '*',          // INSERT, UPDATE, DELETE
+                schema: 'public',
+                table: 'accurate_purchase_order_items',
+                filter: `po_id=eq.${poId}`
+            },
+            (payload) => {
+                console.log('[Realtime] PO items updated, reloading...', payload)
+                pulseUpdate()
+                fetchDetail() // Reload data silently
+            }
+        )
+        .on(
+            'postgres_changes',
+            {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'accurate_purchase_orders',
+                filter: `id=eq.${poId}`
+            },
+            (payload) => {
+                console.log('[Realtime] PO header updated, reloading...', payload)
+                pulseUpdate()
+                fetchDetail()
+            }
+        )
+        .subscribe((status) => {
+            console.log('[Realtime] Channel status:', status)
+            isRealtimeConnected.value = status === 'SUBSCRIBED'
+        })
+})
+
+onUnmounted(() => {
+    // Clean up realtime subscription when leaving the page
+    if (realtimeChannel) {
+        supabase.removeChannel(realtimeChannel)
+        realtimeChannel = null
+    }
 })
 
 // --- HELPERS ---
@@ -106,9 +210,65 @@ const getStatusColor = (status) => {
         
         <!-- HEADER -->
         <div class="flex flex-col gap-4">
-            <Button @click="router.push('/purchase-orders')" variant="ghost" class="w-fit pl-0 hover:bg-transparent hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400">
-                <ArrowLeft class="w-4 h-4 mr-2"/> Kembali ke List
-            </Button>
+            <div class="flex items-center justify-between">
+                <Button @click="router.push('/purchase-orders')" variant="ghost" class="w-fit pl-0 hover:bg-transparent hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400">
+                    <ArrowLeft class="w-4 h-4 mr-2"/> Kembali ke List
+                </Button>
+
+                <div class="flex items-center gap-3">
+                    <!-- Realtime Live Indicator -->
+                    <div class="flex items-center gap-1.5 text-[11px] font-medium select-none"
+                         :class="realtimeUpdatePulse 
+                           ? 'text-blue-600 dark:text-blue-400' 
+                           : isRealtimeConnected 
+                             ? 'text-emerald-600 dark:text-emerald-400' 
+                             : 'text-slate-400 dark:text-slate-600'">
+                        <span class="relative flex h-2 w-2">
+                            <span v-if="isRealtimeConnected || realtimeUpdatePulse" 
+                                  class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                                  :class="realtimeUpdatePulse ? 'bg-blue-400' : 'bg-emerald-400'">
+                            </span>
+                            <span class="relative inline-flex rounded-full h-2 w-2 transition-colors duration-300"
+                                  :class="realtimeUpdatePulse ? 'bg-blue-500' : isRealtimeConnected ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'">
+                            </span>
+                        </span>
+                        <span class="hidden sm:inline">
+                            {{ realtimeUpdatePulse ? 'Diperbarui!' : isRealtimeConnected ? 'Live' : 'Offline' }}
+                        </span>
+                    </div>
+
+                    <!-- Refresh status message -->
+                    <Transition
+                        enter-active-class="transition-all duration-300"
+                        enter-from-class="opacity-0 translate-x-2"
+                        enter-to-class="opacity-100 translate-x-0"
+                        leave-active-class="transition-all duration-200"
+                        leave-from-class="opacity-100"
+                        leave-to-class="opacity-0"
+                    >
+                        <div v-if="refreshStatus === 'success'" class="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg px-3 py-1.5">
+                            <CheckCircle2 class="w-3.5 h-3.5 shrink-0" />
+                            {{ refreshMessage }}
+                        </div>
+                        <div v-else-if="refreshStatus === 'error'" class="flex items-center gap-1.5 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-1.5">
+                            <XCircle class="w-3.5 h-3.5 shrink-0" />
+                            {{ refreshMessage }}
+                        </div>
+                    </Transition>
+
+                    <!-- Refresh Button -->
+                    <Button
+                        @click="refreshSinglePO"
+                        :disabled="isRefreshing"
+                        size="sm"
+                        variant="outline"
+                        class="gap-2 border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 hover:border-slate-400 transition-all"
+                    >
+                        <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isRefreshing }" />
+                        {{ isRefreshing ? 'Memperbarui...' : 'Refresh PO Ini' }}
+                    </Button>
+                </div>
+            </div>
             
             <div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
                 <div class="space-y-3">
