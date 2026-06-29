@@ -118,10 +118,10 @@ const itemsToPurchase = computed(() => {
         // Cek apakah sudah ada HPO dari database atau dari Accurate sync
         const hasHpoInDb = item.logistics_hpo && item.logistics_hpo.trim().length > 0;
         const hasHpoFromAccurate = hpoMapping.value[item.code] || (hpoDetails.value && hpoDetails.value.some(p => p.itemCode === item.code));
-        const isProcessRunning = item.logistics_status !== 'Pending Process';
+        const isHoldOrCancelled = item.logistics_status === 'Hold by Customer' || item.logistics_status === 'Cancel by Customer';
         
-        // Jangan tampilkan jika sudah ada HPO atau status bukan Pending
-        if (hasHpoInDb || hasHpoFromAccurate || isProcessRunning) return false;
+        // Jangan tampilkan jika sudah ada HPO atau pesanan di-hold/cancel
+        if (hasHpoInDb || hasHpoFromAccurate || isHoldOrCancelled) return false;
         
         return true;
     })
@@ -196,22 +196,38 @@ const formatDateSimple = (dateStr) => {
     return `${day}/${month}/${year}`;
 }
 
+import * as XLSX from 'xlsx'
+
 const exportToExcel = () => {
     if (itemsToPurchase.value.length === 0) return alert("Tidak ada barang yang perlu dipesan.");
-    const headers = ['Kode Produk', 'Nama Produk', 'Total Order', 'Stock Gudang', 'SARAN ORDER', 'Keterangan'];
-    const rows = itemsToPurchase.value.map(i => {
-        const safeName = i.name ? i.name.replace(/,/g, ' ') : '-';
-        return [`"${i.code}"`, `"${safeName}"`, i.qty_order, i.parsed_stock_qty, i.qty_to_order, `"${i.admin_note}"`].join(',');
-    });
-    const csvContent = [headers.join(','), ...rows].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `ORDER_LIST_${soDetail.value.number}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    
+    const dataToExport = itemsToPurchase.value.map(item => ({
+        "Kode Produk": item.code,
+        "Nama Produk": item.name,
+        "Total Order (SO)": item.qty_order,
+        "Stock Gudang": item.parsed_stock_qty || 0,
+        "SARAN ORDER (QTY)": item.qty_to_order,
+        "Catatan Admin": item.admin_note || '-',
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    
+    // Auto-size columns
+    const colWidths = [
+      { wch: 20 }, // Kode Produk
+      { wch: 50 }, // Nama Produk
+      { wch: 15 }, // Total Order
+      { wch: 15 }, // Stock Gudang
+      { wch: 20 }, // SARAN ORDER
+      { wch: 40 }, // Catatan
+    ];
+    ws['!cols'] = colWidths;
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Saran Order");
+    
+    const safeSoNumber = (soDetail.value.number || 'SO').replace(/[\/\\]/g, '_');
+    XLSX.writeFile(wb, `ORDER_LIST_${safeSoNumber}.xlsx`);
 }
 
 // --- BACKGROUND HPO FETCH ---
