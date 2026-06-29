@@ -26,7 +26,8 @@ import {
 
 const route = useRoute()
 const router = useRouter()
-const soId = route.params.id
+const routeId = route.params.id
+const resolvedSoId = ref(null)
 
 // --- 1. STATE MANAGEMENT ---
 const soDetail = ref(null)
@@ -109,21 +110,7 @@ const isAllSelected = computed(() => {
 const itemsToPurchase = computed(() => {
     if (!soDetail.value || !soDetail.value.items) return []
     return soDetail.value.items.filter(item => {
-        // Hanya tampilkan jika qty_to_order > 0 (no stock atau stock sebagian)
-        if (item.qty_to_order <= 0) return false;
-        
-        // Jangan tampilkan jika sudah selesai dikirim (sudah ada HDO dan fully shipped)
-        if (item.is_fully_shipped) return false;
-        
-        // Cek apakah sudah ada HPO dari database atau dari Accurate sync
-        const hasHpoInDb = item.logistics_hpo && item.logistics_hpo.trim().length > 0;
-        const hasHpoFromAccurate = hpoMapping.value[item.code] || (hpoDetails.value && hpoDetails.value.some(p => p.itemCode === item.code));
-        const isHoldOrCancelled = item.logistics_status === 'Hold by Customer' || item.logistics_status === 'Cancel by Customer';
-        
-        // Jangan tampilkan jika sudah ada HPO atau pesanan di-hold/cancel
-        if (hasHpoInDb || hasHpoFromAccurate || isHoldOrCancelled) return false;
-        
-        return true;
+        return getRowStatus(item).text === 'PERLU DIPESAN';
     })
 })
 
@@ -354,11 +341,41 @@ const fetchDetail = async (skipHpoSync = false) => {
   loadingMessage.value = 'Menghubungkan ke Accurate...'
   
   try {
+    let targetId = resolvedSoId.value
+    
+    if (!targetId) {
+      const isNumeric = /^\d+$/.test(routeId)
+      if (isNumeric) {
+        targetId = parseInt(routeId)
+      } else {
+        // Ini adalah nomor HSO (misal: HSO-25-01-001)
+        // Ubah kembali "-" menjadi "/"
+        const targetNumber = routeId.replace(/-/g, '/')
+        loadingMessage.value = `Mencari ID untuk ${targetNumber}...`
+        
+        const { data: listData, error: listError } = await supabase.functions.invoke('accurate-list-so', {
+          body: { 
+            filterNumber: targetNumber,
+            fields: 'id,number'
+          }
+        })
+        
+        if (listError) throw listError
+        
+        const matchedSo = listData?.d?.find(so => so.number === targetNumber)
+        if (!matchedSo) {
+          throw new Error(`Sales Order dengan nomor ${targetNumber} tidak ditemukan di Accurate.`)
+        }
+        targetId = matchedSo.id
+      }
+      resolvedSoId.value = targetId
+    }
+
     loadingProgress.value = 20
     loadingMessage.value = 'Mengambil data HSO...'
     
     const { data: accData, error: accError } = await supabase.functions.invoke('accurate-detail-so', {
-      body: { id: parseInt(soId), type: 'sales-order' }
+      body: { id: targetId, type: 'sales-order' }
     })
     
     loadingProgress.value = 50
@@ -373,7 +390,7 @@ const fetchDetail = async (skipHpoSync = false) => {
     loadingProgress.value = 70
     loadingMessage.value = 'Memuat data pengiriman...'
 
-    const { data: shipData } = await supabase.from('shipments').select('*').eq('so_id', String(soId))
+    const { data: shipData } = await supabase.from('shipments').select('*').eq('so_id', String(resolvedSoId.value))
     shipmentList.value = shipData || []
 
     loadingProgress.value = 85
@@ -400,7 +417,7 @@ const fetchDetail = async (skipHpoSync = false) => {
     const rawItems = d.detailItem || []
     const sortedItems = rawItems.sort((a, b) => (a.seq || 0) - (b.seq || 0))
 
-    const linkData = await supabase.from('so_tracking_links').select('unique_code').eq('so_id', String(soId)).maybeSingle()
+    const linkData = await supabase.from('so_tracking_links').select('unique_code').eq('so_id', String(resolvedSoId.value)).maybeSingle()
     uniqueTrackingCode.value = linkData.data?.unique_code || null
 
     soDetail.value = {
@@ -593,11 +610,12 @@ const getRowStatus = (item) => {
     return { text: 'PRODUK SUDAH DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
   }
   
-  // Cek HPO dari Accurate
+  // Cek HPO dari Accurate atau dari DB
   const hpoEntries = getHpoEntries(item)
+  const hasHpoInDb = item.logistics_hpo && item.logistics_hpo.trim().length > 0
   
-  // Jika ada HPO dari Accurate, status = SUDAH DIPESAN
-  if (hpoEntries.length > 0) {
+  // Jika ada HPO dari Accurate atau dari DB, status = SUDAH DIPESAN
+  if (hpoEntries.length > 0 || hasHpoInDb) {
     return { text: 'SUDAH DIPESAN', class: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800', icon: CheckCircle2 }
   }
   
@@ -767,7 +785,7 @@ const saveUpdate = async () => {
     } catch (error) { alert("Gagal update status: " + error.message) } finally { isSubmitting.value = false } 
 }
 
-const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if (!codeToUse) { const newUniqueCode = generateUUID(); const { data, error } = await supabase.from('so_tracking_links').insert({ so_id: String(soId), unique_code: newUniqueCode }).select('unique_code').single(); if (error) { alert('Gagal generate link'); return } codeToUse = data.unique_code; uniqueTrackingCode.value = codeToUse; } const trackingUrl = `${window.location.origin}/public/tracking/${codeToUse}`; navigator.clipboard.writeText(trackingUrl).then(() => { isLinkCopied.value = true; setTimeout(() => isLinkCopied.value = false, 3000); }) }
+const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if (!codeToUse) { const newUniqueCode = generateUUID(); const { data, error } = await supabase.from('so_tracking_links').insert({ so_id: String(resolvedSoId.value), unique_code: newUniqueCode }).select('unique_code').single(); if (error) { alert('Gagal generate link'); return } codeToUse = data.unique_code; uniqueTrackingCode.value = codeToUse; } const trackingUrl = `${window.location.origin}/public/tracking/${codeToUse}`; navigator.clipboard.writeText(trackingUrl).then(() => { isLinkCopied.value = true; setTimeout(() => isLinkCopied.value = false, 3000); }) }
 </script>
 
 <template>

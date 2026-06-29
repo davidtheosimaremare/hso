@@ -28,7 +28,7 @@ serve(async (req) => {
     if (!accessToken) throw new Error('Token Accurate belum disetting!')
 
     // 1. BACA BODY DARI FRONTEND (Agar fields dinamis)
-    const { fields, limit, sort } = await req.json().catch(() => ({}))
+    const { fields, limit, sort, filterNumber } = await req.json().catch(() => ({}))
 
     // Default fields jika frontend tidak kirim (Backward compatibility)
     const fieldsParam = fields || 'id,number,transDate,customer,totalAmount,statusName,percentShipped'
@@ -49,12 +49,16 @@ serve(async (req) => {
       signatureHeader = { 'X-Api-Timestamp': timestamp, 'X-Api-Signature': signature }
     }
 
-    console.log(`Fetching Data. Fields: ${fieldsParam.substring(0, 50)}...`)
+    console.log(`Fetching Data. Fields: ${fieldsParam.substring(0, 50)}... FilterNumber: ${filterNumber || 'none'}`)
 
     // LOOPING FETCH
     while (hasMoreData) {
       // Masukkan fieldsParam ke URL
-      const url = `${LIST_SO_ENDPOINT}?fields=${fieldsParam}&sp.page=${page}&sp.pageSize=${pageSize}&sp.sort=${sortParam}`
+      let url = `${LIST_SO_ENDPOINT}?fields=${fieldsParam}&sp.page=${page}&sp.pageSize=${pageSize}&sp.sort=${sortParam}`
+      
+      if (filterNumber) {
+        url += `&filter.number.op=EQUAL&filter.number.val=${encodeURIComponent(filterNumber)}`
+      }
 
       const response = await fetch(url, {
         method: 'GET',

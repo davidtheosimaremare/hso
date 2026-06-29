@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase'
 import { 
   LayoutDashboard, 
   FileText, 
-  PackageSearch, 
   Settings, 
   LogOut, 
   Moon, 
@@ -51,13 +50,11 @@ onMounted(async () => {
   }
 })
 
-// --- 2. Menu Config ---
 const menuItems = [
   { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
   { name: 'Sales Order', path: '/sales-orders', icon: FileText },
   { name: 'Purchase Order', path: '/purchase-orders', icon: ShoppingBag },
   { name: 'Delivery Order', path: '/delivery-orders', icon: Truck },
-  { name: 'Procurement', path: '/tracking', icon: PackageSearch }, // Rename Tracking -> Procurement sesuai gambar
   { name: 'Manage Account', path: '/settings', icon: Settings },
 ]
 
@@ -118,11 +115,7 @@ const handleLogout = async () => {
     </aside>
 
     <main class="flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-y-auto bg-white dark:bg-[#1a1a1a] text-black dark:text-gray-200 transition-colors duration-300">
-      <RouterView v-slot="{ Component }">
-        <KeepAlive include="TrackingView">
-          <component :is="Component" />
-        </KeepAlive>
-      </RouterView>
+      <RouterView />
     </main>
 
     <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-[#1a1a1a] border-t border-gray-200 dark:border-gray-800 flex justify-around items-center p-2 z-50 pb-safe shadow-lg transition-colors duration-300">

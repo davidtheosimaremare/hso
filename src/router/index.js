@@ -6,7 +6,6 @@ import MainLayout from '@/layouts/MainLayout.vue'
 // ... import view lainnya (DashboardView, dll)
 import DashboardView from '@/views/DashboardView.vue'
 import SalesOrderView from '@/views/SalesOrderView.vue'
-import TrackingView from '@/views/TrackingView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import SalesOrderDetailView from '@/views/SalesOrderDetailView.vue'
 import PurchaseOrderListView from '@/views/PurchaseOrderListView.vue'
@@ -36,7 +35,6 @@ const router = createRouter({
         { path: '/dashboard', component: DashboardView },
         { path: '/sales-orders', component: SalesOrderView },
         { path: '/sales-orders/:id', component: SalesOrderDetailView },
-        { path: '/tracking', component: TrackingView },
         { path: '/purchase-orders', component: PurchaseOrderListView },
         { path: '/purchase-orders/:id', component: PurchaseOrderDetailView },
         { path: '/delivery-orders', component: DeliveryOrderListView },

@@ -973,7 +973,7 @@ onMounted(() => {
               v-for="so in latestHSOs" 
               :key="so.id"
               class="p-4 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-600 transition-colors cursor-pointer group"
-              @click="router.push(`/sales-orders/${so.id}`)"
+              @click="router.push(`/sales-orders/${so.number.replace(/\//g, '-')}`)"
             >
               <div class="flex items-start justify-between mb-2">
                 <div>

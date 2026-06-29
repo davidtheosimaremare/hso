@@ -28,8 +28,10 @@ import {
   Search, RefreshCw, FileText, ArrowRight, Loader2, 
   Calendar as CalendarIcon, XCircle, ChevronLeft, ChevronRight, 
   Download, FileSpreadsheet, File as FileIcon, Filter,
-  ChevronsUpDown, ArrowUp, ArrowDown, Check, X
+  ChevronsUpDown, ArrowUp, ArrowDown, Check, X,
+  ShoppingCart
 } from 'lucide-vue-next'
+import { Checkbox } from '@/components/ui/checkbox'
 
 const router = useRouter()
 const route = useRoute()
@@ -39,6 +41,12 @@ const salesOrders = ref([])
 const isLoading = ref(false)
 const currentPage = ref(1)
 const itemsPerPage = ref(10)
+
+// --- BULK ACTION STATE ---
+const selectedOrders = ref([])
+const isBulkDownloading = ref(false)
+const bulkProgress = ref(0)
+const bulkStatus = ref('')
 
 // --- FILTER STATE ---
 const searchQuery = ref('')
@@ -240,6 +248,31 @@ const pageTotalAmount = computed(() => {
 const nextPage = () => { if (currentPage.value < totalPages.value) currentPage.value++ }
 const prevPage = () => { if (currentPage.value > 1) currentPage.value-- }
 
+// --- MULTI SELECT LOGIC ---
+const isAllSelected = computed(() => {
+    return paginatedOrders.value.length > 0 && selectedOrders.value.length === paginatedOrders.value.length
+})
+
+const toggleSelectAll = () => {
+    if (isAllSelected.value) {
+        selectedOrders.value = []
+    } else {
+        selectedOrders.value = paginatedOrders.value.map(so => so.id_database)
+    }
+}
+
+const toggleSelect = (id, isChecked) => {
+    if (selectedOrders.value.includes(id)) {
+        selectedOrders.value = selectedOrders.value.filter(item => item !== id)
+    } else {
+        selectedOrders.value.push(id)
+    }
+}
+// Clear selection when page changes
+watch(currentPage, () => {
+  selectedOrders.value = []
+})
+
 // --- FILTER TANGGAL ---
 const setDateFilter = (type) => {
   const now = new Date()
@@ -299,6 +332,157 @@ const exportToExcel = () => {
   XLSX.writeFile(wb, getFilename('xlsx'))
 }
 
+// --- BULK DOWNLOAD SARAN ORDER ---
+const bulkDownloadSaranOrder = async () => {
+    if (selectedOrders.value.length === 0) return
+    
+    isBulkDownloading.value = true
+    bulkProgress.value = 0
+    let allItemsToPurchase = []
+    
+    try {
+        const totalSelected = selectedOrders.value.length
+        
+        for (let i = 0; i < totalSelected; i++) {
+            const soId = selectedOrders.value[i]
+            const soSummary = salesOrders.value.find(s => s.id_database === soId)
+            const soNumber = soSummary ? soSummary.no_so : 'UNKNOWN'
+            const customerName = soSummary ? soSummary.client : 'UNKNOWN'
+            
+            bulkStatus.value = `Mengambil data SO ${soNumber} (${i+1}/${totalSelected})...`
+            bulkProgress.value = Math.round(((i) / totalSelected) * 100)
+            
+            // 1. Fetch Detail SO
+            const { data: detailData, error: detailError } = await supabase.functions.invoke('accurate-detail-so', {
+                body: { id: soId }
+            })
+            
+            if (detailError || !detailData?.d?.detailItem) continue
+            
+            const detailItems = detailData.d.detailItem
+            
+            // 2. Fetch HPO dari Accurate (Sama dengan detail view)
+            const { data: poData } = await supabase.functions.invoke('accurate-list-po', {
+                body: { hsoNumber: soNumber }
+            })
+            const hpoDetails = poData?.d || []
+            
+            // 3. Fetch status logistik dari DB
+            const { data: dbData } = await supabase
+                .from('shipments')
+                .select('item_code, current_status, hpo_number')
+                .eq('sales_order_number', soNumber)
+                
+            const dbShipments = dbData || []
+            
+            // 4. Process Items
+            detailItems.forEach(item => {
+                const code = item.item?.no
+                const name = item.item?.name || item.detailName
+                const qty_order = item.quantity || 0
+                const qty_shipped = item.shipQuantity || item.shippedQuantity || 0
+                const qty_remaining = qty_order - qty_shipped
+                const is_fully_shipped = qty_remaining <= 0
+                
+                const myShipment = dbShipments.find(s => s.item_code === code)
+                const logistics_status = myShipment?.current_status || 'Pending Process'
+                
+                // Parse qty dari notes dulu
+                const note = item.detailNotes || ''
+                const lower = note.toLowerCase()
+                let qty_stock_admin = 0
+                let qty_to_order = qty_order
+                
+                if (lower.includes('no stock') || lower.includes('non stock') || lower.includes('kosong') || lower.includes('indent')) {
+                    qty_stock_admin = 0
+                    qty_to_order = qty_order
+                } else {
+                    const matchNum = lower.match(/(?:stock|stok|sisa)\s*[:.]?\s*(\d+)/)
+                    if (matchNum) {
+                        qty_stock_admin = parseInt(matchNum[1])
+                        qty_to_order = Math.max(0, qty_order - qty_stock_admin)
+                    } else if (lower.includes('stock') || lower.includes('stok') || lower.includes('ready')) {
+                        qty_stock_admin = qty_order
+                        qty_to_order = 0
+                    }
+                }
+                
+                // Tentukan status teks persis getRowStatus di detail view:
+                const hpoEntries = hpoDetails.filter(p => p.itemCode === code)
+                const hasHpoInDb = !!(myShipment?.hpo_number && myShipment.hpo_number.trim().length > 0)
+                
+                let statusText = 'MENUNGGU'
+                if (logistics_status === 'Hold by Customer') {
+                    statusText = 'HOLD BY CUSTOMER'
+                } else if (is_fully_shipped) {
+                    statusText = 'PRODUK SUDAH DIKIRIM'
+                } else if (qty_shipped > 0 && qty_remaining > 0) {
+                    statusText = 'DIKIRIM SEBAGIAN'
+                } else if (qty_shipped > 0 && qty_remaining === 0) {
+                    statusText = 'PRODUK SUDAH DIKIRIM'
+                } else if (hpoEntries.length > 0 || hasHpoInDb) {
+                    statusText = 'SUDAH DIPESAN'
+                } else if (qty_to_order > 0) {
+                    statusText = 'PERLU DIPESAN'
+                } else if (qty_to_order === 0 && qty_shipped === 0) {
+                    statusText = 'MENUNGGU PENGIRIMAN'
+                }
+                
+                // Hanya tampilkan jika statusnya 'PERLU DIPESAN'
+                if (statusText !== 'PERLU DIPESAN') return
+                
+                allItemsToPurchase.push({
+                    "No HSO": soNumber,
+                    "Nama PT": customerName,
+                    "Kode Produk": code,
+                    "Nama Produk": name,
+                    "Total Order (SO)": qty_order,
+                    "Stock Gudang": qty_stock_admin,
+                    "SARAN ORDER (QTY)": qty_to_order,
+                    "Catatan": note || '-'
+                })
+            })
+        }
+        
+        bulkProgress.value = 100
+        bulkStatus.value = "Membuat file Excel..."
+        
+        if (allItemsToPurchase.length === 0) {
+            alert("Tidak ada barang yang perlu dipesan dari SO yang dipilih.")
+            isBulkDownloading.value = false
+            return
+        }
+        
+        // Buat Excel
+        const ws = XLSX.utils.json_to_sheet(allItemsToPurchase)
+        
+        const colWidths = [
+          { wch: 20 }, // No HSO
+          { wch: 30 }, // Nama PT
+          { wch: 20 }, // Kode Produk
+          { wch: 50 }, // Nama Produk
+          { wch: 15 }, // Total Order
+          { wch: 15 }, // Stock Gudang
+          { wch: 20 }, // SARAN ORDER
+          { wch: 40 }, // Catatan
+        ]
+        ws['!cols'] = colWidths
+        
+        const wb = XLSX.utils.book_new()
+        XLSX.utils.book_append_sheet(wb, ws, "Saran Order Massal")
+        
+        XLSX.writeFile(wb, `Saran_Order_Massal_${new Date().toISOString().split('T')[0]}.xlsx`)
+        
+    } catch (e) {
+        console.error("Bulk download error:", e)
+        alert("Terjadi kesalahan saat mengunduh Saran Order.")
+    } finally {
+        isBulkDownloading.value = false
+        bulkProgress.value = 0
+        bulkStatus.value = ""
+    }
+}
+
 const exportToPDF = () => {
   const doc = new jsPDF()
   doc.text("Laporan Sales Order", 14, 15)
@@ -324,12 +508,29 @@ const getStatusColor = (status) => {
 <template>
   <div class="space-y-6 pb-20 font-source-code text-slate-900 dark:text-slate-100">
     
+    <!-- LOADING OVERLAY BULK DOWNLOAD -->
+    <div v-if="isBulkDownloading" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div class="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-2xl max-w-sm w-full mx-4 flex flex-col items-center border border-slate-200 dark:border-slate-700">
+            <Loader2 class="w-12 h-12 text-red-600 animate-spin mb-4" />
+            <h3 class="text-lg font-bold text-slate-900 dark:text-white mb-2">Memproses Unduhan</h3>
+            <p class="text-sm text-center text-slate-500 dark:text-slate-400 mb-6">{{ bulkStatus }}</p>
+            
+            <div class="w-full bg-slate-100 dark:bg-slate-700 rounded-full h-3 mb-2 overflow-hidden border border-slate-200 dark:border-slate-600">
+                <div class="bg-red-600 h-3 rounded-full transition-all duration-300" :style="{ width: bulkProgress + '%' }"></div>
+            </div>
+            <p class="text-xs font-bold text-slate-600 dark:text-slate-300">{{ bulkProgress }}%</p>
+        </div>
+    </div>
+    
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm transition-colors duration-300">
       <div>
         <h2 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Sales Orders</h2>
         <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Total: {{ salesOrders.length }} Pesanan</p>
       </div>
       <div class="flex gap-2 w-full md:w-auto">
+        <Button v-if="selectedOrders.length > 0" @click="bulkDownloadSaranOrder" variant="default" class="w-full md:w-auto bg-green-600 hover:bg-green-700 text-white gap-2 border-0 shadow-sm transition-all animate-in slide-in-from-top-2">
+            <ShoppingCart class="w-4 h-4" /> Download Saran Order ({{ selectedOrders.length }})
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger as-child>
             <Button variant="outline" class="gap-2 w-full md:w-auto border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
@@ -467,6 +668,14 @@ const getStatusColor = (status) => {
         <TableHeader class="bg-slate-900 dark:bg-black">
           <TableRow class="hover:bg-slate-900 dark:hover:bg-black border-none">
             
+            <TableHead class="w-[50px] px-4 text-center">
+                <Checkbox 
+                  :modelValue="isAllSelected" 
+                  @update:modelValue="toggleSelectAll" 
+                  class="border-white/50 data-[state=checked]:bg-red-600 data-[state=checked]:border-red-600"
+                />
+            </TableHead>
+
             <TableHead class="text-white font-bold cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-900 h-12 w-[180px]" @click="toggleSort('no_so')">
                 <div class="flex items-center gap-2">No. SO <ChevronsUpDown v-if="sortKey !== 'no_so'" class="w-3 h-3 opacity-50"/> <component :is="sortOrder === 'asc' ? ArrowUp : ArrowDown" v-else class="w-3 h-3 text-red-400"/></div>
             </TableHead>
@@ -496,7 +705,7 @@ const getStatusColor = (status) => {
         </TableHeader>
         <TableBody>
           <TableRow v-if="isLoading">
-            <TableCell colspan="7" class="h-40 text-center text-slate-500 dark:text-slate-400">
+            <TableCell colspan="8" class="h-40 text-center text-slate-500 dark:text-slate-400">
               <div class="flex flex-col items-center justify-center gap-3">
                 <Loader2 class="animate-spin w-8 h-8 text-red-600"/> 
                 <span class="text-sm font-medium">Sedang mengambil data...</span>
@@ -505,13 +714,21 @@ const getStatusColor = (status) => {
           </TableRow>
 
           <TableRow v-else-if="filteredAndSortedOrders.length === 0">
-            <TableCell colspan="7" class="h-40 text-center text-slate-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-900">
+            <TableCell colspan="8" class="h-40 text-center text-slate-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-900">
                 Tidak ada data yang sesuai filter.
             </TableCell>
           </TableRow>
 
-          <TableRow v-else v-for="so in paginatedOrders" :key="so.id_database" class="group cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0" @click="router.push(`/sales-orders/${so.id_database}`)">
+          <TableRow v-else v-for="so in paginatedOrders" :key="so.id_database" class="group cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0" @click="router.push(`/sales-orders/${so.no_so.replace(/\//g, '-')}`)">
             
+            <TableCell class="px-4 text-center align-middle" @click.stop>
+                <Checkbox 
+                  :modelValue="selectedOrders.includes(so.id_database)" 
+                  @update:modelValue="toggleSelect(so.id_database, $event)"
+                  class="border-slate-300 dark:border-slate-600 data-[state=checked]:bg-red-600 data-[state=checked]:border-red-600"
+                />
+            </TableCell>
+
             <TableCell class="py-4 font-bold text-slate-900 dark:text-white align-middle">
               <div class="flex items-center gap-3">
                 <div class="p-2 bg-slate-100 dark:bg-slate-700 rounded-md text-slate-500 dark:text-slate-300 group-hover:bg-red-50 group-hover:text-red-600 dark:group-hover:bg-red-900/30 dark:group-hover:text-red-400 transition-colors">

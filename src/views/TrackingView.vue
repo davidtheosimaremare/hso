@@ -376,9 +376,10 @@ const openSiePortal = (code) => {
     window.open(`https://sieportal.siemens.com/en-id/products-services/detail/${code}?tree=CatalogTree`, '_blank');
 }
 
-const openDetail = (soId, itemCode) => {
+const openDetail = (soNumber, itemCode) => {
+    const cleanNumber = soNumber.replace(/\//g, '-')
     router.push({ 
-        path: `/sales-orders/${soId}`, 
+        path: `/sales-orders/${cleanNumber}`, 
         query: { highlight: itemCode } 
     })
 }
@@ -558,7 +559,7 @@ const openDetail = (soId, itemCode) => {
                                 </TableCell>
 
                                 <TableCell>
-                                    <Button variant="ghost" size="icon" class="h-6 w-6 text-slate-400 hover:text-blue-600" @click.stop="openDetail(hso.so_id, group.code)">
+                                    <Button variant="ghost" size="icon" class="h-6 w-6 text-slate-400 hover:text-blue-600" @click.stop="openDetail(hso.so_number, group.code)">
                                         <ExternalLink class="w-3 h-3" />
                                     </Button>
                                 </TableCell>
