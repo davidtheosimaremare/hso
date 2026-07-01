@@ -111,7 +111,7 @@ const fetchTrackingData = async () => {
             let isReady = false;
             
             // 1. Cek dari logistik status
-            if (['Already in Hokiindo Raya', 'Already in siemens Warehouse'].includes(logistik.status)) {
+            if (['Already in Hokiindo Raya'].includes(logistik.status)) {
                 isReady = true;
             }
             
