@@ -4,8 +4,10 @@ import { useRoute } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { 
     Loader2, AlertCircle, ChevronDown, ChevronUp, 
-    Truck, Package, Clock, MessageCircle, Send 
+    Truck, Package, Clock, MessageCircle, Send, Download 
 } from 'lucide-vue-next'
+import * as XLSX from 'xlsx'
+import { Button } from '@/components/ui/button'
 
 // --- SETUP & STATE ---
 const route = useRoute()
@@ -188,6 +190,29 @@ const groupedData = computed(() => {
         countProcessing: processing.reduce((acc, i) => acc + i.displayQty, 0)
     };
 })
+
+const exportToExcel = () => {
+    const data = [];
+    soItems.value.forEach(item => {
+        data.push({
+            "Kode Produk": item.code,
+            "Nama Produk": item.name,
+            "Total Order": item.qty_order,
+            "Total Terkirim": item.qty_shipped,
+            "Sisa/Proses": item.qty_order - item.qty_shipped,
+            "Status Logistik": item.status,
+            "Ex-Work Date": formatDate(item.exwork_date) || '-',
+            "ETA Port": formatDate(item.eta_date) || '-',
+            "Tiba di DUNEX": formatDate(item.dunex_date) || '-',
+            "Siap Kirim": item.is_ready ? 'Ya' : 'Tidak'
+        });
+    });
+    
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Tracking Status");
+    XLSX.writeFile(wb, `Tracking_${soHeader.value?.number || 'Data'}.xlsx`);
+}
 </script>
 
 <template>
@@ -206,17 +231,22 @@ const groupedData = computed(() => {
 
         <div v-else class="max-w-3xl mx-auto px-4 pt-8 md:pt-12">
             
-            <div class="text-center md:text-left mb-8 border-b-2 border-slate-200 pb-6">
-                <div class="inline-flex items-center gap-3 mb-4">
-                    <img src="https://shop.hokiindo.co.id/favicon.ico" alt="Hokiindo Logo" class="w-12 h-12 rounded-lg shadow bg-white"/>
-                    <h2 class="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">HSO Tracking</h2>
+            <div class="text-center md:text-left mb-8 border-b-2 border-slate-200 pb-6 flex flex-col md:flex-row md:justify-between md:items-end gap-4">
+                <div>
+                    <div class="inline-flex items-center gap-3 mb-4">
+                        <img src="https://shop.hokiindo.co.id/favicon.ico" alt="Hokiindo Logo" class="w-12 h-12 rounded-lg shadow bg-white"/>
+                        <h2 class="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">HSO Tracking</h2>
+                    </div>
+                    <h1 class="text-3xl md:text-4xl font-bold mt-2 text-slate-900">{{ soHeader?.client }}</h1>
+                    <div class="flex flex-col md:flex-row md:items-center gap-2 md:gap-6 mt-3 text-sm text-slate-500 font-medium">
+                        <span>SO #: <span class="text-slate-900">{{ soHeader?.number }}</span></span>
+                        <span class="hidden md:inline text-slate-300">|</span>
+                        <span>PO Cust: <span class="text-slate-900">{{ soHeader?.po_number }}</span></span>
+                    </div>
                 </div>
-                <h1 class="text-3xl md:text-4xl font-bold mt-2 text-slate-900">{{ soHeader?.client }}</h1>
-                <div class="flex flex-col md:flex-row md:items-center gap-2 md:gap-6 mt-3 text-sm text-slate-500 font-medium">
-                    <span>SO #: <span class="text-slate-900">{{ soHeader?.number }}</span></span>
-                    <span class="hidden md:inline text-slate-300">|</span>
-                    <span>PO Cust: <span class="text-slate-900">{{ soHeader?.po_number }}</span></span>
-                </div>
+                <Button variant="outline" class="gap-2 border-slate-300 w-full md:w-auto" @click="exportToExcel">
+                    <Download class="w-4 h-4" /> Export Excel
+                </Button>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
