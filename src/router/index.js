@@ -12,6 +12,7 @@ import PurchaseOrderListView from '@/views/PurchaseOrderListView.vue'
 import PurchaseOrderDetailView from '@/views/PurchaseOrderDetailView.vue'
 import DeliveryOrderListView from '@/views/DeliveryOrderListView.vue'
 import DeliveryOrderDetailView from '@/views/DeliveryOrderDetailView.vue'
+import ImportLogisticsView from '@/views/ImportLogisticsView.vue'
 
 // Import Public
 import PublicLayout from '@/layouts/PublicLayout.vue'
@@ -39,6 +40,7 @@ const router = createRouter({
         { path: '/purchase-orders/:id', component: PurchaseOrderDetailView },
         { path: '/delivery-orders', component: DeliveryOrderListView },
         { path: '/delivery-orders/:id', component: DeliveryOrderDetailView },
+        { path: '/import-logistics', component: ImportLogisticsView },
         { path: '/settings', component: SettingsView },
       ]
     },

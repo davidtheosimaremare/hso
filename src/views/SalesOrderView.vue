@@ -371,7 +371,7 @@ const bulkDownloadSaranOrder = async () => {
             const { data: dbData } = await supabase
                 .from('shipments')
                 .select('item_code, current_status, hpo_number')
-                .eq('sales_order_number', soNumber)
+                .eq('so_id', String(soId))
                 
             const dbShipments = dbData || []
             

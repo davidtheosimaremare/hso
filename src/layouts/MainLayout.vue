@@ -12,7 +12,8 @@ import {
   User,
 
   ShoppingBag,
-  Truck
+  Truck,
+  UploadCloud
 } from 'lucide-vue-next'
 
 
@@ -55,6 +56,7 @@ const menuItems = [
   { name: 'Sales Order', path: '/sales-orders', icon: FileText },
   { name: 'Purchase Order', path: '/purchase-orders', icon: ShoppingBag },
   { name: 'Delivery Order', path: '/delivery-orders', icon: Truck },
+  { name: 'Import Update', path: '/import-logistics', icon: UploadCloud },
   { name: 'Manage Account', path: '/settings', icon: Settings },
 ]
 
