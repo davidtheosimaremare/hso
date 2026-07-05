@@ -35,7 +35,7 @@ const router = useRouter()
 const route = useRoute()
 
 // --- STATE ---
-const purchaseOrders = ref([])
+const receiveItems = ref([])
 const isLoading = ref(false)
 const currentPage = ref(1)
 const itemsPerPage = ref(10)
@@ -89,28 +89,20 @@ const fetchOrders = async () => {
   isLoading.value = true
   // Query Supabase table directly
   let query = supabase
-    .from('accurate_purchase_orders')
-    .select('id, number, trans_date, vendor_name, status_name, total_amount')
+    .from('accurate_receive_items')
+    .select('id, number, trans_date, vendor_name, status_name, po_number')
     
-  // Note: Filtering is handled client-side for now to match SO View logic, 
-  // but could be server-side if data is large. Direct DB query allows server-side though.
-  // For consistency with existing SO view which mostly filters client side from the API response
-  // we will fetch all (or limit) and filter here, OR better, apply Supabase filters.
-  // Given we want to match the "feature" of search/filter, let's pull data.
-  // Since we might have many POs, let's limit to recent 1000 or so if no filter?
-  // Ideally we should use server side filtering.
-  
   const { data, error } = await query.order('trans_date', { ascending: false }).limit(2000)
 
   if (error) {
     console.error("Error:", error)
   } else if (data) {
-    purchaseOrders.value = data.map(item => ({
+    receiveItems.value = data.map(item => ({
       id_database: item.id,
-      no_po: item.number,
+      no_ri: item.number,
       vendor: item.vendor_name || 'Tanpa Nama',
       date: item.trans_date,
-      amount: Math.round(item.total_amount || 0), 
+      po_number: item.po_number || '-',
       status: item.status_name || ''
     }))
   }
@@ -182,7 +174,10 @@ const triggerSync = async () => {
   }
 }
 
-const triggerSyncReceiveItem = async () => {
+// Removing triggerSyncReceiveItem from this file, as it will replace the triggerSync itself.
+
+// Update `triggerSync` function for RI
+const triggerSyncRI = async () => {
   if (!confirm('Sync Penerimaan Barang dari Accurate sekarang?')) return
   isLoading.value = true
   
@@ -233,6 +228,7 @@ const triggerSyncReceiveItem = async () => {
         alert(`Sukses! Sync RI selesai. Total ${totalProcessed} data diproses.`)
     }
     
+    await fetchOrders()
   } catch (e) {
     console.error(e)
     alert(`Gagal Sync RI: ${e.message}`)
@@ -242,16 +238,14 @@ const triggerSyncReceiveItem = async () => {
 }
 
 const isSyncing = ref(false)
-const lastSyncTime = ref(localStorage.getItem('po_last_sync'))
+const lastSyncTime = ref(localStorage.getItem('ri_last_sync'))
 
 const checkAndTriggerAutoSync = async () => {
-    // Check if we should sync (e.g., every 60 minutes)
     const now = Date.now()
     const last = lastSyncTime.value ? parseInt(lastSyncTime.value) : 0
     const diffMinutes = (now - last) / (1000 * 60)
     
     if (diffMinutes > 60 || !last) {
-        console.log("Auto-Sync PO Triggered (Last sync: " + (last ? diffMinutes.toFixed(0) + " mins ago" : "Never") + ")")
         await runBackgroundSync()
     }
 }
@@ -260,14 +254,13 @@ const runBackgroundSync = async () => {
     if (isSyncing.value) return
     isSyncing.value = true
     
-    // Non-blocking sync (mostly copied from triggerSync but without alerts/confirms)
     let page = 1
     let hasMore = true
     let totalProcessed = 0
     
     try {
         const { data: { session } } = await supabase.auth.getSession()
-        const endpoint = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sync-accurate-pos'
+        const endpoint = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sync-accurate-receive-items'
 
         while (hasMore) {
              try {
@@ -288,7 +281,7 @@ const runBackgroundSync = async () => {
                 
                 if (hasMore) {
                     page++
-                    await new Promise(r => setTimeout(r, 1000)) // Slower interval for background
+                    await new Promise(r => setTimeout(r, 1000))
                 }
             } catch (pageErr) {
                 console.error(`Background Sync Error page ${page}:`, pageErr)
@@ -296,11 +289,9 @@ const runBackgroundSync = async () => {
             }
         }
         
-        // Success
         lastSyncTime.value = Date.now().toString()
-        localStorage.setItem('po_last_sync', lastSyncTime.value)
-        console.log(`Background Sync Finished. Processed: ${totalProcessed}`)
-        await fetchOrders() // Refresh data silently
+        localStorage.setItem('ri_last_sync', lastSyncTime.value)
+        await fetchOrders()
         
     } catch (e) {
         console.error("Background Sync Failed:", e)
@@ -374,13 +365,14 @@ const toggleSort = (key) => {
 }
 
 const filteredAndSortedOrders = computed(() => {
-  let result = [...purchaseOrders.value]
+  let result = [...receiveItems.value]
 
   if (searchQuery.value) {
     const query = searchQuery.value.toLowerCase()
-    result = result.filter(po => 
-      po.vendor.toLowerCase().includes(query) || 
-      po.no_po.toLowerCase().includes(query)
+    result = result.filter(ri => 
+      ri.vendor.toLowerCase().includes(query) || 
+      ri.no_ri.toLowerCase().includes(query) ||
+      ri.po_number.toLowerCase().includes(query)
     )
   }
 
@@ -445,10 +437,6 @@ const paginatedOrders = computed(() => {
   return filteredAndSortedOrders.value.slice(start, start + itemsPerPage.value)
 })
 
-const pageTotalAmount = computed(() => {
-    return paginatedOrders.value.reduce((sum, item) => sum + item.amount, 0)
-})
-
 const nextPage = () => { if (currentPage.value < totalPages.value) currentPage.value++ }
 const prevPage = () => { if (currentPage.value > 1) currentPage.value-- }
 
@@ -502,20 +490,20 @@ const resetFilter = () => {
 const getFilename = (ext) => `Laporan_PurchaseOrder_${new Date().toISOString().split('T')[0]}.${ext}`
 
 const exportToExcel = () => {
-  const dataToExport = filteredAndSortedOrders.value.map(po => ({
-    "No PO": po.no_po, "Vendor": po.vendor, "Tanggal": po.date, "Status": po.status, "Nilai": po.amount
+  const dataToExport = filteredAndSortedOrders.value.map(ri => ({
+    "No RI": ri.no_ri, "Vendor": ri.vendor, "Tanggal": ri.date, "Status": ri.status, "No PO": ri.po_number
   }))
   const ws = XLSX.utils.json_to_sheet(dataToExport)
   const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, "Purchase Orders")
+  XLSX.utils.book_append_sheet(wb, ws, "Receive Items")
   XLSX.writeFile(wb, getFilename('xlsx'))
 }
 
 const exportToPDF = () => {
   const doc = new jsPDF()
-  doc.text("Laporan Purchase Order", 14, 15)
-  const rows = filteredAndSortedOrders.value.map(po => [po.no_po, po.vendor, po.date, po.status, formatCurrency(po.amount)])
-  autoTable(doc, { head: [["No PO", "Vendor", "Tanggal", "Status", "Nilai"]], body: rows, startY: 25, headStyles: { fillColor: [185, 28, 28] } })
+  doc.text("Laporan Penerimaan Barang", 14, 15)
+  const rows = filteredAndSortedOrders.value.map(ri => [ri.no_ri, ri.vendor, ri.date, ri.status, ri.po_number])
+  autoTable(doc, { head: [["No RI", "Vendor", "Tanggal", "Status", "No PO"]], body: rows, startY: 25, headStyles: { fillColor: [185, 28, 28] } })
   doc.save(getFilename('pdf'))
 }
 
@@ -538,8 +526,8 @@ const getStatusColor = (status) => {
     
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm transition-colors duration-300">
       <div>
-        <h2 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Purchase Orders</h2>
-        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Total: {{ purchaseOrders.length }} Pesanan</p>
+        <h2 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Penerimaan Barang (RI)</h2>
+        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Total: {{ receiveItems.length }} Penerimaan</p>
       </div>
       <div class="flex gap-2 w-full md:w-auto">
         <DropdownMenu>
@@ -557,13 +545,9 @@ const getStatusColor = (status) => {
             <RefreshCw class="w-3 h-3 animate-spin"/>
             Syncing...
         </div>
-        <Button size="sm" @click="triggerSync" :disabled="isLoading || isSyncing" class="w-full md:w-auto bg-slate-900 hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 text-white">
+        <Button size="sm" @click="triggerSyncRI" :disabled="isLoading || isSyncing" class="w-full md:w-auto bg-slate-900 hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 text-white">
           <RefreshCw class="w-4 h-4 mr-2" :class="{'animate-spin': isLoading}" /> 
-          {{ isLoading ? 'Loading...' : 'Sync PO' }}
-        </Button>
-        <Button size="sm" @click="triggerSyncReceiveItem" :disabled="isLoading || isSyncing" class="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white">
-          <RefreshCw class="w-4 h-4 mr-2" :class="{'animate-spin': isLoading}" /> 
-          {{ isLoading ? 'Loading...' : 'Sync Terima Brg' }}
+          {{ isLoading ? 'Loading...' : 'Sync Accurate' }}
         </Button>
       </div>
     </div>
@@ -687,8 +671,8 @@ const getStatusColor = (status) => {
         <TableHeader class="bg-slate-900 dark:bg-black">
           <TableRow class="hover:bg-slate-900 dark:hover:bg-black border-none">
             
-            <TableHead class="text-white font-bold cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-900 h-12 w-[180px]" @click="toggleSort('no_po')">
-                <div class="flex items-center gap-2">No. PO <ChevronsUpDown v-if="sortKey !== 'no_po'" class="w-3 h-3 opacity-50"/> <component :is="sortOrder === 'asc' ? ArrowUp : ArrowDown" v-else class="w-3 h-3 text-red-400"/></div>
+            <TableHead class="text-white font-bold cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-900 h-12 w-[180px]" @click="toggleSort('no_ri')">
+                <div class="flex items-center gap-2">No. RI <ChevronsUpDown v-if="sortKey !== 'no_ri'" class="w-3 h-3 opacity-50"/> <component :is="sortOrder === 'asc' ? ArrowUp : ArrowDown" v-else class="w-3 h-3 text-red-400"/></div>
             </TableHead>
 
             <TableHead class="text-white font-bold cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-900" @click="toggleSort('vendor')">
@@ -703,8 +687,8 @@ const getStatusColor = (status) => {
                 <div class="flex items-center gap-2">Status <ChevronsUpDown v-if="sortKey !== 'status'" class="w-3 h-3 opacity-50"/> <component :is="sortOrder === 'asc' ? ArrowUp : ArrowDown" v-else class="w-3 h-3 text-red-400"/></div>
             </TableHead>
 
-            <TableHead class="hidden md:table-cell text-right text-white font-bold cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-900 w-[180px]" @click="toggleSort('amount')">
-                <div class="flex items-center justify-end gap-2">Nilai (IDR) <ChevronsUpDown v-if="sortKey !== 'amount'" class="w-3 h-3 opacity-50"/> <component :is="sortOrder === 'asc' ? ArrowUp : ArrowDown" v-else class="w-3 h-3 text-red-400"/></div>
+            <TableHead class="hidden md:table-cell text-right text-white font-bold cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-900 w-[180px]" @click="toggleSort('po_number')">
+                <div class="flex items-center justify-end gap-2">No PO <ChevronsUpDown v-if="sortKey !== 'po_number'" class="w-3 h-3 opacity-50"/> <component :is="sortOrder === 'asc' ? ArrowUp : ArrowDown" v-else class="w-3 h-3 text-red-400"/></div>
             </TableHead>
 
             <TableHead class="w-[50px] text-white"></TableHead>
@@ -726,36 +710,36 @@ const getStatusColor = (status) => {
             </TableCell>
           </TableRow>
 
-          <TableRow v-else v-for="po in paginatedOrders" :key="po.id_database" class="group cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0" @click="router.push(`/purchase-orders/${po.id_database}`)">
+          <TableRow v-else v-for="ri in paginatedOrders" :key="ri.id_database" class="group cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0" @click="router.push(`/receive-items/${ri.id_database}`)">
             
             <TableCell class="py-4 font-bold text-slate-900 dark:text-white align-middle">
               <div class="flex items-center gap-3">
                 <div class="p-2 bg-slate-100 dark:bg-slate-700 rounded-md text-slate-500 dark:text-slate-300 group-hover:bg-red-50 group-hover:text-red-600 dark:group-hover:bg-red-900/30 dark:group-hover:text-red-400 transition-colors">
                     <FileText class="w-4 h-4" />
                 </div>
-                {{ po.no_po }}
+                {{ ri.no_ri }}
               </div>
             </TableCell>
 
             <TableCell class="py-4 align-middle">
               <div class="flex flex-col">
-                <span class="font-bold text-slate-700 dark:text-slate-200 text-sm truncate max-w-[250px]" :title="po.vendor">{{ po.vendor }}</span>
-                <span class="text-[11px] text-slate-400 md:hidden mt-1 font-medium">{{ formatShortDate(po.date) }}</span>
+                <span class="font-bold text-slate-700 dark:text-slate-200 text-sm truncate max-w-[250px]" :title="ri.vendor">{{ ri.vendor }}</span>
+                <span class="text-[11px] text-slate-400 md:hidden mt-1 font-medium">{{ formatShortDate(ri.date) }}</span>
               </div>
             </TableCell>
 
             <TableCell class="hidden md:table-cell py-4 text-slate-600 dark:text-slate-400 text-sm font-medium align-middle">
-                {{ formatShortDate(po.date) }}
+                {{ formatShortDate(ri.date) }}
             </TableCell>
 
             <TableCell class="py-4 align-middle">
-              <Badge variant="outline" class="transition-all duration-300 font-medium px-2.5 py-0.5 rounded text-xs uppercase tracking-wide border shadow-sm" :class="getStatusColor(po.status)">
-                {{ po.status }}
+              <Badge variant="outline" class="transition-all duration-300 font-medium px-2.5 py-0.5 rounded text-xs uppercase tracking-wide border shadow-sm" :class="getStatusColor(ri.status)">
+                {{ ri.status }}
               </Badge>
             </TableCell>
 
             <TableCell class="hidden md:table-cell text-right font-bold text-slate-800 dark:text-slate-200 text-sm py-4 align-middle">
-                {{ formatCurrency(po.amount) }}
+                {{ ri.po_number }}
             </TableCell>
 
             <TableCell class="py-4 align-middle text-right">
@@ -785,10 +769,6 @@ const getStatusColor = (status) => {
             </div>
             
             <div class="hidden sm:block h-4 w-px bg-slate-300 dark:bg-slate-700"></div>
-
-            <div class="text-xs text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-800 px-3 py-1.5 rounded border border-slate-200 dark:border-slate-700 shadow-sm">
-                Total Nilai Halaman: <span class="font-bold text-slate-900 dark:text-white ml-1">{{ formatCurrency(pageTotalAmount) }}</span>
-            </div>
         </div>
 
         <div class="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">

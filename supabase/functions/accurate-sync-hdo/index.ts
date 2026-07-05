@@ -79,6 +79,7 @@ serve(async (req) => {
                     items: doDetail.detailItem.map((item: any) => ({
                         code: item.item?.no || '',
                         name: item.item?.name || item.detailName || '',
+                        note: item.detailNotes || '',
                         qty_shipped: item.quantity || 0,
                         unit: item.itemUnit?.name || 'Pcs'
                     }))
@@ -89,6 +90,7 @@ serve(async (req) => {
                     if (item.item && item.item.no) {
                         itemMapping.push({
                             itemCode: item.item.no,
+                            note: item.detailNotes || '',
                             doNumber: doDetail.number,
                             doDate: doDetail.transDate
                         })

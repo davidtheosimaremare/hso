@@ -180,6 +180,84 @@ async function handleSalesOrder(id: number, authHeaders: Record<string, string>)
     return `SO ${so.number} synced`
 }
 
+/** Sync a single Receive Item (Penerimaan Barang) — update shipments status */
+async function handleReceiveItem(id: number, authHeaders: Record<string, string>): Promise<string> {
+    const res = await fetch(`${BASE_API}/receive-item/detail.do?id=${id}`, { headers: authHeaders })
+    if (!res.ok) throw new Error(`RI detail fetch failed: ${res.status}`)
+    const json = await res.json()
+    const doc = json.d
+    if (!doc) throw new Error(`RI ${id} not found in Accurate`)
+
+    console.log(`[webhook] RI payload keys: ${Object.keys(doc).join(', ')}`)
+    
+    // Extract PO number if it exists
+    const poNumber = doc.purchaseOrder?.number ?? doc.poNumber ?? null
+    const transDate = formatDate(doc.transDate)
+
+    const header = {
+        id: safeInt(doc.id),
+        number: doc.number ?? 'UNKNOWN',
+        vendor_id: safeInt(doc.vendor?.id),
+        vendor_name: doc.vendor?.name ?? null,
+        trans_date: transDate,
+        status_name: doc.statusName ?? null,
+        branch_id: safeInt(doc.branch?.id),
+        po_number: poNumber
+    }
+
+    const itemsForDb = (doc.detailItem ?? []).map((item: any, idx: number) => ({
+        id: safeInt(item.id),
+        receive_item_id: safeInt(doc.id),
+        item_code: item.item?.no ?? null,
+        item_name: item.item?.name ?? null,
+        quantity: safeFloat(item.quantity),
+        unit_name: item.itemUnit?.name ?? null,
+        detail_notes: item.detailNotes ?? null,
+        item_seq: idx,
+        hso_number: extractHso(item.detailNotes ?? null),
+    }))
+
+    const { error: hErr } = await supabase.from('accurate_receive_items').upsert(header, { onConflict: 'id' })
+    if (hErr) throw new Error(`RI header upsert: ${hErr.message}`)
+
+    await supabase.from('accurate_receive_item_items').delete().eq('receive_item_id', header.id)
+    if (itemsForDb.length > 0) {
+        const { error: iErr } = await supabase.from('accurate_receive_item_items').insert(itemsForDb)
+        if (iErr) throw new Error(`RI items insert: ${iErr.message}`)
+    }
+
+    if (!poNumber) {
+        return `RI ${doc.number} synced (No PO linked, DB saved, skipped shipment update)`
+    }
+
+    let updatedShipments = 0
+    const items = doc.detailItem ?? []
+    
+    for (const item of items) {
+        const itemCode = item.item?.no
+        if (!itemCode) continue
+
+        // Update shipments table where item_code and hpo_number match
+        const { error } = await supabase
+            .from('shipments')
+            .update({
+                current_status: 'Already in Hokiindo Raya',
+                hokiindo_date: transDate,
+                updated_at: new Date().toISOString()
+            })
+            .eq('item_code', itemCode)
+            .eq('hpo_number', poNumber)
+
+        if (!error) {
+            updatedShipments++
+        } else {
+            console.error(`[webhook] Failed to update shipment for ${itemCode} / ${poNumber}:`, error.message)
+        }
+    }
+
+    return `RI ${doc.number} synced to DB (${updatedShipments} shipments updated to Hokiindo Raya)`
+}
+
 // ─── Webhook Router ───────────────────────────────────────────────────────────
 
 /**
@@ -205,6 +283,7 @@ function detectType(body: any): { type: string; id: number } | null {
             if (!id && typeStr === 'purchase_order') id = dataItem.purchaseOrderId
             if (!id && typeStr === 'delivery_order') id = dataItem.deliveryOrderId
             if (!id && typeStr === 'sales_order') id = dataItem.salesOrderId
+            if (!id && typeStr === 'receive_item') id = dataItem.receiveItemId
             
             if (id) return { type: typeStr, id: Number(id) }
         }
@@ -225,6 +304,7 @@ function detectType(body: any): { type: string; id: number } | null {
     if (body.purchaseOrderId) return { type: 'purchase_order', id: Number(body.purchaseOrderId) }
     if (body.deliveryOrderId) return { type: 'delivery_order', id: Number(body.deliveryOrderId) }
     if (body.salesOrderId)    return { type: 'sales_order',    id: Number(body.salesOrderId) }
+    if (body.receiveItemId)   return { type: 'receive_item',   id: Number(body.receiveItemId) }
 
     return null
 }
@@ -240,6 +320,9 @@ const TYPE_ALIASES: Record<string, string> = {
     'sales_order': 'so',
     'salesOrder': 'so',
     'pesanan_penjualan': 'so',
+    'receive_item': 'ri',
+    'receiveItem': 'ri',
+    'penerimaan_barang': 'ri',
 }
 
 // ─── Main Handler ─────────────────────────────────────────────────────────────
@@ -308,6 +391,9 @@ serve(async (req) => {
                 break
             case 'so':
                 message = await handleSalesOrder(id, authHeaders)
+                break
+            case 'ri':
+                message = await handleReceiveItem(id, authHeaders)
                 break
             default:
                 message = `Type "${normalizedType}" belum ada handler-nya — payload dicatat di logs`

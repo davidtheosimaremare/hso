@@ -12,6 +12,8 @@ import PurchaseOrderListView from '@/views/PurchaseOrderListView.vue'
 import PurchaseOrderDetailView from '@/views/PurchaseOrderDetailView.vue'
 import DeliveryOrderListView from '@/views/DeliveryOrderListView.vue'
 import DeliveryOrderDetailView from '@/views/DeliveryOrderDetailView.vue'
+import ReceiveItemListView from '@/views/ReceiveItemListView.vue'
+import ReceiveItemDetailView from '@/views/ReceiveItemDetailView.vue'
 import ImportLogisticsView from '@/views/ImportLogisticsView.vue'
 
 // Import Public
@@ -40,6 +42,8 @@ const router = createRouter({
         { path: '/purchase-orders/:id', component: PurchaseOrderDetailView },
         { path: '/delivery-orders', component: DeliveryOrderListView },
         { path: '/delivery-orders/:id', component: DeliveryOrderDetailView },
+        { path: '/receive-items', component: ReceiveItemListView },
+        { path: '/receive-items/:id', component: ReceiveItemDetailView },
         { path: '/import-logistics', component: ImportLogisticsView },
         { path: '/settings', component: SettingsView },
       ]
