@@ -73,6 +73,33 @@ const copySku = (sku) => {
     }, 2000)
   }
 }
+
+const copiedPartNumber = ref(null)
+const copyPartNumber = (code) => {
+  if (!code) return
+  navigator.clipboard.writeText(code).then(() => {
+    copiedPartNumber.value = code
+    setTimeout(() => { copiedPartNumber.value = null }, 2000)
+  })
+}
+
+const copiedRowCode = ref(null)
+const copyPurchaseRow = (item) => {
+  const text = `${item.code}\t${item.name}\t${item.order_suggestion}`
+  navigator.clipboard.writeText(text).then(() => {
+    copiedRowCode.value = item.code
+    setTimeout(() => { if (copiedRowCode.value === item.code) copiedRowCode.value = null }, 2000)
+  })
+}
+
+const isAllPurchaseCopied = ref(false)
+const copyAllPurchaseRows = () => {
+  const rows = itemsToPurchase.value.map(i => `${i.code}\t${i.name}\t${i.order_suggestion}`).join('\n')
+  navigator.clipboard.writeText(rows).then(() => {
+    isAllPurchaseCopied.value = true
+    setTimeout(() => { isAllPurchaseCopied.value = false }, 2000)
+  })
+}
 // Helper: Generate unique code for tracking link
 const generateUUID = () => {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
@@ -132,45 +159,23 @@ const isAllSelected = computed(() => {
 // --- COMPUTED: PURCHASING (Saran Order) ---
 const itemsToPurchase = computed(() => {
     if (!soDetail.value || !soDetail.value.items) return []
-    return soDetail.value.items.filter(item => {
-        return getRowStatus(item).text === 'PERLU DIPESAN';
-    })
+    return soDetail.value.items.map(item => {
+        const statusText = getRowStatus(item).text || '';
+        if (statusText.startsWith('PERLU DIPESAN') || statusText.startsWith('KURANG DIPESAN')) {
+            const hpoEntries = getHpoEntries(item);
+            let finalSuggestion = item.qty_to_order;
+            if (hpoEntries.length > 0) {
+                const totalPo = hpoEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0);
+                finalSuggestion = Math.max(0, item.qty_to_order - totalPo);
+            }
+            return { ...item, order_suggestion: finalSuggestion };
+        }
+        return null;
+    }).filter(item => item !== null)
 })
 
 // --- COMPUTED: RIWAYAT DOKUMEN ---
-const groupedShipments = computed(() => {
-    if (!soDetail.value) return [];
-    const shipmentsMap = new Map();
-    
-    if (soDetail.value.shipments) {
-        soDetail.value.shipments.forEach(s => {
-            const key = s.no.trim().toLowerCase();
-            shipmentsMap.set(key, { 
-                no: s.no, 
-                date: s.date, 
-                status: s.status, 
-                source: s.source || 'ACCURATE', 
-                items: s.items || [] // Use items from shipment if available
-            });
-        });
-    }
-
-    if (soDetail.value.items) {
-        soDetail.value.items.forEach(item => {
-            const hdoRaw = item.logistics_hdo ? item.logistics_hdo.trim() : null;
-            if (hdoRaw) {
-                const key = hdoRaw.toLowerCase();
-                if (shipmentsMap.has(key)) {
-                    shipmentsMap.get(key).items.push(item);
-                } else {
-                    shipmentsMap.set(key, { no: hdoRaw, date: item.logistics_date ? formatDateSimple(item.logistics_date) : '-', status: 'Manual Update', source: 'MANUAL', items: [item] });
-                }
-            }
-        });
-    }
-    return Array.from(shipmentsMap.values()).sort((a, b) => b.no.localeCompare(a.no));
-})
-
+// groupedShipments logic has been moved down below getHpoEntries
 // --- HELPER UNTUK PARSING NOTE ---
 const parseStockFromNote = (note) => {
     if (!note) return { qty: 0, isReady: false, hasInfo: false };
@@ -238,12 +243,17 @@ import * as XLSX from 'xlsx'
 const exportToExcel = () => {
     if (itemsToPurchase.value.length === 0) return alert("Tidak ada barang yang perlu dipesan.");
     
+    const hsoNumber = soDetail.value?.number || '-';
+    const customerName = soDetail.value?.customer?.name || '-';
+
     const dataToExport = itemsToPurchase.value.map(item => ({
+        "No HSO": hsoNumber,
+        "Nama PT": customerName,
         "Kode Produk": item.code,
         "Nama Produk": item.name,
         "Total Order (SO)": item.qty_order,
         "Stock Gudang": item.parsed_stock_qty || 0,
-        "SARAN ORDER (QTY)": item.qty_to_order,
+        "SARAN ORDER (QTY)": item.order_suggestion,
         "Catatan Admin": item.admin_note || '-',
     }));
 
@@ -251,6 +261,8 @@ const exportToExcel = () => {
     
     // Auto-size columns
     const colWidths = [
+      { wch: 15 }, // No HSO
+      { wch: 30 }, // Nama PT
       { wch: 20 }, // Kode Produk
       { wch: 50 }, // Nama Produk
       { wch: 15 }, // Total Order
@@ -392,10 +404,12 @@ const fetchHdoInBackground = async (doNumbers) => {
 }
 
 // --- 2. DATA FETCHING ---
-const fetchDetail = async (skipHpoSync = false) => {
-  isLoading.value = true
-  loadingProgress.value = 0
-  loadingMessage.value = 'Menghubungkan ke Accurate...'
+const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
+  if (showLoader) {
+    isLoading.value = true
+    loadingProgress.value = 0
+    loadingMessage.value = 'Menghubungkan ke Accurate...'
+  }
   
   try {
     let targetId = resolvedSoId.value
@@ -666,7 +680,7 @@ const getRowStatus = (item) => {
   
   // Jika sudah ada pengiriman sebagian (masih ada sisa), status = DIKIRIM SEBAGIAN
   if (item.qty_shipped > 0 && item.qty_remaining > 0) {
-    return { text: 'DIKIRIM SEBAGIAN', class: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800', icon: Truck }
+    return { text: `DIKIRIM SEBAGIAN (SISA ${item.qty_remaining} ${item.unit})`, class: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800', icon: Truck }
   }
   
   // Jika sudah dikirim semua (tidak ada sisa tapi belum dikonfirmasi fully_shipped)
@@ -682,7 +696,8 @@ const getRowStatus = (item) => {
   if (hpoEntries.length > 0) {
     const totalPo = hpoEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
     if (totalPo < item.qty_to_order) {
-      return { text: 'KURANG DIPESAN', class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: AlertTriangle }
+      const shortage = item.qty_to_order - totalPo
+      return { text: `KURANG DIPESAN (${shortage} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: AlertTriangle }
     } else if (totalPo > item.qty_to_order) {
       return { text: 'KELEBIHAN DIPESAN', class: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800', icon: AlertTriangle }
     }
@@ -696,7 +711,7 @@ const getRowStatus = (item) => {
   
   // Jika belum ada HPO dan perlu order (stock kurang)
   if (item.qty_to_order > 0) {
-    return { text: 'PERLU DIPESAN', class: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800', icon: AlertCircle }
+    return { text: `PERLU DIPESAN (${item.qty_to_order} ${item.unit})`, class: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800', icon: AlertCircle }
   }
   
   // Jika stock ready tapi belum ada pengiriman
@@ -753,6 +768,7 @@ const getHpoEntries = (item) => {
   const poItems = hpoDetails.value.filter(p => p.itemCode === item.code)
   return poItems.map(p => ({
     poNumber: p.poNumber,
+    poDate: p.poDate,
     quantity: p.quantity,
     description: p.description
   }))
@@ -772,6 +788,84 @@ const getHpoShortage = (item) => {
   const totalPo = entries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
   return item.qty_to_order - totalPo
 }
+
+const groupedShipments = computed(() => {
+    if (!soDetail.value) return [];
+    const shipmentsMap = new Map(); // For DO (HDO)
+    const hpoMap = new Map(); // For PO (HPO)
+    
+    // Create a Set of item codes that belong to this Sales Order
+    const validSoItemCodes = new Set(soDetail.value?.items?.map(i => i.code) || []);
+    
+    // 1. Initialize from Accurate DO history
+    if (soDetail.value.shipments) {
+        soDetail.value.shipments.forEach(s => {
+            const key = s.no.trim().toLowerCase();
+            
+            // Filter DO items to ONLY include items that belong to this Sales Order
+            const filteredAccurateItems = s.items ? s.items.filter(i => validSoItemCodes.has(i.code)) : [];
+            
+            shipmentsMap.set(key, { 
+                no: s.no, 
+                type: 'HDO',
+                date: s.date, 
+                status: s.status, 
+                source: s.source || 'ACCURATE', 
+                items: filteredAccurateItems
+            });
+        });
+    }
+
+    // 2. Loop through local items to map HDO and HPO
+    if (soDetail.value.items) {
+        soDetail.value.items.forEach(item => {
+            // A. Handle HDO (Pengiriman)
+            const hdoRaw = item.logistics_hdo ? item.logistics_hdo.trim() : null;
+            if (hdoRaw) {
+                const key = hdoRaw.toLowerCase();
+                let doc = shipmentsMap.get(key);
+                if (!doc) {
+                    doc = { no: hdoRaw, type: 'HDO', date: item.logistics_date ? formatDateSimple(item.logistics_date) : '-', status: 'Manual Update', source: 'MANUAL', items: [] };
+                    shipmentsMap.set(key, doc);
+                }
+                // Avoid duplicate if Accurate API already provided this item
+                if (!doc.items.some(i => i.code === item.code)) {
+                    // if manual, use qty_shipped
+                    doc.items.push({ ...item, name: item.name, code: item.code, qty_shipped: item.qty_shipped || 0, unit: item.unit });
+                }
+            }
+            
+            // B. Handle HPO (Pesanan Pembelian)
+            const hpos = getHpoEntries(item);
+            hpos.forEach(hpo => {
+                const poNum = hpo.poNumber.trim();
+                const key = poNum.toLowerCase();
+                let doc = hpoMap.get(key);
+                if (!doc) {
+                    const shipmentData = getHpoShipment(item, poNum);
+                    doc = { 
+                        no: poNum, 
+                        type: 'HPO', 
+                        date: hpo.poDate ? formatDateSimple(hpo.poDate) : ((shipmentData && shipmentData.status_date) ? formatDateSimple(shipmentData.status_date) : '-'), 
+                        status: (shipmentData && shipmentData.current_status) ? shipmentData.current_status : 'Diproses', 
+                        source: 'DB', 
+                        items: [] 
+                    };
+                    hpoMap.set(key, doc);
+                }
+                if (!doc.items.some(i => i.code === item.code)) {
+                    doc.items.push({ ...item, name: item.name, code: item.code, qty_shipped: hpo.quantity, unit: item.unit });
+                }
+            });
+        });
+    }
+    
+    // Combine HDO and HPO
+    const allDocs = [...Array.from(shipmentsMap.values()), ...Array.from(hpoMap.values())];
+    
+    // Sort by NO descending
+    return allDocs.sort((a, b) => b.no.localeCompare(a.no));
+})
 
 const openSiePortal = (item) => { const code = item.code ? item.code.trim() : ''; if(!code || code === '-') return; window.open(`https://sieportal.siemens.com/en-id/products-services/detail/${code}?tree=CatalogTree`, '_blank'); }
 const toggleSelectAll = () => { if (isAllSelected.value) selectedItemCodes.value = []; else selectedItemCodes.value = soDetail.value.items.filter(i => !i.is_fully_shipped).map(i => i.code) }
@@ -895,7 +989,7 @@ const saveUpdate = async () => {
             }
         } 
         
-        await fetchDetail(true) // skip HPO sync
+        await fetchDetail(true, false) // skip HPO sync, no loading screen
         isModalOpen.value = false
         selectedItemCodes.value = [] 
     } catch (error) { alert("Gagal update status: " + error.message) } finally { isSubmitting.value = false } 
@@ -1129,16 +1223,7 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                             </div>
                             </template>
                             
-                            <!-- Notifikasi Shortage dari HPO vs Qty Order -->
-                            <div v-if="getHpoShortage(item) > 0" class="mt-1.5 text-[10px] text-red-600 dark:text-red-400 italic flex items-center gap-1 font-bold">
-                                <AlertTriangle class="w-3 h-3" />
-                                Kurang dipesan di PO: {{ getHpoShortage(item) }} {{ item.unit }}
-                            </div>
-                            <!-- Notifikasi kekurangan untuk partial shipment -->
-                            <div v-if="item.qty_shipped > 0 && item.qty_remaining > 0" class="text-[10px] text-orange-600 dark:text-orange-400 italic flex items-center gap-1">
-                                <AlertCircle class="w-3 h-3" />
-                                Pemesanan Kekurangan ({{ item.qty_remaining }} {{ item.unit }})
-                            </div>
+                            <!-- Notifications for shortage/remaining have been moved to the status badge text -->
                         </div>
                         
                         <!-- Warning jika dikirim sebagian tapi belum ada HPO -->
@@ -1156,7 +1241,7 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                         </div>
 
                         <!-- Warning jika perlu PO tapi belum ada HPO -->
-                        <div v-else-if="item.qty_to_order > 0 && !item.is_fully_shipped && !isSyncing && getHpoEntries(item).length === 0" class="mt-1 text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
+                        <div v-else-if="item.qty_to_order > 0 && !item.is_fully_shipped && !isSyncing && getHpoEntries(item).length === 0" class="mt-1.5 text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
                             <Clock class="w-3 h-3" />
                             Pesanan sudah {{ getDaysSinceOrder() }} hari
                         </div>
@@ -1214,61 +1299,98 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
         </Card>
 
         <!-- Actual Content setelah loading -->
-        <Card v-else-if="itemsToPurchase.length > 0" class="border shadow-sm rounded-lg bg-white dark:bg-slate-800 border-l-4 border-l-red-600 animate-in slide-in-from-bottom-2 duration-500">
+        <Card v-else-if="itemsToPurchase.length > 0" class="border shadow-sm rounded-lg bg-white dark:bg-slate-800 border-l-4 border-l-red-500 animate-in slide-in-from-bottom-2 duration-500">
             <CardHeader class="pb-3 border-b border-gray-100 dark:border-slate-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors select-none" @click="isPurchaseExpanded = !isPurchaseExpanded">
                 <div class="flex justify-between items-center">
                     <div class="flex items-center gap-3">
                         <component :is="isPurchaseExpanded ? ChevronUp : ChevronDown" class="w-5 h-5 text-gray-500 transition-transform duration-200" />
                         <div>
                             <CardTitle class="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
-                                <AlertTriangle class="w-5 h-5 text-red-600"/>
+                                <AlertTriangle class="w-5 h-5 text-red-500"/>
                                 Barang Perlu di Order
                                 <Badge class="bg-red-100 text-red-700 hover:bg-red-200 border-0">{{ itemsToPurchase.length }} Item</Badge>
                             </CardTitle>
                             <CardDescription class="mt-1" v-if="isPurchaseExpanded">
-                                Daftar berikut adalah barang yang <b>belum memiliki stock</b> berdasarkan catatan admin.
+                                Daftar berikut adalah barang yang <b>belum dipesan atau kurang jumlahnya</b> berdasarkan catatan admin dan data PO Accurate.
                             </CardDescription>
                             <CardDescription class="mt-0" v-else>
                                 Klik untuk melihat detail barang yang perlu dipesan.
                             </CardDescription>
                         </div>
                     </div>
-                    <div @click.stop>
-                        <Button variant="outline" class="border-green-600 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20" @click="exportToExcel">
-                            <Download class="w-4 h-4 mr-2"/> Download Excel
+                    <div class="flex items-center gap-2" @click.stop>
+                        <Button variant="outline" size="sm"
+                            :class="isAllPurchaseCopied ? 'border-green-500 text-green-600 bg-green-50 dark:bg-green-900/20' : 'border-gray-300 text-gray-600 hover:bg-gray-50 dark:hover:bg-slate-700'"
+                            class="gap-1.5 text-xs transition-all duration-300"
+                            @click.stop="copyAllPurchaseRows">
+                            <component :is="isAllPurchaseCopied ? CheckCircle2 : Copy" class="w-3.5 h-3.5 transition-all"/>
+                            {{ isAllPurchaseCopied ? 'Disalin!' : 'Copy Semua ke Excel' }}
+                        </Button>
+                        <Button variant="outline" size="sm" class="border-green-600 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 gap-1.5 text-xs" @click="exportToExcel">
+                            <Download class="w-3.5 h-3.5"/> Download Excel
                         </Button>
                     </div>
                 </div>
             </CardHeader>
-            <div v-show="isPurchaseExpanded" class="p-0 overflow-x-auto transition-all duration-300">
-                <Table>
-                    <TableHeader class="bg-red-50/50 dark:bg-red-900/10">
-                        <TableRow>
-                            <TableHead class="w-[40%] text-xs font-bold uppercase text-gray-500">Produk</TableHead>
-                            <TableHead class="text-center text-xs font-bold uppercase text-gray-500">Stock Gudang (Note)</TableHead>
-                            <TableHead class="text-center text-xs font-bold uppercase text-red-600">Saran Order</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        <TableRow v-for="(item, idx) in itemsToPurchase" :key="idx" class="border-b border-gray-100 dark:border-slate-700 last:border-0">
-                            <TableCell class="py-3">
-                                <div class="font-bold text-sm text-gray-800 dark:text-gray-200">{{ item.name }}</div>
-                                <div class="text-xs text-gray-400 font-mono">{{ item.code }}</div>
-                            </TableCell>
-                            <TableCell class="text-center">
-                                <span v-if="item.parsed_stock_qty === 'Ready'" class="text-xs font-bold text-emerald-600">READY</span>
-                                <span v-else>{{ item.parsed_stock_qty }}</span>
-                            </TableCell>
-                            <TableCell class="text-center">
-                                <Badge class="bg-red-600 hover:bg-red-700 text-white text-sm font-bold px-3">
-                                    {{ item.order_suggestion }} {{ item.unit }}
-                                </Badge>
-                            </TableCell>
-                        </TableRow>
-                    </TableBody>
-                </Table>
+            <div v-show="isPurchaseExpanded" class="divide-y divide-gray-100 dark:divide-slate-700 transition-all duration-300">
+                <div v-for="(item, idx) in itemsToPurchase" :key="idx"
+                    class="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 dark:hover:bg-slate-700/30 transition-colors group">
+                    
+                    <!-- Status type indicator bar -->
+                    <div class="flex-shrink-0 flex flex-col items-center gap-1 w-24">
+                        <div :class="getRowStatus(item).text.startsWith('KURANG') ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-red-100 text-red-700 border-red-200'"
+                            class="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border whitespace-nowrap text-center">
+                            {{ getRowStatus(item).text.startsWith('KURANG') ? 'Kurang PO' : 'Belum Dipesan' }}
+                        </div>
+                    </div>
+
+                    <!-- Code + Name -->
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="font-mono font-bold text-sm text-gray-800 dark:text-gray-100 tracking-wide">{{ item.code }}</span>
+                            <button @click.stop="copyPartNumber(item.code)"
+                                class="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded transition-colors"
+                                :class="copiedPartNumber === item.code ? 'text-green-500' : 'text-gray-400 hover:text-blue-500'"
+                                title="Copy Part Number">
+                                <component :is="copiedPartNumber === item.code ? CheckCircle2 : Copy" class="w-3 h-3"/>
+                            </button>
+                        </div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 leading-snug mt-0.5 line-clamp-2">{{ item.name }}</div>
+                    </div>
+
+                    <!-- Stock -->
+                    <div class="flex-shrink-0 text-center w-20">
+                        <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5">Stock</div>
+                        <div class="text-sm font-bold" :class="item.parsed_stock_qty > 0 ? 'text-amber-600' : 'text-gray-400'">
+                            {{ item.parsed_stock_qty || 0 }}
+                        </div>
+                    </div>
+
+                    <!-- Order Suggestion -->
+                    <div class="flex-shrink-0 text-center">
+                        <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5">Perlu Dipesan</div>
+                        <Badge :class="getRowStatus(item).text.startsWith('KURANG') ? 'bg-orange-500 hover:bg-orange-600' : 'bg-red-600 hover:bg-red-700'" class="text-white text-sm font-bold px-3 py-0.5 min-w-[64px] justify-center">
+                            {{ item.order_suggestion }} {{ item.unit }}
+                        </Badge>
+                    </div>
+
+                    <!-- Copy row -->
+                    <div class="flex-shrink-0">
+                        <button
+                            @click.stop="copyPurchaseRow(item)"
+                            :class="copiedRowCode === item.code
+                                ? 'text-green-600 border-green-400 bg-green-50 dark:bg-green-900/20 opacity-100'
+                                : 'opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 border-gray-200 dark:border-slate-600 hover:border-blue-400'"
+                            class="transition-all duration-300 flex items-center gap-1 text-xs border rounded px-2 py-1 bg-white dark:bg-slate-800"
+                            title="Copy baris ke clipboard (SKU | Deskripsi | Qty)">
+                            <component :is="copiedRowCode === item.code ? CheckCircle2 : Copy" class="w-3 h-3"/>
+                            {{ copiedRowCode === item.code ? 'Disalin!' : 'Baris' }}
+                        </button>
+                    </div>
+                </div>
             </div>
         </Card>
+
 
         <div class="grid md:grid-cols-2 gap-6">
           <Card class="border shadow-sm rounded-lg bg-white dark:bg-slate-800 dark:border-slate-700">
@@ -1291,19 +1413,23 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                 <div v-for="doItem in groupedShipments" :key="doItem.no" class="flex flex-col bg-gray-50 dark:bg-slate-700/50 rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden transition-all duration-300">
                     <div class="flex justify-between items-center p-3 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700" @click="expandedDocNo = expandedDocNo === doItem.no ? null : doItem.no">
                         <div class="flex items-center gap-3">
-                            <div class="bg-white dark:bg-slate-800 p-1.5 rounded border border-gray-200 dark:border-slate-600 text-blue-600 dark:text-blue-400 shadow-sm">
-                                <Truck class="w-4 h-4"/>
+                            <div :class="doItem.type === 'HPO' ? 'text-green-600 dark:text-green-400' : 'text-blue-600 dark:text-blue-400'" class="bg-white dark:bg-slate-800 p-1.5 rounded border border-gray-200 dark:border-slate-600 shadow-sm">
+                                <ShoppingCart v-if="doItem.type === 'HPO'" class="w-4 h-4"/>
+                                <Truck v-else class="w-4 h-4"/>
                             </div>
                             <div>
                                 <div class="text-sm font-bold text-gray-800 dark:text-white flex items-center gap-2">
                                     {{ doItem.no }}
                                     <span v-if="doItem.source === 'MANUAL'" class="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200">MANUAL</span>
+                                    <span v-if="doItem.type === 'HPO'" class="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded border border-green-200">PO</span>
                                 </div>
                                 <div class="text-xs text-gray-500 dark:text-gray-400">{{ doItem.date }}</div>
                             </div>
                         </div>
                         <div class="flex items-center gap-2">
-                            <Badge variant="secondary" class="bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-600 text-gray-600 dark:text-gray-300">{{ doItem.status }}</Badge>
+                            <Badge variant="secondary" :class="doItem.type === 'HPO' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-white dark:bg-slate-800 border-gray-200 dark:border-slate-600'">
+                                {{ doItem.items.length }} Item
+                            </Badge>
                             <component :is="expandedDocNo === doItem.no ? ChevronUp : ChevronDown" class="w-4 h-4 text-gray-400"/>
                         </div>
                     </div>

@@ -58,7 +58,6 @@ const menuItems = [
   { name: 'Purchase Order', path: '/purchase-orders', icon: ShoppingBag },
   { name: 'Penerimaan Barang', path: '/receive-items', icon: Package },
   { name: 'Delivery Order', path: '/delivery-orders', icon: Truck },
-  { name: 'Import Update', path: '/import-logistics', icon: UploadCloud },
   { name: 'Manage Account', path: '/settings', icon: Settings },
 ]
 

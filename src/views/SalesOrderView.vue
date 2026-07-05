@@ -441,16 +441,30 @@ const bulkDownloadSaranOrder = async () => {
                     statusText = 'DIKIRIM SEBAGIAN'
                 } else if (qty_shipped > 0 && qty_remaining === 0) {
                     statusText = 'PRODUK SUDAH DIKIRIM'
-                } else if (hpoEntries.length > 0 || hasHpoInDb) {
+                }
+                
+                let totalPo = 0;
+                if (statusText === 'MENUNGGU' && hpoEntries.length > 0) {
+                    totalPo = hpoEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0);
+                    if (totalPo < qty_to_order) {
+                        statusText = 'KURANG DIPESAN';
+                    } else if (totalPo > qty_to_order) {
+                        statusText = 'KELEBIHAN DIPESAN';
+                    } else {
+                        statusText = 'SUDAH DIPESAN';
+                    }
+                } else if (statusText === 'MENUNGGU' && hasHpoInDb) {
                     statusText = 'SUDAH DIPESAN'
-                } else if (qty_to_order > 0) {
+                } else if (statusText === 'MENUNGGU' && qty_to_order > 0) {
                     statusText = 'PERLU DIPESAN'
-                } else if (qty_to_order === 0 && qty_shipped === 0) {
+                } else if (statusText === 'MENUNGGU' && qty_to_order === 0 && qty_shipped === 0) {
                     statusText = 'MENUNGGU PENGIRIMAN'
                 }
                 
-                // Hanya tampilkan jika statusnya 'PERLU DIPESAN'
-                if (statusText !== 'PERLU DIPESAN') return
+                // Hanya tampilkan jika statusnya 'PERLU DIPESAN' atau 'KURANG DIPESAN'
+                if (statusText !== 'PERLU DIPESAN' && statusText !== 'KURANG DIPESAN') return
+                
+                const finalSuggestion = statusText === 'KURANG DIPESAN' ? Math.max(0, qty_to_order - totalPo) : qty_to_order;
                 
                 allItemsToPurchase.push({
                     "No HSO": soNumber,
@@ -459,7 +473,7 @@ const bulkDownloadSaranOrder = async () => {
                     "Nama Produk": name,
                     "Total Order (SO)": qty_order,
                     "Stock Gudang": qty_stock_admin,
-                    "SARAN ORDER (QTY)": qty_to_order,
+                    "SARAN ORDER (QTY)": finalSuggestion,
                     "Catatan": note || '-'
                 })
             })
