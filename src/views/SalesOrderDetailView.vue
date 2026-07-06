@@ -438,8 +438,7 @@ const fetchHpoInBackground = async (soNumber) => {
                   hpo_number: hpo,
                   current_status: 'Follow up with our forwarder',
                   status_date: new Date().toISOString().split('T')[0],
-                  shipment_type: 'IMPORT_PO',
-                  admin_notes: 'Auto-created on page load (missing shipment record)'
+                  shipment_type: 'IMPORT_PO'
                 })
               })
             }
@@ -554,6 +553,7 @@ const excelFileInput = ref(null)
 const isExcelParsing = ref(false)
 const isExcelModalOpen = ref(false)
 const excelRowsToUpdate = ref([]) // Matched items to update
+const excelProgressCount = ref(0)
 
 const triggerExcelImport = () => {
   if (excelFileInput.value) {
@@ -600,21 +600,55 @@ const handleExcelImport = (e) => {
       }
       
       // Date parser helper
+      // Date parser helper
       const parseExcelDateLocal = (val) => {
         if (val === undefined || val === null || val === '') return null
-        if (typeof val === 'number') {
-          const date = new Date(Math.round((val - 25569) * 86400 * 1000))
+        
+        let numVal = val
+        if (typeof val === 'string' && /^\d+$/.test(val.trim())) {
+          numVal = Number(val.trim())
+        }
+        
+        if (typeof numVal === 'number') {
+          const date = new Date(Math.round((numVal - 25569) * 86400 * 1000))
           const yyyy = date.getFullYear()
           const mm = String(date.getMonth() + 1).padStart(2, '0')
           const dd = String(date.getDate()).padStart(2, '0')
           return `${yyyy}-${mm}-${dd}`
         }
+        
         const str = String(val).trim()
         if (!str) return null
-        const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
-        if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`
+        
+        // 1. Try to match standard formats like DD/MM/YYYY or DD-MM-YYYY or DD/MM/YY
+        const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/)
+        if (dmy) {
+          let y = dmy[3]
+          if (y.length === 2) y = '20' + y
+          const m = dmy[2].padStart(2, '0')
+          const d = dmy[1].padStart(2, '0')
+          return `${y}-${m}-${d}`
+        }
+        
+        // 2. Try to match English text date like "23 Jul 26" or "08 July 2026"
+        const monthsMap = {
+          jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+          jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
+        }
+        const textMatch = str.match(/(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{2,4})/i)
+        if (textMatch) {
+          const d = textMatch[1].padStart(2, '0')
+          const mKey = textMatch[2].toLowerCase()
+          const m = monthsMap[mKey]
+          let y = textMatch[3]
+          if (y.length === 2) y = '20' + y
+          return `${y}-${m}-${d}`
+        }
+        
+        // 3. Try to match YYYY-MM-DD
         const ymd = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/)
         if (ymd) return `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`
+        
         const parsed = new Date(str)
         if (!isNaN(parsed.getTime())) {
           const yyyy = parsed.getFullYear()
@@ -622,21 +656,21 @@ const handleExcelImport = (e) => {
           const dd = String(parsed.getDate()).padStart(2, '0')
           return `${yyyy}-${mm}-${dd}`
         }
-        return str
+        return null
       }
       
       // Status mapper helper
       const mapStatusLocal = (excelStatus) => {
-        if (!excelStatus) return ''
+        if (!excelStatus) return 'Follow up with our forwarder'
         const s = String(excelStatus).trim().toLowerCase()
         if (s.includes('done delivery') || s.includes('delivered') || s.includes('customer') || s.includes('hokiindo')) return 'Already in Hokiindo Raya'
-        if (s.includes('siemens') || s.includes('dunex') || s.includes('warehouse') || s.includes('tiba gudang dunex')) return 'Already in siemens Warehouse'
+        if (s.includes('siemens') || s.includes('dunex') || s.includes('warehouse') || s.includes('tiba gudang dunex') || s.includes('our warehouse') || s.includes('our wh')) return 'Already in siemens Warehouse'
         if (s.includes('transit') || s.includes('eta') || s.includes('port') || s.includes('jkt') || s.includes('jkt port')) return 'ETA Port JKT'
-        if (s.includes('forwarder') || s.includes('ex-works') || s.includes('exwork') || s.includes('ready')) return 'Follow up with our forwarder'
+        if (s.includes('forwarder') || s.includes('ex-works') || s.includes('exwork') || s.includes('ready') || s.includes('factory') || s.includes('production')) return 'Follow up with our forwarder'
         const exact = ['follow up with our forwarder', 'eta port jkt', 'already in siemens warehouse', 'already in hokiindo raya']
         const matched = exact.find(e => e.toLowerCase() === s)
         if (matched) return matched
-        return excelStatus
+        return 'Follow up with our forwarder'
       }
       
       // Match helpers for robust comparisons
@@ -668,61 +702,64 @@ const handleExcelImport = (e) => {
         return d === e
       }
 
-      // Match against the shipments currently loaded in shipmentList.value for this specific HSO
+      // Match against the items of this Sales Order
       const matches = []
-      rows.forEach(row => {
-        const hpoVal = row[hpoCol]
-        const hpoNumber = hpoVal ? String(hpoVal).trim() : ''
-        
-        const itemVal = row[itemCol]
-        const itemCode = itemVal ? String(itemVal).trim() : ''
-        
-        if (!hpoNumber || !itemCode) return
-        
-        // Find existing shipments loaded for this HSO
-        const targetShipments = shipmentList.value.filter(s => isItemMatch(s.item_code, itemCode))
-        
-        // Find which shipments match this HPO
-        let matchedShipments = targetShipments.filter(s => s.hpo_number && isHpoMatch(s.hpo_number, hpoNumber))
-        
-        // Fallback: match shipments that don't have an HPO number set yet in the database,
-        // but only if the item code has a mapped HPO in Accurate (hpoMapping) matching the Excel PO
-        if (matchedShipments.length === 0) {
-          const mappedHpo = hpoMapping.value[itemCode]
-          const isAccurateMapped = mappedHpo && mappedHpo.split(',').map(x => x.trim()).some(hpo => isHpoMatch(hpo, hpoNumber))
+      
+      if (soDetail.value && soDetail.value.items) {
+        soDetail.value.items.forEach(item => {
+          // Get the mapped HPO number for this item in the SO (from Accurate)
+          const hpoVal = hpoMapping.value[item.code]
+          if (!hpoVal) return // Skip if no HPO linked to this item
           
-          const emptyHpos = targetShipments.filter(s => !s.hpo_number)
-          if (emptyHpos.length > 0 && isAccurateMapped) {
-            matchedShipments = emptyHpos
-          }
-        }
-        
-        const excelExwork = exworkCol ? parseExcelDateLocal(row[exworkCol]) : null
-        const excelEta = etaCol ? parseExcelDateLocal(row[etaCol]) : null
-        const excelDelivery = deliveryCol ? parseExcelDateLocal(row[deliveryCol]) : null
-        const excelStatus = statusCol ? mapStatusLocal(row[statusCol]) : ''
-        
-        matchedShipments.forEach(s => {
-          // Avoid duplicate additions for the same shipment ID
-          const alreadyAdded = matches.some(m => m.shipmentIds && m.shipmentIds.includes(s.id))
-          if (!alreadyAdded) {
-            matches.push({
-              hpoNumber,
-              itemCode,
-              excelExwork,
-              excelEta,
-              excelDelivery,
-              excelStatus,
-              dbStatus: s.current_status || '',
-              dbExwork: s.exwork_date || '',
-              dbEta: s.eta_date || '',
-              dbDelivery: s.dunex_date || '',
-              shipmentIds: [s.id],
-              isVirtual: false
+          // Split HPO values in case there are multiple (e.g. "HPO/26/05/049, HPO/26/05/050")
+          const hpos = hpoVal.split(',').map(x => x.trim())
+          
+          hpos.forEach(hpo => {
+            // Find a matching row in the Excel sheet
+            const matchingExcelRow = rows.find(row => {
+              const excelHpo = row[hpoCol] ? String(row[hpoCol]).trim() : ''
+              const excelItem = row[itemCol] ? String(row[itemCol]).trim() : ''
+              
+              return isItemMatch(item.code, excelItem) && isHpoMatch(hpo, excelHpo)
             })
-          }
+            
+            if (matchingExcelRow) {
+              const excelExwork = exworkCol ? parseExcelDateLocal(matchingExcelRow[exworkCol]) : null
+              const excelEta = etaCol ? parseExcelDateLocal(matchingExcelRow[etaCol]) : null
+              let excelDelivery = deliveryCol ? parseExcelDateLocal(matchingExcelRow[deliveryCol]) : null
+              const excelStatus = statusCol ? mapStatusLocal(matchingExcelRow[statusCol]) : ''
+              
+              if (!excelDelivery && (excelStatus === 'Already in siemens Warehouse' || excelStatus === 'Already in Hokiindo Raya')) {
+                excelDelivery = getLocalDate()
+              }
+              
+              // Check if we already have an existing shipment record in the database for this item and HPO
+              const dbShipments = shipmentList.value.filter(s => 
+                isItemMatch(s.item_code, item.code) && 
+                (s.hpo_number ? isHpoMatch(s.hpo_number, hpo) : true)
+              )
+              
+              const hasDbShipment = dbShipments.length > 0
+              const primaryShipment = hasDbShipment ? dbShipments[0] : null
+              
+              matches.push({
+                hpoNumber: hpo,
+                itemCode: item.code,
+                excelExwork,
+                excelEta,
+                excelDelivery,
+                excelStatus,
+                dbStatus: primaryShipment ? (primaryShipment.current_status || '') : '(Akan Dibuat)',
+                dbExwork: primaryShipment ? (primaryShipment.exwork_date || '') : '-',
+                dbEta: primaryShipment ? (primaryShipment.eta_date || '') : '-',
+                dbDelivery: primaryShipment ? (primaryShipment.hokiindo_date || primaryShipment.dunex_date || '') : '-',
+                shipmentIds: dbShipments.map(s => s.id),
+                isVirtual: !hasDbShipment
+              })
+            }
+          })
         })
-      })
+      }
       
       if (matches.length === 0) {
         alert("Tidak ada item atau nomor HPO yang cocok dengan data pelacakan di HSO ini.")
@@ -744,36 +781,82 @@ const handleExcelImport = (e) => {
 
 const applyExcelUpdates = async () => {
   isExcelParsing.value = true
+  excelProgressCount.value = 0
   let successCount = 0
   let errorCount = 0
   
   for (const item of excelRowsToUpdate.value) {
     try {
-      // Update existing shipment record in database
-      const updateData = {}
-      if (item.hpoNumber) {
-        updateData.hpo_number = item.hpoNumber
-      }
-      if (item.excelStatus) {
-        updateData.current_status = item.excelStatus
-        updateData.status_date = new Date().toISOString().split('T')[0]
-      }
-      if (item.excelExwork) updateData.exwork_date = item.excelExwork
-      if (item.excelEta) updateData.eta_date = item.excelEta
-      if (item.excelDelivery) updateData.dunex_date = item.excelDelivery
-      
-      updateData.updated_at = new Date().toISOString()
-      
-      const { error } = await supabase
-        .from('shipments')
-        .update(updateData)
-        .in('id', item.shipmentIds)
+      if (item.isVirtual) {
+        // Create new shipment record in database
+        const insertPayload = {
+          so_id: String(soDetail.value.id),
+          item_code: item.itemCode,
+          hpo_number: item.hpoNumber,
+          shipment_type: 'IMPORT_PO'
+        }
+        if (item.excelStatus) {
+          insertPayload.current_status = item.excelStatus
+          insertPayload.status_date = new Date().toISOString().split('T')[0]
+        } else {
+          insertPayload.current_status = 'Follow up with our forwarder'
+          insertPayload.status_date = new Date().toISOString().split('T')[0]
+        }
+        if (item.excelExwork) insertPayload.exwork_date = item.excelExwork
+        if (item.excelEta) insertPayload.eta_date = item.excelEta
         
-      if (error) throw error
-      successCount += item.shipmentIds.length
+        // Map excelDelivery based on status
+        if (item.excelDelivery) {
+          if (item.excelStatus === 'Already in Hokiindo Raya') {
+            insertPayload.hokiindo_date = item.excelDelivery
+          } else {
+            insertPayload.dunex_date = item.excelDelivery
+          }
+        }
+        
+        const { error } = await supabase
+          .from('shipments')
+          .insert(insertPayload)
+          
+        if (error) throw error
+        successCount++
+      } else {
+        // Update existing shipment record in database
+        const updateData = {}
+        if (item.hpoNumber) {
+          updateData.hpo_number = item.hpoNumber
+        }
+        if (item.excelStatus) {
+          updateData.current_status = item.excelStatus
+          updateData.status_date = new Date().toISOString().split('T')[0]
+        }
+        if (item.excelExwork) updateData.exwork_date = item.excelExwork
+        if (item.excelEta) updateData.eta_date = item.excelEta
+        
+        // Map excelDelivery based on status
+        if (item.excelDelivery) {
+          if (item.excelStatus === 'Already in Hokiindo Raya') {
+            updateData.hokiindo_date = item.excelDelivery
+          } else {
+            updateData.dunex_date = item.excelDelivery
+          }
+        }
+        
+        updateData.updated_at = new Date().toISOString()
+        
+        const { error } = await supabase
+          .from('shipments')
+          .update(updateData)
+          .in('id', item.shipmentIds)
+          
+        if (error) throw error
+        successCount += item.shipmentIds.length
+      }
     } catch (err) {
       console.error(err)
       errorCount++
+    } finally {
+      excelProgressCount.value++
     }
   }
   
@@ -1072,11 +1155,6 @@ const getRowStatus = (item) => {
   // Jika fully shipped (semua terkirim dan dikonfirmasi selesai)
   if (item.is_fully_shipped) return { text: 'PRODUK SUDAH DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
   
-  // Jika sudah ada pengiriman sebagian (masih ada sisa), status = DIKIRIM SEBAGIAN
-  if (item.qty_shipped > 0 && item.qty_remaining > 0) {
-    return { text: `DIKIRIM SEBAGIAN (SISA ${item.qty_remaining} ${item.unit})`, class: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800', icon: Truck }
-  }
-  
   // Jika sudah dikirim semua (tidak ada sisa tapi belum dikonfirmasi fully_shipped)
   if (item.qty_shipped > 0 && item.qty_remaining === 0) {
     return { text: 'PRODUK SUDAH DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
@@ -1085,14 +1163,29 @@ const getRowStatus = (item) => {
   // Cek HPO dari Accurate atau dari DB
   const hpoEntries = getHpoEntries(item)
   const hasHpoInDb = item.logistics_hpo && item.logistics_hpo.trim().length > 0
+
+  // Jika belum/kurang dipesan (Prioritas di atas pengiriman sebagian agar masuk logika order)
+  if (item.qty_to_order > 0) {
+    if (hpoEntries.length > 0) {
+      const totalPo = hpoEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
+      if (totalPo < item.qty_to_order) {
+        const shortage = item.qty_to_order - totalPo
+        return { text: `KURANG DIPESAN (${shortage} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: AlertTriangle }
+      }
+    } else if (!hasHpoInDb) {
+      return { text: `PERLU DIPESAN (${item.qty_to_order} ${item.unit})`, class: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800', icon: AlertCircle }
+    }
+  }
+
+  // Jika sudah ada pengiriman sebagian (masih ada sisa), status = DIKIRIM SEBAGIAN
+  if (item.qty_shipped > 0 && item.qty_remaining > 0) {
+    return { text: `DIKIRIM SEBAGIAN (SISA ${item.qty_remaining} ${item.unit})`, class: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800', icon: Truck }
+  }
   
-  // Jika ada HPO dari Accurate
+  // Jika ada HPO dari Accurate (dan sudah terpenuhi penuh)
   if (hpoEntries.length > 0) {
     const totalPo = hpoEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
-    if (totalPo < item.qty_to_order) {
-      const shortage = item.qty_to_order - totalPo
-      return { text: `KURANG DIPESAN (${shortage} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: AlertTriangle }
-    } else if (totalPo > item.qty_to_order) {
+    if (totalPo > item.qty_to_order && item.qty_to_order > 0) {
       return { text: 'KELEBIHAN DIPESAN', class: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800', icon: AlertTriangle }
     }
     return { text: 'SUDAH DIPESAN', class: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800', icon: CheckCircle2 }
@@ -1101,11 +1194,6 @@ const getRowStatus = (item) => {
   // Jika dari DB (manual input lama yang tidak terbaca array)
   if (hasHpoInDb) {
     return { text: 'SUDAH DIPESAN', class: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800', icon: CheckCircle2 }
-  }
-  
-  // Jika belum ada HPO dan perlu order (stock kurang)
-  if (item.qty_to_order > 0) {
-    return { text: `PERLU DIPESAN (${item.qty_to_order} ${item.unit})`, class: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800', icon: AlertCircle }
   }
   
   // Jika stock ready tapi belum ada pengiriman
@@ -1696,7 +1784,7 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                     </div>
                     
                     <!-- Admin Notes (Only show after sync) -->
-                    <div v-if="!isSyncing && item.logistics_note && !item.logistics_note.includes('Auto-synced')" class="text-[11px] text-gray-600 dark:text-gray-400 mt-2 p-2 bg-gray-50 dark:bg-gray-800 rounded border-l-2 border-gray-300 dark:border-gray-600">
+                    <div v-if="!isSyncing && item.logistics_note && !item.logistics_note.includes('Auto-synced') && !item.logistics_note.includes('Auto-created')" class="text-[11px] text-gray-600 dark:text-gray-400 mt-2 p-2 bg-gray-50 dark:bg-gray-800 rounded border-l-2 border-gray-300 dark:border-gray-600">
                         <div class="font-bold text-[9px] uppercase text-gray-500 mb-0.5">Note:</div>
                         {{ item.logistics_note }}
                     </div>
@@ -2171,7 +2259,24 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
         </SheetContent>
       <!-- Excel Import Confirmation Modal -->
       <div v-if="isExcelModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto animate-in fade-in duration-200">
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden font-source-code">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden font-source-code relative">
+          
+          <!-- Loading overlay during save -->
+          <div v-if="isExcelParsing" class="absolute inset-0 bg-slate-950/50 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center space-y-4">
+            <div class="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col items-center space-y-3 max-w-sm text-center">
+              <RefreshCw class="w-10 h-10 text-emerald-600 dark:text-emerald-400 animate-spin" />
+              <h4 class="font-bold text-sm text-slate-900 dark:text-white">Menyimpan Perubahan...</h4>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-normal">Sedang mengirim data pembaruan pelacakan ke database, mohon jangan tutup halaman ini.</p>
+              
+              <!-- Progress bar -->
+              <div class="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden mt-2">
+                <div class="bg-emerald-600 h-full transition-all duration-300" :style="{ width: `${excelRowsToUpdate.length > 0 ? (excelProgressCount / excelRowsToUpdate.length) * 100 : 0}%` }"></div>
+              </div>
+              <span class="text-[10px] font-bold text-slate-600 dark:text-slate-400">
+                Memproses {{ excelProgressCount }} dari {{ excelRowsToUpdate.length }} item
+              </span>
+            </div>
+          </div>
           
           <!-- Header -->
           <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 flex justify-between items-center shrink-0">

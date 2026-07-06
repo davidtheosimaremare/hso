@@ -481,32 +481,39 @@ const bulkDownloadSaranOrder = async () => {
                 const hasHpoInDb = !!(myShipment?.hpo_number && myShipment.hpo_number.trim().length > 0)
                 
                 let statusText = 'MENUNGGU'
+                let totalPo = 0;
+                
                 if (logistics_status === 'Hold by Customer') {
                     statusText = 'HOLD BY CUSTOMER'
                 } else if (is_fully_shipped) {
                     statusText = 'PRODUK SUDAH DIKIRIM'
-                } else if (qty_shipped > 0 && qty_remaining > 0) {
-                    statusText = 'DIKIRIM SEBAGIAN'
                 } else if (qty_shipped > 0 && qty_remaining === 0) {
                     statusText = 'PRODUK SUDAH DIKIRIM'
+                } else if (qty_to_order > 0) {
+                    // Cek kekurangan pemesanan (Prioritas di atas pengiriman sebagian agar masuk logika order)
+                    if (hpoEntries.length > 0) {
+                        totalPo = hpoEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0);
+                        if (totalPo < qty_to_order) {
+                            statusText = 'KURANG DIPESAN';
+                        } else if (totalPo > qty_to_order) {
+                            statusText = 'KELEBIHAN DIPESAN';
+                        } else {
+                            statusText = 'SUDAH DIPESAN';
+                        }
+                    } else if (hasHpoInDb) {
+                        statusText = 'SUDAH DIPESAN';
+                    } else {
+                        statusText = 'PERLU DIPESAN';
+                    }
                 }
                 
-                let totalPo = 0;
-                if (statusText === 'MENUNGGU' && hpoEntries.length > 0) {
-                    totalPo = hpoEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0);
-                    if (totalPo < qty_to_order) {
-                        statusText = 'KURANG DIPESAN';
-                    } else if (totalPo > qty_to_order) {
-                        statusText = 'KELEBIHAN DIPESAN';
-                    } else {
-                        statusText = 'SUDAH DIPESAN';
+                // Jika statusText masih 'MENUNGGU' atau sudah penuh dipesan, cek status pengiriman sebagian
+                if (statusText === 'MENUNGGU' || statusText === 'SUDAH DIPESAN' || statusText === 'KELEBIHAN DIPESAN') {
+                    if (qty_shipped > 0 && qty_remaining > 0) {
+                        statusText = 'DIKIRIM SEBAGIAN';
+                    } else if (qty_to_order === 0 && qty_shipped === 0) {
+                        statusText = 'MENUNGGU PENGIRIMAN';
                     }
-                } else if (statusText === 'MENUNGGU' && hasHpoInDb) {
-                    statusText = 'SUDAH DIPESAN'
-                } else if (statusText === 'MENUNGGU' && qty_to_order > 0) {
-                    statusText = 'PERLU DIPESAN'
-                } else if (statusText === 'MENUNGGU' && qty_to_order === 0 && qty_shipped === 0) {
-                    statusText = 'MENUNGGU PENGIRIMAN'
                 }
                 
                 // Hanya tampilkan jika statusnya 'PERLU DIPESAN' atau 'KURANG DIPESAN'
