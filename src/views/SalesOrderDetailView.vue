@@ -704,6 +704,7 @@ const handleExcelImport = (e) => {
 
       // Match against the items of this Sales Order
       const matches = []
+      const seenKeys = new Set()
       
       if (soDetail.value && soDetail.value.items) {
         soDetail.value.items.forEach(item => {
@@ -715,6 +716,9 @@ const handleExcelImport = (e) => {
           const hpos = hpoVal.split(',').map(x => x.trim())
           
           hpos.forEach(hpo => {
+            const key = `${item.code.toLowerCase()}||${hpo.toLowerCase()}`
+            if (seenKeys.has(key)) return
+            
             // Find a matching row in the Excel sheet
             const matchingExcelRow = rows.find(row => {
               const excelHpo = row[hpoCol] ? String(row[hpoCol]).trim() : ''
@@ -724,6 +728,7 @@ const handleExcelImport = (e) => {
             })
             
             if (matchingExcelRow) {
+              seenKeys.add(key)
               const excelExwork = exworkCol ? parseExcelDateLocal(matchingExcelRow[exworkCol]) : null
               const excelEta = etaCol ? parseExcelDateLocal(matchingExcelRow[etaCol]) : null
               let excelDelivery = deliveryCol ? parseExcelDateLocal(matchingExcelRow[deliveryCol]) : null
