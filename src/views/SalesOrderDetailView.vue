@@ -639,57 +639,74 @@ const handleExcelImport = (e) => {
         
         if (!hpoNumber || !itemCode) return
         
-        // Find matching shipments loaded for this HSO
-        const matchedShipments = shipmentList.value.filter(s => {
-          // Match MLFB / SKU code
-          if (!isItemMatch(s.item_code, itemCode)) return false
-          
-          // Match HPO Number
-          // 1. First, check if shipment's HPO number in DB matches
-          if (s.hpo_number && isHpoMatch(s.hpo_number, hpoNumber)) {
-            return true
-          }
-          
-          // 2. Second, check if Accurate's HPO mapping for this item code contains the HPO number
-          const mappedHpo = hpoMapping.value[s.item_code]
-          if (mappedHpo) {
-            const hpos = mappedHpo.split(',').map(x => x.trim())
-            return hpos.some(hpo => isHpoMatch(hpo, hpoNumber))
-          }
-          
-          // 3. Fallback: if shipment has no HPO number in DB, and there is only 1 shipment item of this code in the SO, match it!
-          const sameItemShipments = shipmentList.value.filter(x => isItemMatch(x.item_code, itemCode))
-          if (sameItemShipments.length === 1) {
-            return true
-          }
-          
-          return false
-        })
+        // Check if this item belongs to this Sales Order
+        const isItemInSo = soDetail.value && soDetail.value.items && soDetail.value.items.some(item => isItemMatch(item.code, itemCode))
+        if (!isItemInSo) return
         
-        if (matchedShipments.length > 0) {
-          const excelExwork = exworkCol ? parseExcelDateLocal(row[exworkCol]) : null
-          const excelEta = etaCol ? parseExcelDateLocal(row[etaCol]) : null
-          const excelDelivery = deliveryCol ? parseExcelDateLocal(row[deliveryCol]) : null
-          const excelStatus = statusCol ? mapStatusLocal(row[statusCol]) : ''
+        // Find existing shipments loaded for this HSO
+        const targetShipments = shipmentList.value.filter(s => isItemMatch(s.item_code, itemCode))
+        
+        // Find which shipments match this HPO
+        let matchedShipments = targetShipments.filter(s => s.hpo_number && isHpoMatch(s.hpo_number, hpoNumber))
+        
+        // Fallback: match shipments that don't have an HPO number set yet in the database
+        if (matchedShipments.length === 0) {
+          const mappedHpo = hpoMapping.value[itemCode]
+          const isAccurateMapped = mappedHpo && mappedHpo.split(',').map(x => x.trim()).some(hpo => isHpoMatch(hpo, hpoNumber))
           
-          const primaryShipment = matchedShipments[0]
-          
-          matches.push({
-            hpoNumber,
-            itemCode,
-            // New Excel values
-            excelExwork,
-            excelEta,
-            excelDelivery,
-            excelStatus,
-            // Old DB values
-            dbStatus: primaryShipment.current_status || '',
-            dbExwork: primaryShipment.exwork_date || '',
-            dbEta: primaryShipment.eta_date || '',
-            dbDelivery: primaryShipment.dunex_date || '',
-            // Shipment record IDs to update
-            shipmentIds: matchedShipments.map(s => s.id)
+          const emptyHpos = targetShipments.filter(s => !s.hpo_number)
+          if (emptyHpos.length > 0 && (isAccurateMapped || targetShipments.length === 1)) {
+            matchedShipments = emptyHpos
+          }
+        }
+        
+        const isVirtual = matchedShipments.length === 0
+        
+        const excelExwork = exworkCol ? parseExcelDateLocal(row[exworkCol]) : null
+        const excelEta = etaCol ? parseExcelDateLocal(row[etaCol]) : null
+        const excelDelivery = deliveryCol ? parseExcelDateLocal(row[deliveryCol]) : null
+        const excelStatus = statusCol ? mapStatusLocal(row[statusCol]) : ''
+        
+        if (!isVirtual) {
+          matchedShipments.forEach(s => {
+            // Avoid duplicate additions for the same shipment ID
+            const alreadyAdded = matches.some(m => m.shipmentIds && m.shipmentIds.includes(s.id))
+            if (!alreadyAdded) {
+              matches.push({
+                hpoNumber,
+                itemCode,
+                excelExwork,
+                excelEta,
+                excelDelivery,
+                excelStatus,
+                dbStatus: s.current_status || '',
+                dbExwork: s.exwork_date || '',
+                dbEta: s.eta_date || '',
+                dbDelivery: s.dunex_date || '',
+                shipmentIds: [s.id],
+                isVirtual: false
+              })
+            }
           })
+        } else {
+          // Virtual record to create
+          const alreadyAdded = matches.some(m => isItemMatch(m.itemCode, itemCode) && isHpoMatch(m.hpoNumber, hpoNumber))
+          if (!alreadyAdded) {
+            matches.push({
+              hpoNumber,
+              itemCode,
+              excelExwork,
+              excelEta,
+              excelDelivery,
+              excelStatus,
+              dbStatus: '(Akan Dibuat)',
+              dbExwork: '-',
+              dbEta: '-',
+              dbDelivery: '-',
+              shipmentIds: [],
+              isVirtual: true
+            })
+          }
         }
       })
       
@@ -718,27 +735,56 @@ const applyExcelUpdates = async () => {
   
   for (const item of excelRowsToUpdate.value) {
     try {
-      const updateData = {}
-      if (item.hpoNumber) {
-        updateData.hpo_number = item.hpoNumber
-      }
-      if (item.excelStatus) {
-        updateData.current_status = item.excelStatus
-        updateData.status_date = new Date().toISOString().split('T')[0]
-      }
-      if (item.excelExwork) updateData.exwork_date = item.excelExwork
-      if (item.excelEta) updateData.eta_date = item.excelEta
-      if (item.excelDelivery) updateData.dunex_date = item.excelDelivery
-      
-      updateData.updated_at = new Date().toISOString()
-      
-      const { error } = await supabase
-        .from('shipments')
-        .update(updateData)
-        .in('id', item.shipmentIds)
+      if (item.isVirtual) {
+        // Create new shipment record in database
+        const insertPayload = {
+          so_id: String(soDetail.value.id),
+          item_code: item.itemCode,
+          hpo_number: item.hpoNumber,
+          shipment_type: 'IMPORT_PO',
+          admin_notes: 'Auto-created dari Import Excel Status'
+        }
+        if (item.excelStatus) {
+          insertPayload.current_status = item.excelStatus
+          insertPayload.status_date = new Date().toISOString().split('T')[0]
+        } else {
+          insertPayload.current_status = 'Follow up with our forwarder'
+          insertPayload.status_date = new Date().toISOString().split('T')[0]
+        }
+        if (item.excelExwork) insertPayload.exwork_date = item.excelExwork
+        if (item.excelEta) insertPayload.eta_date = item.excelEta
+        if (item.excelDelivery) insertPayload.dunex_date = item.excelDelivery
         
-      if (error) throw error
-      successCount += item.shipmentIds.length
+        const { error } = await supabase
+          .from('shipments')
+          .insert(insertPayload)
+          
+        if (error) throw error
+        successCount++
+      } else {
+        // Update existing shipment record in database
+        const updateData = {}
+        if (item.hpoNumber) {
+          updateData.hpo_number = item.hpoNumber
+        }
+        if (item.excelStatus) {
+          updateData.current_status = item.excelStatus
+          updateData.status_date = new Date().toISOString().split('T')[0]
+        }
+        if (item.excelExwork) updateData.exwork_date = item.excelExwork
+        if (item.excelEta) updateData.eta_date = item.excelEta
+        if (item.excelDelivery) updateData.dunex_date = item.excelDelivery
+        
+        updateData.updated_at = new Date().toISOString()
+        
+        const { error } = await supabase
+          .from('shipments')
+          .update(updateData)
+          .in('id', item.shipmentIds)
+          
+        if (error) throw error
+        successCount += item.shipmentIds.length
+      }
     } catch (err) {
       console.error(err)
       errorCount++
@@ -748,7 +794,7 @@ const applyExcelUpdates = async () => {
   isExcelParsing.value = false
   isExcelModalOpen.value = false
   
-  alert(`Berhasil memperbarui ${successCount} data pelacakan di database!`)
+  alert(`Berhasil memproses pembaruan data pelacakan di database!`)
   
   // Reload SO detail and shipments to reflect changes
   fetchDetail()
