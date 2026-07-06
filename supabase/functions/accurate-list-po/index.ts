@@ -55,19 +55,44 @@ serve(async (req) => {
         // Clean up HSO number for search?
         // If user sends "HSO/25/01/001", we search "%HSO/25/01/001%".
 
-        const { data: items, error } = await supabase
-            .from('accurate_purchase_order_items')
-            .select(`
-                *,
-                header:accurate_purchase_orders(
-                    id, number, trans_date, status_name, vendor_name
-                )
-            `)
-            .ilike('detail_notes', `%${filterHsoNumber}%`)
-            .order('created_at', { ascending: false })
-            .limit(100)
+        let items: any[] = []
+        let page = 0
+        const pageSize = 1000
+        let hasMore = true
+        let queryError = null
 
-        if (error) throw error
+        while (hasMore) {
+            const { data, error } = await supabase
+                .from('accurate_purchase_order_items')
+                .select(`
+                    *,
+                    header:accurate_purchase_orders(
+                        id, number, trans_date, status_name, vendor_name
+                    )
+                `)
+                .ilike('detail_notes', `%${filterHsoNumber}%`)
+                .range(page * pageSize, (page + 1) * pageSize - 1)
+                .order('created_at', { ascending: false })
+                .order('id', { ascending: false })
+
+            if (error) {
+                queryError = error
+                break
+            }
+
+            if (data && data.length > 0) {
+                items = items.concat(data)
+                if (data.length < pageSize) {
+                    hasMore = false
+                } else {
+                    page++
+                }
+            } else {
+                hasMore = false
+            }
+        }
+
+        if (queryError) throw queryError
 
         // Transform to expected format
         const hsoMappings = items.map((item: any) => ({

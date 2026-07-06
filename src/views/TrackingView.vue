@@ -292,11 +292,57 @@ const syncHpoInBackground = async (soNumbers) => {
     for (let i = 0; i < total; i += batchSize) {
         const batch = soNumbers.slice(i, i + batchSize)
         
-        await Promise.all(batch.map(async (soNumber) => {
-            try {
-                const { data: poData, error } = await supabase.functions.invoke('accurate-list-po', {
-                    body: { hsoNumber: soNumber }
-                })
+                let dbItems = []
+                let page = 0
+                const pageSize = 1000
+                let hasMore = true
+                let error = null
+
+                while (hasMore) {
+                    const { data, error: fetchErr } = await supabase
+                        .from('accurate_purchase_order_items')
+                        .select(`
+                            *,
+                            header:accurate_purchase_orders(
+                                id, number, trans_date, status_name, vendor_name
+                            )
+                        `)
+                        .ilike('detail_notes', `%${soNumber}%`)
+                        .range(page * pageSize, (page + 1) * pageSize - 1)
+                        .order('created_at', { ascending: false })
+                        .order('id', { ascending: false })
+
+                    if (fetchErr) {
+                        error = fetchErr
+                        break
+                    }
+
+                    if (data && data.length > 0) {
+                        dbItems = dbItems.concat(data)
+                        if (data.length < pageSize) {
+                            hasMore = false
+                        } else {
+                            page++
+                        }
+                    } else {
+                        hasMore = false
+                    }
+                }
+                
+                const poData = { d: null }
+                if (!error && dbItems.length > 0) {
+                    poData.d = dbItems.map(item => ({
+                        poId: item.header?.id,
+                        poNumber: item.header?.number,
+                        poDate: item.header?.trans_date,
+                        poStatus: item.header?.status_name || 'Open',
+                        itemCode: item.item_code,
+                        itemName: item.item_name,
+                        quantity: item.quantity,
+                        description: item.detail_notes,
+                        vendorName: item.header?.vendor_name
+                    }))
+                }
                 
                 if (!error && poData?.d) {
                     poData.d.forEach(poItem => {
