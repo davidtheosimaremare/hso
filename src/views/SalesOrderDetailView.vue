@@ -332,6 +332,22 @@ const fetchHpoInBackground = async (soNumber) => {
     syncProgress.value = 0
     console.log(`Background: Fetching HPO for ${soNumber}...`)
     
+    // Phase 1: Invoke Edge Function to query Accurate API and update/upsert POs into Supabase DB in real-time
+    syncProgress.value = 20
+    try {
+      await supabase.functions.invoke('accurate-sync-hpo', {
+        body: { 
+          soId: resolvedSoId.value, 
+          soNumber: soNumber, 
+          items: soDetail.value?.items?.map(i => i.code) || [] 
+        }
+      })
+    } catch (err) {
+      console.warn('Real-time HPO sync via Edge Function failed, using existing DB data:', err)
+    }
+
+    // Phase 2: Query the updated database using paginated search
+    syncProgress.value = 40
     let dbItems = []
     let page = 0
     const pageSize = 1000

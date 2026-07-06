@@ -17,6 +17,30 @@ async function createHmacSha256(secret: string, message: string) {
     return btoa(String.fromCharCode(...new Uint8Array(signature)))
 }
 
+// Helpers for database mapping
+const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return null
+    const parts = dateStr.split('/')
+    if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`
+    if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) return dateStr
+    return null
+}
+const safeFloat = (val: unknown): number => {
+    if (typeof val === 'number') return val
+    if (typeof val === 'string') return parseFloat((val as string).replace(/,/g, '')) || 0
+    return 0
+}
+const safeInt = (val: unknown): number | null => {
+    if (typeof val === 'number') return Math.floor(val as number)
+    if (typeof val === 'string') return parseInt(val as string) || null
+    return null
+}
+const extractHso = (note: string | null): string | null => {
+    if (!note) return null
+    const match = note.match(/(HSO\/[\w\d\/]+)/i)
+    return match ? match[1] : null
+}
+
 serve(async (req) => {
     const corsHeaders = {
         'Access-Control-Allow-Origin': '*',
@@ -126,7 +150,44 @@ serve(async (req) => {
 
                 if (detailRes.ok) {
                     const detailJson = await detailRes.json()
-                    const poItems = detailJson.d?.detailItem || []
+                    const fullPo = detailJson.d
+                    const poItems = fullPo?.detailItem || []
+
+                    // --- Sync PO header to database ---
+                    const poHeader = {
+                        id: safeInt(po.id),
+                        number: po.number || 'UNKNOWN',
+                        vendor_id: safeInt(po.vendor?.id || fullPo?.vendor?.id),
+                        vendor_name: po.vendor?.name || fullPo?.vendor?.name || null,
+                        trans_date: formatDate(po.transDate),
+                        status_name: po.statusName,
+                        total_amount: safeFloat(po.totalAmount || fullPo?.totalAmount),
+                        currency_code: po.currency?.code || fullPo?.currency?.code || null,
+                        branch_id: safeInt(po.branch?.id || fullPo?.branch?.id)
+                    }
+                    const { error: hErr } = await supabase.from('accurate_purchase_orders').upsert(poHeader, { onConflict: 'id' })
+                    if (hErr) console.error(`[sync-hpo] Header upsert error: ${hErr.message}`)
+
+                    // --- Sync PO items to database ---
+                    const poItemsSanitized = poItems.map((item: any, index: number) => ({
+                        id: safeInt(item.id),
+                        po_id: safeInt(po.id),
+                        item_code: item.item?.no ?? null,
+                        item_name: item.item?.name ?? null,
+                        quantity: safeFloat(item.quantity),
+                        unit_name: item.itemUnit?.name ?? null,
+                        unit_price: safeFloat(item.unitPrice),
+                        item_disc_percent: safeFloat(item.itemDiscPercent),
+                        detail_notes: item.detailNotes ?? null,
+                        item_seq: index,
+                        hso_number: extractHso(item.detailNotes ?? null)
+                    }))
+                    
+                    await supabase.from('accurate_purchase_order_items').delete().eq('po_id', poHeader.id)
+                    if (poItemsSanitized.length > 0) {
+                        const { error: iErr } = await supabase.from('accurate_purchase_order_items').insert(poItemsSanitized)
+                        if (iErr) console.error(`[sync-hpo] Items insert error: ${iErr.message}`)
+                    }
 
                     poItems.forEach((item: any) => {
                         const itemCode = item.item?.no || ''
