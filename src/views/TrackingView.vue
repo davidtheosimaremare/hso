@@ -151,7 +151,24 @@ const fetchProcurementData = async () => {
           if (!shipErr && shipments) {
             shipments.forEach(s => {
               const key = `${s.so_id}|${s.item_code}`
-              shipmentsMap[key] = s
+              const existing = shipmentsMap[key]
+              if (!existing) {
+                shipmentsMap[key] = s
+              } else {
+                // Prioritize shipments with a non-null HPO number
+                const existingHasHpo = existing.hpo_number ? 1 : 0
+                const newHasHpo = s.hpo_number ? 1 : 0
+                if (newHasHpo > existingHasHpo) {
+                  shipmentsMap[key] = s
+                } else if (newHasHpo === existingHasHpo) {
+                  // Fallback to latest update (using status_date)
+                  const existingTime = existing.status_date ? new Date(existing.status_date).getTime() : 0
+                  const newTime = s.status_date ? new Date(s.status_date).getTime() : 0
+                  if (newTime > existingTime) {
+                    shipmentsMap[key] = s
+                  }
+                }
+              }
             })
           }
       }

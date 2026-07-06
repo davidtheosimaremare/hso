@@ -86,13 +86,42 @@ const fetchTrackingData = async () => {
             .from('shipments').select('item_code, current_status, hpo_number, exwork_date, eta_date, dunex_date').eq('so_id', String(soId))
 
         const shipmentsMap = (shipData || []).reduce((map, s) => {
-            map[s.item_code] = { 
-                status: s.current_status, 
-                hpo: s.hpo_number,
-                exwork_date: s.exwork_date,
-                eta_date: s.eta_date,
-                dunex_date: s.dunex_date
-            };
+            const existing = map[s.item_code];
+            if (!existing) {
+                map[s.item_code] = { 
+                    status: s.current_status, 
+                    hpo: s.hpo_number,
+                    exwork_date: s.exwork_date,
+                    eta_date: s.eta_date,
+                    dunex_date: s.dunex_date
+                };
+            } else {
+                // Prioritize shipments with a non-null HPO number
+                const existingHasHpo = existing.hpo ? 1 : 0;
+                const newHasHpo = s.hpo_number ? 1 : 0;
+                if (newHasHpo > existingHasHpo) {
+                    map[s.item_code] = { 
+                        status: s.current_status, 
+                        hpo: s.hpo_number,
+                        exwork_date: s.exwork_date,
+                        eta_date: s.eta_date,
+                        dunex_date: s.dunex_date
+                    };
+                } else if (newHasHpo === existingHasHpo) {
+                    // Fallback to the one that has dates configured
+                    const existingHasDates = (existing.exwork_date || existing.eta_date || existing.dunex_date) ? 1 : 0;
+                    const newHasDates = (s.exwork_date || s.eta_date || s.dunex_date) ? 1 : 0;
+                    if (newHasDates > existingHasDates) {
+                        map[s.item_code] = { 
+                            status: s.current_status, 
+                            hpo: s.hpo_number,
+                            exwork_date: s.exwork_date,
+                            eta_date: s.eta_date,
+                            dunex_date: s.dunex_date
+                        };
+                    }
+                }
+            }
             return map;
         }, {});
 

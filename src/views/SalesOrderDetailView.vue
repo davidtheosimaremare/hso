@@ -21,7 +21,7 @@ import {
   Edit, CheckCircle2, Clock, Anchor, Factory, FileText, 
   PackageCheck, Share2, Info, ExternalLink, Package, Hourglass, 
   Layers, AlertCircle, ShoppingCart, Download, AlertTriangle,
-  ChevronDown, ChevronUp, Plane, Box, Copy
+  ChevronDown, ChevronUp, Plane, Box, Copy, Search
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -150,10 +150,54 @@ watch(selectedTargetStatus, (newVal) => {
 })
 
 
+const itemSearchQuery = ref('')
+const itemStatusFilter = ref('ALL')
+
+const filteredItems = computed(() => {
+  if (!soDetail.value || !soDetail.value.items) return []
+  return soDetail.value.items.filter(item => {
+    // 1. Search filter
+    const query = itemSearchQuery.value.trim().toLowerCase()
+    if (query) {
+      const codeMatch = item.code && item.code.toLowerCase().includes(query)
+      const nameMatch = item.name && item.name.toLowerCase().includes(query)
+      const noteMatch = item.admin_note && item.admin_note.toLowerCase().includes(query)
+      const logisticsNoteMatch = item.logistics_note && item.logistics_note.toLowerCase().includes(query)
+      if (!codeMatch && !nameMatch && !noteMatch && !logisticsNoteMatch) return false
+    }
+    
+    // 2. Status filter
+    if (itemStatusFilter.value === 'ALL') return true
+    
+    const statusText = getRowStatus(item).text || ''
+    
+    if (itemStatusFilter.value === 'HOLD') {
+      return item.logistics_status === 'Hold by Customer'
+    }
+    if (itemStatusFilter.value === 'NEED_ORDER') {
+      return statusText.includes('PERLU DIPESAN') || statusText.includes('KURANG DIPESAN')
+    }
+    if (itemStatusFilter.value === 'ORDERED') {
+      return statusText === 'SUDAH DIPESAN' || statusText === 'KELEBIHAN DIPESAN'
+    }
+    if (itemStatusFilter.value === 'READY') {
+      return statusText === 'MENUNGGU PENGIRIMAN'
+    }
+    if (itemStatusFilter.value === 'PARTIAL') {
+      return statusText.includes('DIKIRIM SEBAGIAN')
+    }
+    if (itemStatusFilter.value === 'SHIPPED') {
+      return statusText === 'PRODUK SUDAH DIKIRIM'
+    }
+    
+    return true
+  })
+})
+
 const isAllSelected = computed(() => {
-    if (!soDetail.value?.items) return false
-    const activeItems = soDetail.value.items.filter(i => !i.is_fully_shipped)
-    return activeItems.length > 0 && selectedItemCodes.value.length === activeItems.length
+    if (filteredItems.value.length === 0) return false
+    const activeItems = filteredItems.value.filter(i => !i.is_fully_shipped)
+    return activeItems.length > 0 && activeItems.every(i => selectedItemCodes.value.includes(i.code))
 })
 
 // --- COMPUTED: PURCHASING (Saran Order) ---
@@ -508,7 +552,18 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
         const seq = item.seq || 0
         // Find by code AND sequence to avoid split row overlap
         const myShipments = shipmentList.value.filter(s => s.item_code === code && (s.item_seq === seq || s.item_seq == null))
-        const myShipment = myShipments[0] || {}
+        
+        // Sort myShipments to prioritize shipments with a non-null HPO number, then by updated_at descending
+        const sortedMyShipments = [...myShipments].sort((a, b) => {
+          const aHasHpo = a.hpo_number ? 1 : 0
+          const bHasHpo = b.hpo_number ? 1 : 0
+          if (aHasHpo !== bHasHpo) return bHasHpo - aHasHpo // non-null HPO first
+          
+          const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0
+          const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0
+          return bTime - aTime // latest updated first
+        })
+        const myShipment = sortedMyShipments[0] || {}
         
         const qty_order = item.quantity || 0
         const qty_shipped = item.shipQuantity || 0
@@ -868,7 +923,16 @@ const groupedShipments = computed(() => {
 })
 
 const openSiePortal = (item) => { const code = item.code ? item.code.trim() : ''; if(!code || code === '-') return; window.open(`https://sieportal.siemens.com/en-id/products-services/detail/${code}?tree=CatalogTree`, '_blank'); }
-const toggleSelectAll = () => { if (isAllSelected.value) selectedItemCodes.value = []; else selectedItemCodes.value = soDetail.value.items.filter(i => !i.is_fully_shipped).map(i => i.code) }
+const toggleSelectAll = () => {
+    const activeFilteredCodes = filteredItems.value.filter(i => !i.is_fully_shipped).map(i => i.code)
+    const allActiveFilteredSelected = activeFilteredCodes.every(code => selectedItemCodes.value.includes(code))
+    if (allActiveFilteredSelected) {
+        selectedItemCodes.value = selectedItemCodes.value.filter(code => !activeFilteredCodes.includes(code))
+    } else {
+        const newSelected = new Set([...selectedItemCodes.value, ...activeFilteredCodes])
+        selectedItemCodes.value = Array.from(newSelected)
+    }
+}
 const toggleSelection = (code) => { if (selectedItemCodes.value.includes(code)) selectedItemCodes.value = selectedItemCodes.value.filter(id => id !== code); else selectedItemCodes.value.push(code) }
 const openActionModal = (item) => { 
   isBulkMode.value = false
@@ -904,7 +968,7 @@ const openActionModal = (item) => {
         dunex_date: ship.dunex_date || '',
         hokiindo_date: ship.hokiindo_date || '',
         ready_date: ship.ready_date || '',
-        admin_notes: ship.admin_notes || ''
+        admin_notes: (ship && ship.id) ? (ship.admin_notes || '') : (item.logistics_note || '')
       }
     })
   }
@@ -1087,7 +1151,36 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
 
         <Card class="border shadow-sm rounded-lg overflow-hidden bg-white dark:bg-slate-800 dark:border-slate-700 flex flex-col max-h-[75vh]">
           <CardHeader class="border-b border-gray-100 dark:border-slate-700 px-6 py-4 bg-white dark:bg-slate-800 shrink-0">
-            <div class="flex items-center justify-between"><CardTitle class="text-base font-bold text-gray-800 dark:text-white">Detail Produk & Logistik</CardTitle></div>
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <CardTitle class="text-base font-bold text-gray-800 dark:text-white">Detail Produk & Logistik</CardTitle>
+              <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+                <!-- Search Input -->
+                <div class="relative w-full sm:w-64">
+                  <Search class="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+                  <input 
+                    v-model="itemSearchQuery" 
+                    type="text" 
+                    placeholder="Cari SKU / nama / note..." 
+                    class="pl-9 pr-3 py-1.5 w-full text-xs border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-red-500" 
+                  />
+                </div>
+                <!-- Status Filter Select -->
+                <div class="w-full sm:w-48">
+                  <select 
+                    v-model="itemStatusFilter"
+                    class="px-3 py-1.5 w-full text-xs border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-red-500"
+                  >
+                    <option value="ALL">Semua Status</option>
+                    <option value="NEED_ORDER">Perlu / Kurang PO</option>
+                    <option value="ORDERED">Sudah / Kelebihan PO</option>
+                    <option value="READY">Menunggu Pengiriman</option>
+                    <option value="PARTIAL">Dikirim Sebagian</option>
+                    <option value="SHIPPED">Sudah Dikirim</option>
+                    <option value="HOLD">Hold by Customer</option>
+                  </select>
+                </div>
+              </div>
+            </div>
           </CardHeader>
           <div class="overflow-auto flex-1">
             <div class="[&>div]:overflow-visible min-w-[800px] w-full">
@@ -1111,7 +1204,7 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
               </TableHeader>
               <TableBody>
                 <TableRow 
-                    v-for="(item, idx) in soDetail.items" 
+                    v-for="(item, idx) in filteredItems" 
                     v-show="!isPurchaseExpanded || item.qty_to_order > 0"
                     :key="idx" 
                     class="group hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors border-b border-gray-100 dark:border-slate-700 last:border-0"
@@ -1266,6 +1359,15 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                   <TableCell class="text-right pr-6 align-top pt-3">
                     <!-- Edit button only shows after sync completes -->
                     <Button v-if="!isSyncing" size="sm" variant="outline" class="h-8 px-3 rounded border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-600 dark:hover:border-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all bg-white dark:bg-slate-800 flex items-center gap-1.5 ml-auto" @click="openActionModal(item)"><Edit class="w-3.5 h-3.5"/><span class="text-xs font-bold">Edit</span></Button>
+                  </TableCell>
+                </TableRow>
+                <TableRow v-if="filteredItems.length === 0">
+                  <TableCell colspan="8" class="text-center py-12 text-slate-500">
+                    <div class="flex flex-col items-center justify-center">
+                      <Search class="w-8 h-8 text-slate-300 dark:text-slate-600 mb-2" />
+                      <p class="text-sm font-semibold">Produk tidak ditemukan</p>
+                      <p class="text-xs text-slate-400 mt-1">Coba gunakan kata kunci pencarian lain atau ubah filter status.</p>
+                    </div>
                   </TableCell>
                 </TableRow>
               </TableBody>
