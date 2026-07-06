@@ -21,7 +21,7 @@ import {
   Edit, CheckCircle2, Clock, Anchor, Factory, FileText, 
   PackageCheck, Share2, Info, ExternalLink, Package, Hourglass, 
   Layers, AlertCircle, ShoppingCart, Download, AlertTriangle,
-  ChevronDown, ChevronUp, Plane, Box, Copy, Search
+  ChevronDown, ChevronUp, Plane, Box, Copy, Search, UploadCloud
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -507,6 +507,199 @@ const fetchHdoInBackground = async (doNumbers) => {
     isSyncing.value = false
     syncProgress.value = 0
   }
+}
+
+// --- EXCEL STATUS IMPORT LOGIC ---
+const excelFileInput = ref(null)
+const isExcelParsing = ref(false)
+const isExcelModalOpen = ref(false)
+const excelRowsToUpdate = ref([]) // Matched items to update
+
+const triggerExcelImport = () => {
+  if (excelFileInput.value) {
+    excelFileInput.value.click()
+  }
+}
+
+const handleExcelImport = (e) => {
+  const file = e.target.files[0]
+  if (!file) return
+  
+  isExcelParsing.value = true
+  const reader = new FileReader()
+  reader.onload = async (evt) => {
+    try {
+      const data = new Uint8Array(evt.target.result)
+      const workbook = XLSX.read(data, { type: 'array' })
+      const firstSheetName = workbook.SheetNames[0]
+      const worksheet = workbook.Sheets[firstSheetName]
+      const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '' })
+      
+      if (rows.length === 0) {
+        alert("File Excel tidak berisi data.")
+        return
+      }
+      
+      // Auto detect columns
+      const headers = Object.keys(rows[0])
+      let hpoCol = '', itemCol = '', exworkCol = '', etaCol = '', deliveryCol = '', statusCol = ''
+      
+      headers.forEach(header => {
+        const h = header.toLowerCase().replace(/[\s\_\-]/g, '')
+        if (h.includes('po') || h.includes('hpo') || h.includes('customerpo') || h.includes('nopembelian')) hpoCol = header
+        else if (h.includes('mlfb') || h.includes('item') || h.includes('code') || h.includes('sku') || h.includes('nomorproduct')) itemCol = header
+        else if (h.includes('exwork') || h.includes('exworkdate')) exworkCol = header
+        else if (h.includes('eta') || h.includes('etajakarta')) etaCol = header
+        else if (h.includes('deliverydate') || h.includes('tanggaldo')) deliveryCol = header
+        else if (h.includes('status')) statusCol = header
+      })
+      
+      if (!hpoCol || !itemCol) {
+        alert("Kolom HPO Number ('Customer PO') dan Product SKU ('MLFB') tidak terdeteksi otomatis. Pastikan nama header kolom sesuai.")
+        return
+      }
+      
+      // Date parser helper
+      const parseExcelDateLocal = (val) => {
+        if (val === undefined || val === null || val === '') return null
+        if (typeof val === 'number') {
+          const date = new Date(Math.round((val - 25569) * 86400 * 1000))
+          const yyyy = date.getFullYear()
+          const mm = String(date.getMonth() + 1).padStart(2, '0')
+          const dd = String(date.getDate()).padStart(2, '0')
+          return `${yyyy}-${mm}-${dd}`
+        }
+        const str = String(val).trim()
+        if (!str) return null
+        const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
+        if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`
+        const ymd = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/)
+        if (ymd) return `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`
+        const parsed = new Date(str)
+        if (!isNaN(parsed.getTime())) {
+          const yyyy = parsed.getFullYear()
+          const mm = String(parsed.getMonth() + 1).padStart(2, '0')
+          const dd = String(parsed.getDate()).padStart(2, '0')
+          return `${yyyy}-${mm}-${dd}`
+        }
+        return str
+      }
+      
+      // Status mapper helper
+      const mapStatusLocal = (excelStatus) => {
+        if (!excelStatus) return ''
+        const s = String(excelStatus).trim().toLowerCase()
+        if (s.includes('done delivery') || s.includes('delivered') || s.includes('customer') || s.includes('hokiindo')) return 'Already in Hokiindo Raya'
+        if (s.includes('siemens') || s.includes('dunex') || s.includes('warehouse') || s.includes('tiba gudang dunex')) return 'Already in siemens Warehouse'
+        if (s.includes('transit') || s.includes('eta') || s.includes('port') || s.includes('jkt') || s.includes('jkt port')) return 'ETA Port JKT'
+        if (s.includes('forwarder') || s.includes('ex-works') || s.includes('exwork') || s.includes('ready')) return 'Follow up with our forwarder'
+        const exact = ['follow up with our forwarder', 'eta port jkt', 'already in siemens warehouse', 'already in hokiindo raya']
+        const matched = exact.find(e => e.toLowerCase() === s)
+        if (matched) return matched
+        return excelStatus
+      }
+      
+      // Match against the shipments currently loaded in shipmentList.value for this specific HSO
+      const matches = []
+      rows.forEach(row => {
+        const hpoVal = row[hpoCol]
+        const hpoNumber = hpoVal ? String(hpoVal).trim() : ''
+        
+        const itemVal = row[itemCol]
+        const itemCode = itemVal ? String(itemVal).trim() : ''
+        
+        if (!hpoNumber || !itemCode) return
+        
+        // Find matching shipments loaded for this HSO
+        const matchedShipments = shipmentList.value.filter(s => 
+          s.hpo_number && s.item_code &&
+          s.hpo_number.toLowerCase() === hpoNumber.toLowerCase() &&
+          s.item_code.toLowerCase() === itemCode.toLowerCase()
+        )
+        
+        if (matchedShipments.length > 0) {
+          const excelExwork = exworkCol ? parseExcelDateLocal(row[exworkCol]) : null
+          const excelEta = etaCol ? parseExcelDateLocal(row[etaCol]) : null
+          const excelDelivery = deliveryCol ? parseExcelDateLocal(row[deliveryCol]) : null
+          const excelStatus = statusCol ? mapStatusLocal(row[statusCol]) : ''
+          
+          const primaryShipment = matchedShipments[0]
+          
+          matches.push({
+            hpoNumber,
+            itemCode,
+            // New Excel values
+            excelExwork,
+            excelEta,
+            excelDelivery,
+            excelStatus,
+            // Old DB values
+            dbStatus: primaryShipment.current_status || '',
+            dbExwork: primaryShipment.exwork_date || '',
+            dbEta: primaryShipment.eta_date || '',
+            dbDelivery: primaryShipment.dunex_date || '',
+            // Shipment record IDs to update
+            shipmentIds: matchedShipments.map(s => s.id)
+          })
+        }
+      })
+      
+      if (matches.length === 0) {
+        alert("Tidak ada item atau nomor HPO yang cocok dengan data pelacakan di HSO ini.")
+        return
+      }
+      
+      excelRowsToUpdate.value = matches
+      isExcelModalOpen.value = true
+    } catch (err) {
+      console.error(err)
+      alert("Gagal membaca file Excel.")
+    } finally {
+      isExcelParsing.value = false
+      if (excelFileInput.value) excelFileInput.value.value = ''
+    }
+  }
+  reader.readAsArrayBuffer(file)
+}
+
+const applyExcelUpdates = async () => {
+  isExcelParsing.value = true
+  let successCount = 0
+  let errorCount = 0
+  
+  for (const item of excelRowsToUpdate.value) {
+    try {
+      const updateData = {}
+      if (item.excelStatus) {
+        updateData.current_status = item.excelStatus
+        updateData.status_date = new Date().toISOString().split('T')[0]
+      }
+      if (item.excelExwork) updateData.exwork_date = item.excelExwork
+      if (item.excelEta) updateData.eta_date = item.excelEta
+      if (item.excelDelivery) updateData.dunex_date = item.excelDelivery
+      
+      updateData.updated_at = new Date().toISOString()
+      
+      const { error } = await supabase
+        .from('shipments')
+        .update(updateData)
+        .in('id', item.shipmentIds)
+        
+      if (error) throw error
+      successCount += item.shipmentIds.length
+    } catch (err) {
+      console.error(err)
+      errorCount++
+    }
+  }
+  
+  isExcelParsing.value = false
+  isExcelModalOpen.value = false
+  
+  alert(`Berhasil memperbarui ${successCount} data pelacakan di database!`)
+  
+  // Reload SO detail and shipments to reflect changes
+  fetchDetail()
 }
 
 // --- 2. DATA FETCHING ---
@@ -1181,6 +1374,13 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
               <Button v-if="selectedItemCodes.length > 0" size="lg" class="shadow-sm bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 transition-all animate-in zoom-in-95 duration-200" @click="openBulkEditModal">
                 <Layers class="w-4 h-4 mr-2"/> Update ({{ selectedItemCodes.length }}) Item
               </Button>
+              <Button size="lg" :variant="'outline'" class="shadow-sm border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 transition-all hover:shadow-md active:scale-95" @click="triggerExcelImport" :disabled="isExcelParsing || isLoading">
+                <div class="flex items-center gap-2">
+                  <UploadCloud class="w-5 h-5" :class="isExcelParsing ? 'animate-spin' : ''"/>
+                  <span class="font-semibold">{{ isExcelParsing ? 'Memuat...' : 'Import Excel Status' }}</span>
+                </div>
+              </Button>
+              <input type="file" ref="excelFileInput" class="hidden" accept=".xlsx, .xls" @change="handleExcelImport" />
               <Button size="lg" class="shadow-sm transition-all hover:shadow-md active:scale-95" :class="isLinkCopied ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white dark:shadow-red-900/20'" @click="shareToClient" :disabled="isLinkCopied || isLoading">
                 <div class="flex items-center gap-2">
                   <component :is="isLinkCopied ? CheckCircle2 : Share2" class="w-5 h-5"/>
@@ -1885,6 +2085,111 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
               <button @click="saveUpdate" :disabled="isSubmitting" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2.5 font-bold text-sm rounded shadow-lg active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"><Loader2 v-if="isSubmitting" class="w-4 h-4 animate-spin" /> {{ isSubmitting ? 'SAVING...' : isBulkMode ? 'UPDATE ALL' : 'UPDATE ITEM' }}</button>
           </div>
         </SheetContent>
+      <!-- Excel Import Confirmation Modal -->
+      <div v-if="isExcelModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto animate-in fade-in duration-200">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden font-source-code">
+          
+          <!-- Header -->
+          <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 flex justify-between items-center shrink-0">
+            <div>
+              <h3 class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <FileSpreadsheet class="w-5 h-5 text-emerald-600 dark:text-emerald-400"/>
+                Konfirmasi Update Status (Excel)
+              </h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Ditemukan <strong>{{ excelRowsToUpdate.length }}</strong> item yang cocok dengan HSO ini. Silakan tinjau perbedaan di bawah sebelum menerapkan.
+              </p>
+            </div>
+            <button @click="isExcelModalOpen = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl font-bold p-1">&times;</button>
+          </div>
+          
+          <!-- Table Grid Content -->
+          <div class="p-6 overflow-y-auto flex-1 space-y-4">
+            <div class="border rounded-lg overflow-hidden border-slate-200 dark:border-slate-800">
+              <Table>
+                <TableHeader class="bg-slate-100 dark:bg-slate-950 sticky top-0 z-10 shadow-sm">
+                  <TableRow>
+                    <TableHead class="font-bold text-xs text-slate-500">HPO Number</TableHead>
+                    <TableHead class="font-bold text-xs text-slate-500">Item SKU</TableHead>
+                    <TableHead class="font-bold text-xs text-slate-500">Status (Lama → Baru)</TableHead>
+                    <TableHead class="font-bold text-xs text-slate-500">Ex-Works Date (Lama → Baru)</TableHead>
+                    <TableHead class="font-bold text-xs text-slate-500">ETA Jakarta (Lama → Baru)</TableHead>
+                    <TableHead class="font-bold text-xs text-slate-500">Delivery Date (Lama → Baru)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <TableRow 
+                    v-for="(row, idx) in excelRowsToUpdate" 
+                    :key="idx"
+                    class="border-b border-slate-100 dark:border-slate-800/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors text-xs"
+                  >
+                    <TableCell class="font-bold">{{ row.hpoNumber }}</TableCell>
+                    <TableCell class="font-medium text-slate-600 dark:text-slate-400">{{ row.itemCode }}</TableCell>
+                    
+                    <!-- Status -->
+                    <TableCell>
+                      <div class="flex flex-col">
+                        <span class="text-slate-400 line-through">{{ row.dbStatus || '-' }}</span>
+                        <span class="font-bold text-slate-900 dark:text-white" :class="row.dbStatus !== row.excelStatus && 'text-blue-600 dark:text-blue-400'">
+                          {{ row.excelStatus || '-' }}
+                        </span>
+                      </div>
+                    </TableCell>
+                    
+                    <!-- Exwork -->
+                    <TableCell>
+                      <div class="flex flex-col">
+                        <span class="text-slate-400 line-through">{{ row.dbExwork || '-' }}</span>
+                        <span class="font-bold text-slate-900 dark:text-white" :class="row.dbExwork !== row.excelExwork && 'text-emerald-600 dark:text-emerald-400'">
+                          {{ row.excelExwork || '-' }}
+                        </span>
+                      </div>
+                    </TableCell>
+                    
+                    <!-- ETA -->
+                    <TableCell>
+                      <div class="flex flex-col">
+                        <span class="text-slate-400 line-through">{{ row.dbEta || '-' }}</span>
+                        <span class="font-bold text-slate-900 dark:text-white" :class="row.dbEta !== row.excelEta && 'text-emerald-600 dark:text-emerald-400'">
+                          {{ row.excelEta || '-' }}
+                        </span>
+                      </div>
+                    </TableCell>
+                    
+                    <!-- Delivery -->
+                    <TableCell>
+                      <div class="flex flex-col">
+                        <span class="text-slate-400 line-through">{{ row.dbDelivery || '-' }}</span>
+                        <span class="font-bold text-slate-900 dark:text-white" :class="row.dbDelivery !== row.excelDelivery && 'text-emerald-600 dark:text-emerald-400'">
+                          {{ row.excelDelivery || '-' }}
+                        </span>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+          
+          <!-- Footer Buttons -->
+          <div class="px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 flex justify-end items-center gap-3 shrink-0">
+            <button 
+              @click="isExcelModalOpen = false" 
+              class="px-5 py-2 text-slate-600 dark:text-slate-400 text-xs font-bold border border-slate-300 dark:border-slate-700 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              BATAL
+            </button>
+            <Button 
+              @click="applyExcelUpdates" 
+              :disabled="isExcelParsing"
+              class="bg-red-600 hover:bg-red-700 text-white text-xs font-bold px-6 py-2 transition-all flex items-center gap-1.5 shadow-md"
+            >
+              <RefreshCw v-if="isExcelParsing" class="w-3.5 h-3.5 animate-spin"/>
+              {{ isExcelParsing ? 'Menyimpan...' : 'TERAPKAN UPDATE MASSAL' }}
+            </Button>
+          </div>
+        </div>
+      </div>
       </Sheet>
 </div>
     </div>

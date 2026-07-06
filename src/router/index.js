@@ -14,7 +14,6 @@ import DeliveryOrderListView from '@/views/DeliveryOrderListView.vue'
 import DeliveryOrderDetailView from '@/views/DeliveryOrderDetailView.vue'
 import ReceiveItemListView from '@/views/ReceiveItemListView.vue'
 import ReceiveItemDetailView from '@/views/ReceiveItemDetailView.vue'
-import ImportTrackingView from '@/views/ImportTrackingView.vue'
 
 // Import Public
 import PublicLayout from '@/layouts/PublicLayout.vue'
@@ -44,7 +43,6 @@ const router = createRouter({
         { path: '/delivery-orders/:id', component: DeliveryOrderDetailView },
         { path: '/receive-items', component: ReceiveItemListView },
         { path: '/receive-items/:id', component: ReceiveItemDetailView },
-        { path: '/import-tracking', component: ImportTrackingView },
         { path: '/settings', component: SettingsView },
       ]
     },
