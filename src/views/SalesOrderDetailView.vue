@@ -461,6 +461,7 @@ const fetchHpoInBackground = async (soNumber) => {
           }
         }
       }
+      }
       
       syncProgress.value = 100
   } catch (err) {
