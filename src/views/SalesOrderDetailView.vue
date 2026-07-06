@@ -599,6 +599,35 @@ const handleExcelImport = (e) => {
         return excelStatus
       }
       
+      // Match helpers for robust comparisons
+      const cleanString = (val) => {
+        if (!val) return ''
+        return String(val).trim().toLowerCase().replace(/\s/g, '')
+      }
+
+      const isHpoMatch = (dbHpo, excelHpo) => {
+        const d = cleanString(dbHpo)
+        const e = cleanString(excelHpo)
+        if (!d || !e) return false
+        if (d === e) return true
+        
+        // Base match (strip revisions like R1, R2, REV1, etc.)
+        const dBase = d.replace(/(r\d+|rev\d+|v\d+)$/, '')
+        const eBase = e.replace(/(r\d+|rev\d+|v\d+)$/, '')
+        if (dBase === eBase) return true
+        
+        // Substring match
+        if (d.includes(e) || e.includes(d)) return true
+        return false
+      }
+
+      const isItemMatch = (dbItem, excelItem) => {
+        const d = cleanString(dbItem)
+        const e = cleanString(excelItem)
+        if (!d || !e) return false
+        return d === e
+      }
+
       // Match against the shipments currently loaded in shipmentList.value for this specific HSO
       const matches = []
       rows.forEach(row => {
@@ -611,11 +640,31 @@ const handleExcelImport = (e) => {
         if (!hpoNumber || !itemCode) return
         
         // Find matching shipments loaded for this HSO
-        const matchedShipments = shipmentList.value.filter(s => 
-          s.hpo_number && s.item_code &&
-          s.hpo_number.toLowerCase() === hpoNumber.toLowerCase() &&
-          s.item_code.toLowerCase() === itemCode.toLowerCase()
-        )
+        const matchedShipments = shipmentList.value.filter(s => {
+          // Match MLFB / SKU code
+          if (!isItemMatch(s.item_code, itemCode)) return false
+          
+          // Match HPO Number
+          // 1. First, check if shipment's HPO number in DB matches
+          if (s.hpo_number && isHpoMatch(s.hpo_number, hpoNumber)) {
+            return true
+          }
+          
+          // 2. Second, check if Accurate's HPO mapping for this item code contains the HPO number
+          const mappedHpo = hpoMapping.value[s.item_code]
+          if (mappedHpo) {
+            const hpos = mappedHpo.split(',').map(x => x.trim())
+            return hpos.some(hpo => isHpoMatch(hpo, hpoNumber))
+          }
+          
+          // 3. Fallback: if shipment has no HPO number in DB, and there is only 1 shipment item of this code in the SO, match it!
+          const sameItemShipments = shipmentList.value.filter(x => isItemMatch(x.item_code, itemCode))
+          if (sameItemShipments.length === 1) {
+            return true
+          }
+          
+          return false
+        })
         
         if (matchedShipments.length > 0) {
           const excelExwork = exworkCol ? parseExcelDateLocal(row[exworkCol]) : null
@@ -670,6 +719,9 @@ const applyExcelUpdates = async () => {
   for (const item of excelRowsToUpdate.value) {
     try {
       const updateData = {}
+      if (item.hpoNumber) {
+        updateData.hpo_number = item.hpoNumber
+      }
       if (item.excelStatus) {
         updateData.current_status = item.excelStatus
         updateData.status_date = new Date().toISOString().split('T')[0]
