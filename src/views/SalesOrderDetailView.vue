@@ -420,10 +420,49 @@ const fetchHpoInBackground = async (soNumber) => {
       
       hpoMapping.value = mapping
       hpoDetails.value = items
-      console.log(`Background: Found ${Object.keys(mapping).length} HPO mappings from ${poData.totalPOs || 'N/A'} POs checked`)
-    }
-    
-    syncProgress.value = 100
+      console.log(`Background: Found ${Object.keys(mapping).length} HPO mappings`)
+
+      // Database healing: Auto-create missing shipment records for items that have POs but no shipment rows in the DB
+      if (soDetail.value && soDetail.value.items) {
+        const missingShipments = []
+        soDetail.value.items.forEach(item => {
+          const hasHpo = mapping[item.code]
+          if (hasHpo) {
+            const hasShipment = shipmentList.value.some(s => s.item_code === item.code)
+            if (!hasShipment) {
+              const hpos = hasHpo.split(',').map(x => x.trim())
+              hpos.forEach(hpo => {
+                missingShipments.push({
+                  so_id: String(soDetail.value.id),
+                  item_code: item.code,
+                  hpo_number: hpo,
+                  current_status: 'Follow up with our forwarder',
+                  status_date: new Date().toISOString().split('T')[0],
+                  shipment_type: 'IMPORT_PO',
+                  admin_notes: 'Auto-created on page load (missing shipment record)'
+                })
+              })
+            }
+          }
+        })
+        
+        if (missingShipments.length > 0) {
+          console.log(`Healing: Creating ${missingShipments.length} missing shipment records...`)
+          const { data: newShips, error: insertErr } = await supabase
+            .from('shipments')
+            .insert(missingShipments)
+            .select()
+            
+          if (!insertErr && newShips) {
+            shipmentList.value = [...shipmentList.value, ...newShips]
+            console.log('Successfully healed missing shipments')
+          } else if (insertErr) {
+            console.warn('Healing error:', insertErr)
+          }
+        }
+      }
+      
+      syncProgress.value = 100
   } catch (err) {
     console.warn('HPO fetch error:', err)
   } finally {
