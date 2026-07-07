@@ -3,6 +3,9 @@
 -- Jalankan di Supabase Dashboard > SQL Editor atau migrasikan
 -- =============================================================
 
+-- Enable pg_cron extension (ini akan membuat schema 'cron')
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
 -- Enable pg_net extension (jika belum aktif)
 CREATE EXTENSION IF NOT EXISTS pg_net;
 
