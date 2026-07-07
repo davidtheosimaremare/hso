@@ -329,6 +329,9 @@ const exportReminderExcel = () => {
     const reminderItems = [];
     
     soDetail.value.items.forEach(item => {
+        // Skip items that do not need to be ordered (stock is ready / Menunggu Pengiriman)
+        if (!item.qty_to_order || item.qty_to_order <= 0) return;
+        
         const hpos = getHpoEntries(item);
         if (hpos.length === 0) {
             // If there are no HPOs from Accurate, look for a manual shipment record in DB
