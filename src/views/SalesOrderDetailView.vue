@@ -21,7 +21,7 @@ import {
   Edit, CheckCircle2, Clock, Anchor, Factory, FileText, 
   PackageCheck, Share2, Info, ExternalLink, Package, Hourglass, 
   Layers, AlertCircle, ShoppingCart, Download, AlertTriangle,
-  ChevronDown, ChevronUp, Plane, Box, Copy, Search, UploadCloud
+  ChevronDown, ChevronUp, Plane, Box, Copy, Search, UploadCloud, FileSpreadsheet
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -321,6 +321,100 @@ const exportToExcel = () => {
     
     const safeSoNumber = (soDetail.value.number || 'SO').replace(/[\/\\]/g, '_');
     XLSX.writeFile(wb, `ORDER_LIST_${safeSoNumber}.xlsx`);
+}
+
+const exportReminderExcel = () => {
+    if (!soDetail.value || !soDetail.value.items) return;
+    
+    const reminderItems = [];
+    
+    soDetail.value.items.forEach(item => {
+        const hpos = getHpoEntries(item);
+        if (hpos.length === 0) {
+            // If there are no HPOs from Accurate, look for a manual shipment record in DB
+            const manualShipment = shipmentList.value.find(s => s.item_code === item.code && !s.hpo_number);
+            if (manualShipment) {
+                const status = getVisualStatus(manualShipment);
+                if (['Follow up with our forwarder', 'ETA Port JKT', 'Already in siemens Warehouse'].includes(status)) {
+                    reminderItems.push({
+                        hpoNumber: '-',
+                        itemCode: item.code,
+                        itemName: item.name,
+                        qty: item.qty_order,
+                        status: status === 'Follow up with our forwarder' ? 'Ex-Works' : status === 'ETA Port JKT' ? 'ETA JKT' : 'Tiba Dunex',
+                        exworkDate: manualShipment.exwork_date || '-',
+                        etaDate: manualShipment.eta_date || '-',
+                        dunexDate: manualShipment.dunex_date || '-',
+                        note: manualShipment.admin_notes || '-'
+                    });
+                }
+            }
+        } else {
+            hpos.forEach(hpo => {
+                const shipment = getHpoShipment(item, hpo.poNumber);
+                const status = getVisualStatus(shipment);
+                if (['Follow up with our forwarder', 'ETA Port JKT', 'Already in siemens Warehouse'].includes(status)) {
+                    reminderItems.push({
+                        hpoNumber: hpo.poNumber,
+                        itemCode: item.code,
+                        itemName: item.name,
+                        qty: hpo.quantity || item.qty_order,
+                        status: status === 'Follow up with our forwarder' ? 'Ex-Works' : status === 'ETA Port JKT' ? 'ETA JKT' : 'Tiba Dunex',
+                        exworkDate: shipment.exwork_date || '-',
+                        etaDate: shipment.eta_date || '-',
+                        dunexDate: shipment.dunex_date || '-',
+                        note: shipment.admin_notes || '-'
+                    });
+                }
+            });
+        }
+    });
+
+    if (reminderItems.length === 0) {
+        alert("Tidak ada item yang berstatus Ex-Works, ETA JKT, atau Tiba Dunex untuk HSO ini.");
+        return;
+    }
+
+    const hsoNumber = soDetail.value?.number || '-';
+    const customerName = soDetail.value?.customer?.name || '-';
+
+    const dataToExport = reminderItems.map(item => ({
+        "No HSO": hsoNumber,
+        "Nama Customer": customerName,
+        "No HPO (Purchase Order)": item.hpoNumber,
+        "Kode Barang (MLFB)": item.itemCode,
+        "Nama Barang": item.itemName,
+        "Qty": item.qty,
+        "Status Logistik": item.status,
+        "Tanggal Ex-Works": item.exworkDate,
+        "Tanggal ETA JKT": item.etaDate,
+        "Tanggal Tiba Dunex": item.dunexDate,
+        "Catatan": item.note
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+
+    // Auto-size columns
+    const colWidths = [
+        { wch: 15 }, // No HSO
+        { wch: 30 }, // Nama Customer
+        { wch: 22 }, // No HPO
+        { wch: 22 }, // Kode Barang
+        { wch: 45 }, // Nama Barang
+        { wch: 8 },  // Qty
+        { wch: 18 }, // Status Logistik
+        { wch: 18 }, // Tanggal Ex-Works
+        { wch: 18 }, // Tanggal ETA JKT
+        { wch: 18 }, // Tanggal Tiba Dunex
+        { wch: 35 }  // Catatan
+    ];
+    ws['!cols'] = colWidths;
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Reminder PO");
+
+    const safeSoNumber = (soDetail.value.number || 'SO').replace(/[\/\\]/g, '_');
+    XLSX.writeFile(wb, `REMINDER_PO_${safeSoNumber}.xlsx`);
 }
 
 // --- BACKGROUND HPO FETCH ---
@@ -1558,6 +1652,12 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                 </div>
               </Button>
               <input type="file" ref="excelFileInput" class="hidden" accept=".xlsx, .xls" @change="handleExcelImport" />
+              <Button size="lg" :variant="'outline'" class="shadow-sm border-emerald-600 text-emerald-600 dark:border-emerald-500 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition-all hover:shadow-md active:scale-95" @click="exportReminderExcel" :disabled="isLoading">
+                <div class="flex items-center gap-2">
+                  <FileSpreadsheet class="w-5 h-5"/>
+                  <span class="font-semibold">Export Reminder PO</span>
+                </div>
+              </Button>
               <Button size="lg" class="shadow-sm transition-all hover:shadow-md active:scale-95" :class="isLinkCopied ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white dark:shadow-red-900/20'" @click="shareToClient" :disabled="isLinkCopied || isLoading">
                 <div class="flex items-center gap-2">
                   <component :is="isLinkCopied ? CheckCircle2 : Share2" class="w-5 h-5"/>
