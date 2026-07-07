@@ -288,7 +288,7 @@ const exportToExcel = () => {
     if (itemsToPurchase.value.length === 0) return alert("Tidak ada barang yang perlu dipesan.");
     
     const hsoNumber = soDetail.value?.number || '-';
-    const customerName = soDetail.value?.customer?.name || '-';
+    const customerName = soDetail.value?.client || '-';
 
     const dataToExport = itemsToPurchase.value.map(item => ({
         "No HSO": hsoNumber,
@@ -376,7 +376,7 @@ const exportReminderExcel = () => {
     }
 
     const hsoNumber = soDetail.value?.number || '-';
-    const customerName = soDetail.value?.customer?.name || '-';
+    const customerName = soDetail.value?.client || '-';
 
     const dataToExport = reminderItems.map(item => ({
         "No HSO": hsoNumber,
@@ -1619,29 +1619,29 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
 
       <div v-else-if="soDetail" class="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
 
-        <div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 pb-2 border-b border-gray-200 dark:border-gray-800 pb-6">
-          <div class="space-y-2">
+        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 pb-6 border-b border-gray-200 dark:border-gray-800">
+          <div class="space-y-2 flex-1 min-w-0">
             <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-1">
               <span class="cursor-pointer hover:text-red-600 dark:hover:text-red-400 transition-colors" @click="router.push('/sales-orders')">Sales Orders</span>
               <span class="text-gray-300 dark:text-gray-600">/</span>
               <span class="font-medium text-gray-900 dark:text-white">Detail</span>
             </div>
             <h1 class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight flex items-center gap-3">{{ soDetail.client }}</h1>
-            <div class="flex items-center gap-3 text-sm font-medium text-gray-500 dark:text-gray-400">
-               <span class="flex items-center gap-1.5"><Calendar class="w-4 h-4"/> {{ soDetail.date }}</span>
-               <span class="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600"></span>
-               <span class="flex items-center gap-1.5 group">
-                 <Building2 class="w-4 h-4"/> 
+            <div class="flex flex-wrap items-center gap-3 text-sm font-medium text-gray-500 dark:text-gray-400">
+               <span class="flex items-center gap-1.5 whitespace-nowrap"><Calendar class="w-4 h-4 flex-shrink-0"/> {{ soDetail.date }}</span>
+               <span class="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600 hidden sm:inline-block"></span>
+               <span class="flex items-center gap-1.5 group whitespace-nowrap">
+                 <Building2 class="w-4 h-4 flex-shrink-0"/> 
                  {{ soDetail.number }}
                  <button @click="copySoNumber" class="ml-0.5 p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors" title="Copy HSO Number">
                    <component :is="isSoNumberCopied ? CheckCircle2 : Copy" class="w-3.5 h-3.5" :class="isSoNumberCopied ? 'text-green-600 dark:text-green-400' : ''"/>
                  </button>
                </span>
-               <span class="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600"></span>
-               <span class="text-gray-900 dark:text-gray-200 bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-xs">PO: {{ soDetail.po_number }}</span>
+               <span class="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600 hidden sm:inline-block"></span>
+               <span class="text-gray-900 dark:text-gray-200 bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-xs whitespace-nowrap">PO: {{ soDetail.po_number }}</span>
             </div>
           </div>
-          <div class="flex gap-3">
+          <div class="flex flex-wrap items-center gap-3 w-full lg:w-auto shrink-0 mt-2 lg:mt-0">
               <Button v-if="selectedItemCodes.length > 0" size="lg" class="shadow-sm bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 transition-all animate-in zoom-in-95 duration-200" @click="openBulkEditModal">
                 <Layers class="w-4 h-4 mr-2"/> Update ({{ selectedItemCodes.length }}) Item
               </Button>
