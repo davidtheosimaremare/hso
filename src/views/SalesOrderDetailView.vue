@@ -1561,7 +1561,17 @@ const getRowStatus = (item) => {
     return { text: 'PRODUK SUDAH DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
   }
   
-  // Cek HPO dari Accurate atau dari DB
+  // Item STOCK (qty_to_order === 0): tidak perlu dipesan, cek status pengiriman saja
+  // Harus dicek SEBELUM pengecekan HPO agar HPO lama dari DB tidak salah memicu "SUDAH DIPESAN"
+  if (item.qty_to_order === 0) {
+    if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) > 0) {
+      return { text: `DIKIRIM SEBAGIAN (SISA ${getDisplayedQtyRemaining(item)} ${item.unit})`, class: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800', icon: Truck }
+    }
+    // Belum ada pengiriman sama sekali → tunggu pengiriman
+    return { text: 'MENUNGGU PENGIRIMAN', class: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800', icon: Package }
+  }
+
+  // Cek HPO dari Accurate atau dari DB (hanya untuk item NO STOCK / qty_to_order > 0)
   const hpoEntries = getHpoEntries(item)
   const hasHpoInDb = item.logistics_hpo && item.logistics_hpo.trim().length > 0
 
@@ -1597,8 +1607,8 @@ const getRowStatus = (item) => {
     return { text: 'SUDAH DIPESAN', class: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800', icon: CheckCircle2 }
   }
   
-  // Jika stock ready tapi belum ada pengiriman
-  if (item.qty_to_order === 0 && item.qty_shipped === 0) {
+  // Fallback: stock belum dikirim (seharusnya sudah ditangani di atas)
+  if (item.qty_shipped === 0) {
     return { text: 'MENUNGGU PENGIRIMAN', class: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800', icon: Package }
   }
   
