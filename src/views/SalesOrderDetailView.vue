@@ -196,7 +196,7 @@ const filteredItems = computed(() => {
 
 const isAllSelected = computed(() => {
     if (filteredItems.value.length === 0) return false
-    const activeItems = filteredItems.value.filter(i => !i.is_fully_shipped)
+    const activeItems = filteredItems.value.filter(i => !isDisplayedFullyShipped(i))
     return activeItems.length > 0 && activeItems.every(i => selectedItemCodes.value.includes(i.code))
 })
 
@@ -1468,6 +1468,30 @@ const fulfillmentPercentage = (items) => {
   return total === 0 ? 0 : Math.round((shipped / total) * 100)
 }
 
+const getDisplayedQtyShipped = (item) => {
+  let totalHdoQty = 0
+  if (soDetail.value?.shipments) {
+    soDetail.value.shipments.forEach(shipment => {
+      if (shipment.items) {
+        const shipmentItem = shipment.items.find(i => i.code === item.code)
+        if (shipmentItem) {
+          totalHdoQty += Number(shipmentItem.qty_shipped || 0)
+        }
+      }
+    })
+  }
+  return Math.max(item.qty_shipped || 0, totalHdoQty)
+}
+
+const getDisplayedQtyRemaining = (item) => {
+  const shipped = getDisplayedQtyShipped(item)
+  return Math.max(0, (item.qty_order || 0) - shipped)
+}
+
+const isDisplayedFullyShipped = (item) => {
+  return getDisplayedQtyRemaining(item) <= 0
+}
+
 const getRowStatus = (item) => {
   // PRIORITAS TERTINGGI: Jika item di-hold oleh customer
   if (item.logistics_status === 'Hold by Customer') {
@@ -1475,10 +1499,10 @@ const getRowStatus = (item) => {
   }
   
   // Jika fully shipped (semua terkirim dan dikonfirmasi selesai)
-  if (item.is_fully_shipped) return { text: 'PRODUK SUDAH DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
+  if (isDisplayedFullyShipped(item)) return { text: 'PRODUK SUDAH DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
   
   // Jika sudah dikirim semua (tidak ada sisa tapi belum dikonfirmasi fully_shipped)
-  if (item.qty_shipped > 0 && item.qty_remaining === 0) {
+  if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) === 0) {
     return { text: 'PRODUK SUDAH DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
   }
   
@@ -1500,8 +1524,8 @@ const getRowStatus = (item) => {
   }
 
   // Jika sudah ada pengiriman sebagian (masih ada sisa), status = DIKIRIM SEBAGIAN
-  if (item.qty_shipped > 0 && item.qty_remaining > 0) {
-    return { text: `DIKIRIM SEBAGIAN (SISA ${item.qty_remaining} ${item.unit})`, class: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800', icon: Truck }
+  if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) > 0) {
+    return { text: `DIKIRIM SEBAGIAN (SISA ${getDisplayedQtyRemaining(item)} ${item.unit})`, class: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800', icon: Truck }
   }
   
   // Jika ada HPO dari Accurate (dan sudah terpenuhi penuh)
@@ -1537,28 +1561,55 @@ const getDaysSinceOrder = () => {
 }
 
 // Helper: Get HDO number safely considering note type
+const getHdosForItem = (item) => {
+  if (!soDetail.value?.shipments) return []
+  
+  const itemNoteType = getNoteType(item.admin_note)
+  
+  // Find all items in the SO with the same item code
+  const sameCodeSoItems = soDetail.value?.items ? soDetail.value.items.filter(i => i.code === item.code) : []
+  const hasMultipleRows = sameCodeSoItems.length > 1
+  
+  return soDetail.value.shipments.filter(shipment => {
+    if (!shipment.items) return false
+    
+    return shipment.items.some(i => {
+      if (i.code !== item.code) return false
+      const doItemNoteType = getNoteType(i.note)
+      
+      if (hasMultipleRows) {
+        // If there are multiple rows for the same item code, we strictly match the note types
+        if (itemNoteType !== 'unknown' && doItemNoteType !== 'unknown') {
+          return itemNoteType === doItemNoteType
+        }
+        return itemNoteType === doItemNoteType
+      }
+      
+      return true
+    })
+  })
+}
+
+const getSingleHdoQty = (hdo, item) => {
+  if (!hdo || !hdo.items) return 0
+  const doItem = hdo.items.find(i => i.code === item.code)
+  return doItem ? doItem.qty_shipped : 0
+}
+
+// Helper: Get HDO number safely considering note type
 const getHdoNumber = (item) => {
-  const noteType = getNoteType(item.admin_note)
-  const exactKey = `${item.code}_${noteType}`
-  if (hdoMapping.value[exactKey]) return hdoMapping.value[exactKey]
-  
-  if (hdoMapping.value[`${item.code}_unknown`]) return hdoMapping.value[`${item.code}_unknown`]
-  
+  const hdos = getHdosForItem(item)
+  if (hdos.length > 0) return hdos[0].no
   return item.logistics_hdo
 }
 
 // Helper: Get quantity shipped in HDO for specific item
 const getHdoQty = (item) => {
-  const hdoNumber = getHdoNumber(item)
-  if (!hdoNumber || !soDetail.value?.shipments) return null
-  
-  // Find the shipment/DO that matches this HDO number
-  const shipment = soDetail.value.shipments.find(s => s.no === hdoNumber)
-  if (!shipment || !shipment.items) return null
-  
-  // Find the item in this shipment
-  const shipmentItem = shipment.items.find(i => i.code === item.code)
-  return shipmentItem ? shipmentItem.qty_shipped : null
+  const hdos = getHdosForItem(item)
+  if (hdos.length > 0) {
+    return getSingleHdoQty(hdos[0], item)
+  }
+  return item.qty_shipped
 }
 
 // Helper: Get all HPO entries for specific item (can have multiple POs with different notes)
@@ -1674,7 +1725,7 @@ const groupedShipments = computed(() => {
 
 const openSiePortal = (item) => { const code = item.code ? item.code.trim() : ''; if(!code || code === '-') return; window.open(`https://sieportal.siemens.com/en-id/products-services/detail/${code}?tree=CatalogTree`, '_blank'); }
 const toggleSelectAll = () => {
-    const activeFilteredCodes = filteredItems.value.filter(i => !i.is_fully_shipped).map(i => i.code)
+    const activeFilteredCodes = filteredItems.value.filter(i => !isDisplayedFullyShipped(i)).map(i => i.code)
     const allActiveFilteredSelected = activeFilteredCodes.every(code => selectedItemCodes.value.includes(code))
     if (allActiveFilteredSelected) {
         selectedItemCodes.value = selectedItemCodes.value.filter(code => !activeFilteredCodes.includes(code))
@@ -1975,7 +2026,7 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                     :id="`item-${item.code}`"
                 >
                   <TableCell class="text-center align-top pt-4">
-                    <input v-if="!item.is_fully_shipped" type="checkbox" class="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer" :checked="selectedItemCodes.includes(item.code)" @change="toggleSelection(item.code)"/>
+                    <input v-if="!isDisplayedFullyShipped(item)" type="checkbox" class="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer" :checked="selectedItemCodes.includes(item.code)" @change="toggleSelection(item.code)"/>
                   </TableCell>
                   <TableCell class="pl-2 py-4 align-top">
                     <!-- SKU is now prominent -->
@@ -2001,12 +2052,12 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                   
                   <TableCell class="text-center align-top pt-4 bg-blue-50/30 dark:bg-blue-900/10">
                       <div class="flex flex-col items-center gap-1">
-                          <span class="font-bold text-blue-600 dark:text-blue-400">{{ item.qty_shipped }}</span>
+                          <span class="font-bold text-blue-600 dark:text-blue-400">{{ getDisplayedQtyShipped(item) }}</span>
                       </div>
                   </TableCell>
                   
                   <TableCell class="text-center align-top pt-4 bg-red-50/30 dark:bg-red-900/10">
-                      <span class="font-bold" :class="item.qty_remaining > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'">{{ item.qty_remaining }}</span>
+                      <span class="font-bold" :class="getDisplayedQtyRemaining(item) > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'">{{ getDisplayedQtyRemaining(item) }}</span>
                   </TableCell>
 
                   <TableCell class="pl-4 align-top pt-3">
@@ -2030,26 +2081,38 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                         </div>
                         
                         <!-- HDO (Resi Pengiriman) Info -->
-                        <div v-if="getHdoNumber(item) || (item.qty_shipped > 0 && item.logistics_hdo)" class="mt-2">
-                            <div class="bg-blue-50 dark:bg-blue-900/20 border-2 border-dashed border-blue-300 dark:border-blue-700 rounded-lg p-3">
+                        <div v-if="getHdosForItem(item).length > 0" class="mt-2 space-y-2">
+                            <div v-for="hdo in getHdosForItem(item)" :key="hdo.no" class="bg-blue-50 dark:bg-blue-900/20 border-2 border-dashed border-blue-300 dark:border-blue-700 rounded-lg p-3">
                                 <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-blue-200 dark:border-blue-800">
                                     <Truck class="w-4 h-4 text-blue-600 dark:text-blue-400" />
                                     <span class="text-xs font-bold text-blue-700 dark:text-blue-300">Pengiriman (HDO)</span>
                                 </div>
                                 <div class="flex items-center justify-between">
-                                    <span class="text-xs font-mono font-bold text-blue-600 dark:text-blue-400">{{ getHdoNumber(item) || item.logistics_hdo }}</span>
-                                    <span class="text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-800 px-1.5 py-0.5 rounded">{{ getHdoQty(item) || item.qty_shipped }} {{ item.unit }}</span>
+                                    <span class="text-xs font-mono font-bold text-blue-600 dark:text-blue-400">{{ hdo.no }}</span>
+                                    <span class="text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-800 px-1.5 py-0.5 rounded">{{ getSingleHdoQty(hdo, item) }} {{ item.unit }}</span>
                                 </div>
                                 <div v-if="hpoMapping[item.code] && getNoteType(item.admin_note) !== 'stock'" class="mt-2 pt-2 border-t border-dashed border-blue-200 dark:border-blue-800 text-[10px] text-blue-600 dark:text-blue-400 font-medium text-center">
                                     Ex PO: {{ hpoMapping[item.code] }}
                                 </div>
                             </div>
                         </div>
+                        <div v-else-if="item.qty_shipped > 0 && item.logistics_hdo" class="mt-2">
+                            <div class="bg-blue-50 dark:bg-blue-900/20 border-2 border-dashed border-blue-300 dark:border-blue-700 rounded-lg p-3">
+                                <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-blue-200 dark:border-blue-800">
+                                    <Truck class="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                                    <span class="text-xs font-bold text-blue-700 dark:text-blue-300">Pengiriman (HDO)</span>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs font-mono font-bold text-blue-600 dark:text-blue-400">{{ item.logistics_hdo }}</span>
+                                    <span class="text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-800 px-1.5 py-0.5 rounded">{{ item.qty_shipped }} {{ item.unit }}</span>
+                                </div>
+                            </div>
+                        </div>
                         
                         <!-- HPO Number + Logistics Status Combined (Support Multiple POs) -->
-                        <div v-if="!item.is_fully_shipped && getHpoEntries(item).length > 0" class="mt-1.5 space-y-2">
+                        <div v-if="!isDisplayedFullyShipped(item) && getHpoEntries(item).length > 0" class="mt-1.5 space-y-2">
                             <template v-for="(hpo, idx) in getHpoEntries(item)" :key="idx">
-                            <div v-show="!(item.qty_shipped > 0 && getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya')" class="bg-white dark:bg-slate-800 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-3">
+                            <div v-show="!(getDisplayedQtyShipped(item) > 0 && getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya')" class="bg-white dark:bg-slate-800 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-3">
                                 <!-- HPO Number -->
                                 <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-gray-200 dark:border-gray-700">
                                     <ShoppingCart class="w-4 h-4 text-green-600 dark:text-green-400" />
@@ -2094,21 +2157,21 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                         </div>
                         
                         <!-- Warning jika dikirim sebagian tapi belum ada HPO -->
-                        <div v-else-if="item.qty_shipped > 0 && item.qty_remaining > 0 && !isSyncing" class="mt-1.5 text-[10px] italic">
+                        <div v-else-if="getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) > 0 && !isSyncing" class="mt-1.5 text-[10px] italic">
                             <!-- Jika stock kurang (perlu order) -->
                             <span v-if="item.qty_to_order > 0" class="text-red-600 dark:text-red-400 flex items-center gap-1">
                                 <AlertTriangle class="w-3 h-3" />
-                                Ada kekurangan yang belum dipesan ({{ item.qty_remaining }} {{ item.unit }})
+                                Ada kekurangan yang belum dipesan ({{ getDisplayedQtyRemaining(item) }} {{ item.unit }})
                             </span>
                             <!-- Jika stock ready tapi belum dikirim semua -->
                             <span v-else class="text-blue-600 dark:text-blue-400 flex items-center gap-1">
                                 <Info class="w-3 h-3" />
-                                Ada {{ item.qty_remaining }} {{ item.unit }} belum dikirim
+                                Ada {{ getDisplayedQtyRemaining(item) }} {{ item.unit }} belum dikirim
                             </span>
                         </div>
 
                         <!-- Warning jika perlu PO tapi belum ada HPO -->
-                        <div v-else-if="item.qty_to_order > 0 && !item.is_fully_shipped && !isSyncing && getHpoEntries(item).length === 0" class="mt-1.5 text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
+                        <div v-else-if="item.qty_to_order > 0 && !isDisplayedFullyShipped(item) && !isSyncing && getHpoEntries(item).length === 0" class="mt-1.5 text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
                             <Clock class="w-3 h-3" />
                             Pesanan sudah {{ getDaysSinceOrder() }} hari
                         </div>
