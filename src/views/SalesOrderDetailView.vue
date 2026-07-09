@@ -768,6 +768,44 @@ const handleExcelImport = (e) => {
         }
         return null
       }
+
+      // Extract date embedded in status text
+      const extractDateFromText = (text) => {
+        if (!text) return null
+        const str = String(text).trim()
+        
+        // 1. Try to match English/Indonesian text date like "03 Jul 26" or "03 July 2026" or "3 Juli 2026"
+        const monthsMap = {
+          jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+          jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+          mei: '05', ags: '08', agu: '08', sep: '09', okt: '10', des: '12'
+        }
+        const textMatch = str.match(/(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|mei|ags|agu|okt|des)[a-z]*\s+(\d{2,4})/i)
+        if (textMatch) {
+          const d = textMatch[1].padStart(2, '0')
+          const mKey = textMatch[2].toLowerCase()
+          const m = monthsMap[mKey]
+          let y = textMatch[3]
+          if (y.length === 2) y = '20' + y
+          return `${y}-${m}-${d}`
+        }
+
+        // 2. Try to match standard formats like DD/MM/YYYY or DD-MM-YYYY or DD/MM/YY
+        const dmy = str.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/)
+        if (dmy) {
+          let y = dmy[3]
+          if (y.length === 2) y = '20' + y
+          const m = dmy[2].padStart(2, '0')
+          const d = dmy[1].padStart(2, '0')
+          return `${y}-${m}-${d}`
+        }
+        
+        // 3. Try to match YYYY-MM-DD
+        const ymd = str.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/)
+        if (ymd) return `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`
+        
+        return null
+      }
       
       // Status mapper helper
       const mapStatusLocal = (excelStatus) => {
@@ -848,10 +886,24 @@ const handleExcelImport = (e) => {
 
         seenKeys.add(key)
 
-        const excelExwork = exworkCol ? parseExcelDateLocal(matchingExcelRow[exworkCol]) : null
-        const excelEta = etaCol ? parseExcelDateLocal(matchingExcelRow[etaCol]) : null
+        let excelExwork = exworkCol ? parseExcelDateLocal(matchingExcelRow[exworkCol]) : null
+        let excelEta = etaCol ? parseExcelDateLocal(matchingExcelRow[etaCol]) : null
         let excelDelivery = deliveryCol ? parseExcelDateLocal(matchingExcelRow[deliveryCol]) : null
         const excelStatus = statusCol ? mapStatusLocal(matchingExcelRow[statusCol]) : ''
+        const excelStatusText = statusCol ? String(matchingExcelRow[statusCol]) : ''
+
+        // Fallback: extract date from status text if specific date columns are empty
+        if (excelStatusText) {
+          if (!excelExwork && excelStatus === 'Follow up with our forwarder') {
+            excelExwork = extractDateFromText(excelStatusText)
+          }
+          if (!excelEta && excelStatus === 'ETA Port JKT') {
+            excelEta = extractDateFromText(excelStatusText)
+          }
+          if (!excelDelivery && (excelStatus === 'Already in siemens Warehouse' || excelStatus === 'Already in Hokiindo Raya')) {
+            excelDelivery = extractDateFromText(excelStatusText)
+          }
+        }
 
         // All DB shipments with same item+HPO
         const dbShipments = shipmentList.value.filter(s =>
@@ -903,10 +955,24 @@ const handleExcelImport = (e) => {
 
             seenKeys.add(key)
 
-            const excelExwork = exworkCol ? parseExcelDateLocal(matchingExcelRow[exworkCol]) : null
-            const excelEta = etaCol ? parseExcelDateLocal(matchingExcelRow[etaCol]) : null
+            let excelExwork = exworkCol ? parseExcelDateLocal(matchingExcelRow[exworkCol]) : null
+            let excelEta = etaCol ? parseExcelDateLocal(matchingExcelRow[etaCol]) : null
             let excelDelivery = deliveryCol ? parseExcelDateLocal(matchingExcelRow[deliveryCol]) : null
             const excelStatus = statusCol ? mapStatusLocal(matchingExcelRow[statusCol]) : ''
+            const excelStatusText = statusCol ? String(matchingExcelRow[statusCol]) : ''
+
+            // Fallback: extract date from status text if specific date columns are empty
+            if (excelStatusText) {
+              if (!excelExwork && excelStatus === 'Follow up with our forwarder') {
+                excelExwork = extractDateFromText(excelStatusText)
+              }
+              if (!excelEta && excelStatus === 'ETA Port JKT') {
+                excelEta = extractDateFromText(excelStatusText)
+              }
+              if (!excelDelivery && (excelStatus === 'Already in siemens Warehouse' || excelStatus === 'Already in Hokiindo Raya')) {
+                excelDelivery = extractDateFromText(excelStatusText)
+              }
+            }
 
             if (!excelDelivery && (excelStatus === 'Already in siemens Warehouse' || excelStatus === 'Already in Hokiindo Raya')) {
               excelDelivery = getLocalDate()
