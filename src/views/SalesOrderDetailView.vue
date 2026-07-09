@@ -803,10 +803,11 @@ const handleExcelImport = (e) => {
       }
 
       const isItemMatch = (dbItem, excelItem) => {
-        const d = cleanString(dbItem)
-        const e = cleanString(excelItem)
+        if (!dbItem || !excelItem) return false
+        const d = String(dbItem).trim().toLowerCase().replace(/[\s\-\.]/g, '')
+        const e = String(excelItem).trim().toLowerCase().replace(/[\s\-\.]/g, '')
         if (!d || !e) return false
-        return d === e
+        return d === e || d.includes(e) || e.includes(d)
       }
 
       // Match against the items of this Sales Order
@@ -816,8 +817,31 @@ const handleExcelImport = (e) => {
       if (soDetail.value && soDetail.value.items) {
         soDetail.value.items.forEach(item => {
           // Get the mapped HPO number for this item in the SO (from Accurate)
-          const hpoVal = hpoMapping.value[item.code]
-          if (!hpoVal) return // Skip if no HPO linked to this item
+          let hpoVal = hpoMapping.value[item.code]
+
+          // If no HPO in hpoMapping, try to find HPO from existing DB shipments for this item
+          if (!hpoVal) {
+            const dbShipmentsForItem = shipmentList.value.filter(s => isItemMatch(s.item_code, item.code))
+            if (dbShipmentsForItem.length > 0) {
+              const hposFromDb = [...new Set(dbShipmentsForItem.map(s => s.hpo_number).filter(Boolean))]
+              if (hposFromDb.length > 0) hpoVal = hposFromDb.join(', ')
+            }
+          }
+
+          // If still no HPO, try to find a matching row in Excel by item code alone
+          // and use the HPO from that Excel row
+          if (!hpoVal) {
+            const excelRowForItem = rows.find(row => {
+              const excelItem = row[itemCol] ? String(row[itemCol]).trim() : ''
+              return isItemMatch(item.code, excelItem)
+            })
+            if (excelRowForItem && hpoCol) {
+              const excelHpoRaw = excelRowForItem[hpoCol] ? String(excelRowForItem[hpoCol]).trim() : ''
+              if (excelHpoRaw) hpoVal = excelHpoRaw
+            }
+          }
+
+          if (!hpoVal) return // Skip if truly no HPO found anywhere
           
           // Split HPO values in case there are multiple (e.g. "HPO/26/05/049, HPO/26/05/050")
           const hpos = hpoVal.split(',').map(x => x.trim())
