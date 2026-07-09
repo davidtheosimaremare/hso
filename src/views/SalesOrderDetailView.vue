@@ -1447,7 +1447,8 @@ const getHpoEntries = (item) => {
     poNumber: p.poNumber,
     poDate: p.poDate,
     quantity: p.quantity,
-    description: p.description
+    description: p.description,
+    vendorName: p.vendorName
   }))
 }
 
@@ -1929,6 +1930,13 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                                     <span class="text-sm font-mono font-bold text-green-700 dark:text-green-300">{{ hpo.poNumber }}</span>
                                     <span class="ml-auto text-xs font-bold text-red-600 dark:text-red-400 whitespace-nowrap">
                                         {{ hpo.quantity }} {{ item.unit }}
+                                    </span>
+                                </div>
+
+                                <!-- Supplier Badge -->
+                                <div v-if="hpo.vendorName" class="mb-2">
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600">
+                                        🏢 {{ hpo.vendorName }}
                                     </span>
                                 </div>
                                 
