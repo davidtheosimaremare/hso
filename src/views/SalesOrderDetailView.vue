@@ -1468,6 +1468,63 @@ const fulfillmentPercentage = (items) => {
   return total === 0 ? 0 : Math.round((shipped / total) * 100)
 }
 
+// Helper: Get HDOs that match this SO item using note-type matching
+const getHdosForItem = (item) => {
+  if (!soDetail.value?.shipments) return []
+  
+  const itemNoteType = getNoteType(item.admin_note)
+  
+  // Find all SO rows with the same item code (to detect STOCK vs NO STOCK split)
+  const sameCodeSoItems = soDetail.value?.items
+    ? soDetail.value.items.filter(i => i.code === item.code)
+    : []
+  const hasMultipleRows = sameCodeSoItems.length > 1
+  
+  return soDetail.value.shipments.filter(shipment => {
+    if (!shipment.items) return false
+    
+    return shipment.items.some(i => {
+      if (i.code !== item.code) return false
+      const doItemNoteType = getNoteType(i.note)
+      
+      if (hasMultipleRows) {
+        // Strict matching: only pair if both note types are known and match
+        // e.g. STOCK row only gets HDO with STOCK note, NO STOCK row only gets HDO with NO STOCK note
+        if (itemNoteType !== 'unknown' && doItemNoteType !== 'unknown') {
+          return itemNoteType === doItemNoteType
+        }
+        // If either note is unknown, do NOT match (avoid cross-contamination)
+        return false
+      }
+      
+      // Only one SO row for this item code → match by code alone
+      return true
+    })
+  })
+}
+
+// Helper: Get quantity shipped from a specific HDO for this item, respecting note type
+const getSingleHdoQty = (hdo, item) => {
+  if (!hdo || !hdo.items) return 0
+  const itemNoteType = getNoteType(item.admin_note)
+  const sameCodeSoItems = soDetail.value?.items
+    ? soDetail.value.items.filter(i => i.code === item.code)
+    : []
+  const hasMultipleRows = sameCodeSoItems.length > 1
+  
+  // Find the HDO item that matches this SO row's note type
+  const doItem = hdo.items.find(i => {
+    if (i.code !== item.code) return false
+    if (!hasMultipleRows) return true
+    const doItemNoteType = getNoteType(i.note)
+    if (itemNoteType !== 'unknown' && doItemNoteType !== 'unknown') {
+      return itemNoteType === doItemNoteType
+    }
+    return false
+  })
+  return doItem ? Number(doItem.qty_shipped || 0) : 0
+}
+
 const getDisplayedQtyShipped = (item) => {
   let totalHdoQty = 0
   const hdos = getHdosForItem(item)
@@ -1556,63 +1613,6 @@ const getDaysSinceOrder = () => {
   const today = new Date()
   const diffTime = today.getTime() - orderDate.getTime()
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-}
-
-// Helper: Get HDOs that match this SO item using note-type matching
-const getHdosForItem = (item) => {
-  if (!soDetail.value?.shipments) return []
-  
-  const itemNoteType = getNoteType(item.admin_note)
-  
-  // Find all SO rows with the same item code (to detect STOCK vs NO STOCK split)
-  const sameCodeSoItems = soDetail.value?.items
-    ? soDetail.value.items.filter(i => i.code === item.code)
-    : []
-  const hasMultipleRows = sameCodeSoItems.length > 1
-  
-  return soDetail.value.shipments.filter(shipment => {
-    if (!shipment.items) return false
-    
-    return shipment.items.some(i => {
-      if (i.code !== item.code) return false
-      const doItemNoteType = getNoteType(i.note)
-      
-      if (hasMultipleRows) {
-        // Strict matching: only pair if both note types are known and match
-        // e.g. STOCK row only gets HDO with STOCK note, NO STOCK row only gets HDO with NO STOCK note
-        if (itemNoteType !== 'unknown' && doItemNoteType !== 'unknown') {
-          return itemNoteType === doItemNoteType
-        }
-        // If either note is unknown, do NOT match (avoid cross-contamination)
-        return false
-      }
-      
-      // Only one SO row for this item code → match by code alone
-      return true
-    })
-  })
-}
-
-// Helper: Get quantity shipped from a specific HDO for this item, respecting note type
-const getSingleHdoQty = (hdo, item) => {
-  if (!hdo || !hdo.items) return 0
-  const itemNoteType = getNoteType(item.admin_note)
-  const sameCodeSoItems = soDetail.value?.items
-    ? soDetail.value.items.filter(i => i.code === item.code)
-    : []
-  const hasMultipleRows = sameCodeSoItems.length > 1
-  
-  // Find the HDO item that matches this SO row's note type
-  const doItem = hdo.items.find(i => {
-    if (i.code !== item.code) return false
-    if (!hasMultipleRows) return true
-    const doItemNoteType = getNoteType(i.note)
-    if (itemNoteType !== 'unknown' && doItemNoteType !== 'unknown') {
-      return itemNoteType === doItemNoteType
-    }
-    return false
-  })
-  return doItem ? Number(doItem.qty_shipped || 0) : 0
 }
 
 // Helper: Get HDO number safely considering note type
