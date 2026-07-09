@@ -280,7 +280,10 @@ const getVisualStatusDate = (shipment) => {
     if (status === 'Already in Hokiindo Raya') return formatDateSimple(shipment.hokiindo_date)
     if (status === 'Already in siemens Warehouse') return formatDateSimple(shipment.dunex_date)
     if (status === 'ETA Port JKT') return formatDateSimple(shipment.eta_date)
-    if (status === 'Follow up with our forwarder') return formatDateSimple(shipment.exwork_date)
+    if (status === 'Follow up with our forwarder') {
+      if (shipment.exwork_waiting) return 'Waiting for confirmation'
+      return formatDateSimple(shipment.exwork_date)
+    }
     return ''
 }
 
@@ -347,7 +350,7 @@ const exportReminderExcel = () => {
                         itemName: item.name,
                         qty: item.qty_order,
                         status: status === 'Follow up with our forwarder' ? 'Ex-Works' : status === 'ETA Port JKT' ? 'ETA JKT' : 'Tiba Dunex',
-                        exworkDate: manualShipment.exwork_date || '-',
+                        exworkDate: manualShipment.exwork_waiting ? 'Waiting for confirmation' : (manualShipment.exwork_date || '-'),
                         etaDate: manualShipment.eta_date || '-',
                         dunexDate: manualShipment.dunex_date || '-',
                         note: manualShipment.admin_notes || '-'
@@ -365,7 +368,7 @@ const exportReminderExcel = () => {
                         itemName: item.name,
                         qty: hpo.quantity || item.qty_order,
                         status: status === 'Follow up with our forwarder' ? 'Ex-Works' : status === 'ETA Port JKT' ? 'ETA JKT' : 'Tiba Dunex',
-                        exworkDate: shipment.exwork_date || '-',
+                        exworkDate: shipment.exwork_waiting ? 'Waiting for confirmation' : (shipment.exwork_date || '-'),
                         etaDate: shipment.eta_date || '-',
                         dunexDate: shipment.dunex_date || '-',
                         note: shipment.admin_notes || '-'
@@ -787,17 +790,14 @@ const handleExcelImport = (e) => {
       }
 
       const isHpoMatch = (dbHpo, excelHpo) => {
-        const d = cleanString(dbHpo)
-        const e = cleanString(excelHpo)
+        // Normalize: lowercase, remove all non-alphanumeric, treat digit 0 as letter o
+        const normalize = (s) => String(s).trim().toLowerCase().replace(/[^a-z0-9]/g, '').replace(/0/g, 'o')
+        const d = normalize(dbHpo)
+        const e = normalize(excelHpo)
         if (!d || !e) return false
         if (d === e) return true
         
-        // Base match (strip revisions like R1, R2, REV1, etc.)
-        const dBase = d.replace(/(r\d+|rev\d+|v\d+)$/, '')
-        const eBase = e.replace(/(r\d+|rev\d+|v\d+)$/, '')
-        if (dBase === eBase) return true
-        
-        // Substring match
+        // Substring match as fallback
         if (d.includes(e) || e.includes(d)) return true
         return false
       }
@@ -833,7 +833,16 @@ const handleExcelImport = (e) => {
         })
 
         if (!matchingExcelRow) {
-          console.log('[ExcelImport] No Excel row found for DB shipment:', shipment.item_code, shipment.hpo_number)
+          // Debug: show what Excel actually has for this item to diagnose mismatch
+          const excelRowsForItem = rows.filter(row => {
+            const excelItem = row[itemCol] ? String(row[itemCol]).trim() : ''
+            return isItemMatch(shipment.item_code, excelItem)
+          })
+          if (excelRowsForItem.length > 0) {
+            console.warn('[ExcelImport] Item found in Excel but HPO mismatch. DB HPO:', JSON.stringify(shipment.hpo_number), '| Excel HPOs:', excelRowsForItem.map(r => JSON.stringify(r[hpoCol])).join(', '))
+          } else {
+            console.log('[ExcelImport] No Excel row found for DB shipment:', shipment.item_code, shipment.hpo_number)
+          }
           return
         }
 
@@ -864,7 +873,7 @@ const handleExcelImport = (e) => {
           excelDelivery,
           excelStatus,
           dbStatus: primaryShipment.current_status || '',
-          dbExwork: primaryShipment.exwork_date || '',
+          dbExwork: primaryShipment.exwork_waiting ? 'Waiting for confirmation' : (primaryShipment.exwork_date || ''),
           dbEta: primaryShipment.eta_date || '',
           dbDelivery: primaryShipment.hokiindo_date || primaryShipment.dunex_date || '',
           shipmentIds: dbShipments.map(s => s.id),
@@ -949,6 +958,8 @@ const applyExcelUpdates = async () => {
   
   for (const item of excelRowsToUpdate.value) {
     try {
+      console.log(`[ApplyExcel] ${item.itemCode} | ${item.hpoNumber} | virtual=${item.isVirtual} | ids=${JSON.stringify(item.shipmentIds)} | status=${item.excelStatus} | exwork=${item.excelExwork}`)
+      
       if (item.isVirtual) {
         // Create new shipment record in database
         const insertPayload = {
@@ -964,26 +975,30 @@ const applyExcelUpdates = async () => {
           insertPayload.current_status = 'Follow up with our forwarder'
           insertPayload.status_date = new Date().toISOString().split('T')[0]
         }
-        if (item.excelExwork === '__waiting__') insertPayload.exwork_date = 'Waiting for confirmation'
-        else if (item.excelExwork) insertPayload.exwork_date = item.excelExwork
+        if (item.excelExwork === '__waiting__') {
+          insertPayload.exwork_waiting = true
+          insertPayload.exwork_date = null
+        } else if (item.excelExwork) insertPayload.exwork_date = item.excelExwork
         if (item.excelEta) insertPayload.eta_date = item.excelEta
         
         // Map excelDelivery based on status
         if (item.excelDelivery) {
           if (item.excelStatus === 'Already in Hokiindo Raya') {
             insertPayload.hokiindo_date = item.excelDelivery
-            insertPayload.dunex_date = item.excelDelivery // Also set dunex as arrival checkpoint
+            insertPayload.dunex_date = item.excelDelivery
           } else {
             insertPayload.dunex_date = item.excelDelivery
           }
         }
         
+        console.log(`[ApplyExcel] INSERT payload:`, insertPayload)
         const { error } = await supabase
           .from('shipments')
           .insert(insertPayload)
           
         if (error) throw error
         successCount++
+        console.log(`[ApplyExcel] INSERT OK: ${item.itemCode}`)
       } else {
         // Update existing shipment record in database
         const updateData = {}
@@ -994,21 +1009,19 @@ const applyExcelUpdates = async () => {
           updateData.current_status = item.excelStatus
           updateData.status_date = new Date().toISOString().split('T')[0]
         }
-        if (item.excelExwork === '__waiting__') updateData.exwork_date = 'Waiting for confirmation'
-        else if (item.excelExwork) updateData.exwork_date = item.excelExwork
+        if (item.excelExwork === '__waiting__') {
+          updateData.exwork_waiting = true
+          updateData.exwork_date = null
+        } else if (item.excelExwork) updateData.exwork_date = item.excelExwork
         if (item.excelEta) updateData.eta_date = item.excelEta
         
-        // Map excelDelivery based on status
-        // Only update delivery date if Excel has a value — never overwrite with today's date if DB already has it
         if (item.excelDelivery) {
           if (item.excelStatus === 'Already in Hokiindo Raya') {
             updateData.hokiindo_date = item.excelDelivery
-            // Only update dunex_date if not already set in DB
             if (!item.dbDelivery || item.dbDelivery === '-') {
               updateData.dunex_date = item.excelDelivery
             }
           } else {
-            // Only update dunex_date if not already set in DB
             if (!item.dbDelivery || item.dbDelivery === '-') {
               updateData.dunex_date = item.excelDelivery
             }
@@ -1016,7 +1029,15 @@ const applyExcelUpdates = async () => {
         }
         
         updateData.updated_at = new Date().toISOString()
+
+        // Skip if no shipment IDs to update
+        if (!item.shipmentIds || item.shipmentIds.length === 0) {
+          console.warn(`[ApplyExcel] SKIP - no shipmentIds for ${item.itemCode} | ${item.hpoNumber}`)
+          errorCount++
+          continue
+        }
         
+        console.log(`[ApplyExcel] UPDATE ids=${item.shipmentIds} payload:`, updateData)
         const { error } = await supabase
           .from('shipments')
           .update(updateData)
@@ -1024,9 +1045,10 @@ const applyExcelUpdates = async () => {
           
         if (error) throw error
         successCount += item.shipmentIds.length
+        console.log(`[ApplyExcel] UPDATE OK: ${item.itemCode} (${item.shipmentIds.length} records)`)
       }
     } catch (err) {
-      console.error(err)
+      console.error(`[ApplyExcel] ERROR for ${item.itemCode} | ${item.hpoNumber}:`, err)
       errorCount++
     } finally {
       excelProgressCount.value++

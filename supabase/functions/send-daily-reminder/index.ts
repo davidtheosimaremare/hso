@@ -63,158 +63,197 @@ serve(async (req) => {
         const smtpUser = Deno.env.get('SMTP_USER') || ''
         const smtpPass = Deno.env.get('SMTP_PASSWORD') || ''
         const smtpFrom = Deno.env.get('SMTP_FROM') || 'Hokiindo Shop <noreply@hokiindo.co.id>'
-        const recipients = Deno.env.get('NOTIFICATION_RECIPIENTS') || smtpUser
+        // Read body for test parameter
+        const { test, test_recipients } = await req.json().catch(() => ({}))
+        const recipients = test_recipients || Deno.env.get('NOTIFICATION_RECIPIENTS') || smtpUser
 
         if (!accessToken) throw new Error('Token Accurate belum disetting!')
         if (!supabaseUrl || !supabaseServiceKey) throw new Error('Supabase config missing!')
         if (!smtpUser || !smtpPass) throw new Error('SMTP user atau password belum disetting!')
 
         const supabase = createClient(supabaseUrl, supabaseServiceKey)
-
-        // 1. Fetch List of Sales Orders from Accurate
-        const timestamp = new Date().toISOString()
-        let signatureHeader = {}
-        if (signatureSecret) {
-            const sig = await createHmacSha256(signatureSecret, timestamp)
-            signatureHeader = { 'X-Api-Timestamp': timestamp, 'X-Api-Signature': sig }
-        }
-
-        console.log("Fetching open/partial SOs from Accurate...")
-        const fieldsParam = 'id,number,transDate,customer,totalAmount,statusName,percentShipped'
-        const listSoUrl = `${BASE_API}/sales-order/list.do?fields=${fieldsParam}&sp.pageSize=100`
-        
-        const listRes = await fetch(listSoUrl, {
-            headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json', ...signatureHeader }
-        })
-        if (!listRes.ok) throw new Error(`Gagal fetch SO list: ${await listRes.text()}`)
-        
-        const listJson = await listRes.json()
-        const allSos = listJson.d || []
-
-        // Filter active SOs (Open or Partial)
-        const activeSos = allSos.filter((so: any) => so.statusName === 'Open' || so.statusName === 'Partial')
-        console.log(`Found ${activeSos.length} active (Open/Partial) Sales Orders.`)
-
         const alertHsoList: any[] = []
 
-        // 2. Process each HSO
-        for (const so of activeSos) {
-            console.log(`Processing HSO: ${so.number} (${so.customer?.name || 'Unknown'})`)
+        if (test === true) {
+            console.log("TEST MODE: Compiling mock data email...")
+            alertHsoList.push({
+                number: 'HSO/26/07/TEST',
+                customer: 'PT. HOKIINDO RAYA (SIMULASI TEST)',
+                itemsToPurchase: [
+                    {
+                        code: '3UF7010-1AU00-0',
+                        name: 'SIEMENS SIMOCODE PRO V PB',
+                        qty_order: 47,
+                        qty_to_order: 47,
+                        total_po: 30,
+                        shortage: 17,
+                        status: 'KURANG DIPESAN'
+                    },
+                    {
+                        code: '3WT8165-5AA04-5AA2',
+                        name: 'SIEMENS POWER CONTACTOR',
+                        qty_order: 5,
+                        qty_to_order: 5,
+                        total_po: 0,
+                        shortage: 5,
+                        status: 'PERLU DIPESAN'
+                    }
+                ],
+                itemsReadyToDeliver: [
+                    {
+                        code: '3UF7110-1AA01-0',
+                        name: 'SIEMENS SIMOCODE CURRENT MEASURING',
+                        qty_order: 6,
+                        qty_shipped: 0,
+                        qty_remaining: 6,
+                        status: 'READY DI HOKIINDO'
+                    }
+                ]
+            })
+        } else {
+            // 1. Fetch List of Sales Orders from Accurate
+            const timestamp = new Date().toISOString()
+            let signatureHeader = {}
+            if (signatureSecret) {
+                const sig = await createHmacSha256(signatureSecret, timestamp)
+                signatureHeader = { 'X-Api-Timestamp': timestamp, 'X-Api-Signature': sig }
+            }
+
+            console.log("Fetching open/partial SOs from Accurate...")
+            const fieldsParam = 'id,number,transDate,customer,totalAmount,statusName,percentShipped'
+            const listSoUrl = `${BASE_API}/sales-order/list.do?fields=${fieldsParam}&sp.pageSize=100`
             
-            // Get SO Detail from Accurate
-            const detailRes = await fetch(`${BASE_API}/sales-order/detail.do?id=${so.id}`, {
+            const listRes = await fetch(listSoUrl, {
                 headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json', ...signatureHeader }
             })
-            if (!detailRes.ok) {
-                console.error(`Gagal fetch detail SO ${so.number}: ${await detailRes.text()}`)
-                continue
-            }
-            const detailJson = await detailRes.json()
-            const docData = detailJson.d
-            if (!docData) continue
-
-            // Fetch PO items matching this SO description
-            const { data: poItems, error: poError } = await supabase
-                .from('accurate_purchase_order_items')
-                .select(`
-                    *,
-                    header:accurate_purchase_orders(
-                        id, number, trans_date, status_name, vendor_name
-                    )
-                `)
-                .ilike('detail_notes', `%${so.number}%`)
+            if (!listRes.ok) throw new Error(`Gagal fetch SO list: ${await listRes.text()}`)
             
-            if (poError) {
-                console.error(`Error querying PO items for ${so.number}:`, poError)
-                continue
-            }
+            const listJson = await listRes.json()
+            const allSos = listJson.d || []
 
-            // Fetch shipment records for this HSO
-            const { data: shipments, error: shipError } = await supabase
-                .from('shipments')
-                .select('*')
-                .eq('so_id', String(so.id))
+            // Filter active SOs (Open or Partial)
+            const activeSos = allSos.filter((so: any) => so.statusName === 'Open' || so.statusName === 'Partial')
+            console.log(`Found ${activeSos.length} active (Open/Partial) Sales Orders.`)
 
-            if (shipError) {
-                console.error(`Error querying shipments for ${so.number}:`, shipError)
-                continue
-            }
-
-            // Map PO items
-            const hpoDetails = (poItems || []).map((item: any) => ({
-                poNumber: item.header?.number,
-                itemCode: item.item_code,
-                quantity: item.quantity
-            }))
-
-            const itemsToPurchase: any[] = []
-            const itemsReadyToDeliver: any[] = []
-
-            const rawItems = docData.detailItem || []
-            rawItems.forEach((item: any) => {
-                const code = item.item?.no || '-'
-                const qty_order = item.quantity || 0
-                const qty_shipped = item.shipQuantity || 0
-                const qty_remaining = qty_order - qty_shipped
-
-                // Calculate stock & to order
-                const note = item.detailNotes || ''
-                const stockInfo = parseStockFromNote(note)
-                let qty_to_order = 0
-                if (stockInfo.isReady) {
-                    qty_to_order = 0
-                } else if (stockInfo.hasInfo) {
-                    qty_to_order = Math.max(0, qty_order - stockInfo.qty)
-                } else {
-                    qty_to_order = qty_order
-                }
-
-                // Check HPOs
-                const itemHpos = hpoDetails.filter((p: any) => p.itemCode === code)
-                const totalPo = itemHpos.reduce((sum: number, hpo: any) => sum + (hpo.quantity || 0), 0)
-
-                // Category A: Needs PO / Under Ordered
-                if (qty_to_order > 0) {
-                    if (totalPo < qty_to_order) {
-                        const statusText = totalPo === 0 ? 'PERLU DIPESAN' : 'KURANG DIPESAN'
-                        itemsToPurchase.push({
-                            code: code,
-                            name: item.item?.name || item.detailName,
-                            qty_order: qty_order,
-                            qty_to_order: qty_to_order,
-                            total_po: totalPo,
-                            shortage: qty_to_order - totalPo,
-                            status: statusText
-                        })
-                    }
-                }
-
-                // Category B: Arrived at Hokiindo but not fully shipped to customer
-                if (qty_remaining > 0) {
-                    // Check if there is an associated shipment with hokiindo_date (Arrived Hokiindo)
-                    const itemShipments = (shipments || []).filter((s: any) => s.item_code === code)
-                    const hasArrivedHokiindo = itemShipments.some((s: any) => s.hokiindo_date || s.current_status === 'Already in Hokiindo Raya')
-
-                    if (hasArrivedHokiindo) {
-                        itemsReadyToDeliver.push({
-                            code: code,
-                            name: item.item?.name || item.detailName,
-                            qty_order: qty_order,
-                            qty_shipped: qty_shipped,
-                            qty_remaining: qty_remaining,
-                            status: 'READY DI HOKIINDO'
-                        })
-                    }
-                }
-            })
-
-            if (itemsToPurchase.length > 0 || itemsReadyToDeliver.length > 0) {
-                alertHsoList.push({
-                    number: so.number,
-                    customer: so.customer?.name || 'Unknown',
-                    itemsToPurchase,
-                    itemsReadyToDeliver
+            // 2. Process each HSO
+            for (const so of activeSos) {
+                console.log(`Processing HSO: ${so.number} (${so.customer?.name || 'Unknown'})`)
+                
+                // Get SO Detail from Accurate
+                const detailRes = await fetch(`${BASE_API}/sales-order/detail.do?id=${so.id}`, {
+                    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json', ...signatureHeader }
                 })
+                if (!detailRes.ok) {
+                    console.error(`Gagal fetch detail SO ${so.number}: ${await detailRes.text()}`)
+                    continue
+                }
+                const detailJson = await detailRes.json()
+                const docData = detailJson.d
+                if (!docData) continue
+
+                // Fetch PO items matching this SO description
+                const { data: poItems, error: poError } = await supabase
+                    .from('accurate_purchase_order_items')
+                    .select(`
+                        *,
+                        header:accurate_purchase_orders(
+                            id, number, trans_date, status_name, vendor_name
+                        )
+                    `)
+                    .ilike('detail_notes', `%${so.number}%`)
+                
+                if (poError) {
+                    console.error(`Error querying PO items for ${so.number}:`, poError)
+                    continue
+                }
+
+                // Fetch shipment records for this HSO
+                const { data: shipments, error: shipError } = await supabase
+                    .from('shipments')
+                    .select('*')
+                    .eq('so_id', String(so.id))
+
+                if (shipError) {
+                    console.error(`Error querying shipments for ${so.number}:`, shipError)
+                    continue
+                }
+
+                // Map PO items
+                const hpoDetails = (poItems || []).map((item: any) => ({
+                    poNumber: item.header?.number,
+                    itemCode: item.item_code,
+                    quantity: item.quantity
+                }))
+
+                const itemsToPurchase: any[] = []
+                const itemsReadyToDeliver: any[] = []
+
+                const rawItems = docData.detailItem || []
+                rawItems.forEach((item: any) => {
+                    const code = item.item?.no || '-'
+                    const qty_order = item.quantity || 0
+                    const qty_shipped = item.shipQuantity || 0
+                    const qty_remaining = qty_order - qty_shipped
+
+                    // Calculate stock & to order
+                    const note = item.detailNotes || ''
+                    const stockInfo = parseStockFromNote(note)
+                    let qty_to_order = 0
+                    if (stockInfo.isReady) {
+                        qty_to_order = 0
+                    } else if (stockInfo.hasInfo) {
+                        qty_to_order = Math.max(0, qty_order - stockInfo.qty)
+                    } else {
+                        qty_to_order = qty_order
+                    }
+
+                    // Check HPOs
+                    const itemHpos = hpoDetails.filter((p: any) => p.itemCode === code)
+                    const totalPo = itemHpos.reduce((sum: number, hpo: any) => sum + (hpo.quantity || 0), 0)
+
+                    // Category A: Needs PO / Under Ordered
+                    if (qty_to_order > 0) {
+                        if (totalPo < qty_to_order) {
+                            const statusText = totalPo === 0 ? 'PERLU DIPESAN' : 'KURANG DIPESAN'
+                            itemsToPurchase.push({
+                                code: code,
+                                name: item.item?.name || item.detailName,
+                                qty_order: qty_order,
+                                qty_to_order: qty_to_order,
+                                total_po: totalPo,
+                                shortage: qty_to_order - totalPo,
+                                status: statusText
+                            })
+                        }
+                    }
+
+                    // Category B: Arrived at Hokiindo but not fully shipped to customer
+                    if (qty_remaining > 0) {
+                        // Check if there is an associated shipment with hokiindo_date (Arrived Hokiindo)
+                        const itemShipments = (shipments || []).filter((s: any) => s.item_code === code)
+                        const hasArrivedHokiindo = itemShipments.some((s: any) => s.hokiindo_date || s.current_status === 'Already in Hokiindo Raya')
+
+                        if (hasArrivedHokiindo) {
+                            itemsReadyToDeliver.push({
+                                code: code,
+                                name: item.item?.name || item.detailName,
+                                qty_order: qty_order,
+                                qty_shipped: qty_shipped,
+                                qty_remaining: qty_remaining,
+                                status: 'READY DI HOKIINDO'
+                            })
+                        }
+                    }
+                })
+
+                if (itemsToPurchase.length > 0 || itemsReadyToDeliver.length > 0) {
+                    alertHsoList.push({
+                        number: so.number,
+                        customer: so.customer?.name || 'Unknown',
+                        itemsToPurchase,
+                        itemsReadyToDeliver
+                    })
+                }
             }
         }
 
