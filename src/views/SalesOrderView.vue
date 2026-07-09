@@ -43,23 +43,33 @@ const currentPage = ref(1)
 const itemsPerPage = ref(10)
 
 // --- HPO COMPLETION STATUS ---
-// Map: no_so -> { complete: bool, reason: string }
+// Only flags SOs that are still active AND have no HPO yet
+// Map: no_so -> { complete: false, reason: string }  (only stored for 'Belum Lengkap' cases)
 const hpoStatusMap = ref({})
 const isLoadingHpo = ref(false)
 
-// Fetch from shipments table which HSOs have all items covered with HPO
 const fetchHpoCompletionStatus = async (orders) => {
   if (!orders || orders.length === 0) return
   isLoadingHpo.value = true
   try {
-    // Get all SO numbers in current list
-    const soNumbers = orders.map(o => o.no_so)
+    // Only check SOs that are still active (not fully processed or closed)
+    const activeOrders = orders.filter(o => 
+      o.progress < 100 &&
+      o.status !== 'Terproses' &&
+      o.status !== 'Ditutup'
+    )
     
-    // Query accurate_purchase_order_items grouped by HSO number
-    // Each item has detail_notes containing the HSO number
+    if (activeOrders.length === 0) {
+      isLoadingHpo.value = false
+      return
+    }
+
+    const soNumbers = activeOrders.map(o => o.no_so)
+    
+    // Query accurate_purchase_order_items — check which active SOs have ANY HPO
     const { data: poItems, error } = await supabase
       .from('accurate_purchase_order_items')
-      .select('detail_notes, item_code, quantity')
+      .select('detail_notes')
       .or(soNumbers.map(n => `detail_notes.ilike.%${n}%`).join(','))
       .limit(5000)
     
@@ -68,17 +78,22 @@ const fetchHpoCompletionStatus = async (orders) => {
       return
     }
 
-    // For each SO, check if it has at least one HPO item assigned
+    // Build set of SO numbers that DO have HPO
+    const soWithHpo = new Set()
+    ;(poItems || []).forEach(item => {
+      if (!item.detail_notes) return
+      soNumbers.forEach(soNo => {
+        if (item.detail_notes.includes(soNo)) soWithHpo.add(soNo)
+      })
+    })
+
+    // Only mark SOs that have NO HPO as 'Belum Lengkap'
     const result = {}
     soNumbers.forEach(soNo => {
-      const relatedItems = (poItems || []).filter(item => 
-        item.detail_notes && item.detail_notes.includes(soNo)
-      )
-      if (relatedItems.length > 0) {
-        result[soNo] = { complete: true, reason: `${relatedItems.length} item memiliki HPO` }
-      } else {
-        result[soNo] = { complete: false, reason: 'Ada item tanpa HPO' }
+      if (!soWithHpo.has(soNo)) {
+        result[soNo] = { complete: false }
       }
+      // SOs with HPO: don't store anything — they're fine, no badge needed
     })
     hpoStatusMap.value = result
   } catch (e) {
@@ -88,7 +103,13 @@ const fetchHpoCompletionStatus = async (orders) => {
   }
 }
 
-const getHpoCompletion = (soNo) => hpoStatusMap.value[soNo] || null
+// Returns null if: already processed, has HPO, or not yet checked
+// Returns { complete: false } only for active SOs with no HPO
+const getHpoCompletion = (so) => {
+  // Don't show anything for processed/closed/done SOs
+  if (so.progress >= 100 || so.status === 'Terproses' || so.status === 'Ditutup') return null
+  return hpoStatusMap.value[so.no_so] || null
+}
 
 // --- BULK ACTION STATE ---
 const selectedOrders = ref([])
@@ -915,18 +936,12 @@ const getStatusColor = (status) => {
                 </div>
                 <div class="flex flex-col">
                   <span class="font-bold text-slate-900 dark:text-white text-sm">{{ so.no_so }}</span>
-                  <!-- HPO Completion Indicator -->
-                  <div v-if="getHpoCompletion(so.no_so)" class="flex items-center gap-1 mt-0.5">
-                    <template v-if="getHpoCompletion(so.no_so).complete">
-                      <CheckCircle2 class="w-3 h-3 text-emerald-500 flex-shrink-0" />
-                      <span class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">HPO Lengkap</span>
-                    </template>
-                    <template v-else>
-                      <AlertCircle class="w-3 h-3 text-amber-500 flex-shrink-0" />
-                      <span class="text-[10px] font-semibold text-amber-600 dark:text-amber-400">Belum Lengkap</span>
-                    </template>
+                  <!-- HPO Completion Indicator: only shown for active SOs with no HPO -->
+                  <div v-if="getHpoCompletion(so)" class="flex items-center gap-1 mt-0.5">
+                    <AlertCircle class="w-3 h-3 text-amber-500 flex-shrink-0" />
+                    <span class="text-[10px] font-semibold text-amber-600 dark:text-amber-400">Belum ada HPO</span>
                   </div>
-                  <div v-else-if="isLoadingHpo" class="flex items-center gap-1 mt-0.5">
+                  <div v-else-if="isLoadingHpo && so.progress < 100 && so.status !== 'Terproses' && so.status !== 'Ditutup'" class="flex items-center gap-1 mt-0.5">
                     <div class="w-2 h-2 bg-slate-300 dark:bg-slate-600 rounded-full animate-pulse"></div>
                     <span class="text-[10px] text-slate-400">Memuat...</span>
                   </div>
