@@ -1469,38 +1469,47 @@ const fulfillmentPercentage = (items) => {
 }
 
 // Helper: Get HDOs that match this SO item using note-type matching
+// Step 1: strict note match (STOCK→STOCK, NO STOCK→NO STOCK)
+// Step 2: fallback to any HDO containing this item IF Accurate says it's shipped
 const getHdosForItem = (item) => {
   if (!soDetail.value?.shipments) return []
   
   const itemNoteType = getNoteType(item.admin_note)
-  
-  // Find all SO rows with the same item code (to detect STOCK vs NO STOCK split)
   const sameCodeSoItems = soDetail.value?.items
     ? soDetail.value.items.filter(i => i.code === item.code)
     : []
   const hasMultipleRows = sameCodeSoItems.length > 1
   
-  return soDetail.value.shipments.filter(shipment => {
+  // Step 1: Strict note-type matching
+  const strictMatches = soDetail.value.shipments.filter(shipment => {
     if (!shipment.items) return false
-    
     return shipment.items.some(i => {
       if (i.code !== item.code) return false
       const doItemNoteType = getNoteType(i.note)
-      
       if (hasMultipleRows) {
-        // Strict matching: only pair if both note types are known and match
-        // e.g. STOCK row only gets HDO with STOCK note, NO STOCK row only gets HDO with NO STOCK note
+        // Both notes must be known and equal (STOCK=STOCK or NO STOCK=NO STOCK)
         if (itemNoteType !== 'unknown' && doItemNoteType !== 'unknown') {
           return itemNoteType === doItemNoteType
         }
-        // If either note is unknown, do NOT match (avoid cross-contamination)
-        return false
+        return false // Ambiguous → don't cross-contaminate rows
       }
-      
-      // Only one SO row for this item code → match by code alone
-      return true
+      return true // Single SO row → match by code alone
     })
   })
+  
+  if (strictMatches.length > 0) return strictMatches
+  
+  // Step 2: Fallback — Accurate says item was shipped but no strict note match found.
+  // Show any HDO containing this item. Safe because:
+  // - NO STOCK items always have qty_shipped=0 → fallback never triggers for them
+  // - Only STOCK/already-shipped items reach here
+  if ((item.qty_shipped || 0) > 0) {
+    return soDetail.value.shipments.filter(s =>
+      s.items && s.items.some(i => i.code === item.code)
+    )
+  }
+  
+  return []
 }
 
 // Helper: Get quantity shipped from a specific HDO for this item, respecting note type
@@ -1512,8 +1521,8 @@ const getSingleHdoQty = (hdo, item) => {
     : []
   const hasMultipleRows = sameCodeSoItems.length > 1
   
-  // Find the HDO item that matches this SO row's note type
-  const doItem = hdo.items.find(i => {
+  // Try strict note matching first
+  let doItem = hdo.items.find(i => {
     if (i.code !== item.code) return false
     if (!hasMultipleRows) return true
     const doItemNoteType = getNoteType(i.note)
@@ -1522,6 +1531,12 @@ const getSingleHdoQty = (hdo, item) => {
     }
     return false
   })
+  
+  // Fallback: match by code alone (only reached when getHdosForItem used Step 2 fallback)
+  if (!doItem) {
+    doItem = hdo.items.find(i => i.code === item.code)
+  }
+  
   return doItem ? Number(doItem.qty_shipped || 0) : 0
 }
 
@@ -2110,6 +2125,7 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                         </div>
                         
                         <!-- HDO (Resi Pengiriman) Info -->
+                        <!-- Case 1: HDO sudah di-sync dan ditemukan (strict atau fallback) -->
                         <div v-if="getHdosForItem(item).length > 0" class="mt-2 space-y-2">
                             <div v-for="hdo in getHdosForItem(item)" :key="hdo.no" class="bg-blue-50 dark:bg-blue-900/20 border-2 border-dashed border-blue-300 dark:border-blue-700 rounded-lg p-3">
                                 <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-blue-200 dark:border-blue-800">
@@ -2125,7 +2141,13 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                                 </div>
                             </div>
                         </div>
-                        <div v-else-if="item.qty_shipped > 0 && item.logistics_hdo" class="mt-2">
+                        <!-- Case 2: HDO sedang di-sync (loading) — item sudah terkirim di Accurate tapi detail belum selesai dimuat -->
+                        <div v-else-if="isHdoSyncing && getDisplayedQtyShipped(item) > 0" class="mt-2 bg-blue-50 dark:bg-blue-900/20 border-2 border-dashed border-blue-300 dark:border-blue-700 rounded-lg p-3 flex items-center gap-2">
+                            <Loader2 class="w-4 h-4 text-blue-400 animate-spin" />
+                            <span class="text-xs text-blue-500 font-medium">Memuat data HDO...</span>
+                        </div>
+                        <!-- Case 3: Fallback dari DB (hdo tersimpan di logistics_hdo tapi tidak ada di Accurate sync) -->
+                        <div v-else-if="getDisplayedQtyShipped(item) > 0 && item.logistics_hdo" class="mt-2">
                             <div class="bg-blue-50 dark:bg-blue-900/20 border-2 border-dashed border-blue-300 dark:border-blue-700 rounded-lg p-3">
                                 <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-blue-200 dark:border-blue-800">
                                     <Truck class="w-4 h-4 text-blue-600 dark:text-blue-400" />
