@@ -142,11 +142,6 @@ const checkHpoStatusForVisibleOrders = async (orders) => {
   isLoadingHpo.value = false
 }
 
-// Watch paginatedOrders to fetch HPO status dynamically for visible items
-watch(paginatedOrders, (newVal) => {
-  checkHpoStatusForVisibleOrders(newVal)
-}, { immediate: true })
-
 const getHpoCompletion = (so) => {
   // Don't show anything for processed/closed/done/shipped SOs
   if (so.progress > 0 || so.status === 'Terproses' || so.status === 'Ditutup' || so.status === 'Draf' || so.status === 'Ditolak') return null
@@ -372,6 +367,12 @@ const paginatedOrders = computed(() => {
   const start = (currentPage.value - 1) * itemsPerPage.value
   return filteredAndSortedOrders.value.slice(start, start + itemsPerPage.value)
 })
+
+// Watch paginatedOrders to fetch HPO status dynamically for visible items
+watch(paginatedOrders, (newVal) => {
+  checkHpoStatusForVisibleOrders(newVal)
+}, { immediate: true })
+
 
 const pageTotalAmount = computed(() => {
     return paginatedOrders.value.reduce((sum, item) => sum + item.amount, 0)
