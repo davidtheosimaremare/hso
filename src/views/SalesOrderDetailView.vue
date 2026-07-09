@@ -1438,9 +1438,6 @@ const getHdoQty = (item) => {
 const getHpoEntries = (item) => {
   if (!hpoDetails.value || hpoDetails.value.length === 0) return []
   
-  // Jika baris ini murni stok penuh, tidak mungkin ada HPO
-  if (getNoteType(item.admin_note) === 'stock' && item.qty_to_order === 0) return []
-  
   // Find ALL PO items that match this item code
   const poItems = hpoDetails.value.filter(p => p.itemCode === item.code)
   return poItems.map(p => ({
