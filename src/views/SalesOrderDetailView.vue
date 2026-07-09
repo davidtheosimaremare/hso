@@ -256,7 +256,9 @@ const getNoteType = (note) => {
 
 const formatDateSimple = (dateStr) => {
     if (!dateStr) return '';
+    if (String(dateStr).toLowerCase().includes('waiting')) return 'Waiting for confirmation';
     const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return String(dateStr);
     const day = String(date.getDate()).padStart(2, '0');
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const year = date.getFullYear();
@@ -701,6 +703,11 @@ const handleExcelImport = (e) => {
       const parseExcelDateLocal = (val) => {
         if (val === undefined || val === null || val === '') return null
         
+        // Detect "Waiting for confirmation" text in date column
+        if (typeof val === 'string' && val.trim().toLowerCase().includes('waiting')) {
+          return '__waiting__'
+        }
+        
         let numVal = val
         if (typeof val === 'string' && /^\d+$/.test(val.trim())) {
           numVal = Number(val.trim())
@@ -904,7 +911,8 @@ const applyExcelUpdates = async () => {
           insertPayload.current_status = 'Follow up with our forwarder'
           insertPayload.status_date = new Date().toISOString().split('T')[0]
         }
-        if (item.excelExwork) insertPayload.exwork_date = item.excelExwork
+        if (item.excelExwork === '__waiting__') insertPayload.exwork_date = 'Waiting for confirmation'
+        else if (item.excelExwork) insertPayload.exwork_date = item.excelExwork
         if (item.excelEta) insertPayload.eta_date = item.excelEta
         
         // Map excelDelivery based on status
@@ -932,7 +940,8 @@ const applyExcelUpdates = async () => {
           updateData.current_status = item.excelStatus
           updateData.status_date = new Date().toISOString().split('T')[0]
         }
-        if (item.excelExwork) updateData.exwork_date = item.excelExwork
+        if (item.excelExwork === '__waiting__') updateData.exwork_date = 'Waiting for confirmation'
+        else if (item.excelExwork) updateData.exwork_date = item.excelExwork
         if (item.excelEta) updateData.eta_date = item.excelEta
         
         // Map excelDelivery based on status
@@ -2437,7 +2446,10 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                     <TableCell>
                       <div class="flex flex-col">
                         <span class="text-slate-400 line-through">{{ row.dbExwork || '-' }}</span>
-                        <span class="font-bold text-slate-900 dark:text-white" :class="row.dbExwork !== row.excelExwork && 'text-emerald-600 dark:text-emerald-400'">
+                        <span v-if="row.excelExwork === '__waiting__'" class="font-bold text-amber-600 dark:text-amber-400 text-xs italic">
+                          ⏳ Waiting for confirmation
+                        </span>
+                        <span v-else class="font-bold text-slate-900 dark:text-white" :class="row.dbExwork !== row.excelExwork && 'text-emerald-600 dark:text-emerald-400'">
                           {{ row.excelExwork || '-' }}
                         </span>
                       </div>
