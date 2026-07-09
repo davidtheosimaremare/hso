@@ -43,71 +43,113 @@ const currentPage = ref(1)
 const itemsPerPage = ref(10)
 
 // --- HPO COMPLETION STATUS ---
-// Only flags SOs that are still active AND have no HPO yet
-// Map: no_so -> { complete: false, reason: string }  (only stored for 'Belum Lengkap' cases)
+// Map: no_so -> { complete: false }
 const hpoStatusMap = ref({})
 const isLoadingHpo = ref(false)
+const soDetailCache = {}
 
-const fetchHpoCompletionStatus = async (orders) => {
+const checkHpoStatusForVisibleOrders = async (orders) => {
   if (!orders || orders.length === 0) return
+  
+  // Filter SOs that are active and need HPO check (progress === 0 and active status)
+  const activeOrders = orders.filter(o => 
+    o.progress === 0 && 
+    o.status !== 'Terproses' && 
+    o.status !== 'Ditutup' &&
+    o.status !== 'Draf' &&
+    o.status !== 'Ditolak'
+  )
+
+  if (activeOrders.length === 0) return
   isLoadingHpo.value = true
+
+  const soNumbers = activeOrders.map(o => o.no_so)
+
+  // 1. Fetch HPOs for these active orders in one query
+  let poItems = []
   try {
-    // Only check SOs that are still active (not fully processed or closed)
-    const activeOrders = orders.filter(o => 
-      o.progress < 100 &&
-      o.status !== 'Terproses' &&
-      o.status !== 'Ditutup'
-    )
-    
-    if (activeOrders.length === 0) {
-      isLoadingHpo.value = false
-      return
-    }
-
-    const soNumbers = activeOrders.map(o => o.no_so)
-    
-    // Query accurate_purchase_order_items — check which active SOs have ANY HPO
-    const { data: poItems, error } = await supabase
+    const { data, error } = await supabase
       .from('accurate_purchase_order_items')
-      .select('detail_notes')
+      .select('detail_notes, item_code, quantity')
       .or(soNumbers.map(n => `detail_notes.ilike.%${n}%`).join(','))
-      .limit(5000)
-    
-    if (error) {
-      console.warn('[HPOStatus] Error fetching PO items:', error)
-      return
+    if (!error && data) {
+      poItems = data
     }
-
-    // Build set of SO numbers that DO have HPO
-    const soWithHpo = new Set()
-    ;(poItems || []).forEach(item => {
-      if (!item.detail_notes) return
-      soNumbers.forEach(soNo => {
-        if (item.detail_notes.includes(soNo)) soWithHpo.add(soNo)
-      })
-    })
-
-    // Only mark SOs that have NO HPO as 'Belum Lengkap'
-    const result = {}
-    soNumbers.forEach(soNo => {
-      if (!soWithHpo.has(soNo)) {
-        result[soNo] = { complete: false }
-      }
-      // SOs with HPO: don't store anything — they're fine, no badge needed
-    })
-    hpoStatusMap.value = result
   } catch (e) {
-    console.warn('[HPOStatus] Exception:', e)
-  } finally {
-    isLoadingHpo.value = false
+    console.warn('[HPOCheck] Error fetching PO items:', e)
   }
+
+  // 2. Process each active SO
+  for (const so of activeOrders) {
+    try {
+      let detailItems = []
+      
+      if (soDetailCache[so.id_database]) {
+        detailItems = soDetailCache[so.id_database]
+      } else {
+        // Fetch detail in background
+        const { data, error } = await supabase.functions.invoke('accurate-detail-so', {
+          body: { id: so.id_database }
+        })
+        if (!error && data?.d?.detailItem) {
+          detailItems = data.d.detailItem
+          soDetailCache[so.id_database] = detailItems
+        } else {
+          continue // skip if fetch failed
+        }
+      }
+
+      // Check items
+      let hasShortage = false
+      
+      for (const item of detailItems) {
+        const code = item.item?.no
+        if (!code) continue
+        
+        // Clean notes to see if it is stock/no stock
+        const note = item.detailNotes || ''
+        const lower = note.toLowerCase()
+        const isStock = lower.includes('stock') || lower.includes('stok') || lower.includes('ready')
+        
+        // If not stock, it needs to be ordered
+        if (!isStock) {
+          const qtyToOrder = item.quantity - (item.quantityShipped || 0)
+          if (qtyToOrder > 0) {
+            // Check matching POs
+            const matchedPos = poItems.filter(po => 
+              po.item_code === code && 
+              po.detail_notes && po.detail_notes.includes(so.no_so)
+            )
+            const totalPoQty = matchedPos.reduce((sum, po) => sum + Number(po.quantity), 0)
+            
+            if (totalPoQty < qtyToOrder) {
+              hasShortage = true
+              break // found shortage, no need to check other items
+            }
+          }
+        }
+      }
+
+      if (hasShortage) {
+        hpoStatusMap.value[so.no_so] = { complete: false }
+      } else {
+        hpoStatusMap.value[so.no_so] = null // Complete/Ready
+      }
+    } catch (e) {
+      console.warn(`[HPOCheck] Error checking SO ${so.no_so}:`, e)
+    }
+  }
+  isLoadingHpo.value = false
 }
 
-// Returns null if: already processed, has HPO, or not yet checked
-// Returns { complete: false } only for active SOs with no HPO
+// Watch paginatedOrders to fetch HPO status dynamically for visible items
+watch(paginatedOrders, (newVal) => {
+  checkHpoStatusForVisibleOrders(newVal)
+}, { immediate: true })
+
 const getHpoCompletion = (so) => {
-  // Don't show anything for processed/closed/done SOs
-  if (so.progress >= 100 || so.status === 'Terproses' || so.status === 'Ditutup') return null
+  // Don't show anything for processed/closed/done/shipped SOs
+  if (so.progress > 0 || so.status === 'Terproses' || so.status === 'Ditutup' || so.status === 'Draf' || so.status === 'Ditolak') return null
   return hpoStatusMap.value[so.no_so] || null
 }
 
@@ -199,8 +241,6 @@ const fetchOrders = async () => {
       status: item.statusName || '', 
       progress: item.percentShipped || 0 
     }))
-    // After orders loaded, fetch HPO completion in background
-    fetchHpoCompletionStatus(salesOrders.value)
   }
   isLoading.value = false
 }
