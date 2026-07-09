@@ -1935,16 +1935,22 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                                 <!-- Logistics Status Tree (if exists for this item) -->
                                 <template v-for="hpoShipment in [getHpoShipment(item, hpo.poNumber)]" :key="hpoShipment.id || hpo.poNumber">
                                 <div v-if="hpoShipment.current_status && hpoShipment.current_status !== 'Pending Process'" class="mt-2">
-                                    <div class="flex items-center justify-between bg-blue-50 dark:bg-blue-900/20 px-2.5 py-1.5 rounded border border-blue-100 dark:border-blue-800">
-                                        <div class="flex items-center gap-1.5">
-                                            <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                                            <span class="text-[11px] font-bold text-blue-700 dark:text-blue-300">
-                                                {{ getVisualStatus(hpoShipment) === 'Follow up with our forwarder' ? 'Ex-Works' : getVisualStatus(hpoShipment) === 'Already in siemens Warehouse' ? 'Tiba Dunex' : getVisualStatus(hpoShipment) === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo (Siap Kirim)' : getVisualStatus(hpoShipment) }}
+                                    <div class="flex items-start gap-2 bg-blue-50 dark:bg-blue-900/20 px-2.5 py-1.5 rounded border border-blue-100 dark:border-blue-800">
+                                        <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                                        <div class="flex flex-col min-w-0 flex-1">
+                                            <span class="text-[11px] font-bold text-blue-700 dark:text-blue-300 whitespace-nowrap">
+                                                {{ getVisualStatus(hpoShipment) === 'Follow up with our forwarder' ? 'Ex-Works' : getVisualStatus(hpoShipment) === 'Already in siemens Warehouse' ? 'Tiba Dunex' : getVisualStatus(hpoShipment) === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : getVisualStatus(hpoShipment) }}
+                                            </span>
+                                            <!-- Waiting for confirmation badge -->
+                                            <span v-if="hpoShipment.exwork_waiting && getVisualStatus(hpoShipment) === 'Follow up with our forwarder'"
+                                                  class="text-[10px] font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap flex items-center gap-1 mt-0.5">
+                                                ⏳ Waiting for confirmation
+                                            </span>
+                                            <!-- Normal date display -->
+                                            <span v-else class="text-[10px] font-mono font-bold text-blue-500 dark:text-blue-400 whitespace-nowrap mt-0.5">
+                                                {{ getVisualStatusDate(hpoShipment) || '-' }}
                                             </span>
                                         </div>
-                                        <span class="text-[10px] font-mono font-bold text-blue-600 dark:text-blue-400">
-                                            {{ getVisualStatusDate(hpoShipment) || '-' }}
-                                        </span>
                                     </div>
                                 </div>
                                 </template>
