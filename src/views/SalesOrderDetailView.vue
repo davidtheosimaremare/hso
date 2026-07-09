@@ -810,99 +810,118 @@ const handleExcelImport = (e) => {
         return d === e || d.includes(e) || e.includes(d)
       }
 
-      // Match against the items of this Sales Order
+      // ── MATCHING LOGIC ──────────────────────────────────────────────────────
+      // Strategi sederhana:
+      //   1. Jika item sudah ada di DB shipments dengan HPO → match item+HPO di Excel
+      //   2. Fallback: item dari soDetail.items dengan hpoMapping (belum ada di DB)
+      // ────────────────────────────────────────────────────────────────────────
       const matches = []
       const seenKeys = new Set()
-      
+
+      // ── PASS 1: DB Shipments yang sudah punya HPO ────────────────────────
+      shipmentList.value.forEach(shipment => {
+        if (!shipment.hpo_number || !shipment.item_code) return
+
+        const key = `${String(shipment.item_code).trim().toLowerCase()}||${String(shipment.hpo_number).trim().toLowerCase()}`
+        if (seenKeys.has(key)) return
+
+        // Find matching Excel row by item_code + hpo_number
+        const matchingExcelRow = rows.find(row => {
+          const excelHpo = row[hpoCol] ? String(row[hpoCol]).trim() : ''
+          const excelItem = row[itemCol] ? String(row[itemCol]).trim() : ''
+          return isItemMatch(shipment.item_code, excelItem) && isHpoMatch(shipment.hpo_number, excelHpo)
+        })
+
+        if (!matchingExcelRow) {
+          console.log('[ExcelImport] No Excel row found for DB shipment:', shipment.item_code, shipment.hpo_number)
+          return
+        }
+
+        seenKeys.add(key)
+
+        const excelExwork = exworkCol ? parseExcelDateLocal(matchingExcelRow[exworkCol]) : null
+        const excelEta = etaCol ? parseExcelDateLocal(matchingExcelRow[etaCol]) : null
+        let excelDelivery = deliveryCol ? parseExcelDateLocal(matchingExcelRow[deliveryCol]) : null
+        const excelStatus = statusCol ? mapStatusLocal(matchingExcelRow[statusCol]) : ''
+
+        // All DB shipments with same item+HPO
+        const dbShipments = shipmentList.value.filter(s =>
+          isItemMatch(s.item_code, shipment.item_code) && isHpoMatch(s.hpo_number, shipment.hpo_number)
+        )
+        const primaryShipment = dbShipments[0]
+
+        // Only default delivery to today if status is "arrived" AND DB has no delivery date yet
+        if (!excelDelivery && (excelStatus === 'Already in siemens Warehouse' || excelStatus === 'Already in Hokiindo Raya')) {
+          const dbAlreadyHasDelivery = primaryShipment && (primaryShipment.dunex_date || primaryShipment.hokiindo_date)
+          if (!dbAlreadyHasDelivery) excelDelivery = getLocalDate()
+        }
+
+        matches.push({
+          hpoNumber: shipment.hpo_number,
+          itemCode: shipment.item_code,
+          excelExwork,
+          excelEta,
+          excelDelivery,
+          excelStatus,
+          dbStatus: primaryShipment.current_status || '',
+          dbExwork: primaryShipment.exwork_date || '',
+          dbEta: primaryShipment.eta_date || '',
+          dbDelivery: primaryShipment.hokiindo_date || primaryShipment.dunex_date || '',
+          shipmentIds: dbShipments.map(s => s.id),
+          isVirtual: false
+        })
+      })
+
+      // ── PASS 2: Items dengan hpoMapping yang belum ada di DB ─────────────
       if (soDetail.value && soDetail.value.items) {
         soDetail.value.items.forEach(item => {
-          // Get the mapped HPO number for this item in the SO (from Accurate)
-          let hpoVal = hpoMapping.value[item.code]
+          const hpoVal = hpoMapping.value[item.code]
+          if (!hpoVal) return
 
-          // If no HPO in hpoMapping, try to find HPO from existing DB shipments for this item
-          if (!hpoVal) {
-            const dbShipmentsForItem = shipmentList.value.filter(s => isItemMatch(s.item_code, item.code))
-            if (dbShipmentsForItem.length > 0) {
-              const hposFromDb = [...new Set(dbShipmentsForItem.map(s => s.hpo_number).filter(Boolean))]
-              if (hposFromDb.length > 0) hpoVal = hposFromDb.join(', ')
-            }
-          }
-
-          // If still no HPO, try to find a matching row in Excel by item code alone
-          // and use the HPO from that Excel row
-          if (!hpoVal) {
-            const excelRowForItem = rows.find(row => {
-              const excelItem = row[itemCol] ? String(row[itemCol]).trim() : ''
-              return isItemMatch(item.code, excelItem)
-            })
-            if (excelRowForItem && hpoCol) {
-              const excelHpoRaw = excelRowForItem[hpoCol] ? String(excelRowForItem[hpoCol]).trim() : ''
-              if (excelHpoRaw) hpoVal = excelHpoRaw
-            }
-          }
-
-          if (!hpoVal) return // Skip if truly no HPO found anywhere
-          
-          // Split HPO values in case there are multiple (e.g. "HPO/26/05/049, HPO/26/05/050")
-          const hpos = hpoVal.split(',').map(x => x.trim())
-          
+          const hpos = String(hpoVal).split(',').map(x => x.trim()).filter(Boolean)
           hpos.forEach(hpo => {
-            const key = `${item.code.toLowerCase()}||${hpo.toLowerCase()}`
-            if (seenKeys.has(key)) return
-            
-            // Find a matching row in the Excel sheet
+            const key = `${String(item.code).trim().toLowerCase()}||${hpo.trim().toLowerCase()}`
+            if (seenKeys.has(key)) return // Already handled in pass 1
+
+            // Find matching Excel row
             const matchingExcelRow = rows.find(row => {
               const excelHpo = row[hpoCol] ? String(row[hpoCol]).trim() : ''
               const excelItem = row[itemCol] ? String(row[itemCol]).trim() : ''
-              
               return isItemMatch(item.code, excelItem) && isHpoMatch(hpo, excelHpo)
             })
-            
-            if (matchingExcelRow) {
-              seenKeys.add(key)
-              const excelExwork = exworkCol ? parseExcelDateLocal(matchingExcelRow[exworkCol]) : null
-              const excelEta = etaCol ? parseExcelDateLocal(matchingExcelRow[etaCol]) : null
-              let excelDelivery = deliveryCol ? parseExcelDateLocal(matchingExcelRow[deliveryCol]) : null
-              const excelStatus = statusCol ? mapStatusLocal(matchingExcelRow[statusCol]) : ''
 
-              // Check if we already have an existing shipment record in the database for this item and HPO
-              const dbShipments = shipmentList.value.filter(s => 
-                isItemMatch(s.item_code, item.code) && 
-                (s.hpo_number ? isHpoMatch(s.hpo_number, hpo) : true)
-              )
-              
-              const hasDbShipment = dbShipments.length > 0
-              const primaryShipment = hasDbShipment ? dbShipments[0] : null
+            if (!matchingExcelRow) return
 
-              // Only default to today's date if:
-              // 1. Excel delivery date is empty, AND
-              // 2. Status is "arrived" (dunex or hokiindo), AND
-              // 3. The DB does NOT already have a delivery date stored
-              if (!excelDelivery && (excelStatus === 'Already in siemens Warehouse' || excelStatus === 'Already in Hokiindo Raya')) {
-                const dbAlreadyHasDelivery = primaryShipment && (primaryShipment.dunex_date || primaryShipment.hokiindo_date)
-                if (!dbAlreadyHasDelivery) {
-                  excelDelivery = getLocalDate()
-                }
-              }
-              
-              matches.push({
-                hpoNumber: hpo,
-                itemCode: item.code,
-                excelExwork,
-                excelEta,
-                excelDelivery,
-                excelStatus,
-                dbStatus: primaryShipment ? (primaryShipment.current_status || '') : '(Akan Dibuat)',
-                dbExwork: primaryShipment ? (primaryShipment.exwork_date || '') : '-',
-                dbEta: primaryShipment ? (primaryShipment.eta_date || '') : '-',
-                dbDelivery: primaryShipment ? (primaryShipment.hokiindo_date || primaryShipment.dunex_date || '') : '-',
-                shipmentIds: dbShipments.map(s => s.id),
-                isVirtual: !hasDbShipment
-              })
+            seenKeys.add(key)
+
+            const excelExwork = exworkCol ? parseExcelDateLocal(matchingExcelRow[exworkCol]) : null
+            const excelEta = etaCol ? parseExcelDateLocal(matchingExcelRow[etaCol]) : null
+            let excelDelivery = deliveryCol ? parseExcelDateLocal(matchingExcelRow[deliveryCol]) : null
+            const excelStatus = statusCol ? mapStatusLocal(matchingExcelRow[statusCol]) : ''
+
+            if (!excelDelivery && (excelStatus === 'Already in siemens Warehouse' || excelStatus === 'Already in Hokiindo Raya')) {
+              excelDelivery = getLocalDate()
             }
+
+            matches.push({
+              hpoNumber: hpo,
+              itemCode: item.code,
+              excelExwork,
+              excelEta,
+              excelDelivery,
+              excelStatus,
+              dbStatus: '(Akan Dibuat)',
+              dbExwork: '-',
+              dbEta: '-',
+              dbDelivery: '-',
+              shipmentIds: [],
+              isVirtual: true
+            })
           })
         })
       }
+
+      console.log('[ExcelImport] Total matches found:', matches.length, matches.map(m => `${m.itemCode} | ${m.hpoNumber} | ${m.excelStatus}`))
       
       if (matches.length === 0) {
         alert("Tidak ada item atau nomor HPO yang cocok dengan data pelacakan di HSO ini.")
@@ -953,6 +972,7 @@ const applyExcelUpdates = async () => {
         if (item.excelDelivery) {
           if (item.excelStatus === 'Already in Hokiindo Raya') {
             insertPayload.hokiindo_date = item.excelDelivery
+            insertPayload.dunex_date = item.excelDelivery // Also set dunex as arrival checkpoint
           } else {
             insertPayload.dunex_date = item.excelDelivery
           }
@@ -979,11 +999,19 @@ const applyExcelUpdates = async () => {
         if (item.excelEta) updateData.eta_date = item.excelEta
         
         // Map excelDelivery based on status
+        // Only update delivery date if Excel has a value — never overwrite with today's date if DB already has it
         if (item.excelDelivery) {
           if (item.excelStatus === 'Already in Hokiindo Raya') {
             updateData.hokiindo_date = item.excelDelivery
+            // Only update dunex_date if not already set in DB
+            if (!item.dbDelivery || item.dbDelivery === '-') {
+              updateData.dunex_date = item.excelDelivery
+            }
           } else {
-            updateData.dunex_date = item.excelDelivery
+            // Only update dunex_date if not already set in DB
+            if (!item.dbDelivery || item.dbDelivery === '-') {
+              updateData.dunex_date = item.excelDelivery
+            }
           }
         }
         
