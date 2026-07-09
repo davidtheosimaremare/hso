@@ -848,6 +848,42 @@ const handleExcelImport = (e) => {
         return d === e || d.includes(e) || e.includes(d)
       }
 
+      // Find all matching rows and pick the best one (highest status or most dates defined)
+      const getBestMatchingExcelRow = (matchingRows) => {
+        if (!matchingRows || matchingRows.length === 0) return null
+        if (matchingRows.length === 1) return matchingRows[0]
+        
+        const statusLevels = {
+          'Already in Hokiindo Raya': 4,
+          'Already in siemens Warehouse': 3,
+          'ETA Port JKT': 2,
+          'Follow up with our forwarder': 1,
+          '': 0
+        }
+        
+        return matchingRows.reduce((best, current) => {
+          const bestStatus = statusCol ? mapStatusLocal(best[statusCol]) : ''
+          const currentStatus = statusCol ? mapStatusLocal(current[statusCol]) : ''
+          
+          const bestLevel = statusLevels[bestStatus] || 0
+          const currentLevel = statusLevels[currentStatus] || 0
+          
+          if (currentLevel !== bestLevel) {
+            return currentLevel > bestLevel ? current : best
+          }
+          
+          // If status level is same, prioritize the one with more dates defined
+          const bestDatesCount = (best[exworkCol] ? 1 : 0) + (best[etaCol] ? 1 : 0)
+          const currentDatesCount = (current[exworkCol] ? 1 : 0) + (current[etaCol] ? 1 : 0)
+          
+          if (currentDatesCount !== bestDatesCount) {
+            return currentDatesCount > bestDatesCount ? current : best
+          }
+          
+          return best
+        })
+      }
+
       // ── MATCHING LOGIC ──────────────────────────────────────────────────────
       // Strategi sederhana:
       //   1. Jika item sudah ada di DB shipments dengan HPO → match item+HPO di Excel
@@ -863,12 +899,13 @@ const handleExcelImport = (e) => {
         const key = `${String(shipment.item_code).trim().toLowerCase()}||${String(shipment.hpo_number).trim().toLowerCase()}`
         if (seenKeys.has(key)) return
 
-        // Find matching Excel row by item_code + hpo_number
-        const matchingExcelRow = rows.find(row => {
+        // Find all matching Excel rows by item_code + hpo_number and choose the best one
+        const matchedExcelRows = rows.filter(row => {
           const excelHpo = row[hpoCol] ? String(row[hpoCol]).trim() : ''
           const excelItem = row[itemCol] ? String(row[itemCol]).trim() : ''
           return isItemMatch(shipment.item_code, excelItem) && isHpoMatch(shipment.hpo_number, excelHpo)
         })
+        const matchingExcelRow = getBestMatchingExcelRow(matchedExcelRows)
 
         if (!matchingExcelRow) {
           // Debug: show what Excel actually has for this item to diagnose mismatch
@@ -944,12 +981,13 @@ const handleExcelImport = (e) => {
             const key = `${String(item.code).trim().toLowerCase()}||${hpo.trim().toLowerCase()}`
             if (seenKeys.has(key)) return // Already handled in pass 1
 
-            // Find matching Excel row
-            const matchingExcelRow = rows.find(row => {
+            // Find all matching Excel rows and choose the best one
+            const matchedExcelRows = rows.filter(row => {
               const excelHpo = row[hpoCol] ? String(row[hpoCol]).trim() : ''
               const excelItem = row[itemCol] ? String(row[itemCol]).trim() : ''
               return isItemMatch(item.code, excelItem) && isHpoMatch(hpo, excelHpo)
             })
+            const matchingExcelRow = getBestMatchingExcelRow(matchedExcelRows)
 
             if (!matchingExcelRow) return
 
@@ -1074,12 +1112,35 @@ const applyExcelUpdates = async () => {
         if (item.excelStatus) {
           updateData.current_status = item.excelStatus
           updateData.status_date = new Date().toISOString().split('T')[0]
+          
+          // Clear future dates if we go back to an earlier stage
+          if (item.excelStatus === 'Follow up with our forwarder') {
+            updateData.eta_date = null
+            updateData.dunex_date = null
+            updateData.hokiindo_date = null
+          } else if (item.excelStatus === 'ETA Port JKT') {
+            updateData.dunex_date = null
+            updateData.hokiindo_date = null
+          } else if (item.excelStatus === 'Already in siemens Warehouse') {
+            updateData.hokiindo_date = null
+          }
         }
-        if (item.excelExwork === '__waiting__') {
-          updateData.exwork_waiting = true
-          updateData.exwork_date = null
-        } else if (item.excelExwork) updateData.exwork_date = item.excelExwork
-        if (item.excelEta) updateData.eta_date = item.excelEta
+        
+        // Sync Ex-Works date if column is defined
+        if (exworkCol) {
+          if (item.excelExwork === '__waiting__') {
+            updateData.exwork_waiting = true
+            updateData.exwork_date = null
+          } else {
+            updateData.exwork_waiting = false
+            updateData.exwork_date = item.excelExwork || null
+          }
+        }
+        
+        // Sync ETA date if column is defined (unless cleared by status transition above)
+        if (etaCol && item.excelStatus !== 'Follow up with our forwarder') {
+          updateData.eta_date = item.excelEta || null
+        }
         
         if (item.excelDelivery) {
           if (item.excelStatus === 'Already in Hokiindo Raya') {
