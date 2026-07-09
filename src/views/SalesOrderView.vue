@@ -29,7 +29,7 @@ import {
   Calendar as CalendarIcon, XCircle, ChevronLeft, ChevronRight, 
   Download, FileSpreadsheet, File as FileIcon, Filter,
   ChevronsUpDown, ArrowUp, ArrowDown, Check, X,
-  ShoppingCart
+  ShoppingCart, CheckCircle2, AlertCircle
 } from 'lucide-vue-next'
 import { Checkbox } from '@/components/ui/checkbox'
 
@@ -41,6 +41,54 @@ const salesOrders = ref([])
 const isLoading = ref(false)
 const currentPage = ref(1)
 const itemsPerPage = ref(10)
+
+// --- HPO COMPLETION STATUS ---
+// Map: no_so -> { complete: bool, reason: string }
+const hpoStatusMap = ref({})
+const isLoadingHpo = ref(false)
+
+// Fetch from shipments table which HSOs have all items covered with HPO
+const fetchHpoCompletionStatus = async (orders) => {
+  if (!orders || orders.length === 0) return
+  isLoadingHpo.value = true
+  try {
+    // Get all SO numbers in current list
+    const soNumbers = orders.map(o => o.no_so)
+    
+    // Query accurate_purchase_order_items grouped by HSO number
+    // Each item has detail_notes containing the HSO number
+    const { data: poItems, error } = await supabase
+      .from('accurate_purchase_order_items')
+      .select('detail_notes, item_code, quantity')
+      .or(soNumbers.map(n => `detail_notes.ilike.%${n}%`).join(','))
+      .limit(5000)
+    
+    if (error) {
+      console.warn('[HPOStatus] Error fetching PO items:', error)
+      return
+    }
+
+    // For each SO, check if it has at least one HPO item assigned
+    const result = {}
+    soNumbers.forEach(soNo => {
+      const relatedItems = (poItems || []).filter(item => 
+        item.detail_notes && item.detail_notes.includes(soNo)
+      )
+      if (relatedItems.length > 0) {
+        result[soNo] = { complete: true, reason: `${relatedItems.length} item memiliki HPO` }
+      } else {
+        result[soNo] = { complete: false, reason: 'Ada item tanpa HPO' }
+      }
+    })
+    hpoStatusMap.value = result
+  } catch (e) {
+    console.warn('[HPOStatus] Exception:', e)
+  } finally {
+    isLoadingHpo.value = false
+  }
+}
+
+const getHpoCompletion = (soNo) => hpoStatusMap.value[soNo] || null
 
 // --- BULK ACTION STATE ---
 const selectedOrders = ref([])
@@ -130,6 +178,8 @@ const fetchOrders = async () => {
       status: item.statusName || '', 
       progress: item.percentShipped || 0 
     }))
+    // After orders loaded, fetch HPO completion in background
+    fetchHpoCompletionStatus(salesOrders.value)
   }
   isLoading.value = false
 }
@@ -859,11 +909,28 @@ const getStatusColor = (status) => {
               </div>
             </TableCell>
             <TableCell class="py-4 align-middle">
-              <div class="flex items-center gap-3">
+              <div class="flex items-center gap-2">
                 <div class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 group-hover:bg-red-50 dark:group-hover:bg-red-900/20 flex items-center justify-center transition-colors shrink-0">
                   <FileText class="w-4 h-4 text-slate-400 group-hover:text-red-500 transition-colors"/>
                 </div>
-                <span class="font-bold text-slate-900 dark:text-white text-sm">{{ so.no_so }}</span>
+                <div class="flex flex-col">
+                  <span class="font-bold text-slate-900 dark:text-white text-sm">{{ so.no_so }}</span>
+                  <!-- HPO Completion Indicator -->
+                  <div v-if="getHpoCompletion(so.no_so)" class="flex items-center gap-1 mt-0.5">
+                    <template v-if="getHpoCompletion(so.no_so).complete">
+                      <CheckCircle2 class="w-3 h-3 text-emerald-500 flex-shrink-0" />
+                      <span class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">HPO Lengkap</span>
+                    </template>
+                    <template v-else>
+                      <AlertCircle class="w-3 h-3 text-amber-500 flex-shrink-0" />
+                      <span class="text-[10px] font-semibold text-amber-600 dark:text-amber-400">Belum Lengkap</span>
+                    </template>
+                  </div>
+                  <div v-else-if="isLoadingHpo" class="flex items-center gap-1 mt-0.5">
+                    <div class="w-2 h-2 bg-slate-300 dark:bg-slate-600 rounded-full animate-pulse"></div>
+                    <span class="text-[10px] text-slate-400">Memuat...</span>
+                  </div>
+                </div>
               </div>
             </TableCell>
             <TableCell class="py-4 align-middle">
