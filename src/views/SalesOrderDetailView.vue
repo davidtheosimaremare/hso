@@ -840,11 +840,7 @@ const handleExcelImport = (e) => {
               const excelEta = etaCol ? parseExcelDateLocal(matchingExcelRow[etaCol]) : null
               let excelDelivery = deliveryCol ? parseExcelDateLocal(matchingExcelRow[deliveryCol]) : null
               const excelStatus = statusCol ? mapStatusLocal(matchingExcelRow[statusCol]) : ''
-              
-              if (!excelDelivery && (excelStatus === 'Already in siemens Warehouse' || excelStatus === 'Already in Hokiindo Raya')) {
-                excelDelivery = getLocalDate()
-              }
-              
+
               // Check if we already have an existing shipment record in the database for this item and HPO
               const dbShipments = shipmentList.value.filter(s => 
                 isItemMatch(s.item_code, item.code) && 
@@ -853,6 +849,17 @@ const handleExcelImport = (e) => {
               
               const hasDbShipment = dbShipments.length > 0
               const primaryShipment = hasDbShipment ? dbShipments[0] : null
+
+              // Only default to today's date if:
+              // 1. Excel delivery date is empty, AND
+              // 2. Status is "arrived" (dunex or hokiindo), AND
+              // 3. The DB does NOT already have a delivery date stored
+              if (!excelDelivery && (excelStatus === 'Already in siemens Warehouse' || excelStatus === 'Already in Hokiindo Raya')) {
+                const dbAlreadyHasDelivery = primaryShipment && (primaryShipment.dunex_date || primaryShipment.hokiindo_date)
+                if (!dbAlreadyHasDelivery) {
+                  excelDelivery = getLocalDate()
+                }
+              }
               
               matches.push({
                 hpoNumber: hpo,
