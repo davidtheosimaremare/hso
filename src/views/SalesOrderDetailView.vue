@@ -685,13 +685,16 @@ const handleExcelImport = (e) => {
       
       headers.forEach(header => {
         const h = header.toLowerCase().replace(/[\s\_\-]/g, '')
-        if (h.includes('po') || h.includes('hpo') || h.includes('customerpo') || h.includes('nopembelian')) hpoCol = header
-        else if (h.includes('mlfb') || h.includes('item') || h.includes('code') || h.includes('sku') || h.includes('nomorproduct')) itemCol = header
+        if (h.includes('status') || h.includes('logistic') || h.includes('kondisi') || h.includes('keterangan')) statusCol = header
         else if (h.includes('exwork') || h.includes('exworkdate')) exworkCol = header
         else if (h.includes('eta') || h.includes('etajakarta')) etaCol = header
-        else if (h.includes('deliverydate') || h.includes('tanggaldo')) deliveryCol = header
-        else if (h.includes('status')) statusCol = header
+        else if (h.includes('deliverydate') || h.includes('tanggaldo') || h.includes('delivery')) deliveryCol = header
+        else if (h.includes('hpo') || h.includes('customerpo') || h.includes('nopembelian') || (h.includes('po') && !h.includes('product'))) hpoCol = header
+        else if (h.includes('mlfb') || h.includes('sku') || h.includes('nomorproduct') || h.includes('itemcode') || h.includes('productcode')) itemCol = header
+        else if (h.includes('item') || h.includes('code')) itemCol = header
       })
+      console.log('[ExcelImport] Headers detected:', { hpoCol, itemCol, exworkCol, etaCol, deliveryCol, statusCol })
+      console.log('[ExcelImport] All raw headers:', headers)
       
       if (!hpoCol || !itemCol) {
         alert("Kolom HPO Number ('Customer PO') dan Product SKU ('MLFB') tidak terdeteksi otomatis. Pastikan nama header kolom sesuai.")
