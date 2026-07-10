@@ -1142,7 +1142,7 @@ const getStatusColor = (status) => {
     </div>
 
     <!-- Table -->
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-x-auto">
       <Table>
         <TableHeader class="bg-slate-950 dark:bg-black">
           <TableRow class="hover:bg-slate-950 dark:hover:bg-black border-none">

@@ -14,8 +14,16 @@ import {
   ShoppingBag,
   Truck,
   UploadCloud,
-  Package
+  Package,
+  Menu
 } from 'lucide-vue-next'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger
+} from '@/components/ui/sheet'
 
 
 
@@ -68,9 +76,21 @@ const handleLogout = async () => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-white dark:bg-[#1a1a1a] flex flex-col md:flex-row font-source-code transition-colors duration-300">
+  <div class="min-h-screen bg-gray-50 dark:bg-[#0f172a] flex flex-col md:flex-row font-source-code transition-colors duration-300">
     
-    <aside class="hidden md:flex w-[280px] bg-white dark:bg-[#1a1a1a] border-r border-gray-200 dark:border-gray-800 flex-col sticky top-0 h-screen transition-colors duration-300">
+    <!-- Mobile Top Header Bar -->
+    <header class="md:hidden flex items-center justify-between px-6 py-4 bg-white dark:bg-[#1e293b] border-b border-gray-200 dark:border-slate-800 sticky top-0 z-40 shadow-sm transition-colors duration-300">
+      <div class="flex items-center gap-3">
+        <img src="https://shop.hokiindo.co.id/favicon.ico" alt="Hokiindo Logo" class="w-8 h-8 object-contain" />
+        <h1 class="text-lg font-bold text-slate-900 dark:text-white tracking-tight">HSO TRACKER</h1>
+      </div>
+      <div class="w-8 h-8 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 flex items-center justify-center font-bold text-xs">
+        H
+      </div>
+    </header>
+
+    <!-- Desktop Sidebar -->
+    <aside class="hidden md:flex w-[280px] bg-white dark:bg-[#1e293b] border-r border-gray-200 dark:border-slate-800 flex-col sticky top-0 h-screen transition-colors duration-300">
       
       <div class="p-6 flex items-center gap-3">
         <img src="https://shop.hokiindo.co.id/favicon.ico" alt="Hokiindo Logo" class="w-8 h-8 object-contain" />
@@ -85,8 +105,8 @@ const handleLogout = async () => {
           :to="item.path"
           class="flex items-center gap-4 px-4 py-3.5 text-sm font-medium transition-all border-l-4"
           :class="route.path.startsWith(item.path) 
-            ? 'border-[#e60000] text-black dark:text-white bg-gray-50 dark:bg-gray-800/50' 
-            : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-800/30'"
+            ? 'border-[#e60000] text-black dark:text-white bg-gray-50 dark:bg-slate-800/50' 
+            : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30'"
         >
           <span v-if="route.path.startsWith(item.path)" class="w-1.5 h-1.5 rounded-full bg-[#e60000] absolute left-8"></span>
           
@@ -95,13 +115,11 @@ const handleLogout = async () => {
 
       </nav>
 
-
-
-      <div class="p-4 border-t border-gray-200 dark:border-gray-800 space-y-2">
+      <div class="p-4 border-t border-gray-200 dark:border-slate-800 space-y-2">
         
         <button 
           @click="toggleDarkMode"
-          class="flex items-center gap-3 px-4 py-3 w-full text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-all rounded-md"
+          class="flex items-center gap-3 px-4 py-3 w-full text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30 transition-all rounded-md"
         >
           <component :is="isDarkMode ? Sun : Moon" class="w-4 h-4" />
           {{ isDarkMode ? 'Light Mode' : 'Dark Mode' }}
@@ -117,30 +135,112 @@ const handleLogout = async () => {
       </div>
     </aside>
 
-    <main class="flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-y-auto bg-white dark:bg-[#1a1a1a] text-black dark:text-gray-200 transition-colors duration-300">
+    <!-- Main Content Area -->
+    <main class="flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-y-auto bg-gray-50/50 dark:bg-[#0f172a] text-black dark:text-gray-200 transition-colors duration-300">
       <RouterView />
     </main>
 
-    <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-[#1a1a1a] border-t border-gray-200 dark:border-gray-800 flex justify-around items-center p-2 z-50 pb-safe shadow-lg transition-colors duration-300">
+    <!-- Mobile Bottom Navigation Bar (Capped at 4 items) -->
+    <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-[#1e293b] border-t border-gray-200 dark:border-slate-800 flex justify-around items-center p-2 z-50 pb-safe shadow-lg transition-colors duration-300">
       
       <RouterLink 
-        v-for="item in menuItems" 
-        :key="item.path" 
-        :to="item.path"
+        to="/dashboard"
         class="flex flex-col items-center justify-center p-2 rounded-lg w-full transition-colors"
-        :class="route.path.startsWith(item.path) ? 'text-[#e60000]' : 'text-gray-400 dark:text-gray-500'"
+        :class="route.path.startsWith('/dashboard') ? 'text-[#e60000] font-bold' : 'text-gray-400 dark:text-gray-400'"
       >
-        <component :is="item.icon" class="w-5 h-5 mb-1" />
-        <span class="text-[10px] font-bold">{{ item.name }}</span>
+        <LayoutDashboard class="w-5 h-5 mb-1" />
+        <span class="text-[10px]">Dashboard</span>
       </RouterLink>
 
-      <button 
-        @click="toggleDarkMode"
-        class="flex flex-col items-center justify-center p-2 rounded-lg w-full text-gray-400 dark:text-gray-500"
+      <RouterLink 
+        to="/sales-orders"
+        class="flex flex-col items-center justify-center p-2 rounded-lg w-full transition-colors"
+        :class="route.path.startsWith('/sales-orders') ? 'text-[#e60000] font-bold' : 'text-gray-400 dark:text-gray-400'"
       >
-        <component :is="isDarkMode ? Sun : Moon" class="w-5 h-5 mb-1" />
-        <span class="text-[10px] font-bold">Theme</span>
-      </button>
+        <FileText class="w-5 h-5 mb-1" />
+        <span class="text-[10px]">Sales Order</span>
+      </RouterLink>
+
+      <RouterLink 
+        to="/purchase-orders"
+        class="flex flex-col items-center justify-center p-2 rounded-lg w-full transition-colors"
+        :class="route.path.startsWith('/purchase-orders') ? 'text-[#e60000] font-bold' : 'text-gray-400 dark:text-gray-400'"
+      >
+        <ShoppingBag class="w-5 h-5 mb-1" />
+        <span class="text-[10px]">PO Siemens</span>
+      </RouterLink>
+
+      <!-- More Menu using Sheet Drawer -->
+      <Sheet>
+        <SheetTrigger as-child>
+          <button class="flex flex-col items-center justify-center p-2 rounded-lg w-full text-gray-400 dark:text-gray-400 transition-colors">
+            <Menu class="w-5 h-5 mb-1" />
+            <span class="text-[10px]">Menu</span>
+          </button>
+        </SheetTrigger>
+        <SheetContent side="bottom" class="dark:bg-[#1e293b] dark:border-slate-800 rounded-t-2xl max-h-[85vh] p-6 focus:outline-none">
+          <SheetHeader class="pb-4 border-b border-gray-100 dark:border-slate-800">
+            <div class="flex items-center gap-3">
+              <img src="https://shop.hokiindo.co.id/favicon.ico" alt="Hokiindo Logo" class="w-7 h-7 object-contain" />
+              <SheetTitle class="text-base font-bold text-slate-900 dark:text-white">HSO TRACKER</SheetTitle>
+            </div>
+            <div class="text-[11px] text-slate-400 dark:text-slate-500 mt-1 font-mono break-all">{{ userEmail }}</div>
+          </SheetHeader>
+          
+          <div class="py-4 space-y-1.5 overflow-y-auto max-h-[50vh]">
+            <RouterLink 
+              to="/receive-items"
+              class="flex items-center gap-4 px-4 py-3 text-sm font-medium transition-all rounded-xl border border-transparent"
+              :class="route.path.startsWith('/receive-items') 
+                ? 'text-[#e60000] bg-red-50/50 dark:bg-red-950/20 border-red-100 dark:border-red-950' 
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30'"
+            >
+              <Package class="w-5 h-5 text-slate-500 dark:text-slate-400" />
+              <span>Penerimaan Barang</span>
+            </RouterLink>
+            
+            <RouterLink 
+              to="/delivery-orders"
+              class="flex items-center gap-4 px-4 py-3 text-sm font-medium transition-all rounded-xl border border-transparent"
+              :class="route.path.startsWith('/delivery-orders') 
+                ? 'text-[#e60000] bg-red-50/50 dark:bg-red-950/20 border-red-100 dark:border-red-950' 
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30'"
+            >
+              <Truck class="w-5 h-5 text-slate-500 dark:text-slate-400" />
+              <span>Delivery Order</span>
+            </RouterLink>
+
+            <RouterLink 
+              to="/settings"
+              class="flex items-center gap-4 px-4 py-3 text-sm font-medium transition-all rounded-xl border border-transparent"
+              :class="route.path.startsWith('/settings') 
+                ? 'text-[#e60000] bg-red-50/50 dark:bg-red-950/20 border-red-100 dark:border-red-950' 
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30'"
+            >
+              <Settings class="w-5 h-5 text-slate-500 dark:text-slate-400" />
+              <span>Manage Account</span>
+            </RouterLink>
+            
+            <div class="border-t border-slate-100 dark:border-slate-800 my-3"></div>
+            
+            <button 
+              @click="toggleDarkMode"
+              class="flex items-center gap-4 px-4 py-3 w-full text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30 transition-all rounded-xl"
+            >
+              <component :is="isDarkMode ? Sun : Moon" class="w-5 h-5 text-slate-500 dark:text-slate-400" />
+              <span>{{ isDarkMode ? 'Light Mode' : 'Dark Mode' }}</span>
+            </button>
+            
+            <button 
+              @click="handleLogout"
+              class="flex items-center gap-4 px-4 py-3 w-full text-sm font-bold text-white bg-[#e60000] hover:bg-[#cc0000] transition-all rounded-xl"
+            >
+              <LogOut class="w-5 h-5" />
+              <span>Logout</span>
+            </button>
+          </div>
+        </SheetContent>
+      </Sheet>
 
     </nav>
 

@@ -212,7 +212,7 @@ onMounted(() => { fetchData() })
     </div>
 
     <!-- KPI Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       <!-- Total HSO -->
       <div class="relative overflow-hidden bg-gradient-to-br from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-900 rounded-2xl p-5 shadow-lg shadow-blue-500/20">
         <div class="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full"></div>
@@ -307,7 +307,7 @@ onMounted(() => { fetchData() })
 
         <div v-else>
           <!-- Zoom Controls -->
-          <div class="flex items-center justify-between gap-4 mb-4 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700/50">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700/50">
             <div class="flex items-center gap-3">
               <span class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Zoom</span>
               <button @click="chartZoom = Math.max(30, chartZoom-10)" :disabled="chartZoom<=30"
@@ -540,7 +540,7 @@ onMounted(() => { fetchData() })
         <div v-else-if="customerAnalytics.length === 0" class="text-center py-12 text-slate-400">
           Tidak ada data customer
         </div>
-        <div v-else class="overflow-hidden rounded-xl border border-slate-100 dark:border-slate-800">
+        <div v-else class="overflow-x-auto rounded-xl border border-slate-100 dark:border-slate-800">
           <Table>
             <TableHeader class="bg-slate-900 dark:bg-slate-950">
               <TableRow class="hover:bg-slate-900 dark:hover:bg-slate-950 border-none">

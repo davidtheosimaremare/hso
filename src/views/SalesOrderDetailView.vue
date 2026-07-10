@@ -2059,7 +2059,7 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
               <span class="text-gray-300 dark:text-gray-600">/</span>
               <span class="font-medium text-gray-900 dark:text-white">Detail</span>
             </div>
-            <h1 class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight flex items-center gap-3">{{ soDetail.client }}</h1>
+            <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white tracking-tight flex flex-wrap items-center gap-2">{{ soDetail.client }}</h1>
             <div class="flex flex-wrap items-center gap-3 text-sm font-medium text-gray-500 dark:text-gray-400">
                <span class="flex items-center gap-1.5 whitespace-nowrap"><Calendar class="w-4 h-4 flex-shrink-0"/> {{ soDetail.date }}</span>
                <span class="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600 hidden sm:inline-block"></span>
@@ -2075,11 +2075,11 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
             </div>
           </div>
           <div class="flex flex-wrap items-center gap-3 w-full lg:w-auto shrink-0 mt-2 lg:mt-0">
-              <Button v-if="selectedItemCodes.length > 0" size="lg" class="shadow-sm bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 transition-all animate-in zoom-in-95 duration-200" @click="openBulkEditModal">
+              <Button v-if="selectedItemCodes.length > 0" size="lg" class="w-full sm:w-auto shadow-sm bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 transition-all animate-in zoom-in-95 duration-200 flex items-center justify-center" @click="openBulkEditModal">
                 <Layers class="w-4 h-4 mr-2"/> Update ({{ selectedItemCodes.length }}) Item
               </Button>
-              <Button size="lg" :variant="'outline'" class="shadow-sm border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 transition-all hover:shadow-md active:scale-95" @click="triggerExcelImport" :disabled="isExcelParsing || isLoading">
-                <div class="flex items-center gap-2">
+              <Button size="lg" :variant="'outline'" class="w-full sm:w-auto shadow-sm border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 transition-all hover:shadow-md active:scale-95" @click="triggerExcelImport" :disabled="isExcelParsing || isLoading">
+                <div class="flex items-center justify-center gap-2">
                   <UploadCloud class="w-5 h-5" :class="isExcelParsing ? 'animate-spin' : ''"/>
                   <span class="font-semibold">{{ isExcelParsing ? 'Memuat...' : 'Import Excel Status' }}</span>
                 </div>
@@ -2088,7 +2088,7 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
               <!-- Grouped Export Excel Dropdown -->
               <DropdownMenu>
                 <DropdownMenuTrigger as-child>
-                  <Button size="lg" :variant="'outline'" class="shadow-sm border-emerald-600 text-emerald-600 dark:border-emerald-500 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition-all hover:shadow-md active:scale-95 flex items-center gap-2" :disabled="isLoading">
+                  <Button size="lg" :variant="'outline'" class="w-full sm:w-auto shadow-sm border-emerald-600 text-emerald-600 dark:border-emerald-500 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition-all hover:shadow-md active:scale-95 flex items-center justify-center gap-2" :disabled="isLoading">
                     <FileSpreadsheet class="w-5 h-5"/>
                     <span class="font-semibold">Export Excel</span>
                     <ChevronDown class="w-4 h-4 opacity-75" />
@@ -2112,8 +2112,8 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <Button size="lg" class="shadow-sm transition-all hover:shadow-md active:scale-95" :class="isLinkCopied ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white dark:shadow-red-900/20'" @click="shareToClient" :disabled="isLinkCopied || isLoading">
-                <div class="flex items-center gap-2">
+              <Button size="lg" class="w-full sm:w-auto shadow-sm transition-all hover:shadow-md active:scale-95" :class="isLinkCopied ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white dark:shadow-red-900/20'" @click="shareToClient" :disabled="isLinkCopied || isLoading">
+                <div class="flex items-center justify-center gap-2">
                   <component :is="isLinkCopied ? CheckCircle2 : Share2" class="w-5 h-5"/>
                   <span class="font-semibold">{{ isLinkCopied ? 'Link Disalin!' : 'Share Tracking Link' }}</span>
                 </div>
@@ -2179,8 +2179,14 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                 </div>
               </div>
             </div>
+            <!-- Mobile Select All Checkbox -->
+            <div class="flex items-center gap-2.5 sm:hidden mt-3 pt-3 border-t border-slate-100 dark:border-slate-800/80">
+              <input type="checkbox" id="mobile-select-all" class="w-4.5 h-4.5 rounded border-slate-300 text-red-600 focus:ring-red-500 cursor-pointer" :checked="isAllSelected" @change="toggleSelectAll"/>
+              <label for="mobile-select-all" class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider cursor-pointer">Pilih Semua Produk</label>
+            </div>
           </CardHeader>
-          <div class="overflow-auto flex-1">
+          <!-- Desktop/Tablet View (Table Layout) -->
+          <div class="hidden md:block overflow-auto flex-1">
             <div class="[&>div]:overflow-visible min-w-[800px] w-full">
               <Table class="relative">
                 <TableHeader class="bg-gray-50 dark:bg-slate-900 sticky top-0 z-20 shadow-sm border-b">
@@ -2343,8 +2349,6 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                                 </template>
                             </div>
                             </template>
-                            
-                            <!-- Notifications for shortage/remaining have been moved to the status badge text -->
                         </div>
                         
                         <!-- Fallback HPO from DB (when not found in PO sync list, e.g. manual input/import) -->
@@ -2382,41 +2386,40 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                         <div v-else-if="getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) > 0 && !isSyncing" class="mt-1.5 text-[10px] italic">
                             <!-- Jika stock kurang (perlu order) -->
                             <span v-if="item.qty_to_order > 0" class="text-red-600 dark:text-red-400 flex items-center gap-1">
-                                <AlertTriangle class="w-3 h-3" />
-                                Ada kekurangan yang belum dipesan ({{ getDisplayedQtyRemaining(item) }} {{ item.unit }})
+                                <AlertTriangle class="w-3.5 h-3.5 shrink-0" />
+                                Ada kekurangan PO ({{ getDisplayedQtyRemaining(item) }} {{ item.unit }})
                             </span>
                             <!-- Jika stock ready tapi belum dikirim semua -->
                             <span v-else class="text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                                <Info class="w-3 h-3" />
+                                <Info class="w-3.5 h-3.5 shrink-0" />
                                 Ada {{ getDisplayedQtyRemaining(item) }} {{ item.unit }} belum dikirim
                             </span>
                         </div>
 
                         <!-- Warning jika perlu PO tapi belum ada HPO -->
                         <div v-else-if="item.qty_to_order > 0 && !isDisplayedFullyShipped(item) && !isSyncing && getHpoEntries(item).length === 0" class="mt-1.5 text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
-                            <Clock class="w-3 h-3" />
+                            <Clock class="w-3.5 h-3.5 shrink-0" />
                             Pesanan sudah {{ getDaysSinceOrder() }} hari
                         </div>
                     </div>
                     
-                    <!-- Hold by Customer Indicator - Prominent Display (Only show after sync) -->
+                    <!-- Hold by Customer Indicator -->
                     <div v-if="!isSyncing && item.logistics_status === 'Hold by Customer'" class="text-[11px] font-bold mt-2 p-3 bg-amber-50 dark:bg-amber-900/20 rounded border-l-4 border-amber-500 flex items-center gap-2">
                         <Clock class="w-4 h-4 text-amber-600 dark:text-amber-400" />
                         <div>
                             <div class="text-amber-800 dark:text-amber-300 uppercase tracking-wide">⚠️ HOLD BY CUSTOMER</div>
-                            <div class="text-amber-600 dark:text-amber-400 text-[10px] mt-0.5">Item ditunda oleh customer</div>
+                            <div class="text-amber-600 dark:text-amber-400 text-[10px] mt-0.5 font-normal">Item ditunda oleh customer</div>
                         </div>
                     </div>
                     
-                    <!-- Admin Notes (Only show after sync) -->
-                    <div v-if="!isSyncing && item.logistics_note && !item.logistics_note.includes('Auto-synced') && !item.logistics_note.includes('Auto-created')" class="text-[11px] text-gray-600 dark:text-gray-400 mt-2 p-2 bg-gray-50 dark:bg-gray-800 rounded border-l-2 border-gray-300 dark:border-gray-600">
-                        <div class="font-bold text-[9px] uppercase text-gray-500 mb-0.5">Note:</div>
+                    <!-- Admin Notes -->
+                    <div v-if="!isSyncing && item.logistics_note && !item.logistics_note.includes('Auto-synced') && !item.logistics_note.includes('Auto-created')" class="text-[11px] text-gray-600 dark:text-gray-400 mt-2 p-2 bg-gray-50 dark:bg-gray-800 rounded border-l-2 border-gray-300 dark:border-gray-600 leading-normal">
+                        <div class="font-bold text-[9px] uppercase text-slate-400 mb-0.5">Admin Logistics Note:</div>
                         {{ item.logistics_note }}
                     </div>
                   </TableCell>
                   
                   <TableCell class="text-right pr-6 align-top pt-3">
-                    <!-- Edit button only shows after sync completes -->
                     <Button v-if="!isSyncing" size="sm" variant="outline" class="h-8 px-3 rounded border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-600 dark:hover:border-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all bg-white dark:bg-slate-800 flex items-center gap-1.5 ml-auto" @click="openActionModal(item)"><Edit class="w-3.5 h-3.5"/><span class="text-xs font-bold">Edit</span></Button>
                   </TableCell>
                 </TableRow>
@@ -2431,6 +2434,247 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                 </TableRow>
               </TableBody>
             </Table>
+            </div>
+          </div>
+
+          <!-- Mobile View (Card Layout) -->
+          <div class="md:hidden overflow-y-auto flex-1 p-4 space-y-4 bg-slate-50/50 dark:bg-slate-900/30">
+            <div v-if="filteredItems.length === 0" class="text-center py-12 text-slate-500 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/60 dark:border-slate-800 p-6">
+              <Search class="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+              <p class="text-sm font-semibold">Produk tidak ditemukan</p>
+              <p class="text-xs text-slate-400 mt-1">Coba gunakan kata kunci pencarian lain atau ubah filter status.</p>
+            </div>
+            
+            <div v-else 
+                 v-for="(item, idx) in filteredItems" 
+                 v-show="!isPurchaseExpanded || item.qty_to_order > 0"
+                 :key="idx" 
+                 class="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm relative space-y-4 transition-all"
+                 :class="{ 'border-yellow-400 dark:border-yellow-600 bg-yellow-50/30 dark:bg-yellow-950/20': route.query.highlight === item.code }"
+                 :id="`item-mob-${item.code}`"
+            >
+              <!-- Card Top: Checkbox, SKU, and Action -->
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex items-center gap-3">
+                  <input v-if="!isDisplayedFullyShipped(item)" 
+                         type="checkbox" 
+                         class="w-5 h-5 rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer" 
+                         :checked="selectedItemCodes.includes(item.code)" 
+                         @change="toggleSelection(item.code)" />
+                  <div class="flex items-center gap-1.5">
+                    <span class="font-bold text-gray-900 dark:text-slate-200 text-sm font-mono tracking-tight">{{ item.code }}</span>
+                    <button @click="copySku(item.code)" class="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors" title="Copy SKU">
+                      <component :is="copiedSku === item.code ? CheckCircle2 : Copy" class="w-3.5 h-3.5" :class="copiedSku === item.code ? 'text-green-600 dark:text-green-400' : ''"/>
+                    </button>
+                  </div>
+                </div>
+                
+                <!-- Action Button (Edit) -->
+                <Button v-if="!isSyncing" size="sm" variant="outline" class="h-8 px-2.5 rounded-lg border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-600 bg-white dark:bg-slate-800 flex items-center gap-1 shrink-0 shadow-sm transition-all" @click="openActionModal(item)">
+                  <Edit class="w-3.5 h-3.5"/>
+                  <span class="text-xs font-bold">Edit</span>
+                </Button>
+              </div>
+
+              <!-- Product Name -->
+              <div class="text-xs font-medium text-slate-700 dark:text-slate-300 leading-relaxed">
+                {{ item.name }}
+              </div>
+              
+              <!-- SKU Admin Note if exists -->
+              <div v-if="item.admin_note" class="text-[10px] text-slate-500 bg-slate-50 dark:bg-slate-800/40 p-2 rounded-lg border border-slate-100 dark:border-slate-800/60 leading-normal">
+                <span class="font-semibold text-slate-400 block mb-0.5">Admin Note:</span>
+                {{ item.admin_note }}
+              </div>
+
+              <div class="border-t border-slate-100 dark:border-slate-800 my-1"></div>
+
+              <!-- Metrics Stats Section -->
+              <div class="grid grid-cols-2 gap-3">
+                <!-- Qty Order -->
+                <div class="bg-slate-50/50 dark:bg-slate-800/30 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/60">
+                  <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Qty Order</div>
+                  <div class="text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">{{ item.qty_order }} <span class="text-[10px] font-normal text-slate-500">{{ item.unit }}</span></div>
+                </div>
+                <!-- Stock Gudang -->
+                <div class="bg-slate-50/50 dark:bg-slate-800/30 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800/60">
+                  <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Stok Gudang</div>
+                  <div class="text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">{{ item.parsed_stock_qty }} <span class="text-[10px] font-normal text-slate-500">{{ item.unit }}</span></div>
+                </div>
+                <!-- Terkirim -->
+                <div class="bg-blue-50/20 dark:bg-blue-900/10 p-2.5 rounded-xl border border-blue-100/50 dark:border-blue-900/20">
+                  <div class="text-[10px] font-bold text-blue-500 dark:text-blue-400 uppercase tracking-wider">Terkirim</div>
+                  <div class="text-sm font-extrabold text-blue-600 dark:text-blue-400 mt-0.5">{{ getDisplayedQtyShipped(item) }} <span class="text-[10px] font-normal text-blue-500">{{ item.unit }}</span></div>
+                </div>
+                <!-- Sisa Kirim -->
+                <div class="p-2.5 rounded-xl border" :class="getDisplayedQtyRemaining(item) > 0 ? 'bg-red-50/20 dark:bg-red-900/10 border-red-100/50 dark:border-red-900/20' : 'bg-emerald-50/20 dark:bg-emerald-900/10 border-emerald-100/50 dark:border-emerald-900/20'">
+                  <div class="text-[10px] font-bold uppercase tracking-wider" :class="getDisplayedQtyRemaining(item) > 0 ? 'text-red-500 dark:text-red-400' : 'text-emerald-500 dark:text-emerald-400'">Sisa Kirim</div>
+                  <div class="text-sm font-extrabold mt-0.5" :class="getDisplayedQtyRemaining(item) > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'">{{ getDisplayedQtyRemaining(item) }} <span class="text-[10px] font-normal">{{ item.unit }}</span></div>
+                </div>
+              </div>
+
+              <!-- General Logistics Status Section -->
+              <div class="space-y-3 pt-1">
+                <!-- Check PO/HDO Loading -->
+                <div v-if="isSyncing && item.qty_to_order > 0" class="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-100 dark:border-amber-950 text-amber-700 dark:text-amber-400 text-xs font-semibold">
+                  <Loader2 class="w-4 h-4 animate-spin" />
+                  <span>Checking purchase order...</span>
+                </div>
+                <div v-else-if="isSyncing && item.qty_shipped > 0 && !getHdoNumber(item)" class="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-950 text-blue-700 dark:text-blue-400 text-xs font-semibold">
+                  <Loader2 class="w-4 h-4 animate-spin" />
+                  <span>Checking shipment logs...</span>
+                </div>
+                
+                <div v-else class="space-y-3">
+                  <!-- General Status Badge -->
+                  <div>
+                    <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold shadow-sm" :class="getRowStatus(item).class">
+                      <component :is="getRowStatus(item).icon" class="w-4 h-4" />
+                      {{ getRowStatus(item).text }}
+                    </div>
+                  </div>
+
+                  <!-- HDO List -->
+                  <div v-if="getHdosForItem(item).length > 0" class="space-y-2">
+                    <div v-for="hdo in getHdosForItem(item)" :key="hdo.no" class="bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-xl p-3">
+                      <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-blue-100 dark:border-blue-900/60">
+                        <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                        <span class="text-[10px] font-bold text-blue-500 uppercase tracking-wider">HDO Pengiriman</span>
+                      </div>
+                      <div class="flex items-center justify-between">
+                        <span class="text-xs font-mono font-bold text-blue-700 dark:text-blue-300">{{ hdo.no }}</span>
+                        <span class="text-xs font-bold text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-900/60 px-2 py-0.5 rounded-lg border border-blue-200/50 dark:border-blue-800">{{ getSingleHdoQty(hdo, item) }} {{ item.unit }}</span>
+                      </div>
+                      <div v-if="hpoMapping[item.code] && getNoteType(item.admin_note) !== 'stock'" class="mt-2 text-[10px] text-blue-500 dark:text-blue-400 font-medium">
+                        Ex PO: {{ hpoMapping[item.code] }}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div v-else-if="isHdoSyncing && getDisplayedQtyShipped(item) > 0" class="bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-xl p-3 flex items-center gap-2">
+                    <Loader2 class="w-4 h-4 text-blue-400 animate-spin" />
+                    <span class="text-xs text-blue-500 font-medium">Memuat data HDO...</span>
+                  </div>
+                  
+                  <div v-else-if="getDisplayedQtyShipped(item) > 0 && item.logistics_hdo" class="bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-xl p-3">
+                    <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-blue-100 dark:border-blue-900/60">
+                      <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                      <span class="text-[10px] font-bold text-blue-500 uppercase tracking-wider">HDO Pengiriman</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-mono font-bold text-blue-700 dark:text-blue-300">{{ item.logistics_hdo }}</span>
+                      <span class="text-xs font-bold text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-900/60 px-2 py-0.5 rounded-lg border border-blue-200/50 dark:border-blue-800">{{ item.qty_shipped }} {{ item.unit }}</span>
+                    </div>
+                  </div>
+
+                  <!-- HPO List -->
+                  <div v-if="!isDisplayedFullyShipped(item) && getHpoEntries(item).length > 0" class="space-y-2">
+                    <div v-for="(hpo, idx) in getHpoEntries(item)" :key="idx" 
+                         v-show="!(getDisplayedQtyShipped(item) > 0 && getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya')"
+                         class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
+                      <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-slate-100 dark:border-slate-700">
+                        <ShoppingCart class="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">PO Siemens</span>
+                      </div>
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="text-xs font-mono font-bold text-slate-800 dark:text-slate-200 truncate">{{ hpo.poNumber }}</span>
+                        <span class="text-xs font-extrabold text-red-600 dark:text-red-400 whitespace-nowrap bg-red-50 dark:bg-red-950/20 px-2 py-0.5 rounded-lg border border-red-100 dark:border-red-950/60">{{ hpo.quantity }} {{ item.unit }}</span>
+                      </div>
+                      
+                      <div v-if="hpo.vendorName" class="mt-2 flex">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600">
+                          🏢 {{ hpo.vendorName }}
+                        </span>
+                      </div>
+
+                      <!-- Logistics status tree inside HPO -->
+                      <template v-for="hpoShipment in [getHpoShipment(item, hpo.poNumber)]" :key="hpoShipment.id || hpo.poNumber">
+                        <div v-if="hpoShipment.current_status && hpoShipment.current_status !== 'Pending Process'" class="mt-2.5">
+                          <div class="flex items-center justify-between gap-2 bg-blue-50/50 dark:bg-blue-950/20 px-2.5 py-1.5 rounded-lg border border-blue-100 dark:border-blue-900">
+                            <div class="flex items-center gap-1.5 min-w-0">
+                              <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                              <span class="text-[11px] font-bold text-blue-700 dark:text-blue-300 truncate">
+                                {{ getVisualStatus(hpoShipment) === 'Follow up with our forwarder' ? 'Ex-Works' : getVisualStatus(hpoShipment) === 'Already in siemens Warehouse' ? 'Tiba Dunex' : getVisualStatus(hpoShipment) === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : getVisualStatus(hpoShipment) }}
+                              </span>
+                            </div>
+                            <span v-if="hpoShipment.exwork_waiting && getVisualStatus(hpoShipment) === 'Follow up with our forwarder'"
+                                  class="text-[10px] font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                              ⏳ Waiting
+                            </span>
+                            <span v-else class="text-[10px] font-mono font-bold text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                              {{ getVisualStatusDate(hpoShipment) || '-' }}
+                            </span>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+
+                  <!-- Fallback HPO from DB (imported status/manual PO) -->
+                  <div v-else-if="!isDisplayedFullyShipped(item) && item.logistics_hpo" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
+                    <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-slate-100 dark:border-slate-700">
+                      <ShoppingCart class="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
+                      <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">PO Siemens</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="text-xs font-mono font-bold text-slate-800 dark:text-slate-200 truncate">{{ item.logistics_hpo }}</span>
+                      <span class="text-xs font-extrabold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 px-2 py-0.5 rounded-lg border border-red-100 dark:border-red-950/60">{{ item.qty_order }} {{ item.unit }}</span>
+                    </div>
+
+                    <!-- Logistics status if exists -->
+                    <div v-if="item.logistics_status && item.logistics_status !== 'Pending Process'" class="mt-2.5">
+                      <div class="flex items-center justify-between gap-2 bg-blue-50/50 dark:bg-blue-950/20 px-2.5 py-1.5 rounded-lg border border-blue-100 dark:border-blue-900">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                          <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                          <span class="text-[11px] font-bold text-blue-700 dark:text-blue-300 truncate">
+                            {{ item.logistics_status === 'Follow up with our forwarder' ? 'Ex-Works' : item.logistics_status === 'ETA Port JKT' ? 'ETA JKT' : item.logistics_status === 'Already in siemens Warehouse' ? 'Tiba Dunex' : item.logistics_status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : item.logistics_status }}
+                          </span>
+                        </div>
+                        <span v-if="item.exwork_waiting && item.logistics_status === 'Follow up with our forwarder'"
+                              class="text-[10px] font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                          ⏳ Waiting
+                        </span>
+                        <span v-else class="text-[10px] font-mono font-bold text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                          {{ formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date) || '-' }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Alert if partial shipped but no PO/ready -->
+                  <div v-else-if="getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) > 0 && !isSyncing" class="text-[11px] italic p-2 bg-slate-50 dark:bg-slate-800/40 rounded-lg">
+                    <span v-if="item.qty_to_order > 0" class="text-red-600 dark:text-red-400 flex items-center gap-1.5">
+                      <AlertTriangle class="w-3.5 h-3.5" />
+                      Ada kekurangan PO ({{ getDisplayedQtyRemaining(item) }} {{ item.unit }})
+                    </span>
+                    <span v-else class="text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
+                      <Info class="w-3.5 h-3.5" />
+                      Ada {{ getDisplayedQtyRemaining(item) }} {{ item.unit }} belum dikirim
+                    </span>
+                  </div>
+
+                  <!-- Alert if old items need PO -->
+                  <div v-else-if="item.qty_to_order > 0 && !isDisplayedFullyShipped(item) && !isSyncing && getHpoEntries(item).length === 0" class="text-[11px] text-red-600 dark:text-red-400 flex items-center gap-1.5">
+                    <Clock class="w-3.5 h-3.5" />
+                    <span>Pesanan sudah {{ getDaysSinceOrder() }} hari</span>
+                  </div>
+
+                  <!-- Hold by Customer Notification -->
+                  <div v-if="!isSyncing && item.logistics_status === 'Hold by Customer'" class="text-[11px] font-bold p-3 bg-amber-50 dark:bg-amber-900/20 border-l-4 border-amber-500 rounded-lg flex items-center gap-2">
+                    <Clock class="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <div>
+                      <div class="text-amber-800 dark:text-amber-300">⚠️ HOLD BY CUSTOMER</div>
+                      <div class="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5 font-normal">Item ditunda oleh customer</div>
+                    </div>
+                  </div>
+
+                  <!-- Admin Note -->
+                  <div v-if="!isSyncing && item.logistics_note && !item.logistics_note.includes('Auto-synced') && !item.logistics_note.includes('Auto-created')" class="text-[11px] text-slate-600 dark:text-slate-400 p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-800 leading-normal">
+                    <span class="font-bold text-[9px] uppercase text-slate-400 block mb-0.5">Admin Logistics Note:</span>
+                    {{ item.logistics_note }}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </Card>
