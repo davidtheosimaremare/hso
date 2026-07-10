@@ -658,6 +658,7 @@ const isExcelParsing = ref(false)
 const isExcelModalOpen = ref(false)
 const excelRowsToUpdate = ref([]) // Matched items to update
 const excelProgressCount = ref(0)
+const detectedExcelCols = ref({ exwork: false, eta: false, delivery: false, status: false })
 
 const triggerExcelImport = () => {
   if (excelFileInput.value) {
@@ -1141,7 +1142,7 @@ const applyExcelUpdates = async () => {
         }
         
         // Sync Ex-Works date if column is defined
-        if (exworkCol) {
+        if (detectedExcelCols.value.exwork) {
           if (item.excelExwork === '__waiting__') {
             updateData.exwork_waiting = true
             updateData.exwork_date = null
@@ -1152,7 +1153,7 @@ const applyExcelUpdates = async () => {
         }
         
         // Sync ETA date if column is defined (unless cleared by status transition above)
-        if (etaCol && item.excelStatus !== 'Follow up with our forwarder') {
+        if (detectedExcelCols.value.eta && item.excelStatus !== 'Follow up with our forwarder') {
           updateData.eta_date = item.excelEta || null
         }
         
