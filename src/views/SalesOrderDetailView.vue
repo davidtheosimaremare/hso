@@ -336,6 +336,8 @@ const exportReminderExcel = () => {
     soDetail.value.items.forEach(item => {
         // Skip items that do not need to be ordered (stock is ready / Menunggu Pengiriman)
         if (!item.qty_to_order || item.qty_to_order <= 0) return;
+        // Skip items yang sudah sepenuhnya terkirim — tidak perlu di-reminder
+        if (isDisplayedFullyShipped(item)) return;
         
         const hpos = getHpoEntries(item);
         if (hpos.length === 0) {
@@ -896,6 +898,13 @@ const handleExcelImport = (e) => {
       shipmentList.value.forEach(shipment => {
         if (!shipment.hpo_number || !shipment.item_code) return
 
+        // Skip item yang sudah terkirim penuh — tidak perlu diupdate dari Excel
+        const soItemForShipment = soDetail.value?.items?.find(i => i.code === shipment.item_code)
+        if (soItemForShipment && isDisplayedFullyShipped(soItemForShipment)) {
+          console.log(`[ExcelImport] SKIP (sudah terkirim): ${shipment.item_code} | ${shipment.hpo_number}`)
+          return
+        }
+
         const key = `${String(shipment.item_code).trim().toLowerCase()}||${String(shipment.hpo_number).trim().toLowerCase()}`
         if (seenKeys.has(key)) return
 
@@ -973,6 +982,11 @@ const handleExcelImport = (e) => {
       // ── PASS 2: Items dengan hpoMapping yang belum ada di DB ─────────────
       if (soDetail.value && soDetail.value.items) {
         soDetail.value.items.forEach(item => {
+          // Skip item yang sudah terkirim penuh
+          if (isDisplayedFullyShipped(item)) {
+            console.log(`[ExcelImport] SKIP Pass2 (sudah terkirim): ${item.code}`)
+            return
+          }
           const hpoVal = hpoMapping.value[item.code]
           if (!hpoVal) return
 
