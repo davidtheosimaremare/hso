@@ -155,12 +155,14 @@ const bulkProgress = ref(0)
 const bulkStatus = ref('')
 const isBulkMode = ref(false) // Show checkbox column
 const showSaranTooltip = ref(false)
+const showReminderTooltip = ref(false)
 
-const toggleBulkMode = () => {
+const toggleBulkMode = (type = 'saran') => {
   if (isBulkMode.value) {
     // If already in mode and items selected -> download
     if (selectedOrders.value.length > 0) {
-      bulkDownloadSaranOrder()
+      if (type === 'saran') bulkDownloadSaranOrder()
+      else if (type === 'reminder') bulkDownloadReminderPO()
     } else {
       // Toggle off
       isBulkMode.value = false
@@ -685,6 +687,222 @@ const bulkDownloadSaranOrder = async () => {
     }
 }
 
+// --- BULK DOWNLOAD REMINDER PO ---
+const bulkDownloadReminderPO = async () => {
+    if (selectedOrders.value.length === 0) return
+    
+    isBulkDownloading.value = true
+    bulkProgress.value = 0
+    let reminderItems = []
+    
+    try {
+        const totalSelected = selectedOrders.value.length
+        
+        for (let i = 0; i < totalSelected; i++) {
+            const soId = selectedOrders.value[i]
+            const soSummary = salesOrders.value.find(s => s.id_database === soId)
+            const soNumber = soSummary ? soSummary.no_so : 'UNKNOWN'
+            const customerName = soSummary ? soSummary.client : 'UNKNOWN'
+            
+            bulkStatus.value = `Mengambil data SO ${soNumber} (${i+1}/${totalSelected})...`
+            bulkProgress.value = Math.round(((i) / totalSelected) * 100)
+            
+            // 1. Fetch Detail SO
+            const { data: detailData, error: detailError } = await supabase.functions.invoke('accurate-detail-so', {
+                body: { id: soId }
+            })
+            if (detailError || !detailData?.d?.detailItem) continue
+            const detailItems = detailData.d.detailItem
+            
+            // 2. Fetch HPO dari Accurate (Sama dengan detail view)
+            let dbItems = []
+            let page = 0
+            const pageSize = 1000
+            let hasMore = true
+            let poError = null
+
+            while (hasMore) {
+                const { data, error: fetchErr } = await supabase
+                    .from('accurate_purchase_order_items')
+                    .select(`
+                        *,
+                        header:accurate_purchase_orders(
+                            id, number, trans_date, status_name, vendor_name
+                        )
+                    `)
+                    .ilike('detail_notes', `%${soNumber}%`)
+                    .range(page * pageSize, (page + 1) * pageSize - 1)
+                    .order('created_at', { ascending: false })
+                    .order('id', { ascending: false })
+
+                if (fetchErr) {
+                    poError = fetchErr
+                    break
+                }
+
+                if (data && data.length > 0) {
+                    dbItems = dbItems.concat(data)
+                    if (data.length < pageSize) {
+                        hasMore = false
+                    } else {
+                        page++
+                    }
+                } else {
+                    hasMore = false
+                }
+            }
+
+            const poData = { d: null }
+            if (!poError && dbItems.length > 0) {
+                poData.d = dbItems.map(item => ({
+                    poId: item.header?.id,
+                    poNumber: item.header?.number,
+                    poDate: item.header?.trans_date,
+                    poStatus: item.header?.status_name || 'Open',
+                    itemCode: item.item_code,
+                    itemName: item.item_name,
+                    quantity: item.quantity,
+                    description: item.detail_notes,
+                    vendorName: item.header?.vendor_name
+                }))
+            }
+            const hpoDetails = poData?.d || []
+
+            // 3. Fetch shipments
+            const { data: dbData } = await supabase
+                .from('shipments')
+                .select('*')
+                .eq('so_id', String(soId))
+            const dbShipments = dbData || []
+            
+            const isDisplayedFullyShipped = (item) => {
+                const qty_order = item.quantity || 0
+                const qty_shipped = item.shipQuantity || item.shippedQuantity || 0
+                return (qty_order - qty_shipped) <= 0
+            }
+            
+            const getVisualStatus = (shipment) => {
+                if (!shipment) return 'Pending Process'
+                if (shipment.current_status === 'Hold by Customer') return 'Hold by Customer'
+                if (shipment.hokiindo_date) return 'Already in Hokiindo Raya'
+                if (shipment.dunex_date) return 'Already in siemens Warehouse'
+                if (shipment.eta_date) return 'ETA Port JKT'
+                return shipment.current_status || 'Follow up with our forwarder'
+            }
+            
+            const getHpoEntries = (item) => {
+                const code = item.item?.no || item.detailName
+                const poItems = hpoDetails.filter(p => p.itemCode === code)
+                return poItems.map(p => ({
+                    poNumber: p.poNumber,
+                    poDate: p.poDate,
+                    quantity: p.quantity,
+                    description: p.description,
+                    vendorName: p.vendorName
+                }))
+            }
+            
+            const getHpoShipment = (item, hpoNumber) => {
+                const code = item.item?.no || item.detailName
+                const matches = dbShipments.filter(s => 
+                    s.item_code === code && 
+                    (!s.hpo_number || String(s.hpo_number).trim().toLowerCase() === String(hpoNumber).trim().toLowerCase())
+                )
+                const exactMatch = matches.find(s => s.hpo_number)
+                if (exactMatch) return exactMatch
+                return matches[0] || null
+            }
+            
+            detailItems.forEach(item => {
+                const qty_order = item.quantity || 0
+                const note = item.detailNotes || ''
+                const lower = note.toLowerCase()
+                let qty_stock_admin = 0
+                let qty_to_order = qty_order
+                
+                if (lower.includes('no stock') || lower.includes('non stock') || lower.includes('kosong') || lower.includes('indent')) {
+                    qty_stock_admin = 0
+                    qty_to_order = qty_order
+                } else {
+                    const match = note.match(/(?:stock|stok|ready)\s*:?\s*(\d+)/i)
+                    if (match && match[1]) {
+                        qty_stock_admin = parseInt(match[1], 10)
+                        qty_to_order = Math.max(0, qty_order - qty_stock_admin)
+                    } else if (lower.includes('stock') || lower.includes('stok') || lower.includes('ready')) {
+                        qty_stock_admin = qty_order
+                        qty_to_order = 0
+                    }
+                }
+                
+                if (qty_to_order <= 0) return
+                if (isDisplayedFullyShipped(item)) return
+                const hpos = getHpoEntries(item)
+                const siemensHpos = hpos.filter(hpo => hpo.vendorName && hpo.vendorName.toLowerCase().includes('siemens'))
+                
+                if (siemensHpos.length > 0) {
+                    siemensHpos.forEach(hpo => {
+                        const shipment = getHpoShipment(item, hpo.poNumber)
+                        const status = getVisualStatus(shipment)
+                        if (['Follow up with our forwarder', 'ETA Port JKT', 'Already in siemens Warehouse'].includes(status)) {
+                            reminderItems.push({
+                                hsoNumber: soNumber,
+                                customerName: customerName,
+                                hpoNumber: hpo.poNumber,
+                                itemCode: item.item?.no || item.detailName,
+                                itemName: item.item?.name || item.detailName,
+                                qty: qty_order, // Using SO Qty Order as requested
+                                status: status === 'Follow up with our forwarder' ? 'Ex-Works' : status === 'ETA Port JKT' ? 'ETA JKT' : 'Tiba Dunex',
+                                exworkDate: shipment ? (shipment.exwork_waiting ? 'Waiting for confirmation' : (shipment.exwork_date || '-')) : '-',
+                                etaDate: shipment ? (shipment.eta_date || '-') : '-',
+                                dunexDate: shipment ? (shipment.dunex_date || '-') : '-',
+                                note: shipment ? (shipment.admin_notes || '-') : '-'
+                            })
+                        }
+                    })
+                }
+            })
+        }
+        
+        if (reminderItems.length === 0) {
+            alert("Tidak ada item yang berstatus Ex-Works, ETA JKT, atau Tiba Dunex untuk HSO yang dipilih.")
+            return
+        }
+
+        const dataToExport = reminderItems.map(item => ({
+            "No HSO": item.hsoNumber,
+            "Nama Customer": item.customerName,
+            "No HPO (Purchase Order)": item.hpoNumber,
+            "Kode Barang (MLFB)": item.itemCode,
+            "Nama Barang": item.itemName,
+            "Qty": item.qty,
+            "Status Logistik": item.status,
+            "Tanggal Ex-Works": item.exworkDate,
+            "Tanggal ETA JKT": item.etaDate,
+            "Tanggal Tiba Dunex": item.dunexDate,
+            "Catatan": item.note
+        }))
+
+        const ws = XLSX.utils.json_to_sheet(dataToExport)
+        const colWidths = [
+            { wch: 15 }, { wch: 30 }, { wch: 22 }, { wch: 22 }, { wch: 45 }, { wch: 8 },
+            { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 35 }
+        ]
+        ws['!cols'] = colWidths
+        
+        const wb = XLSX.utils.book_new()
+        XLSX.utils.book_append_sheet(wb, ws, "Reminder PO")
+        XLSX.writeFile(wb, `REMINDER_PO_GLOBAL_${new Date().toISOString().split('T')[0]}.xlsx`)
+        
+    } catch (err) {
+        console.error(err)
+        alert("Gagal mengunduh Excel Reminder PO.")
+    } finally {
+        isBulkDownloading.value = false
+        bulkProgress.value = 100
+        bulkStatus.value = ''
+    }
+}
+
 const exportToPDF = () => {
   const doc = new jsPDF()
   doc.text("Laporan Sales Order", 14, 15)
@@ -742,7 +960,7 @@ const getStatusColor = (status) => {
       <div class="flex flex-wrap gap-2 w-full md:w-auto">
         <!-- Saran Order Button - always visible -->
         <div class="relative">
-          <button @click="toggleBulkMode"
+          <button @click="toggleBulkMode('saran')"
             :class="['inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-md',
               isBulkMode && selectedOrders.length > 0
                 ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white shadow-emerald-500/30'
@@ -760,7 +978,7 @@ const getStatusColor = (status) => {
 
           <!-- Cancel button when in bulk mode -->
           <button v-if="isBulkMode" @click="cancelBulkMode"
-            class="absolute -top-2 -right-2 w-5 h-5 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white shadow-md transition-all"
+            class="absolute -top-2 -right-2 w-5 h-5 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white shadow-md transition-all z-10"
             title="Batalkan Pilih SO">
             <X class="w-3 h-3"/>
           </button>
@@ -779,6 +997,37 @@ const getStatusColor = (status) => {
               <div class="flex items-start gap-1.5"><span class="text-amber-400 mt-0.5">!</span> Cek kembali qty sebelum membuat PO</div>
             </div>
             <div class="mt-2 pt-2 border-t border-slate-700 text-slate-400 text-[11px]">Klik tombol → centang SO → klik Download</div>
+            <!-- Tooltip arrow -->
+            <div class="absolute -top-1.5 left-6 w-3 h-3 bg-slate-900 dark:bg-slate-950 border-l border-t border-slate-700 rotate-45"></div>
+          </div>
+        </div>
+
+        <!-- Reminder PO Siemens Button -->
+        <div class="relative">
+          <button @click="toggleBulkMode('reminder')"
+            :class="['inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-md',
+              isBulkMode && selectedOrders.length > 0
+                ? 'bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white shadow-purple-500/30'
+                : isBulkMode
+                  ? 'bg-purple-50 dark:bg-purple-900/20 border-2 border-purple-400 text-purple-700 dark:text-purple-300 shadow-none'
+                  : 'bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white shadow-purple-500/30'
+            ]"
+            @mouseenter="showReminderTooltip = true"
+            @mouseleave="showReminderTooltip = false">
+            <Package class="w-4 h-4"/>
+            <span v-if="!isBulkMode">Reminder PO</span>
+            <span v-else-if="selectedOrders.length === 0">Pilih SO...</span>
+            <span v-else>Reminder ({{ selectedOrders.length }} SO)</span>
+          </button>
+
+          <!-- Tooltip -->
+          <div v-if="showReminderTooltip && !isBulkMode"
+            class="absolute top-full right-0 md:left-0 mt-2 z-50 w-72 bg-slate-900 dark:bg-slate-950 text-white text-xs rounded-xl p-3.5 shadow-2xl border border-slate-700 pointer-events-none">
+            <div class="flex items-center gap-2 mb-2 pb-2 border-b border-slate-700">
+              <Package class="w-4 h-4 text-purple-400 shrink-0"/>
+              <span class="font-bold text-sm text-white">Reminder PO (Bulk)</span>
+            </div>
+            <p class="text-slate-300 leading-relaxed mb-2">Generate list item PO Siemens yang <strong class="text-purple-400">sedang dalam proses pengiriman</strong> (Ex-Works, ETA JKT, Tiba Dunex).</p>
             <!-- Tooltip arrow -->
             <div class="absolute -top-1.5 left-6 w-3 h-3 bg-slate-900 dark:bg-slate-950 border-l border-t border-slate-700 rotate-45"></div>
           </div>

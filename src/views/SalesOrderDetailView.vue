@@ -17,6 +17,12 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle
 } from '@/components/ui/sheet'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   Loader2, Calendar, MapPin, Truck, Building2,
   Edit, CheckCircle2, Clock, Anchor, Factory, FileText, 
   PackageCheck, Share2, Info, ExternalLink, Package, Hourglass, 
@@ -340,27 +346,10 @@ const exportReminderExcel = () => {
         if (isDisplayedFullyShipped(item)) return;
         
         const hpos = getHpoEntries(item);
-        if (hpos.length === 0) {
-            // If there are no HPOs from Accurate, look for a manual shipment record in DB
-            const manualShipment = shipmentList.value.find(s => s.item_code === item.code && !s.hpo_number);
-            if (manualShipment) {
-                const status = getVisualStatus(manualShipment);
-                if (['Follow up with our forwarder', 'ETA Port JKT', 'Already in siemens Warehouse'].includes(status)) {
-                    reminderItems.push({
-                        hpoNumber: '-',
-                        itemCode: item.code,
-                        itemName: item.name,
-                        qty: item.qty_order,
-                        status: status === 'Follow up with our forwarder' ? 'Ex-Works' : status === 'ETA Port JKT' ? 'ETA JKT' : 'Tiba Dunex',
-                        exworkDate: manualShipment.exwork_waiting ? 'Waiting for confirmation' : (manualShipment.exwork_date || '-'),
-                        etaDate: manualShipment.eta_date || '-',
-                        dunexDate: manualShipment.dunex_date || '-',
-                        note: manualShipment.admin_notes || '-'
-                    });
-                }
-            }
-        } else {
-            hpos.forEach(hpo => {
+        const siemensHpos = hpos.filter(hpo => hpo.vendorName && hpo.vendorName.toLowerCase().includes('siemens'));
+        
+        if (siemensHpos.length > 0) {
+            siemensHpos.forEach(hpo => {
                 const shipment = getHpoShipment(item, hpo.poNumber);
                 const status = getVisualStatus(shipment);
                 if (['Follow up with our forwarder', 'ETA Port JKT', 'Already in siemens Warehouse'].includes(status)) {
@@ -425,6 +414,101 @@ const exportReminderExcel = () => {
 
     const safeSoNumber = (soDetail.value.number || 'SO').replace(/[\/\\]/g, '_');
     XLSX.writeFile(wb, `REMINDER_PO_${safeSoNumber}.xlsx`);
+}
+
+const exportAllHpoExcel = () => {
+    if (!soDetail.value || !soDetail.value.items) return;
+    
+    const hpoItems = [];
+    
+    soDetail.value.items.forEach(item => {
+        const hpos = getHpoEntries(item);
+        if (hpos.length > 0) {
+            hpos.forEach(hpo => {
+                const shipment = getHpoShipment(item, hpo.poNumber);
+                const status = getVisualStatus(shipment);
+                hpoItems.push({
+                    hpoNumber: hpo.poNumber,
+                    itemCode: item.code,
+                    itemName: item.name,
+                    qtyOrder: item.qty_order,
+                    qtyHpo: hpo.quantity || item.qty_order,
+                    status: status === 'Follow up with our forwarder' ? 'Ex-Works' : status === 'ETA Port JKT' ? 'ETA JKT' : status === 'Already in siemens Warehouse' ? 'Tiba Dunex' : status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : status,
+                    exworkDate: shipment.exwork_waiting ? 'Waiting for confirmation' : (shipment.exwork_date || '-'),
+                    etaDate: shipment.eta_date || '-',
+                    dunexDate: shipment.dunex_date || '-',
+                    hokiindoDate: shipment.hokiindo_date || '-',
+                    note: shipment.admin_notes || item.logistics_note || '-'
+                });
+            });
+        } else if (item.logistics_hpo && item.logistics_hpo.trim().length > 0) {
+            // Fallback for HPO from DB/Excel manual input when getHpoEntries is empty
+            const status = item.logistics_status || 'Follow up with our forwarder';
+            hpoItems.push({
+                hpoNumber: item.logistics_hpo,
+                itemCode: item.code,
+                itemName: item.name,
+                qtyOrder: item.qty_order,
+                qtyHpo: item.qty_order,
+                status: status === 'Follow up with our forwarder' ? 'Ex-Works' : status === 'ETA Port JKT' ? 'ETA JKT' : status === 'Already in siemens Warehouse' ? 'Tiba Dunex' : status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : status,
+                exworkDate: item.exwork_waiting ? 'Waiting for confirmation' : (item.exwork_date || '-'),
+                etaDate: item.eta_date || '-',
+                dunexDate: item.dunex_date || '-',
+                hokiindoDate: item.hokiindo_date || '-',
+                note: item.logistics_note || '-'
+            });
+        }
+    });
+
+    if (hpoItems.length === 0) {
+        alert("Tidak ada item yang memiliki nomor HPO untuk HSO ini.");
+        return;
+    }
+
+    const hsoNumber = soDetail.value?.number || '-';
+    const customerName = soDetail.value?.client || '-';
+
+    const dataToExport = hpoItems.map(item => ({
+        "No HSO": hsoNumber,
+        "Nama Customer": customerName,
+        "No HPO (Purchase Order)": item.hpoNumber,
+        "Kode Barang (MLFB)": item.itemCode,
+        "Nama Barang": item.itemName,
+        "Qty Order (SO)": item.qtyOrder,
+        "Qty HPO": item.qtyHpo,
+        "Status Logistik": item.status,
+        "Tanggal Ex-Works": item.exworkDate,
+        "Tanggal ETA JKT": item.etaDate,
+        "Tanggal Tiba Dunex": item.dunexDate,
+        "Tanggal Tiba Hokiindo": item.hokiindoDate,
+        "Catatan": item.note
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+
+    // Auto-size columns
+    const colWidths = [
+        { wch: 15 }, // No HSO
+        { wch: 30 }, // Nama Customer
+        { wch: 22 }, // No HPO
+        { wch: 22 }, // Kode Barang
+        { wch: 45 }, // Nama Barang
+        { wch: 12 }, // Qty Order
+        { wch: 10 }, // Qty HPO
+        { wch: 18 }, // Status Logistik
+        { wch: 18 }, // Tanggal Ex-Works
+        { wch: 18 }, // Tanggal ETA JKT
+        { wch: 18 }, // Tanggal Tiba Dunex
+        { wch: 18 }, // Tanggal Tiba Hokiindo
+        { wch: 35 }  // Catatan
+    ];
+    ws['!cols'] = colWidths;
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Semua HPO");
+
+    const safeSoNumber = (soDetail.value.number || 'SO').replace(/[\/\\]/g, '_');
+    XLSX.writeFile(wb, `ALL_HPO_${safeSoNumber}.xlsx`);
 }
 
 // --- BACKGROUND HPO FETCH ---
@@ -702,6 +786,13 @@ const handleExcelImport = (e) => {
       console.log('[ExcelImport] Headers detected:', { hpoCol, itemCol, exworkCol, etaCol, deliveryCol, statusCol })
       console.log('[ExcelImport] All raw headers:', headers)
       
+      detectedExcelCols.value = {
+        exwork: !!exworkCol,
+        eta: !!etaCol,
+        delivery: !!deliveryCol,
+        status: !!statusCol
+      }
+      
       if (!hpoCol || !itemCol) {
         alert("Kolom HPO Number ('Customer PO') dan Product SKU ('MLFB') tidak terdeteksi otomatis. Pastikan nama header kolom sesuai.")
         return
@@ -743,12 +834,13 @@ const handleExcelImport = (e) => {
           return `${y}-${m}-${d}`
         }
         
-        // 2. Try to match English text date like "23 Jul 26" or "08 July 2026"
+        // 2. Try to match English/Indonesian text date like "23 Jul 26" or "23-Jul-26" or "23Jul26"
         const monthsMap = {
           jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
-          jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
+          jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+          mei: '05', ags: '08', agu: '08', sep: '09', okt: '10', des: '12'
         }
-        const textMatch = str.match(/(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{2,4})/i)
+        const textMatch = str.match(/(\d{1,2})[\s\-\/]*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|mei|ags|agu|okt|des)[a-z]*[\s\-\/]*(\d{2,4})/i)
         if (textMatch) {
           const d = textMatch[1].padStart(2, '0')
           const mKey = textMatch[2].toLowerCase()
@@ -777,13 +869,13 @@ const handleExcelImport = (e) => {
         if (!text) return null
         const str = String(text).trim()
         
-        // 1. Try to match English/Indonesian text date like "03 Jul 26" or "03 July 2026" or "3 Juli 2026"
+        // Try to match English/Indonesian text date like "03 Jul 26" or "03-Jul-26" or "03Jul26"
         const monthsMap = {
           jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
           jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
           mei: '05', ags: '08', agu: '08', sep: '09', okt: '10', des: '12'
         }
-        const textMatch = str.match(/(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|mei|ags|agu|okt|des)[a-z]*\s+(\d{2,4})/i)
+        const textMatch = str.match(/(\d{1,2})[\s\-\/]*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|mei|ags|agu|okt|des)[a-z]*[\s\-\/]*(\d{2,4})/i)
         if (textMatch) {
           const d = textMatch[1].padStart(2, '0')
           const mKey = textMatch[2].toLowerCase()
@@ -994,7 +1086,13 @@ const handleExcelImport = (e) => {
           const hpos = String(hpoVal).split(',').map(x => x.trim()).filter(Boolean)
           hpos.forEach(hpo => {
             const key = `${String(item.code).trim().toLowerCase()}||${hpo.trim().toLowerCase()}`
-            if (seenKeys.has(key)) return // Already handled in pass 1
+            
+            // Check fuzzy match against seenKeys to prevent duplicate matches due to vendor name appending differences
+            const alreadySeen = Array.from(seenKeys).some(seenKey => {
+              const [seenItem, seenHpo] = seenKey.split('||')
+              return isItemMatch(item.code, seenItem) && isHpoMatch(hpo, seenHpo)
+            })
+            if (alreadySeen) return // Already handled in pass 1
 
             // Find all matching Excel rows and choose the best one
             const matchedExcelRows = rows.filter(row => {
@@ -1383,7 +1481,8 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
           eta_date: myShipment.eta_date || null,
           dunex_date: myShipment.dunex_date || null,
           hokiindo_date: myShipment.hokiindo_date || null,
-          ready_date: myShipment.ready_date || null
+          ready_date: myShipment.ready_date || null,
+          exwork_waiting: myShipment.exwork_waiting || false
         }
       }).map(item => {
         // Debug log for Hold by Customer items
@@ -1986,12 +2085,33 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                 </div>
               </Button>
               <input type="file" ref="excelFileInput" class="hidden" accept=".xlsx, .xls" @change="handleExcelImport" />
-              <Button size="lg" :variant="'outline'" class="shadow-sm border-emerald-600 text-emerald-600 dark:border-emerald-500 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition-all hover:shadow-md active:scale-95" @click="exportReminderExcel" :disabled="isLoading">
-                <div class="flex items-center gap-2">
-                  <FileSpreadsheet class="w-5 h-5"/>
-                  <span class="font-semibold">Export Reminder PO</span>
-                </div>
-              </Button>
+              <!-- Grouped Export Excel Dropdown -->
+              <DropdownMenu>
+                <DropdownMenuTrigger as-child>
+                  <Button size="lg" :variant="'outline'" class="shadow-sm border-emerald-600 text-emerald-600 dark:border-emerald-500 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition-all hover:shadow-md active:scale-95 flex items-center gap-2" :disabled="isLoading">
+                    <FileSpreadsheet class="w-5 h-5"/>
+                    <span class="font-semibold">Export Excel</span>
+                    <ChevronDown class="w-4 h-4 opacity-75" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" class="dark:bg-slate-800 dark:border-slate-700 rounded-xl w-64 p-1.5 shadow-lg border border-gray-150">
+                  <DropdownMenuItem @click="exportReminderExcel" class="dark:hover:bg-slate-700 dark:text-slate-300 rounded-lg cursor-pointer py-2.5 px-3 flex items-start gap-2.5 focus:bg-emerald-50 dark:focus:bg-emerald-950/30">
+                    <FileSpreadsheet class="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                    <div class="flex flex-col">
+                      <span class="font-bold text-xs text-gray-800 dark:text-gray-200">Export Reminder PO</span>
+                      <span class="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">Filter PO Siemens & Status Aktif</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem @click="exportAllHpoExcel" class="dark:hover:bg-slate-700 dark:text-slate-300 rounded-lg cursor-pointer py-2.5 px-3 flex items-start gap-2.5 focus:bg-teal-50 dark:focus:bg-teal-950/30 mt-1">
+                    <FileSpreadsheet class="w-5 h-5 text-teal-600 dark:text-teal-400 shrink-0 mt-0.5" />
+                    <div class="flex flex-col">
+                      <span class="font-bold text-xs text-gray-800 dark:text-gray-200">Export Semua HPO</span>
+                      <span class="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">Semua item dengan nomor HPO</span>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
               <Button size="lg" class="shadow-sm transition-all hover:shadow-md active:scale-95" :class="isLinkCopied ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white dark:shadow-red-900/20'" @click="shareToClient" :disabled="isLinkCopied || isLoading">
                 <div class="flex items-center gap-2">
                   <component :is="isLinkCopied ? CheckCircle2 : Share2" class="w-5 h-5"/>
@@ -2025,7 +2145,12 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
         <Card class="border shadow-sm rounded-lg overflow-hidden bg-white dark:bg-slate-800 dark:border-slate-700 flex flex-col max-h-[75vh]">
           <CardHeader class="border-b border-gray-100 dark:border-slate-700 px-6 py-4 bg-white dark:bg-slate-800 shrink-0">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <CardTitle class="text-base font-bold text-gray-800 dark:text-white">Detail Produk & Logistik</CardTitle>
+              <CardTitle class="text-base font-bold text-gray-800 dark:text-white flex items-center gap-2 flex-wrap">
+                <span>Detail Produk & Logistik</span>
+                <span class="text-xs font-normal text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-900 px-2.5 py-0.5 rounded-full border border-slate-200/60 dark:border-slate-800/80">
+                  Menampilkan {{ filteredItems.length }} dari {{ soDetail?.items?.length || 0 }} produk
+                </span>
+              </CardTitle>
               <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
                 <!-- Search Input -->
                 <div class="relative w-full sm:w-64">
@@ -2220,6 +2345,37 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                             </template>
                             
                             <!-- Notifications for shortage/remaining have been moved to the status badge text -->
+                        </div>
+                        
+                        <!-- Fallback HPO from DB (when not found in PO sync list, e.g. manual input/import) -->
+                        <div v-else-if="!isDisplayedFullyShipped(item) && item.logistics_hpo" class="mt-1.5 bg-white dark:bg-slate-800 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-3">
+                            <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-gray-200 dark:border-gray-700">
+                                <ShoppingCart class="w-4 h-4 text-green-600 dark:text-green-400" />
+                                <span class="text-xs font-bold text-gray-600 dark:text-gray-400">HPO:</span>
+                                <span class="text-sm font-mono font-bold text-green-700 dark:text-green-300">{{ item.logistics_hpo }}</span>
+                                <span class="ml-auto text-xs font-bold text-red-600 dark:text-red-400 whitespace-nowrap">
+                                    {{ item.qty_order }} {{ item.unit }}
+                                </span>
+                            </div>
+                            
+                            <!-- Logistics Status if any -->
+                            <div v-if="item.logistics_status && item.logistics_status !== 'Pending Process'" class="mt-2">
+                                <div class="flex items-center justify-between gap-2 bg-blue-50 dark:bg-blue-900/20 px-2.5 py-1.5 rounded border border-blue-100 dark:border-blue-800">
+                                    <div class="flex items-center gap-1.5 flex-shrink-0">
+                                        <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                                        <span class="text-[11px] font-bold text-blue-700 dark:text-blue-300 whitespace-nowrap">
+                                            {{ item.logistics_status === 'Follow up with our forwarder' ? 'Ex-Works' : item.logistics_status === 'ETA Port JKT' ? 'ETA JKT' : item.logistics_status === 'Already in siemens Warehouse' ? 'Tiba Dunex' : item.logistics_status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : item.logistics_status }}
+                                        </span>
+                                    </div>
+                                    <span v-if="item.exwork_waiting && item.logistics_status === 'Follow up with our forwarder'"
+                                          class="text-[10px] font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                                        ⏳ Waiting
+                                    </span>
+                                    <span v-else class="text-[10px] font-mono font-bold text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                                        {{ formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date) || '-' }}
+                                    </span>
+                                </div>
+                            </div>
                         </div>
                         
                         <!-- Warning jika dikirim sebagian tapi belum ada HPO -->
