@@ -15,7 +15,8 @@ import {
   Truck,
   UploadCloud,
   Package,
-  Menu
+  Menu,
+  Database
 } from 'lucide-vue-next'
 import {
   Sheet,
@@ -66,6 +67,7 @@ const menuItems = [
   { name: 'Purchase Order', path: '/purchase-orders', icon: ShoppingBag },
   { name: 'Penerimaan Barang', path: '/receive-items', icon: Package },
   { name: 'Delivery Order', path: '/delivery-orders', icon: Truck },
+  { name: 'Database Logistik', path: '/logistics-db', icon: Database },
   { name: 'Manage Account', path: '/settings', icon: Settings },
 ]
 
@@ -127,9 +129,9 @@ const handleLogout = async () => {
 
         <button 
           @click="handleLogout"
-          class="flex items-center gap-3 px-4 py-3 w-full text-sm font-bold text-white bg-[#e60000] hover:bg-[#cc0000] transition-all rounded-md"
+          class="flex items-center gap-3 px-4 py-3 w-full text-sm font-semibold text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all rounded-md border border-transparent hover:border-red-150 dark:hover:border-red-900/30"
         >
-          <LogOut class="w-4 h-4" />
+          <LogOut class="w-4 h-4 text-slate-400 hover:text-red-500 transition-colors" />
           Logout
         </button>
       </div>
@@ -233,9 +235,9 @@ const handleLogout = async () => {
             
             <button 
               @click="handleLogout"
-              class="flex items-center gap-4 px-4 py-3 w-full text-sm font-bold text-white bg-[#e60000] hover:bg-[#cc0000] transition-all rounded-xl"
+              class="flex items-center gap-4 px-4 py-3 w-full text-sm font-bold text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all rounded-xl border border-transparent hover:border-red-150 dark:hover:border-red-900/30"
             >
-              <LogOut class="w-5 h-5" />
+              <LogOut class="w-5 h-5 text-slate-400 hover:text-red-500 transition-colors" />
               <span>Logout</span>
             </button>
           </div>

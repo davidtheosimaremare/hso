@@ -23,11 +23,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
-  Loader2, Calendar, MapPin, Truck, Building2,
+  Loader2, Calendar, MapPin, Truck, Building2, ArrowLeft,
   Edit, CheckCircle2, Clock, Anchor, Factory, FileText, 
   PackageCheck, Share2, Info, ExternalLink, Package, Hourglass, 
   Layers, AlertCircle, ShoppingCart, Download, AlertTriangle,
-  ChevronDown, ChevronUp, Plane, Box, Copy, Search, UploadCloud, FileSpreadsheet
+  ChevronDown, ChevronUp, Plane, Box, Copy, Search, UploadCloud, FileSpreadsheet, Mail
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -184,7 +184,23 @@ const filteredItems = computed(() => {
       return statusText.includes('PERLU DIPESAN') || statusText.includes('KURANG DIPESAN')
     }
     if (itemStatusFilter.value === 'ORDERED') {
-      return statusText === 'SUDAH DIPESAN' || statusText === 'KELEBIHAN DIPESAN'
+      const isOrdered = statusText === 'SUDAH DIPESAN' || statusText === 'KELEBIHAN DIPESAN'
+      const hpos = getHpoEntries(item)
+      const hasHpoInDb = item.logistics_hpo && item.logistics_hpo.trim().length > 0
+      
+      let isFullyOrdered = false
+      if (hpos.length > 0) {
+        const totalPo = hpos.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
+        if (totalPo >= item.qty_to_order) {
+          isFullyOrdered = true
+        }
+      } else if (hasHpoInDb) {
+        isFullyOrdered = true
+      }
+      
+      const isPartial = statusText.includes('DIKIRIM SEBAGIAN')
+      
+      return isOrdered || (isFullyOrdered && isPartial)
     }
     if (itemStatusFilter.value === 'READY') {
       return statusText === 'MENUNGGU PENGIRIMAN'
@@ -194,6 +210,18 @@ const filteredItems = computed(() => {
     }
     if (itemStatusFilter.value === 'SHIPPED') {
       return statusText === 'PRODUK SUDAH DIKIRIM'
+    }
+    if (itemStatusFilter.value === 'EXWORK') {
+      return hasAnyShipmentStatus(item, 'Follow up with our forwarder')
+    }
+    if (itemStatusFilter.value === 'ETA_PORT') {
+      return hasAnyShipmentStatus(item, 'ETA Port JKT')
+    }
+    if (itemStatusFilter.value === 'TIBA_DUNEX') {
+      return hasAnyShipmentStatus(item, 'Already in siemens Warehouse')
+    }
+    if (itemStatusFilter.value === 'TIBA_HOKIINDO') {
+      return hasAnyShipmentStatus(item, 'Already in Hokiindo Raya')
     }
     
     return true
@@ -736,435 +764,349 @@ const fetchHdoInBackground = async (doNumbers) => {
   }
 }
 
-// --- EXCEL STATUS IMPORT LOGIC ---
-const excelFileInput = ref(null)
+// --- DATABASE LOGISTICS STATUS SYNC LOGIC ---
 const isExcelParsing = ref(false)
 const isExcelModalOpen = ref(false)
 const excelRowsToUpdate = ref([]) // Matched items to update
 const excelProgressCount = ref(0)
 const detectedExcelCols = ref({ exwork: false, eta: false, delivery: false, status: false })
 
-const triggerExcelImport = () => {
-  if (excelFileInput.value) {
-    excelFileInput.value.click()
-  }
-}
-
-const handleExcelImport = (e) => {
-  const file = e.target.files[0]
-  if (!file) return
+const syncFromLogisticsDb = async () => {
+  if (!soDetail.value || !soDetail.value.items || soDetail.value.items.length === 0) return
   
   isExcelParsing.value = true
-  const reader = new FileReader()
-  reader.onload = async (evt) => {
-    try {
-      const data = new Uint8Array(evt.target.result)
-      const workbook = XLSX.read(data, { type: 'array' })
-      const firstSheetName = workbook.SheetNames[0]
-      const worksheet = workbook.Sheets[firstSheetName]
-      const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '' })
-      
-      if (rows.length === 0) {
-        alert("File Excel tidak berisi data.")
-        return
-      }
-      
-      // Auto detect columns
-      const headers = Object.keys(rows[0])
-      let hpoCol = '', itemCol = '', exworkCol = '', etaCol = '', deliveryCol = '', statusCol = ''
-      
-      headers.forEach(header => {
-        const h = header.toLowerCase().replace(/[\s\_\-]/g, '')
-        if (h.includes('status') || h.includes('logistic') || h.includes('kondisi') || h.includes('keterangan')) statusCol = header
-        else if (h.includes('exwork') || h.includes('exworkdate')) exworkCol = header
-        else if (h.includes('eta') || h.includes('etajakarta')) etaCol = header
-        else if (h.includes('deliverydate') || h.includes('tanggaldo') || h.includes('delivery')) deliveryCol = header
-        else if (h.includes('hpo') || h.includes('customerpo') || h.includes('nopembelian') || (h.includes('po') && !h.includes('product'))) hpoCol = header
-        else if (h.includes('mlfb') || h.includes('sku') || h.includes('nomorproduct') || h.includes('itemcode') || h.includes('productcode')) itemCol = header
-        else if (h.includes('item') || h.includes('code')) itemCol = header
-      })
-      console.log('[ExcelImport] Headers detected:', { hpoCol, itemCol, exworkCol, etaCol, deliveryCol, statusCol })
-      console.log('[ExcelImport] All raw headers:', headers)
-      
-      detectedExcelCols.value = {
-        exwork: !!exworkCol,
-        eta: !!etaCol,
-        delivery: !!deliveryCol,
-        status: !!statusCol
-      }
-      
-      if (!hpoCol || !itemCol) {
-        alert("Kolom HPO Number ('Customer PO') dan Product SKU ('MLFB') tidak terdeteksi otomatis. Pastikan nama header kolom sesuai.")
-        return
-      }
-      
-      // Date parser helper
-      // Date parser helper
-      const parseExcelDateLocal = (val) => {
-        if (val === undefined || val === null || val === '') return null
-        
-        // Detect "Waiting for confirmation" text in date column
-        if (typeof val === 'string' && val.trim().toLowerCase().includes('waiting')) {
-          return '__waiting__'
-        }
-        
-        let numVal = val
-        if (typeof val === 'string' && /^\d+$/.test(val.trim())) {
-          numVal = Number(val.trim())
-        }
-        
-        if (typeof numVal === 'number') {
-          const date = new Date(Math.round((numVal - 25569) * 86400 * 1000))
-          const yyyy = date.getFullYear()
-          const mm = String(date.getMonth() + 1).padStart(2, '0')
-          const dd = String(date.getDate()).padStart(2, '0')
-          return `${yyyy}-${mm}-${dd}`
-        }
-        
-        const str = String(val).trim()
-        if (!str) return null
-        
-        // 1. Try to match standard formats like DD/MM/YYYY or DD-MM-YYYY or DD/MM/YY
-        const dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/)
-        if (dmy) {
-          let y = dmy[3]
-          if (y.length === 2) y = '20' + y
-          const m = dmy[2].padStart(2, '0')
-          const d = dmy[1].padStart(2, '0')
-          return `${y}-${m}-${d}`
-        }
-        
-        // 2. Try to match English/Indonesian text date like "23 Jul 26" or "23-Jul-26" or "23Jul26"
-        const monthsMap = {
-          jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
-          jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
-          mei: '05', ags: '08', agu: '08', sep: '09', okt: '10', des: '12'
-        }
-        const textMatch = str.match(/(\d{1,2})[\s\-\/]*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|mei|ags|agu|okt|des)[a-z]*[\s\-\/]*(\d{2,4})/i)
-        if (textMatch) {
-          const d = textMatch[1].padStart(2, '0')
-          const mKey = textMatch[2].toLowerCase()
-          const m = monthsMap[mKey]
-          let y = textMatch[3]
-          if (y.length === 2) y = '20' + y
-          return `${y}-${m}-${d}`
-        }
-        
-        // 3. Try to match YYYY-MM-DD
-        const ymd = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/)
-        if (ymd) return `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`
-        
-        const parsed = new Date(str)
-        if (!isNaN(parsed.getTime())) {
-          const yyyy = parsed.getFullYear()
-          const mm = String(parsed.getMonth() + 1).padStart(2, '0')
-          const dd = String(parsed.getDate()).padStart(2, '0')
-          return `${yyyy}-${mm}-${dd}`
-        }
-        return null
-      }
-
-      // Extract date embedded in status text
-      const extractDateFromText = (text) => {
-        if (!text) return null
-        const str = String(text).trim()
-        
-        // Try to match English/Indonesian text date like "03 Jul 26" or "03-Jul-26" or "03Jul26"
-        const monthsMap = {
-          jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
-          jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
-          mei: '05', ags: '08', agu: '08', sep: '09', okt: '10', des: '12'
-        }
-        const textMatch = str.match(/(\d{1,2})[\s\-\/]*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|mei|ags|agu|okt|des)[a-z]*[\s\-\/]*(\d{2,4})/i)
-        if (textMatch) {
-          const d = textMatch[1].padStart(2, '0')
-          const mKey = textMatch[2].toLowerCase()
-          const m = monthsMap[mKey]
-          let y = textMatch[3]
-          if (y.length === 2) y = '20' + y
-          return `${y}-${m}-${d}`
-        }
-
-        // 2. Try to match standard formats like DD/MM/YYYY or DD-MM-YYYY or DD/MM/YY
-        const dmy = str.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/)
-        if (dmy) {
-          let y = dmy[3]
-          if (y.length === 2) y = '20' + y
-          const m = dmy[2].padStart(2, '0')
-          const d = dmy[1].padStart(2, '0')
-          return `${y}-${m}-${d}`
-        }
-        
-        // 3. Try to match YYYY-MM-DD
-        const ymd = str.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/)
-        if (ymd) return `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`
-        
-        return null
-      }
-      
-      // Status mapper helper
-      const mapStatusLocal = (excelStatus) => {
-        if (!excelStatus) return 'Follow up with our forwarder'
-        const s = String(excelStatus).trim().toLowerCase()
-        if (s.includes('done delivery') || s.includes('delivered') || s.includes('customer') || s.includes('hokiindo')) return 'Already in Hokiindo Raya'
-        if (s.includes('siemens') || s.includes('dunex') || s.includes('warehouse') || s.includes('tiba gudang dunex') || s.includes('our warehouse') || s.includes('our wh')) return 'Already in siemens Warehouse'
-        if (s.includes('transit') || s.includes('eta') || s.includes('port') || s.includes('jkt') || s.includes('jkt port')) return 'ETA Port JKT'
-        if (s.includes('forwarder') || s.includes('ex-works') || s.includes('exwork') || s.includes('ready') || s.includes('factory') || s.includes('production')) return 'Follow up with our forwarder'
-        const exact = ['follow up with our forwarder', 'eta port jkt', 'already in siemens warehouse', 'already in hokiindo raya']
-        const matched = exact.find(e => e.toLowerCase() === s)
-        if (matched) return matched
-        return 'Follow up with our forwarder'
-      }
-      
-      // Match helpers for robust comparisons
-      const cleanString = (val) => {
-        if (!val) return ''
-        return String(val).trim().toLowerCase().replace(/\s/g, '')
-      }
-
-      const isHpoMatch = (dbHpo, excelHpo) => {
-        // Normalize: lowercase, remove all non-alphanumeric, treat digit 0 as letter o
-        const normalize = (s) => String(s).trim().toLowerCase().replace(/[^a-z0-9]/g, '').replace(/0/g, 'o')
-        const d = normalize(dbHpo)
-        const e = normalize(excelHpo)
-        if (!d || !e) return false
-        if (d === e) return true
-        
-        // Substring match as fallback
-        if (d.includes(e) || e.includes(d)) return true
-        return false
-      }
-
-      const isItemMatch = (dbItem, excelItem) => {
-        if (!dbItem || !excelItem) return false
-        const d = String(dbItem).trim().toLowerCase().replace(/[\s\-\.]/g, '')
-        const e = String(excelItem).trim().toLowerCase().replace(/[\s\-\.]/g, '')
-        if (!d || !e) return false
-        return d === e || d.includes(e) || e.includes(d)
-      }
-
-      // Find all matching rows and pick the best one (highest status or most dates defined)
-      const getBestMatchingExcelRow = (matchingRows) => {
-        if (!matchingRows || matchingRows.length === 0) return null
-        if (matchingRows.length === 1) return matchingRows[0]
-        
-        const statusLevels = {
-          'Already in Hokiindo Raya': 4,
-          'Already in siemens Warehouse': 3,
-          'ETA Port JKT': 2,
-          'Follow up with our forwarder': 1,
-          '': 0
-        }
-        
-        return matchingRows.reduce((best, current) => {
-          const bestStatus = statusCol ? mapStatusLocal(best[statusCol]) : ''
-          const currentStatus = statusCol ? mapStatusLocal(current[statusCol]) : ''
-          
-          const bestLevel = statusLevels[bestStatus] || 0
-          const currentLevel = statusLevels[currentStatus] || 0
-          
-          if (currentLevel !== bestLevel) {
-            return currentLevel > bestLevel ? current : best
-          }
-          
-          // If status level is same, prioritize the one with more dates defined
-          const bestDatesCount = (best[exworkCol] ? 1 : 0) + (best[etaCol] ? 1 : 0)
-          const currentDatesCount = (current[exworkCol] ? 1 : 0) + (current[etaCol] ? 1 : 0)
-          
-          if (currentDatesCount !== bestDatesCount) {
-            return currentDatesCount > bestDatesCount ? current : best
-          }
-          
-          return best
-        })
-      }
-
-      // ── MATCHING LOGIC ──────────────────────────────────────────────────────
-      // Strategi sederhana:
-      //   1. Jika item sudah ada di DB shipments dengan HPO → match item+HPO di Excel
-      //   2. Fallback: item dari soDetail.items dengan hpoMapping (belum ada di DB)
-      // ────────────────────────────────────────────────────────────────────────
-      const matches = []
-      const seenKeys = new Set()
-
-      // ── PASS 1: DB Shipments yang sudah punya HPO ────────────────────────
-      shipmentList.value.forEach(shipment => {
-        if (!shipment.hpo_number || !shipment.item_code) return
-
-        // Skip item yang sudah terkirim penuh — tidak perlu diupdate dari Excel
-        const soItemForShipment = soDetail.value?.items?.find(i => i.code === shipment.item_code)
-        if (soItemForShipment && isDisplayedFullyShipped(soItemForShipment)) {
-          console.log(`[ExcelImport] SKIP (sudah terkirim): ${shipment.item_code} | ${shipment.hpo_number}`)
-          return
-        }
-
-        const key = `${String(shipment.item_code).trim().toLowerCase()}||${String(shipment.hpo_number).trim().toLowerCase()}`
-        if (seenKeys.has(key)) return
-
-        // Find all matching Excel rows by item_code + hpo_number and choose the best one
-        const matchedExcelRows = rows.filter(row => {
-          const excelHpo = row[hpoCol] ? String(row[hpoCol]).trim() : ''
-          const excelItem = row[itemCol] ? String(row[itemCol]).trim() : ''
-          return isItemMatch(shipment.item_code, excelItem) && isHpoMatch(shipment.hpo_number, excelHpo)
-        })
-        const matchingExcelRow = getBestMatchingExcelRow(matchedExcelRows)
-
-        if (!matchingExcelRow) {
-          // Debug: show what Excel actually has for this item to diagnose mismatch
-          const excelRowsForItem = rows.filter(row => {
-            const excelItem = row[itemCol] ? String(row[itemCol]).trim() : ''
-            return isItemMatch(shipment.item_code, excelItem)
-          })
-          if (excelRowsForItem.length > 0) {
-            console.warn('[ExcelImport] Item found in Excel but HPO mismatch. DB HPO:', JSON.stringify(shipment.hpo_number), '| Excel HPOs:', excelRowsForItem.map(r => JSON.stringify(r[hpoCol])).join(', '))
-          } else {
-            console.log('[ExcelImport] No Excel row found for DB shipment:', shipment.item_code, shipment.hpo_number)
-          }
-          return
-        }
-
-        seenKeys.add(key)
-
-        let excelExwork = exworkCol ? parseExcelDateLocal(matchingExcelRow[exworkCol]) : null
-        let excelEta = etaCol ? parseExcelDateLocal(matchingExcelRow[etaCol]) : null
-        let excelDelivery = deliveryCol ? parseExcelDateLocal(matchingExcelRow[deliveryCol]) : null
-        const excelStatus = statusCol ? mapStatusLocal(matchingExcelRow[statusCol]) : ''
-        const excelStatusText = statusCol ? String(matchingExcelRow[statusCol]) : ''
-
-        // Fallback: extract date from status text if specific date columns are empty
-        if (excelStatusText) {
-          if (!excelExwork && excelStatus === 'Follow up with our forwarder') {
-            excelExwork = extractDateFromText(excelStatusText)
-          }
-          if (!excelEta && excelStatus === 'ETA Port JKT') {
-            excelEta = extractDateFromText(excelStatusText)
-          }
-          if (!excelDelivery && (excelStatus === 'Already in siemens Warehouse' || excelStatus === 'Already in Hokiindo Raya')) {
-            excelDelivery = extractDateFromText(excelStatusText)
-          }
-        }
-
-        // All DB shipments with same item+HPO
-        const dbShipments = shipmentList.value.filter(s =>
-          isItemMatch(s.item_code, shipment.item_code) && isHpoMatch(s.hpo_number, shipment.hpo_number)
-        )
-        const primaryShipment = dbShipments[0]
-
-        // Only default delivery to today if status is "arrived" AND DB has no delivery date yet
-        if (!excelDelivery && (excelStatus === 'Already in siemens Warehouse' || excelStatus === 'Already in Hokiindo Raya')) {
-          const dbAlreadyHasDelivery = primaryShipment && (primaryShipment.dunex_date || primaryShipment.hokiindo_date)
-          if (!dbAlreadyHasDelivery) excelDelivery = getLocalDate()
-        }
-
-        matches.push({
-          hpoNumber: shipment.hpo_number,
-          itemCode: shipment.item_code,
-          excelExwork,
-          excelEta,
-          excelDelivery,
-          excelStatus,
-          dbStatus: primaryShipment.current_status || '',
-          dbExwork: primaryShipment.exwork_waiting ? 'Waiting for confirmation' : (primaryShipment.exwork_date || ''),
-          dbEta: primaryShipment.eta_date || '',
-          dbDelivery: primaryShipment.hokiindo_date || primaryShipment.dunex_date || '',
-          shipmentIds: dbShipments.map(s => s.id),
-          isVirtual: false
-        })
-      })
-
-      // ── PASS 2: Items dengan hpoMapping yang belum ada di DB ─────────────
-      if (soDetail.value && soDetail.value.items) {
-        soDetail.value.items.forEach(item => {
-          // Skip item yang sudah terkirim penuh
-          if (isDisplayedFullyShipped(item)) {
-            console.log(`[ExcelImport] SKIP Pass2 (sudah terkirim): ${item.code}`)
-            return
-          }
-          const hpoVal = hpoMapping.value[item.code]
-          if (!hpoVal) return
-
-          const hpos = String(hpoVal).split(',').map(x => x.trim()).filter(Boolean)
-          hpos.forEach(hpo => {
-            const key = `${String(item.code).trim().toLowerCase()}||${hpo.trim().toLowerCase()}`
-            
-            // Check fuzzy match against seenKeys to prevent duplicate matches due to vendor name appending differences
-            const alreadySeen = Array.from(seenKeys).some(seenKey => {
-              const [seenItem, seenHpo] = seenKey.split('||')
-              return isItemMatch(item.code, seenItem) && isHpoMatch(hpo, seenHpo)
-            })
-            if (alreadySeen) return // Already handled in pass 1
-
-            // Find all matching Excel rows and choose the best one
-            const matchedExcelRows = rows.filter(row => {
-              const excelHpo = row[hpoCol] ? String(row[hpoCol]).trim() : ''
-              const excelItem = row[itemCol] ? String(row[itemCol]).trim() : ''
-              return isItemMatch(item.code, excelItem) && isHpoMatch(hpo, excelHpo)
-            })
-            const matchingExcelRow = getBestMatchingExcelRow(matchedExcelRows)
-
-            if (!matchingExcelRow) return
-
-            seenKeys.add(key)
-
-            let excelExwork = exworkCol ? parseExcelDateLocal(matchingExcelRow[exworkCol]) : null
-            let excelEta = etaCol ? parseExcelDateLocal(matchingExcelRow[etaCol]) : null
-            let excelDelivery = deliveryCol ? parseExcelDateLocal(matchingExcelRow[deliveryCol]) : null
-            const excelStatus = statusCol ? mapStatusLocal(matchingExcelRow[statusCol]) : ''
-            const excelStatusText = statusCol ? String(matchingExcelRow[statusCol]) : ''
-
-            // Fallback: extract date from status text if specific date columns are empty
-            if (excelStatusText) {
-              if (!excelExwork && excelStatus === 'Follow up with our forwarder') {
-                excelExwork = extractDateFromText(excelStatusText)
-              }
-              if (!excelEta && excelStatus === 'ETA Port JKT') {
-                excelEta = extractDateFromText(excelStatusText)
-              }
-              if (!excelDelivery && (excelStatus === 'Already in siemens Warehouse' || excelStatus === 'Already in Hokiindo Raya')) {
-                excelDelivery = extractDateFromText(excelStatusText)
-              }
-            }
-
-            if (!excelDelivery && (excelStatus === 'Already in siemens Warehouse' || excelStatus === 'Already in Hokiindo Raya')) {
-              excelDelivery = getLocalDate()
-            }
-
-            matches.push({
-              hpoNumber: hpo,
-              itemCode: item.code,
-              excelExwork,
-              excelEta,
-              excelDelivery,
-              excelStatus,
-              dbStatus: '(Akan Dibuat)',
-              dbExwork: '-',
-              dbEta: '-',
-              dbDelivery: '-',
-              shipmentIds: [],
-              isVirtual: true
-            })
-          })
-        })
-      }
-
-      console.log('[ExcelImport] Total matches found:', matches.length, matches.map(m => `${m.itemCode} | ${m.hpoNumber} | ${m.excelStatus}`))
-      
-      if (matches.length === 0) {
-        alert("Tidak ada item atau nomor HPO yang cocok dengan data pelacakan di HSO ini.")
-        return
-      }
-      
-      excelRowsToUpdate.value = matches
-      isExcelModalOpen.value = true
-    } catch (err) {
-      console.error(err)
-      alert("Gagal membaca file Excel.")
-    } finally {
-      isExcelParsing.value = false
-      if (excelFileInput.value) excelFileInput.value.value = ''
+  try {
+    const itemCodes = soDetail.value.items.map(i => i.code)
+    
+    // Fetch matching tracking rows from Supabase
+    const { data: rows, error } = await supabase
+      .from('raw_forwarder_tracking')
+      .select('*')
+      .in('item_code', itemCodes)
+    
+    if (error) throw error
+    
+    if (!rows || rows.length === 0) {
+      alert("Tidak ada data pelacakan di database yang cocok dengan item produk di SO ini. Pastikan Anda sudah mengunggah Excel logistik terbaru di Dashboard.")
+      return
     }
+
+    // Map database rows to mock rows structured like the old Excel parser
+    const mockRows = rows.map(r => {
+      let exworkVal = r.exwork_date || ''
+      if (r.exwork_waiting) exworkVal = 'waiting'
+      
+      return {
+        _hpo: r.hpo_number,
+        _item: r.item_code,
+        _exwork: exworkVal,
+        _eta: r.eta_date || '',
+        _delivery: r.delivery_date || '',
+        _status: r.status || ''
+      }
+    })
+
+    const hpoCol = '_hpo'
+    const itemCol = '_item'
+    const exworkCol = '_exwork'
+    const etaCol = '_eta'
+    const deliveryCol = '_delivery'
+    const statusCol = '_status'
+
+    detectedExcelCols.value = {
+      exwork: true,
+      eta: true,
+      delivery: true,
+      status: true
+    }
+
+    // Date parser helper
+    const parseExcelDateLocal = (val) => {
+      if (val === undefined || val === null || val === '') return null
+      if (typeof val === 'string' && val.trim().toLowerCase().includes('waiting')) {
+        return '__waiting__'
+      }
+      return val
+    }
+
+    // Extract date embedded in status text
+    const extractDateFromText = (text) => {
+      if (!text) return null
+      const str = String(text).trim()
+      
+      const monthsMap = {
+        jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+        jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+        mei: '05', ags: '08', agu: '08', sep: '09', okt: '10', des: '12'
+      }
+      const textMatch = str.match(/(\d{1,2})[\s\-\/]*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|mei|ags|agu|okt|des)[a-z]*[\s\-\/]*(\d{2,4})/i)
+      if (textMatch) {
+        const d = textMatch[1].padStart(2, '0')
+        const mKey = textMatch[2].toLowerCase()
+        const m = monthsMap[mKey]
+        let y = textMatch[3]
+        if (y.length === 2) y = '20' + y
+        return `${y}-${m}-${d}`
+      }
+
+      const dmy = str.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/)
+      if (dmy) {
+        let y = dmy[3]
+        if (y.length === 2) y = '20' + y
+        const m = dmy[2].padStart(2, '0')
+        const d = dmy[1].padStart(2, '0')
+        return `${y}-${m}-${d}`
+      }
+      
+      const ymd = str.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/)
+      if (ymd) return `${ymd[1]}-${ymd[2].padStart(2, '0')}-${ymd[3].padStart(2, '0')}`
+      
+      return null
+    }
+    
+    // Status mapper helper
+    const mapStatusLocal = (excelStatus) => {
+      if (!excelStatus) return 'Follow up with our forwarder'
+      const s = String(excelStatus).trim().toLowerCase()
+      if (s.includes('done delivery') || s.includes('delivered') || s.includes('customer') || s.includes('hokiindo')) return 'Already in Hokiindo Raya'
+      if (s.includes('siemens') || s.includes('dunex') || s.includes('warehouse') || s.includes('tiba gudang dunex') || s.includes('our warehouse') || s.includes('our wh')) return 'Already in siemens Warehouse'
+      if (s.includes('transit') || s.includes('eta') || s.includes('port') || s.includes('jkt') || s.includes('jkt port')) return 'ETA Port JKT'
+      if (s.includes('forwarder') || s.includes('ex-works') || s.includes('exwork') || s.includes('ready') || s.includes('factory') || s.includes('production')) return 'Follow up with our forwarder'
+      const exact = ['follow up with our forwarder', 'eta port jkt', 'already in siemens warehouse', 'already in hokiindo raya']
+      const matched = exact.find(e => e.toLowerCase() === s)
+      if (matched) return matched
+      return 'Follow up with our forwarder'
+    }
+    
+    // Match helpers for robust comparisons
+    const cleanString = (val) => {
+      if (!val) return ''
+      return String(val).trim().toLowerCase().replace(/\s/g, '')
+    }
+
+    const isHpoMatch = (dbHpo, excelHpo) => {
+      const normalize = (s) => String(s).trim().toLowerCase().replace(/[^a-z0-9]/g, '').replace(/0/g, 'o')
+      const d = normalize(dbHpo)
+      const e = normalize(excelHpo)
+      if (!d || !e) return false
+      if (d === e) return true
+      if (d.includes(e) || e.includes(d)) return true
+      return false
+    }
+
+    const isItemMatch = (dbItem, excelItem) => {
+      if (!dbItem || !excelItem) return false
+      const d = String(dbItem).trim().toLowerCase().replace(/[\s\-\.]/g, '')
+      const e = String(excelItem).trim().toLowerCase().replace(/[\s\-\.]/g, '')
+      if (!d || !e) return false
+      return d === e || d.includes(e) || e.includes(d)
+    }
+
+    const getBestMatchingExcelRow = (matchingRows) => {
+      if (!matchingRows || matchingRows.length === 0) return null
+      if (matchingRows.length === 1) return matchingRows[0]
+      
+      const statusLevels = {
+        'Already in Hokiindo Raya': 4,
+        'Already in siemens Warehouse': 3,
+        'ETA Port JKT': 2,
+        'Follow up with our forwarder': 1,
+        '': 0
+      }
+      
+      return matchingRows.reduce((best, current) => {
+        const bestStatus = statusCol ? mapStatusLocal(best[statusCol]) : ''
+        const currentStatus = statusCol ? mapStatusLocal(current[statusCol]) : ''
+        
+        const bestLevel = statusLevels[bestStatus] || 0
+        const currentLevel = statusLevels[currentStatus] || 0
+        
+        if (currentLevel !== bestLevel) {
+          return currentLevel > bestLevel ? current : best
+        }
+        
+        const bestDatesCount = (best[exworkCol] ? 1 : 0) + (best[etaCol] ? 1 : 0)
+        const currentDatesCount = (current[exworkCol] ? 1 : 0) + (current[etaCol] ? 1 : 0)
+        
+        if (currentDatesCount !== bestDatesCount) {
+          return currentDatesCount > bestDatesCount ? current : best
+        }
+        
+        return best
+      })
+    }
+
+    const matches = []
+    const seenKeys = new Set()
+
+    // ── PASS 1: DB Shipments yang sudah punya HPO ────────────────────────
+    shipmentList.value.forEach(shipment => {
+      if (!shipment.hpo_number || !shipment.item_code) return
+
+      const soItemForShipment = soDetail.value?.items?.find(i => i.code === shipment.item_code)
+      if (soItemForShipment && isDisplayedFullyShipped(soItemForShipment)) return
+
+      const key = `${String(shipment.item_code).trim().toLowerCase()}||${String(shipment.hpo_number).trim().toLowerCase()}`
+      if (seenKeys.has(key)) return
+
+      const matchedExcelRows = mockRows.filter(row => {
+        const excelHpo = row[hpoCol] ? String(row[hpoCol]).trim() : ''
+        const excelItem = row[itemCol] ? String(row[itemCol]).trim() : ''
+        return isItemMatch(shipment.item_code, excelItem) && isHpoMatch(shipment.hpo_number, excelHpo)
+      })
+      const matchingExcelRow = getBestMatchingExcelRow(matchedExcelRows)
+
+      if (!matchingExcelRow) return
+
+      seenKeys.add(key)
+
+      let excelExwork = exworkCol ? parseExcelDateLocal(matchingExcelRow[exworkCol]) : null
+      let excelEta = etaCol ? parseExcelDateLocal(matchingExcelRow[etaCol]) : null
+      let excelDelivery = deliveryCol ? parseExcelDateLocal(matchingExcelRow[deliveryCol]) : null
+      let excelStatus = statusCol ? mapStatusLocal(matchingExcelRow[statusCol]) : ''
+      const excelStatusText = statusCol ? String(matchingExcelRow[statusCol]) : ''
+
+      if (excelStatusText) {
+        if (!excelExwork && excelStatus === 'Follow up with our forwarder') {
+          excelExwork = extractDateFromText(excelStatusText)
+        }
+        if (!excelEta && excelStatus === 'ETA Port JKT') {
+          excelEta = extractDateFromText(excelStatusText)
+        }
+        if (!excelDelivery && (excelStatus === 'Already in siemens Warehouse' || excelStatus === 'Already in Hokiindo Raya')) {
+          excelDelivery = extractDateFromText(excelStatusText)
+        }
+      }
+
+      if (excelDelivery) {
+        if (excelStatus !== 'Already in Hokiindo Raya' && excelStatus !== 'Already in siemens Warehouse') {
+          excelStatus = 'Already in siemens Warehouse'
+        }
+      } else if (excelEta) {
+        if (excelStatus === 'Follow up with our forwarder' || !excelStatus) {
+          excelStatus = 'ETA Port JKT'
+        }
+      }
+
+      const dbShipments = shipmentList.value.filter(s =>
+        isItemMatch(s.item_code, shipment.item_code) && isHpoMatch(s.hpo_number, shipment.hpo_number)
+      )
+      const primaryShipment = dbShipments[0]
+
+      if (!excelDelivery && (excelStatus === 'Already in siemens Warehouse' || excelStatus === 'Already in Hokiindo Raya')) {
+        const dbAlreadyHasDelivery = primaryShipment && (primaryShipment.dunex_date || primaryShipment.hokiindo_date)
+        if (!dbAlreadyHasDelivery) excelDelivery = getLocalDate()
+      }
+
+      matches.push({
+        hpoNumber: shipment.hpo_number,
+        itemCode: shipment.item_code,
+        excelExwork,
+        excelEta,
+        excelDelivery,
+        excelStatus,
+        dbStatus: primaryShipment.current_status || '',
+        dbExwork: primaryShipment.exwork_waiting ? 'Waiting for confirmation' : (primaryShipment.exwork_date || ''),
+        dbEta: primaryShipment.eta_date || '',
+        dbDelivery: primaryShipment.hokiindo_date || primaryShipment.dunex_date || '',
+        shipmentIds: dbShipments.map(s => s.id),
+        isVirtual: false
+      })
+    })
+
+    // ── PASS 2: Items dengan hpoMapping yang belum ada di DB ─────────────
+    if (soDetail.value && soDetail.value.items) {
+      soDetail.value.items.forEach(item => {
+        if (isDisplayedFullyShipped(item)) return
+        const hpoVal = hpoMapping.value[item.code]
+        if (!hpoVal) return
+
+        const hpos = String(hpoVal).split(',').map(x => x.trim()).filter(Boolean)
+        hpos.forEach(hpo => {
+          const key = `${String(item.code).trim().toLowerCase()}||${hpo.trim().toLowerCase()}`
+          
+          const alreadySeen = Array.from(seenKeys).some(seenKey => {
+            const [seenItem, seenHpo] = seenKey.split('||')
+            return isItemMatch(item.code, seenItem) && isHpoMatch(hpo, seenHpo)
+          })
+          if (alreadySeen) return
+
+          const matchedExcelRows = mockRows.filter(row => {
+            const excelHpo = row[hpoCol] ? String(row[hpoCol]).trim() : ''
+            const excelItem = row[itemCol] ? String(row[itemCol]).trim() : ''
+            return isItemMatch(item.code, excelItem) && isHpoMatch(hpo, excelHpo)
+          })
+          const matchingExcelRow = getBestMatchingExcelRow(matchedExcelRows)
+
+          if (!matchingExcelRow) return
+
+          seenKeys.add(key)
+
+          let excelExwork = exworkCol ? parseExcelDateLocal(matchingExcelRow[exworkCol]) : null
+          let excelEta = etaCol ? parseExcelDateLocal(matchingExcelRow[etaCol]) : null
+          let excelDelivery = deliveryCol ? parseExcelDateLocal(matchingExcelRow[deliveryCol]) : null
+          let excelStatus = statusCol ? mapStatusLocal(matchingExcelRow[statusCol]) : ''
+          const excelStatusText = statusCol ? String(matchingExcelRow[statusCol]) : ''
+
+          if (excelStatusText) {
+            if (!excelExwork && excelStatus === 'Follow up with our forwarder') {
+              excelExwork = extractDateFromText(excelStatusText)
+            }
+            if (!excelEta && excelStatus === 'ETA Port JKT') {
+              excelEta = extractDateFromText(excelStatusText)
+            }
+            if (!excelDelivery && (excelStatus === 'Already in siemens Warehouse' || excelStatus === 'Already in Hokiindo Raya')) {
+              excelDelivery = extractDateFromText(excelStatusText)
+            }
+          }
+
+          if (excelDelivery) {
+            if (excelStatus !== 'Already in Hokiindo Raya' && excelStatus !== 'Already in siemens Warehouse') {
+              excelStatus = 'Already in siemens Warehouse'
+            }
+          } else if (excelEta) {
+            if (excelStatus === 'Follow up with our forwarder' || !excelStatus) {
+              excelStatus = 'ETA Port JKT'
+            }
+          }
+
+          if (!excelDelivery && (excelStatus === 'Already in siemens Warehouse' || excelStatus === 'Already in Hokiindo Raya')) {
+            excelDelivery = getLocalDate()
+          }
+
+          matches.push({
+            hpoNumber: hpo,
+            itemCode: item.code,
+            excelExwork,
+            excelEta,
+            excelDelivery,
+            excelStatus,
+            dbStatus: '(Akan Dibuat)',
+            dbExwork: '-',
+            dbEta: '-',
+            dbDelivery: '-',
+            shipmentIds: [],
+            isVirtual: true
+          })
+        })
+      })
+    }
+
+    console.log('[ExcelSync] Total matches found:', matches.length)
+    
+    if (matches.length === 0) {
+      alert("Tidak ada item SO dengan nomor HPO yang cocok dengan database pelacakan. Pastikan nomor HPO di PO Siemens sudah diinput dengan benar.")
+      return
+    }
+
+    excelRowsToUpdate.value = matches
+    isExcelModalOpen.value = true
+  } catch (err) {
+    console.error(err)
+    alert("Gagal mensinkronkan status logistik dari database: " + err.message)
+  } finally {
+    isExcelParsing.value = false
   }
-  reader.readAsArrayBuffer(file)
 }
 
 const applyExcelUpdates = async () => {
@@ -1226,16 +1168,17 @@ const applyExcelUpdates = async () => {
           updateData.current_status = item.excelStatus
           updateData.status_date = new Date().toISOString().split('T')[0]
           
-          // Clear future dates if we go back to an earlier stage
+          // Clear future dates if we go back to an earlier stage,
+          // BUT only if they are not explicitly provided in the Excel row!
           if (item.excelStatus === 'Follow up with our forwarder') {
-            updateData.eta_date = null
-            updateData.dunex_date = null
-            updateData.hokiindo_date = null
+            updateData.eta_date = item.excelEta || null
+            updateData.dunex_date = item.excelDelivery || null
+            updateData.hokiindo_date = item.excelDelivery || null
           } else if (item.excelStatus === 'ETA Port JKT') {
-            updateData.dunex_date = null
-            updateData.hokiindo_date = null
+            updateData.dunex_date = item.excelDelivery || null
+            updateData.hokiindo_date = item.excelDelivery || null
           } else if (item.excelStatus === 'Already in siemens Warehouse') {
-            updateData.hokiindo_date = null
+            updateData.hokiindo_date = item.excelDelivery || null
           }
         }
         
@@ -1250,8 +1193,8 @@ const applyExcelUpdates = async () => {
           }
         }
         
-        // Sync ETA date if column is defined (unless cleared by status transition above)
-        if (detectedExcelCols.value.eta && item.excelStatus !== 'Follow up with our forwarder') {
+        // Sync ETA date if column is defined
+        if (detectedExcelCols.value.eta) {
           updateData.eta_date = item.excelEta || null
         }
         
@@ -1306,6 +1249,7 @@ const applyExcelUpdates = async () => {
 
 // --- 2. DATA FETCHING ---
 const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
+  errorMessage.value = null
   if (showLoader) {
     isLoading.value = true
     loadingProgress.value = 0
@@ -1803,6 +1747,25 @@ const getHpoShortage = (item) => {
   return item.qty_to_order - totalPo
 }
 
+// Helper: Check if item has a specific shipment status (Exwork, ETA, Dunex, Hokiindo)
+const hasAnyShipmentStatus = (item, targetStatus) => {
+  const hpos = getHpoEntries(item)
+  if (hpos.length === 0) {
+    const status = getVisualStatus({
+      current_status: item.logistics_status,
+      exwork_date: item.exwork_date,
+      eta_date: item.eta_date,
+      dunex_date: item.dunex_date,
+      hokiindo_date: item.hokiindo_date
+    })
+    return status === targetStatus
+  }
+  return hpos.some(hpo => {
+    const shipment = getHpoShipment(item, hpo.poNumber)
+    return getVisualStatus(shipment) === targetStatus
+  })
+}
+
 const groupedShipments = computed(() => {
     if (!soDetail.value) return [];
     const shipmentsMap = new Map(); // For DO (HDO)
@@ -2019,6 +1982,305 @@ const saveUpdate = async () => {
 }
 
 const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if (!codeToUse) { const newUniqueCode = generateUUID(); const { data, error } = await supabase.from('so_tracking_links').insert({ so_id: String(resolvedSoId.value), unique_code: newUniqueCode }).select('unique_code').single(); if (error) { alert('Gagal generate link'); return } codeToUse = data.unique_code; uniqueTrackingCode.value = codeToUse; } const trackingUrl = `${window.location.origin}/public/tracking/${codeToUse}`; navigator.clipboard.writeText(trackingUrl).then(() => { isLinkCopied.value = true; setTimeout(() => isLinkCopied.value = false, 3000); }) }
+
+// --- HSO EMAIL REMINDER SYSTEM ---
+const isEmailModalOpen = ref(false)
+const isSendingEmail = ref(false)
+const isSiemensCopied = ref(false)
+const isResumeCopied = ref(false)
+const emailForm = ref({
+  to: 'info@hokiindo.co.id, sales@hokiindo.co.id',
+  subject: '',
+  customMessage: ''
+})
+
+const openEmailModal = () => {
+  if (!soDetail.value) return
+  emailForm.value.subject = `[Reminder HSO] Resume Logistik ${soDetail.value.number} - ${soDetail.value.client}`
+  emailForm.value.customMessage = `Berikut resume status pengiriman produk untuk Sales Order ${soDetail.value.number} (${soDetail.value.client}):`
+  isEmailModalOpen.value = true
+}
+
+const undeliveredItems = computed(() => {
+  if (!soDetail.value || !soDetail.value.items) return []
+  return soDetail.value.items
+    .filter(item => !isDisplayedFullyShipped(item))
+    .map(item => {
+      const rowStatus = getRowStatus(item)
+      return {
+        code: item.code,
+        name: item.name,
+        qty_order: item.quantity || item.qty_order || 0,
+        qty_shipped: getDisplayedQtyShipped(item),
+        qty_remaining: getDisplayedQtyRemaining(item),
+        statusText: rowStatus.text,
+        statusClass: rowStatus.class
+      }
+    })
+})
+
+const siemensPushItems = computed(() => {
+  if (!soDetail.value || !soDetail.value.items) return []
+  const list = []
+  
+  soDetail.value.items.forEach(item => {
+    const noteType = getNoteType(item.admin_note)
+    const isNoStock = noteType === 'no_stock' || item.qty_to_order > 0
+    if (!isNoStock) return
+
+    const hpos = getHpoEntries(item)
+    hpos.forEach(hpo => {
+      const shipment = getHpoShipment(item, hpo.poNumber)
+      const visualStatus = getVisualStatus(shipment)
+      
+      // Status must NOT be "Already in Hokiindo Raya"
+      if (visualStatus !== 'Already in Hokiindo Raya') {
+        list.push({
+          code: item.code,
+          name: item.name,
+          hpo: hpo.poNumber,
+          qty: hpo.quantity,
+          status: visualStatus === 'Follow up with our forwarder' ? 'Ex-Works' : visualStatus === 'ETA Port JKT' ? 'ETA JKT' : visualStatus === 'Already in siemens Warehouse' ? 'Tiba Dunex' : visualStatus,
+          date: getVisualStatusDate(shipment)
+        })
+      }
+    })
+  })
+  
+  return list
+})
+
+const copyTableToClipboard = async (tableType) => {
+  let htmlContent = ''
+  
+  if (tableType === 'siemens') {
+    if (siemensPushItems.value.length === 0) return
+    
+    htmlContent = `
+      <table style="width: 100%; border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #334155;">
+        <thead>
+          <tr style="background-color: #f8fafc; border-bottom: 2px solid #fee2e2;">
+            <th style="text-align: left; padding: 10px; font-weight: 700; color: #475569;">Kode Produk</th>
+            <th style="text-align: left; padding: 10px; font-weight: 700; color: #475569;">Nama Produk</th>
+            <th style="text-align: left; padding: 10px; font-weight: 700; color: #475569;">HPO</th>
+            <th style="text-align: center; padding: 10px; font-weight: 700; color: #475569; width: 60px;">Qty</th>
+            <th style="text-align: left; padding: 10px; font-weight: 700; color: #475569;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+    `
+    siemensPushItems.value.forEach(item => {
+      htmlContent += `
+        <tr style="border-bottom: 1px solid #fee2e2;">
+          <td style="padding: 10px; font-family: monospace; font-weight: bold; color: #0f172a;">${item.code}</td>
+          <td style="padding: 10px; color: #334155;">${item.name}</td>
+          <td style="padding: 10px; font-family: monospace; color: #475569;">${item.hpo}</td>
+          <td style="padding: 10px; text-align: center; font-weight: bold; color: #0f172a;">${item.qty}</td>
+          <td style="padding: 10px; color: #dc2626; font-weight: bold;">${item.status} (${item.date || '-'})</td>
+        </tr>
+      `
+    })
+    htmlContent += `
+        </tbody>
+      </table>
+    `
+  } else if (tableType === 'resume') {
+    if (undeliveredItems.value.length === 0) return
+    
+    htmlContent = `
+      <table style="width: 100%; border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #334155;">
+        <thead>
+          <tr style="background-color: #f8fafc; border-bottom: 2px solid #fee2e2;">
+            <th style="text-align: left; padding: 10px; font-weight: 700; color: #475569;">Kode Produk</th>
+            <th style="text-align: left; padding: 10px; font-weight: 700; color: #475569;">Nama Produk</th>
+            <th style="text-align: center; padding: 10px; font-weight: 700; color: #475569; width: 60px;">Order</th>
+            <th style="text-align: center; padding: 10px; font-weight: 700; color: #475569; width: 60px;">Kirim</th>
+            <th style="text-align: center; padding: 10px; font-weight: 700; color: #475569; width: 60px;">Sisa</th>
+          </tr>
+        </thead>
+        <tbody>
+    `
+    undeliveredItems.value.forEach(item => {
+      htmlContent += `
+        <tr style="border-bottom: 1px solid #fee2e2;">
+          <td style="padding: 10px; font-family: monospace; font-weight: bold; color: #0f172a;">${item.code}</td>
+          <td style="padding: 10px; color: #334155;">${item.name}</td>
+          <td style="padding: 10px; text-align: center; color: #334155;">${item.qty_order}</td>
+          <td style="padding: 10px; text-align: center; color: #2563eb; font-weight: bold;">${item.qty_shipped}</td>
+          <td style="padding: 10px; text-align: center; color: #dc2626; font-weight: bold;">${item.qty_remaining}</td>
+        </tr>
+      `
+    })
+    htmlContent += `
+        </tbody>
+      </table>
+    `
+  }
+
+  try {
+    const type = 'text/html'
+    const blob = new Blob([htmlContent], { type })
+    const data = [new ClipboardItem({ [type]: blob })]
+    await navigator.clipboard.write(data)
+    
+    if (tableType === 'siemens') {
+      isSiemensCopied.value = true
+      setTimeout(() => isSiemensCopied.value = false, 2000)
+    } else {
+      isResumeCopied.value = true
+      setTimeout(() => isResumeCopied.value = false, 2000)
+    }
+  } catch (err) {
+    console.error('Failed to copy table:', err)
+    alert('Gagal menyalin tabel.')
+  }
+}
+
+const generateEmailHtml = () => {
+  const number = soDetail.value.number
+  const client = soDetail.value.client
+  const customMsg = emailForm.value.customMessage || ''
+  
+  let html = `
+  <html>
+  <head>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #334155; margin: 0; padding: 20px; background-color: #f8fafc; }
+      .container { max-width: 750px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); border: 1px solid #e2e8f0; }
+      .header { background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%); color: #ffffff; padding: 25px; text-align: center; }
+      .header h1 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
+      .header p { margin: 5px 0 0 0; opacity: 0.8; font-size: 13px; }
+      .content { padding: 25px; }
+      .custom-msg { font-size: 13.5px; color: #1e293b; margin-bottom: 20px; white-space: pre-line; background-color: #f1f5f9; padding: 12px 16px; border-left: 4px solid #dc2626; border-radius: 4px; }
+      .section-title { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; margin: 25px 0 10px 0; padding-bottom: 6px; border-bottom: 2px solid #fee2e2; }
+      .section-title.push { color: #dc2626; border-color: #fee2e2; }
+      .section-title.resume { color: #dc2626; border-color: #fee2e2; }
+      
+      table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 12px; }
+      th { background-color: #f8fafc; color: #475569; font-weight: 700; text-align: left; padding: 8px 10px; border-bottom: 1px solid #e2e8f0; }
+      td { padding: 8px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+      
+      .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+      .badge.push { background-color: #fef2f2; color: #991b1b; border: 1px solid #fee2e2; }
+      .badge.info { background-color: #eff6ff; color: #1e40af; border: 1px solid #dbeafe; }
+      
+      .footer { background-color: #f8fafc; padding: 15px; text-align: center; font-size: 10px; color: #64748b; border-top: 1px solid #e2e8f0; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>RESUME LOGISTIK SALES ORDER</h1>
+        <p>${number} &bull; ${client}</p>
+      </div>
+      <div class="content">
+        <div class="custom-msg">${customMsg}</div>
+  `
+
+  if (siemensPushItems.value.length > 0) {
+    html += `
+        <div class="section-title push">🚨 KELOMPOK PUSH SIEMENS (NO STOCK + HPO AKTIF)</div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 25%;">Kode Produk</th>
+              <th style="width: 35%;">Nama Produk</th>
+              <th style="width: 15%;">HPO</th>
+              <th style="text-align: center; width: 8%;">Qty</th>
+              <th style="width: 17%;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+    `
+    siemensPushItems.value.forEach(item => {
+      html += `
+            <tr>
+              <td style="font-family: monospace; font-weight: bold;">${item.code}</td>
+              <td>${item.name}</td>
+              <td style="font-family: monospace;">${item.hpo}</td>
+              <td style="text-align: center; font-weight: bold;">${item.qty}</td>
+              <td><span class="badge push">${item.status} (${item.date || '-'})</span></td>
+            </tr>
+      `
+    })
+    html += `
+          </tbody>
+        </table>
+    `
+  }
+
+  if (undeliveredItems.value.length > 0) {
+    html += `
+        <div class="section-title resume">📋 RESUME PRODUK SO (BELUM DIKIRIM PENUH)</div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 25%;">Kode Produk</th>
+              <th style="width: 45%;">Nama Produk</th>
+              <th style="text-align: center; width: 10%;">Order</th>
+              <th style="text-align: center; width: 10%;">Kirim</th>
+              <th style="text-align: center; width: 10%;">Sisa</th>
+            </tr>
+          </thead>
+          <tbody>
+    `
+    undeliveredItems.value.forEach(item => {
+      html += `
+            <tr>
+              <td style="font-family: monospace; font-weight: bold;">${item.code}</td>
+              <td>${item.name}</td>
+              <td style="text-align: center;">${item.qty_order}</td>
+              <td style="text-align: center; color: #2563eb; font-weight: bold;">${item.qty_shipped}</td>
+              <td style="text-align: center; color: #dc2626; font-weight: bold;">${item.qty_remaining}</td>
+            </tr>
+      `
+    })
+    html += `
+          </tbody>
+        </table>
+    `
+  }
+
+  html += `
+      </div>
+      <div class="footer">
+        <p>Email ini dikirimkan via sistem <strong>HSO Logistics Tracker</strong> Hokiindo Raya.</p>
+        <p>&copy; ${new Date().getFullYear()} PT Hokiindo Raya. All rights reserved.</p>
+      </div>
+    </div>
+  </body>
+  </html>
+  `
+  return html
+}
+
+const sendReminderEmail = async () => {
+  if (isSendingEmail.value) return
+  isSendingEmail.value = true
+  
+  try {
+    const htmlBody = generateEmailHtml()
+    
+    const { data, error } = await supabase.functions.invoke('send-custom-email', {
+      body: {
+        to: emailForm.value.to,
+        subject: emailForm.value.subject,
+        html: htmlBody
+      }
+    })
+    
+    if (error) throw error
+    if (data && data.error) throw new Error(data.error)
+    
+    alert('Email reminder berhasil terkirim!')
+    isEmailModalOpen.value = false
+  } catch (err) {
+    console.error('[SendEmail] Error:', err)
+    alert('Gagal mengirim email: ' + err.message)
+  } finally {
+    isSendingEmail.value = false
+  }
+}
 </script>
 
 <template>
@@ -2026,15 +2288,20 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
     <div class="max-w-7xl mx-auto px-4 sm:px-6 pt-8 space-y-8">
 
       <!-- ERROR STATE -->
-      <div v-if="errorMessage" class="flex flex-col items-center justify-center p-12 text-center bg-white dark:bg-slate-800 rounded-xl border border-red-100 dark:border-red-900 shadow-sm animate-in zoom-in-95 duration-300">
-        <div class="bg-red-50 dark:bg-red-900/20 p-4 rounded-full mb-6">
-            <AlertTriangle class="w-12 h-12 text-red-500" />
+      <div v-if="errorMessage" class="flex flex-col items-center justify-center p-12 text-center bg-white dark:bg-slate-800 rounded-xl border border-amber-100 dark:border-amber-900 shadow-sm animate-in zoom-in-95 duration-300">
+        <div class="bg-amber-50 dark:bg-amber-950/20 p-4 rounded-full mb-6">
+            <AlertTriangle class="w-12 h-12 text-amber-500" />
         </div>
-        <h3 class="text-xl font-bold text-slate-900 dark:text-white mb-2">Gagal Memuat Data</h3>
-        <p class="text-slate-500 dark:text-slate-400 mb-8 max-w-md mx-auto">{{ errorMessage }}</p>
+        <h3 class="text-xl font-bold text-slate-800 dark:text-slate-200 mb-2">Gagal Menghubungkan ke Accurate</h3>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-4 max-w-md mx-auto">
+          Koneksi Accurate sedang sibuk atau sesi Anda perlu disegarkan. Jangan panik, data Anda aman. Silakan klik tombol <strong>Coba Lagi</strong> di bawah.
+        </p>
+        <p class="text-[11px] text-slate-400 dark:text-slate-500 font-mono mb-8 max-w-sm mx-auto bg-slate-50 dark:bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-800 break-all">
+          Detail Error: {{ errorMessage }}
+        </p>
         <div class="flex gap-4">
-            <Button @click="router.push('/sales-orders')" variant="outline">Kembali ke List</Button>
-            <Button @click="fetchDetail" variant="default" class="bg-red-600 hover:bg-red-700 text-white">Coba Lagi</Button>
+            <Button @click="router.push('/sales-orders')" variant="outline" class="font-bold text-xs uppercase tracking-wider rounded-xl">Kembali ke List</Button>
+            <Button @click="fetchDetail(false, true)" variant="default" class="bg-red-650 hover:bg-red-550 text-white font-bold text-xs uppercase tracking-wider rounded-xl bg-red-600 hover:bg-red-500">Coba Lagi</Button>
         </div>
       </div>
 
@@ -2052,46 +2319,48 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
 
       <div v-else-if="soDetail" class="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
 
-        <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 pb-6 border-b border-gray-200 dark:border-gray-800">
-          <div class="space-y-2 flex-1 min-w-0">
-            <div class="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-1">
-              <span class="cursor-pointer hover:text-red-600 dark:hover:text-red-400 transition-colors" @click="router.push('/sales-orders')">Sales Orders</span>
-              <span class="text-gray-300 dark:text-gray-600">/</span>
-              <span class="font-medium text-gray-900 dark:text-white">Detail</span>
+        <!-- PAGE HEADER CARD -->
+        <div class="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm p-6 space-y-5 transition-all duration-300">
+          
+          <!-- TOP ROW: BREADCRUMBS & BUTTONS -->
+          <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-4 pb-3 border-b border-gray-100 dark:border-slate-700/60">
+            <!-- Breadcrumbs -->
+            <div class="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400 shrink-0">
+              <button 
+                @click="router.push('/sales-orders')" 
+                class="flex items-center gap-1.5 hover:text-red-600 dark:hover:text-red-400 transition-colors bg-gray-50 hover:bg-gray-100 dark:bg-slate-900/60 dark:hover:bg-slate-900 px-2.5 py-1.5 rounded-md text-xs font-bold border border-gray-200/50 dark:border-slate-800 shadow-sm"
+              >
+                <ArrowLeft class="w-3.5 h-3.5"/>
+                <span>Kembali</span>
+              </button>
+              <div class="h-4 w-[1px] bg-gray-200 dark:bg-slate-700"></div>
+              <div class="flex items-center gap-1.5 text-xs font-semibold">
+                <span class="cursor-pointer hover:text-red-600 dark:hover:text-red-400 transition-colors" @click="router.push('/sales-orders')">Sales Orders</span>
+                <span class="text-gray-300 dark:text-gray-600">/</span>
+                <span class="text-gray-900 dark:text-white font-extrabold">Detail</span>
+              </div>
             </div>
-            <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white tracking-tight flex flex-wrap items-center gap-2">{{ soDetail.client }}</h1>
-            <div class="flex flex-wrap items-center gap-3 text-sm font-medium text-gray-500 dark:text-gray-400">
-               <span class="flex items-center gap-1.5 whitespace-nowrap"><Calendar class="w-4 h-4 flex-shrink-0"/> {{ soDetail.date }}</span>
-               <span class="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600 hidden sm:inline-block"></span>
-               <span class="flex items-center gap-1.5 group whitespace-nowrap">
-                 <Building2 class="w-4 h-4 flex-shrink-0"/> 
-                 {{ soDetail.number }}
-                 <button @click="copySoNumber" class="ml-0.5 p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors" title="Copy HSO Number">
-                   <component :is="isSoNumberCopied ? CheckCircle2 : Copy" class="w-3.5 h-3.5" :class="isSoNumberCopied ? 'text-green-600 dark:text-green-400' : ''"/>
-                 </button>
-               </span>
-               <span class="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600 hidden sm:inline-block"></span>
-               <span class="text-gray-900 dark:text-gray-200 bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-xs whitespace-nowrap">PO: {{ soDetail.po_number }}</span>
-            </div>
-          </div>
-          <div class="flex flex-wrap items-center gap-3 w-full lg:w-auto shrink-0 mt-2 lg:mt-0">
-              <Button v-if="selectedItemCodes.length > 0" size="lg" class="w-full sm:w-auto shadow-sm bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 transition-all animate-in zoom-in-95 duration-200 flex items-center justify-center" @click="openBulkEditModal">
-                <Layers class="w-4 h-4 mr-2"/> Update ({{ selectedItemCodes.length }}) Item
+            
+            <!-- Actions (Top Right) -->
+            <div class="flex flex-wrap items-center gap-2.5 w-full xl:w-auto xl:justify-end mt-1 xl:mt-0">
+              <!-- BULK EDIT BUTTON -->
+              <Button v-if="selectedItemCodes.length > 0" size="sm" class="w-full sm:w-auto shadow-sm bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 transition-all animate-in zoom-in-95 duration-200 flex items-center justify-center gap-1.5 font-bold" @click="openBulkEditModal">
+                <Layers class="w-4 h-4"/> Update ({{ selectedItemCodes.length }}) Item
               </Button>
-              <Button size="lg" :variant="'outline'" class="w-full sm:w-auto shadow-sm border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-300 hover:bg-gray-50 dark:hover:bg-slate-800 transition-all hover:shadow-md active:scale-95" @click="triggerExcelImport" :disabled="isExcelParsing || isLoading">
-                <div class="flex items-center justify-center gap-2">
-                  <UploadCloud class="w-5 h-5" :class="isExcelParsing ? 'animate-spin' : ''"/>
-                  <span class="font-semibold">{{ isExcelParsing ? 'Memuat...' : 'Import Excel Status' }}</span>
-                </div>
+
+              <!-- SYNC LOGISTICS BUTTON -->
+              <Button size="sm" variant="outline" class="w-full sm:w-auto shadow-sm border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-all duration-200 hover:shadow-xs active:scale-95 flex items-center justify-center gap-1.5 font-bold" @click="syncFromLogisticsDb" :disabled="isExcelParsing || isLoading">
+                <RefreshCw class="w-4 h-4 shrink-0" :class="isExcelParsing ? 'animate-spin' : ''"/>
+                <span>{{ isExcelParsing ? 'Mensinkronkan...' : 'Sync Logistik (Database)' }}</span>
               </Button>
-              <input type="file" ref="excelFileInput" class="hidden" accept=".xlsx, .xls" @change="handleExcelImport" />
-              <!-- Grouped Export Excel Dropdown -->
+
+              <!-- EXPORT EXCEL DROPDOWN -->
               <DropdownMenu>
                 <DropdownMenuTrigger as-child>
-                  <Button size="lg" :variant="'outline'" class="w-full sm:w-auto shadow-sm border-emerald-600 text-emerald-600 dark:border-emerald-500 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition-all hover:shadow-md active:scale-95 flex items-center justify-center gap-2" :disabled="isLoading">
-                    <FileSpreadsheet class="w-5 h-5"/>
-                    <span class="font-semibold">Export Excel</span>
-                    <ChevronDown class="w-4 h-4 opacity-75" />
+                  <Button size="sm" variant="outline" class="w-full sm:w-auto shadow-sm border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-400 bg-emerald-50/20 hover:bg-emerald-100/40 dark:bg-emerald-950/5 dark:hover:bg-emerald-950/20 transition-all duration-200 hover:shadow-xs active:scale-95 flex items-center justify-center gap-1.5 font-bold" :disabled="isLoading">
+                    <FileSpreadsheet class="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400"/>
+                    <span>Export Excel</span>
+                    <ChevronDown class="w-3.5 h-3.5 opacity-70 shrink-0" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" class="dark:bg-slate-800 dark:border-slate-700 rounded-xl w-64 p-1.5 shadow-lg border border-gray-150">
@@ -2112,12 +2381,58 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <Button size="lg" class="w-full sm:w-auto shadow-sm transition-all hover:shadow-md active:scale-95" :class="isLinkCopied ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white dark:shadow-red-900/20'" @click="shareToClient" :disabled="isLinkCopied || isLoading">
-                <div class="flex items-center justify-center gap-2">
-                  <component :is="isLinkCopied ? CheckCircle2 : Share2" class="w-5 h-5"/>
-                  <span class="font-semibold">{{ isLinkCopied ? 'Link Disalin!' : 'Share Tracking Link' }}</span>
-                </div>
+              <!-- SEND REMINDER EMAIL BUTTON -->
+              <Button size="sm" variant="outline" class="w-full sm:w-auto shadow-sm border-blue-600 text-blue-600 dark:border-blue-500 dark:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-all duration-200 hover:shadow-xs active:scale-95 flex items-center justify-center gap-1.5 font-bold" @click="openEmailModal" :disabled="isLoading">
+                <Mail class="w-4 h-4 shrink-0"/>
+                <span>Kirim Email Reminder</span>
               </Button>
+
+              <!-- SHARE TRACKING LINK BUTTON -->
+              <Button size="sm" class="w-full sm:w-auto shadow-sm transition-all duration-300 active:scale-95 flex items-center justify-center gap-1.5 text-white font-bold" :class="isLinkCopied ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-emerald-500/10' : 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 shadow-red-500/10'" @click="shareToClient" :disabled="isLinkCopied || isLoading">
+                <component :is="isLinkCopied ? CheckCircle2 : Share2" class="w-4 h-4 shrink-0"/>
+                <span>{{ isLinkCopied ? 'Link Disalin!' : 'Share Tracking Link' }}</span>
+              </Button>
+            </div>
+          </div>
+
+          <!-- CLIENT SECTION (FULL WIDTH) -->
+          <div class="space-y-2 pt-2">
+            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 border border-slate-200/40 dark:border-slate-600/40">
+              Client / Customer
+            </span>
+            <div class="flex items-center gap-3">
+              <div class="p-3 bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 rounded-xl shrink-0 border border-red-100/30 dark:border-red-900/30 shadow-sm">
+                <Building2 class="w-6 h-6"/>
+              </div>
+              <h1 class="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight leading-tight">
+                {{ soDetail.client }}
+              </h1>
+            </div>
+          </div>
+
+          <!-- META INFO BADGES -->
+          <div class="flex flex-wrap items-center gap-3 pt-3 text-xs border-t border-gray-100 dark:border-slate-700/60">
+            <!-- Date Info -->
+            <div class="inline-flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 text-gray-600 dark:text-gray-400 px-3 py-1.5 rounded-lg border border-gray-150 dark:border-slate-800 font-medium">
+              <Calendar class="w-3.5 h-3.5 text-gray-400 dark:text-gray-500"/>
+              <span>Tanggal SO:</span>
+              <span class="font-semibold text-gray-800 dark:text-gray-200">{{ soDetail.date }}</span>
+            </div>
+
+            <!-- HSO Code Info -->
+            <div class="inline-flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 text-gray-600 dark:text-gray-400 px-3 py-1.5 rounded-lg border border-gray-150 dark:border-slate-800 font-medium">
+              <span class="text-slate-400 dark:text-slate-500 font-bold tracking-wider text-[10px] uppercase font-sans">SO Code</span>
+              <span class="font-bold font-mono text-gray-800 dark:text-gray-200">{{ soDetail.number }}</span>
+              <button @click="copySoNumber" class="ml-1 p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-800 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors flex items-center justify-center" title="Copy HSO Number">
+                <component :is="isSoNumberCopied ? CheckCircle2 : Copy" class="w-3.5 h-3.5" :class="isSoNumberCopied ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-gray-500'"/>
+              </button>
+            </div>
+
+            <!-- PO Number -->
+            <div class="inline-flex items-center gap-1.5 bg-rose-50/70 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 px-3 py-1.5 rounded-lg border border-rose-100/80 dark:border-rose-900/30 font-medium">
+              <span class="text-rose-400 dark:text-rose-500/60 font-bold tracking-wider text-[10px] uppercase font-sans">PO Customer</span>
+              <span class="font-bold font-mono text-rose-800 dark:text-rose-300">{{ soDetail.po_number }}</span>
+            </div>
           </div>
         </div>
 
@@ -2175,6 +2490,10 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
                     <option value="PARTIAL">Dikirim Sebagian</option>
                     <option value="SHIPPED">Sudah Dikirim</option>
                     <option value="HOLD">Hold by Customer</option>
+                    <option value="EXWORK">Ex-Works (Forwarder)</option>
+                    <option value="ETA_PORT">ETA Port JKT</option>
+                    <option value="TIBA_DUNEX">Tiba di Gudang Dunex</option>
+                    <option value="TIBA_HOKIINDO">Tiba di Gudang Hokiindo</option>
                   </select>
                 </div>
               </div>
@@ -3252,6 +3571,168 @@ const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if
         </div>
       </div>
       </Sheet>
+
+      <!-- EMAIL REMINDER MODAL -->
+      <div v-if="isEmailModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-3xl w-full mx-4 flex flex-col border border-slate-200 dark:border-slate-800 max-h-[85vh] overflow-hidden animate-in zoom-in-95 duration-200 text-slate-900 dark:text-white">
+          <!-- Header -->
+          <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 flex justify-between items-center shrink-0">
+            <div>
+              <h3 class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Mail class="w-5 h-5 text-blue-600 dark:text-blue-400"/>
+                Kirim Email Reminder HSO
+              </h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Kirim resume produk HSO yang belum dikirim ke email info & sales Hokiindo.
+              </p>
+            </div>
+            <button @click="isEmailModalOpen = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xl font-bold p-1">&times;</button>
+          </div>
+          
+          <!-- Content -->
+          <div class="p-6 overflow-y-auto flex-1 space-y-4 text-sm">
+            <!-- Recipients -->
+            <div class="space-y-1">
+              <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Penerima Email (Koma sebagai pemisah)</label>
+              <input 
+                v-model="emailForm.to" 
+                type="text" 
+                class="w-full px-3.5 py-2 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs font-medium"
+              />
+            </div>
+
+            <!-- Subject -->
+            <div class="space-y-1">
+              <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Subjek Email</label>
+              <input 
+                v-model="emailForm.subject" 
+                type="text" 
+                class="w-full px-3.5 py-2 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs font-medium"
+              />
+            </div>
+
+            <!-- Custom Message -->
+            <div class="space-y-1">
+              <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Pesan Tambahan (Opsional, di bagian atas resume)</label>
+              <textarea 
+                v-model="emailForm.customMessage" 
+                rows="3" 
+                placeholder="Contoh: Berikut resume status pengiriman produk HSO..."
+                class="w-full px-3.5 py-2 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs font-medium"
+              ></textarea>
+            </div>
+
+            <!-- Email Preview -->
+            <div class="space-y-1">
+              <label class="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase">Pratinjau Resume Email</label>
+              <div class="border border-slate-200 dark:border-slate-800 rounded-lg p-4 bg-slate-50 dark:bg-slate-900/60 max-h-[30vh] overflow-y-auto text-xs space-y-4">
+                <!-- Custom Message Preview -->
+                <p class="font-medium whitespace-pre-line text-slate-700 dark:text-slate-300">
+                  {{ emailForm.customMessage || 'Berikut resume status pengiriman produk HSO...' }}
+                </p>
+                
+                <div v-if="siemensPushItems.length > 0" class="space-y-2 border-t pt-3 border-dashed border-slate-200 dark:border-slate-700">
+                  <div class="flex items-center justify-between mb-1">
+                    <h4 class="font-bold text-red-600 dark:text-red-400 uppercase tracking-wider text-[10px]">
+                      🚨 KELOMPOK PUSH SIEMENS (NO STOCK + HPO AKTIF)
+                    </h4>
+                    <button 
+                      @click="copyTableToClipboard('siemens')"
+                      class="px-2 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[10px] font-bold text-slate-700 dark:text-slate-300 rounded border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-1 active:scale-95 focus:ring-1 focus:ring-red-500"
+                    >
+                      <component :is="isSiemensCopied ? CheckCircle2 : Copy" class="w-3 h-3 text-slate-500" />
+                      {{ isSiemensCopied ? 'Tabel Disalin!' : 'Copy Table' }}
+                    </button>
+                  </div>
+                  <div class="border rounded-md overflow-hidden bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+                    <table class="w-full text-left border-collapse text-[11px]">
+                      <thead class="bg-slate-50 dark:bg-slate-900 text-slate-500">
+                        <tr>
+                          <th class="p-2 font-semibold">SKU / Nama</th>
+                          <th class="p-2 font-semibold">HPO</th>
+                          <th class="p-2 font-semibold text-center">Qty</th>
+                          <th class="p-2 font-semibold">Status</th>
+                          <th class="p-2 font-semibold">Tanggal</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100 dark:divide-slate-700">
+                        <tr v-for="item in siemensPushItems" :key="item.code" class="text-slate-700 dark:text-slate-300">
+                          <td class="p-2">
+                            <span class="font-bold font-mono">{{ item.code }}</span>
+                            <span class="block text-[10px] text-slate-400 truncate max-w-[200px]">{{ item.name }}</span>
+                          </td>
+                          <td class="p-2 font-mono font-semibold">{{ item.hpo }}</td>
+                          <td class="p-2 font-bold text-center">{{ item.qty }}</td>
+                          <td class="p-2">
+                            <span class="inline-block px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-[10px] font-bold border border-blue-200 dark:border-blue-800">
+                              {{ item.status }}
+                            </span>
+                          </td>
+                          <td class="p-2 font-mono">{{ item.date || '-' }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div v-if="undeliveredItems.length > 0" class="space-y-2 border-t pt-3 border-dashed border-slate-200 dark:border-slate-700">
+                  <div class="flex items-center justify-between mb-1">
+                    <h4 class="font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider text-[10px]">
+                      📋 RESUME PRODUK SO (BELUM DIKIRIM PENUH)
+                    </h4>
+                    <button 
+                      @click="copyTableToClipboard('resume')"
+                      class="px-2 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[10px] font-bold text-slate-700 dark:text-slate-300 rounded border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-1 active:scale-95 focus:ring-1 focus:ring-blue-500"
+                    >
+                      <component :is="isResumeCopied ? CheckCircle2 : Copy" class="w-3 h-3 text-slate-500" />
+                      {{ isResumeCopied ? 'Tabel Disalin!' : 'Copy Table' }}
+                    </button>
+                  </div>
+                  <div class="border rounded-md overflow-hidden bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+                    <table class="w-full text-left border-collapse text-[11px]">
+                      <thead class="bg-slate-50 dark:bg-slate-900 text-slate-500">
+                        <tr>
+                          <th class="p-2 font-semibold">SKU / Nama</th>
+                          <th class="p-2 font-semibold text-center">Order</th>
+                          <th class="p-2 font-semibold text-center">Terkirim</th>
+                          <th class="p-2 font-semibold text-center">Sisa</th>
+                          <th class="p-2 font-semibold">Status Utama</th>
+                        </tr>
+                      </thead>
+                      <tbody class="divide-y divide-slate-100 dark:divide-slate-700">
+                        <tr v-for="item in undeliveredItems" :key="item.code" class="text-slate-700 dark:text-slate-300">
+                          <td class="p-2">
+                            <span class="font-bold font-mono">{{ item.code }}</span>
+                            <span class="block text-[10px] text-slate-400 truncate max-w-[200px]">{{ item.name }}</span>
+                          </td>
+                          <td class="p-2 text-center">{{ item.qty_order }}</td>
+                          <td class="p-2 text-center text-blue-600 dark:text-blue-400 font-bold">{{ item.qty_shipped }}</td>
+                          <td class="p-2 text-center text-red-600 dark:text-red-400 font-bold">{{ item.qty_remaining }}</td>
+                          <td class="p-2">
+                            <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border" :class="item.statusClass">
+                              {{ item.statusText }}
+                            </span>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div class="px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/30 flex justify-end gap-3 shrink-0">
+            <Button variant="outline" @click="isEmailModalOpen = false" :disabled="isSendingEmail">BATAL</Button>
+            <Button class="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5" @click="sendReminderEmail" :disabled="isSendingEmail">
+              <Loader2 v-if="isSendingEmail" class="w-4 h-4 animate-spin"/>
+              <Mail v-else class="w-4 h-4"/>
+              <span>{{ isSendingEmail ? 'MENGIRIM...' : 'KIRIM EMAIL' }}</span>
+            </Button>
+          </div>
+        </div>
+      </div>
 </div>
     </div>
   </div>

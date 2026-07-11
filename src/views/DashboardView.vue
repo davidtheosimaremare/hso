@@ -11,8 +11,10 @@ import {
 import { 
   BarChart3, Loader2, TrendingUp, Users, RefreshCw,
   AlertCircle, Package, Trophy, Medal, Award, ShoppingCart, Calendar,
-  ChevronLeft, ChevronRight, ArrowUpRight, Clock, Zap
+  ChevronLeft, ChevronRight, ArrowUpRight, Clock, Zap,
+  UploadCloud, FileSpreadsheet, Trash2, CheckCircle2, AlertTriangle
 } from 'lucide-vue-next'
+
 
 const router = useRouter()
 const isLoading = ref(true)
@@ -184,7 +186,9 @@ const getStatusColor = (status) => {
 const getRankIcon = (i) => { if (i===0) return Trophy; if (i===1) return Medal; if (i===2) return Award; return null }
 const getRankColor = (i) => { if (i===0) return 'text-yellow-500'; if (i===1) return 'text-slate-400'; if (i===2) return 'text-amber-600'; return 'text-slate-400' }
 
-onMounted(() => { fetchData() })
+onMounted(() => { 
+  fetchData() 
+})
 </script>
 
 <template>
@@ -522,6 +526,8 @@ onMounted(() => { fetchData() })
         </div>
       </div>
     </div>
+
+
 
     <!-- Customer Analytics -->
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">

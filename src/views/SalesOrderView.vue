@@ -42,111 +42,11 @@ const isLoading = ref(false)
 const currentPage = ref(1)
 const itemsPerPage = ref(10)
 
-// --- HPO COMPLETION STATUS ---
-// Map: no_so -> { complete: false }
-const hpoStatusMap = ref({})
-const isLoadingHpo = ref(false)
-const soDetailCache = {}
 
-const checkHpoStatusForVisibleOrders = async (orders) => {
-  if (!orders || orders.length === 0) return
-  
-  // Filter SOs that are active and need HPO check (progress === 0 and active status)
-  const activeOrders = orders.filter(o => 
-    o.progress === 0 && 
-    o.status !== 'Terproses' && 
-    o.status !== 'Ditutup' &&
-    o.status !== 'Draf' &&
-    o.status !== 'Ditolak'
-  )
 
-  if (activeOrders.length === 0) return
-  isLoadingHpo.value = true
 
-  const soNumbers = activeOrders.map(o => o.no_so)
 
-  // 1. Fetch HPOs for these active orders in one query
-  let poItems = []
-  try {
-    const { data, error } = await supabase
-      .from('accurate_purchase_order_items')
-      .select('detail_notes, item_code, quantity')
-      .or(soNumbers.map(n => `detail_notes.ilike.%${n}%`).join(','))
-    if (!error && data) {
-      poItems = data
-    }
-  } catch (e) {
-    console.warn('[HPOCheck] Error fetching PO items:', e)
-  }
 
-  // 2. Process each active SO
-  for (const so of activeOrders) {
-    try {
-      let detailItems = []
-      
-      if (soDetailCache[so.id_database]) {
-        detailItems = soDetailCache[so.id_database]
-      } else {
-        // Fetch detail in background
-        const { data, error } = await supabase.functions.invoke('accurate-detail-so', {
-          body: { id: so.id_database }
-        })
-        if (!error && data?.d?.detailItem) {
-          detailItems = data.d.detailItem
-          soDetailCache[so.id_database] = detailItems
-        } else {
-          continue // skip if fetch failed
-        }
-      }
-
-      // Check items
-      let hasShortage = false
-      
-      for (const item of detailItems) {
-        const code = item.item?.no
-        if (!code) continue
-        
-        // Clean notes to see if it is stock/no stock
-        const note = item.detailNotes || ''
-        const lower = note.toLowerCase()
-        const isStock = lower.includes('stock') || lower.includes('stok') || lower.includes('ready')
-        
-        // If not stock, it needs to be ordered
-        if (!isStock) {
-          const qtyToOrder = item.quantity - (item.quantityShipped || 0)
-          if (qtyToOrder > 0) {
-            // Check matching POs
-            const matchedPos = poItems.filter(po => 
-              po.item_code === code && 
-              po.detail_notes && po.detail_notes.includes(so.no_so)
-            )
-            const totalPoQty = matchedPos.reduce((sum, po) => sum + Number(po.quantity), 0)
-            
-            if (totalPoQty < qtyToOrder) {
-              hasShortage = true
-              break // found shortage, no need to check other items
-            }
-          }
-        }
-      }
-
-      if (hasShortage) {
-        hpoStatusMap.value[so.no_so] = { complete: false }
-      } else {
-        hpoStatusMap.value[so.no_so] = null // Complete/Ready
-      }
-    } catch (e) {
-      console.warn(`[HPOCheck] Error checking SO ${so.no_so}:`, e)
-    }
-  }
-  isLoadingHpo.value = false
-}
-
-const getHpoCompletion = (so) => {
-  // Don't show anything for processed/closed/done/shipped SOs
-  if (so.progress > 0 || so.status === 'Terproses' || so.status === 'Ditutup' || so.status === 'Draf' || so.status === 'Ditolak') return null
-  return hpoStatusMap.value[so.no_so] || null
-}
 
 // --- BULK ACTION STATE ---
 const selectedOrders = ref([])
@@ -370,10 +270,7 @@ const paginatedOrders = computed(() => {
   return filteredAndSortedOrders.value.slice(start, start + itemsPerPage.value)
 })
 
-// Watch paginatedOrders to fetch HPO status dynamically for visible items
-watch(paginatedOrders, (newVal) => {
-  checkHpoStatusForVisibleOrders(newVal)
-}, { immediate: true })
+
 
 
 const pageTotalAmount = computed(() => {
@@ -1226,15 +1123,6 @@ const getStatusColor = (status) => {
                 </div>
                 <div class="flex flex-col">
                   <span class="font-bold text-slate-900 dark:text-white text-sm">{{ so.no_so }}</span>
-                  <!-- HPO Completion Indicator: only shown for active SOs with no HPO -->
-                  <div v-if="getHpoCompletion(so)" class="flex items-center gap-1 mt-0.5">
-                    <AlertCircle class="w-3 h-3 text-amber-500 flex-shrink-0" />
-                    <span class="text-[10px] font-semibold text-amber-600 dark:text-amber-400">Belum ada HPO</span>
-                  </div>
-                  <div v-else-if="isLoadingHpo && so.progress < 100 && so.status !== 'Terproses' && so.status !== 'Ditutup'" class="flex items-center gap-1 mt-0.5">
-                    <div class="w-2 h-2 bg-slate-300 dark:bg-slate-600 rounded-full animate-pulse"></div>
-                    <span class="text-[10px] text-slate-400">Memuat...</span>
-                  </div>
                 </div>
               </div>
             </TableCell>
