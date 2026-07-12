@@ -11,6 +11,15 @@
           Daftar item yang perlu/kurang dipesan. Rencana ini dapat dilihat dan dikelola oleh seluruh tim.
         </p>
       </div>
+      <Button 
+        v-if="items.length > 0"
+        variant="outline" 
+        class="h-10 px-4 rounded-xl border-red-200 hover:border-red-300 dark:border-red-950 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all flex items-center gap-2 bg-white dark:bg-slate-950 font-bold text-xs uppercase tracking-wider shrink-0"
+        @click="showClearConfirm = true"
+      >
+        <Trash2 class="w-4 h-4" />
+        <span>Kosongkan Keranjang</span>
+      </Button>
     </div>
 
     <!-- Filters & Search Card -->
@@ -74,181 +83,199 @@
         <Table class="hidden md:table">
           <TableHeader>
             <TableRow class="bg-slate-50/50 dark:bg-slate-950/20 border-b border-slate-200 dark:border-slate-800">
-              <TableHead class="font-bold text-slate-700 dark:text-slate-300 text-xs w-[180px]">SKU / Item Code</TableHead>
+              <TableHead class="font-bold text-slate-700 dark:text-slate-300 text-xs w-[180px] pl-10">SKU / Item Code</TableHead>
               <TableHead class="font-bold text-slate-700 dark:text-slate-300 text-xs">Deskripsi</TableHead>
               <TableHead class="font-bold text-slate-700 dark:text-slate-300 text-xs text-center w-[120px]">Qty Pesan</TableHead>
-              <TableHead class="font-bold text-slate-700 dark:text-slate-300 text-xs w-[240px]">HSO & Perusahaan</TableHead>
-              <TableHead class="font-bold text-slate-700 dark:text-slate-300 text-xs">Catatan Pembelian</TableHead>
               <TableHead class="font-bold text-slate-700 dark:text-slate-300 text-xs text-center w-[150px]">Crosscheck</TableHead>
               <TableHead class="font-bold text-slate-700 dark:text-slate-300 text-xs text-right w-[100px] pr-6">Aksi</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            <TableRow
-              v-for="item in paginatedItems"
-              :key="item.id"
-              class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/40 dark:hover:bg-slate-800/10 transition-colors"
-            >
-              <!-- SKU -->
-              <TableCell class="font-bold text-slate-900 dark:text-white text-xs align-middle">
-                {{ item.item_code }}
-              </TableCell>
-
-              <!-- Description -->
-              <TableCell class="text-xs text-slate-600 dark:text-slate-400 align-middle max-w-xs truncate" :title="item.item_name">
-                {{ item.item_name }}
-              </TableCell>
-
-              <!-- Qty to Order -->
-              <TableCell class="text-center font-extrabold text-xs text-amber-600 dark:text-amber-400 align-middle">
-                {{ item.qty_to_order }}
-              </TableCell>
-
-              <!-- HSO & Company -->
-              <TableCell class="align-middle">
-                <div class="space-y-1">
-                  <router-link
-                    :to="`/sales-orders/${item.so_number.replace(/\//g, '-')}`"
-                    class="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline"
-                  >
-                    <FileText class="w-3 h-3" />
-                    {{ item.so_number }}
-                  </router-link>
-                  <div class="text-[10px] text-slate-500 dark:text-slate-500 font-medium truncate max-w-[200px]" :title="item.company_name">
-                    {{ item.company_name }}
+            <template v-for="group in paginatedGroups" :key="group.so_number">
+              <!-- Group Header Row -->
+              <TableRow class="bg-slate-50/70 dark:bg-slate-900/40 font-bold border-b border-slate-200 dark:border-slate-800">
+                <TableCell colspan="5" class="py-3 px-4">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                      <!-- Collapse Toggle Button -->
+                      <button 
+                        @click="toggleGroup(group.so_number)" 
+                        class="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-colors"
+                        title="Expand/Collapse"
+                      >
+                        <component :is="isGroupCollapsed(group.so_number) ? ChevronRight : ChevronDown" class="w-4 h-4" />
+                      </button>
+                      
+                      <!-- HSO & Client Info -->
+                      <div class="flex items-center gap-2">
+                        <router-link
+                          :to="`/sales-orders/${group.so_number.replace(/\//g, '-')}`"
+                          class="inline-flex items-center gap-1.5 text-xs font-extrabold text-blue-600 dark:text-blue-400 hover:underline bg-blue-50 dark:bg-blue-950/20 px-2 py-0.5 rounded font-sans"
+                        >
+                          <FileText class="w-3.5 h-3.5" />
+                          {{ group.so_number }}
+                        </router-link>
+                        <span class="text-xs text-slate-300 dark:text-slate-700 font-normal">/</span>
+                        <span class="text-xs text-slate-700 dark:text-slate-300 font-bold tracking-tight">{{ group.company_name }}</span>
+                      </div>
+                      
+                      <!-- Item Count Badge -->
+                      <span class="text-[10px] bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-full font-bold px-2 py-0.5">
+                        {{ group.items.length }} Item
+                      </span>
+                    </div>
+                    
+                    <!-- Group Action Option (Crosscheck All) -->
+                    <button
+                      @click="toggleGroupCrosscheck(group)"
+                      class="text-[10px] font-bold text-slate-500 hover:text-green-600 dark:text-slate-400 dark:hover:text-green-400 transition-colors flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-md border border-slate-200/50 dark:border-slate-700/50 hover:border-green-300 dark:hover:border-green-800 shadow-sm"
+                    >
+                      <CheckCircle2 class="w-3.5 h-3.5" />
+                      Crosscheck Semua
+                    </button>
                   </div>
-                </div>
-              </TableCell>
-
-              <!-- Notes (Inline Editable) -->
-              <TableCell class="align-middle">
-                <div class="relative group max-w-md">
-                  <Input
-                    v-model="item.notes"
-                    @blur="updateItemNote(item)"
-                    @keyup.enter="$event.target.blur()"
-                    class="h-8 text-xs border-transparent group-hover:border-slate-200 dark:group-hover:border-slate-800 focus:border-slate-300 dark:focus:border-slate-700 bg-transparent group-hover:bg-white dark:group-hover:bg-slate-950 focus:bg-white dark:focus:bg-slate-950 transition-all rounded px-2 w-full text-slate-700 dark:text-slate-300"
-                    placeholder="Tambah catatan..."
-                  />
-                  <Edit v-if="!item.notes" class="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-300 dark:text-slate-700 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity" />
-                </div>
-              </TableCell>
-
-              <!-- Crosscheck Toggle -->
-              <TableCell class="text-center align-middle">
-                <button
-                  @click="toggleCrosscheck(item)"
-                  class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all border shadow-sm"
-                  :class="item.is_crosschecked
-                    ? 'bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-400 hover:bg-green-500/20'
-                    : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'"
+                </TableCell>
+              </TableRow>
+              
+              <!-- Group Items Rows -->
+              <template v-if="!isGroupCollapsed(group.so_number)">
+                <TableRow
+                  v-for="item in group.items"
+                  :key="item.id"
+                  class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/40 dark:hover:bg-slate-800/10 transition-colors"
                 >
-                  <component :is="item.is_crosschecked ? CheckCircle2 : ShieldQuestion" class="w-3.5 h-3.5" />
-                  {{ item.is_crosschecked ? 'Checked' : 'Pending' }}
-                </button>
-              </TableCell>
+                  <!-- SKU -->
+                  <TableCell class="font-bold text-slate-900 dark:text-white text-xs align-middle pl-10 font-mono tracking-tight">
+                    {{ item.item_code }}
+                  </TableCell>
 
-              <!-- Actions -->
-              <TableCell class="text-right pr-6 align-middle">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  class="h-8 w-8 p-0 rounded-lg border-slate-200 dark:border-slate-800 text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-900/30 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all"
-                  @click="deleteItem(item)"
-                >
-                  <Trash2 class="w-4 h-4" />
-                </Button>
-              </TableCell>
-            </TableRow>
+                  <!-- Description -->
+                  <TableCell class="text-xs text-slate-600 dark:text-slate-400 align-middle max-w-xs truncate" :title="item.item_name">
+                    {{ item.item_name }}
+                  </TableCell>
+
+                  <!-- Qty to Order -->
+                  <TableCell class="text-center font-extrabold text-xs text-amber-600 dark:text-amber-400 align-middle">
+                    {{ item.qty_to_order }}
+                  </TableCell>
+
+                  <!-- Crosscheck Toggle -->
+                  <TableCell class="text-center align-middle">
+                    <button
+                      @click="toggleCrosscheck(item)"
+                      class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all border shadow-sm"
+                      :class="item.is_crosschecked
+                        ? 'bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-400 hover:bg-green-500/20'
+                        : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'"
+                    >
+                      <component :is="item.is_crosschecked ? CheckCircle2 : ShieldQuestion" class="w-3.5 h-3.5" />
+                      {{ item.is_crosschecked ? 'Checked' : 'Pending' }}
+                    </button>
+                  </TableCell>
+
+                  <!-- Actions -->
+                  <TableCell class="text-right pr-6 align-middle">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      class="h-8 w-8 p-0 rounded-lg border-slate-200 dark:border-slate-800 text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-900/30 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all"
+                      @click="deleteItem(item)"
+                    >
+                      <Trash2 class="w-4 h-4" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              </template>
+            </template>
           </TableBody>
         </Table>
 
-        <!-- Mobile Card View -->
         <div class="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
-          <div
-            v-for="item in paginatedItems"
-            :key="item.id"
-            class="p-4 space-y-3 bg-white dark:bg-slate-900"
-          >
-            <!-- Card Header: SKU & Crosscheck -->
-            <div class="flex items-start justify-between gap-2">
-              <div>
-                <span class="text-xs font-bold text-slate-900 dark:text-white block">
-                  {{ item.item_code }}
-                </span>
-                <span class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 block max-w-[200px] truncate">
-                  {{ item.item_name }}
-                </span>
+          <div v-for="group in paginatedGroups" :key="group.so_number" class="bg-slate-50/50 dark:bg-slate-950/20">
+            <!-- Group Header Card -->
+            <div 
+              @click="toggleGroup(group.so_number)"
+              class="p-4 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50 bg-slate-100/50 dark:bg-slate-900/50 cursor-pointer"
+            >
+              <div class="flex items-center gap-2 max-w-[80%]">
+                <component :is="isGroupCollapsed(group.so_number) ? ChevronRight : ChevronDown" class="w-4 h-4 text-slate-500 shrink-0" />
+                <div class="min-w-0">
+                  <span class="text-xs font-bold text-blue-600 dark:text-blue-400 block truncate">{{ group.so_number }}</span>
+                  <span class="text-[10px] text-slate-600 dark:text-slate-400 block truncate font-medium mt-0.5">{{ group.company_name }}</span>
+                </div>
               </div>
-
-              <div class="flex items-center gap-1.5">
-                <button
-                  @click="toggleCrosscheck(item)"
-                  class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-bold transition-all border"
-                  :class="item.is_crosschecked
-                    ? 'bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-400'
-                    : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'"
-                >
-                  <component :is="item.is_crosschecked ? CheckCircle2 : ShieldQuestion" class="w-3 h-3" />
-                  {{ item.is_crosschecked ? 'Checked' : 'Pending' }}
-                </button>
-              </div>
-            </div>
-
-            <!-- Qty, HSO & Company -->
-            <div class="grid grid-cols-2 gap-2 bg-slate-50 dark:bg-slate-950/50 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800/50 text-[11px]">
-              <div>
-                <span class="text-slate-400 block text-[9px] uppercase font-bold">Qty Pesan</span>
-                <span class="font-extrabold text-amber-600 dark:text-amber-400 block mt-0.5">
-                  {{ item.qty_to_order }}
-                </span>
-              </div>
-              <div>
-                <span class="text-slate-400 block text-[9px] uppercase font-bold">HSO / Client</span>
-                <router-link
-                  :to="`/sales-orders/${item.so_number.replace(/\//g, '-')}`"
-                  class="font-bold text-blue-600 dark:text-blue-400 hover:underline block mt-0.5 truncate"
-                >
-                  {{ item.so_number }}
-                </router-link>
-              </div>
-            </div>
-
-            <!-- Notes -->
-            <div class="space-y-1">
-              <span class="text-[9px] uppercase font-bold text-slate-400 block">Catatan Pembelian</span>
-              <Input
-                v-model="item.notes"
-                @blur="updateItemNote(item)"
-                @keyup.enter="$event.target.blur()"
-                class="h-8 text-xs border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 rounded px-2 w-full text-slate-700 dark:text-slate-300"
-                placeholder="Tambah catatan..."
-              />
-            </div>
-
-            <!-- Card Actions -->
-            <div class="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800/40">
-              <span class="text-[9px] text-slate-400">
-                Ditambahkan: {{ formatDate(item.created_at) }}
+              <span class="text-[10px] bg-slate-200 dark:bg-slate-850 text-slate-700 dark:text-slate-300 rounded-full font-bold px-2 py-0.5 shrink-0">
+                {{ group.items.length }} Item
               </span>
-              <Button
-                size="sm"
-                variant="outline"
-                class="h-7 px-2.5 rounded-lg border-slate-200 dark:border-slate-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 text-[10px] font-bold flex items-center gap-1 shadow-sm"
-                @click="deleteItem(item)"
+            </div>
+            
+            <!-- Group Items List -->
+            <div v-if="!isGroupCollapsed(group.so_number)" class="divide-y divide-slate-100 dark:divide-slate-800">
+              <div
+                v-for="item in group.items"
+                :key="item.id"
+                class="p-4 space-y-3 bg-white dark:bg-slate-900 animate-in fade-in slide-in-from-top-1 duration-150"
               >
-                <Trash2 class="w-3.5 h-3.5" />
-                Hapus
-              </Button>
+                <!-- SKU & Crosscheck -->
+                <div class="flex items-start justify-between gap-2">
+                  <div>
+                    <span class="text-xs font-bold text-slate-900 dark:text-white block font-mono">
+                      {{ item.item_code }}
+                    </span>
+                    <span class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 block max-w-[200px] truncate">
+                      {{ item.item_name }}
+                    </span>
+                  </div>
+
+                  <div class="flex items-center gap-1.5">
+                    <button
+                      @click="toggleCrosscheck(item)"
+                      class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-bold transition-all border"
+                      :class="item.is_crosschecked
+                        ? 'bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-400'
+                        : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'"
+                    >
+                      <component :is="item.is_crosschecked ? CheckCircle2 : ShieldQuestion" class="w-3 h-3" />
+                      {{ item.is_crosschecked ? 'Checked' : 'Pending' }}
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Qty and date -->
+                <div class="flex items-center justify-between text-[11px] bg-slate-50 dark:bg-slate-950/50 p-2 rounded-lg border border-slate-100 dark:border-slate-800/50">
+                  <div>
+                    <span class="text-slate-400 text-[9px] uppercase font-bold">Qty Pesan:</span>
+                    <span class="font-extrabold text-amber-600 dark:text-amber-400 ml-1">
+                      {{ item.qty_to_order }}
+                    </span>
+                  </div>
+                  <span class="text-[9px] text-slate-400">
+                    Ditambahkan: {{ formatDate(item.created_at) }}
+                  </span>
+                </div>
+
+                <!-- Card Actions -->
+                <div class="flex items-center justify-end pt-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    class="h-7 px-2.5 rounded-lg border-slate-200 dark:border-slate-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 text-[10px] font-bold flex items-center gap-1 shadow-sm"
+                    @click="deleteItem(item)"
+                  >
+                    <Trash2 class="w-3.5 h-3.5" />
+                    Hapus
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       <!-- Pagination Footer -->
-      <div v-if="!loading && filteredItems.length > 0" class="p-4 bg-slate-50/50 dark:bg-slate-950/20 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
+      <div v-if="!loading && groupedItems.length > 0" class="p-4 bg-slate-50/50 dark:bg-slate-950/20 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
         <div>
-          Menampilkan <span class="font-bold text-slate-700 dark:text-slate-300">{{ startIndex + 1 }}</span> - <span class="font-bold text-slate-700 dark:text-slate-300">{{ Math.min(endIndex, filteredItems.length) }}</span> dari <span class="font-bold text-slate-700 dark:text-slate-300">{{ filteredItems.length }}</span> item
+          Menampilkan <span class="font-bold text-slate-700 dark:text-slate-300">{{ startIndex + 1 }}</span> - <span class="font-bold text-slate-700 dark:text-slate-300">{{ Math.min(endIndex, groupedItems.length) }}</span> dari <span class="font-bold text-slate-700 dark:text-slate-300">{{ groupedItems.length }}</span> HSO
         </div>
         <div class="flex items-center gap-1.5">
           <Button
@@ -272,6 +299,42 @@
         </div>
       </div>
     </Card>
+
+    <!-- Clear Cart Confirmation Dialog -->
+    <div v-if="showClearConfirm" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div class="p-6">
+          <div class="flex items-center gap-3 text-red-600 mb-4">
+            <div class="w-10 h-10 rounded-full bg-red-50 dark:bg-red-950/30 flex items-center justify-center">
+              <Trash2 class="w-5 h-5" />
+            </div>
+            <h3 class="text-lg font-bold text-slate-950 dark:text-white">Kosongkan Keranjang?</h3>
+          </div>
+          <p class="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+            Apakah Anda yakin ingin menghapus <strong>semua {{ items.length }} item</strong> dari keranjang rencana pembelian? Tindakan ini tidak dapat dibatalkan.
+          </p>
+        </div>
+        <div class="px-6 py-4 bg-slate-50 dark:bg-slate-950/40 border-t border-slate-100 dark:border-slate-800/60 flex justify-end gap-2">
+          <Button 
+            variant="outline" 
+            class="h-9 px-4 rounded-xl border-slate-200 dark:border-slate-800 font-bold text-xs bg-white dark:bg-slate-950"
+            @click="showClearConfirm = false"
+            :disabled="isClearing"
+          >
+            Batal
+          </Button>
+          <Button 
+            variant="destructive"
+            class="h-9 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs"
+            @click="clearAllCart"
+            :disabled="isClearing"
+          >
+            <Loader2 v-if="isClearing" class="w-4 h-4 animate-spin mr-1 inline-block" />
+            <span>Ya, Kosongkan</span>
+          </Button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -288,7 +351,9 @@ import {
   FileText,
   Edit,
   Layers,
-  Clock
+  Clock,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-vue-next'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -306,6 +371,8 @@ import {
 const items = ref([])
 const loading = ref(true)
 const searchQuery = ref('')
+const showClearConfirm = ref(false)
+const isClearing = ref(false)
 const activeTab = ref('all') // 'all', 'pending', 'checked'
 const currentPage = ref(1)
 const itemsPerPage = 15
@@ -367,11 +434,39 @@ const filteredItems = computed(() => {
   return list
 })
 
-// Pagination logic
-const totalPages = computed(() => Math.ceil(filteredItems.value.length / itemsPerPage) || 1)
+// Grouping logic (HSO & Company Client)
+const collapsedGroups = ref({})
+
+const toggleGroup = (soNumber) => {
+  collapsedGroups.value[soNumber] = !collapsedGroups.value[soNumber]
+}
+
+const isGroupCollapsed = (soNumber) => {
+  return !!collapsedGroups.value[soNumber]
+}
+
+const groupedItems = computed(() => {
+  const groups = {}
+  filteredItems.value.forEach(item => {
+    const key = item.so_number
+    if (!groups[key]) {
+      groups[key] = {
+        so_number: item.so_number,
+        so_id: item.so_id,
+        company_name: item.company_name,
+        items: []
+      }
+    }
+    groups[key].items.push(item)
+  })
+  return Object.values(groups)
+})
+
+// Pagination logic based on HSO Groups
+const totalPages = computed(() => Math.ceil(groupedItems.value.length / itemsPerPage) || 1)
 const startIndex = computed(() => (currentPage.value - 1) * itemsPerPage)
 const endIndex = computed(() => startIndex.value + itemsPerPage)
-const paginatedItems = computed(() => filteredItems.value.slice(startIndex.value, endIndex.value))
+const paginatedGroups = computed(() => groupedItems.value.slice(startIndex.value, endIndex.value))
 
 // Watch search or tab change to reset page
 watch([searchQuery, activeTab], () => {
@@ -396,6 +491,30 @@ const toggleCrosscheck = async (item) => {
     // Revert on error
     item.is_crosschecked = !nextVal
     alert('Gagal memperbarui status crosscheck: ' + err.message)
+  }
+}
+
+// Toggle crosscheck status for all items in a group
+const toggleGroupCrosscheck = async (group) => {
+  const allChecked = group.items.every(i => i.is_crosschecked)
+  const nextVal = !allChecked
+
+  // Optimistic update
+  group.items.forEach(i => { i.is_crosschecked = nextVal })
+
+  try {
+    const itemIds = group.items.map(i => i.id)
+    const { error } = await supabase
+      .from('purchase_cart')
+      .update({ is_crosschecked: nextVal, updated_at: new Date().toISOString() })
+      .in('id', itemIds)
+
+    if (error) throw error
+  } catch (err) {
+    console.error('Failed to group crosscheck:', err)
+    // Revert on error
+    group.items.forEach(i => { i.is_crosschecked = !nextVal })
+    alert('Gagal melakukan crosscheck massal: ' + err.message)
   }
 }
 
@@ -430,6 +549,27 @@ const deleteItem = async (item) => {
   } catch (err) {
     console.error('Failed to delete item:', err)
     alert('Gagal menghapus item: ' + err.message)
+  }
+}
+
+// Clear all cart items
+const clearAllCart = async () => {
+  isClearing.value = true
+  try {
+    const { error } = await supabase
+      .from('purchase_cart')
+      .delete()
+      .neq('so_id', '') // safely delete all matching rows
+
+    if (error) throw error
+    items.value = []
+    showClearConfirm.value = false
+    alert("Keranjang rencana pembelian berhasil dikosongkan!")
+  } catch (err) {
+    console.error('Failed to clear cart:', err)
+    alert("Gagal mengosongkan keranjang: " + err.message)
+  } finally {
+    isClearing.value = false
   }
 }
 
