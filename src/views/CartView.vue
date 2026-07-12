@@ -310,6 +310,32 @@
       </div>
     </Card>
 
+    <!-- Info Section for Next HPB Number -->
+    <div v-if="items.length > 0" class="bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 dark:border-amber-500/30 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div class="flex items-start gap-3">
+        <div class="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
+          <Send class="w-4 h-4" />
+        </div>
+        <div>
+          <h4 class="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">Nomor HPB Selanjutnya yang Akan Dibuat</h4>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Jika dikirimkan ke Accurate, transaksi akan terbuat menggunakan penomoran otomatis bulan ini.
+          </p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2 sm:self-center">
+        <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Proposed HPB:</span>
+        <div class="flex items-center gap-1.5 min-w-[120px]">
+          <span v-if="isFetchingGeneralHpb" class="text-xs text-slate-400 font-bold flex items-center gap-1">
+            <Loader2 class="w-3.5 h-3.5 animate-spin" /> Pengecekan...
+          </span>
+          <span v-else class="text-xs text-amber-600 dark:text-amber-400 font-extrabold font-mono">
+            {{ generalProposedHpb || 'Tidak Tersedia' }}
+          </span>
+        </div>
+      </div>
+    </div>
+
     <!-- Clear Cart Confirmation Dialog -->
     <div v-if="showClearConfirm" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
@@ -502,6 +528,8 @@ const proposedHpbNumber = ref('')
 const isFetchingHpbNumber = ref(false)
 const isSendingHpb = ref(false)
 const selectedHpbItemIds = ref([])
+const generalProposedHpb = ref('')
+const isFetchingGeneralHpb = ref(false)
 const activeTab = ref('all') // 'all', 'pending', 'checked'
 const currentPage = ref(1)
 const itemsPerPage = 15
@@ -702,6 +730,23 @@ const clearAllCart = async () => {
   }
 }
 
+// Fetch general proposed HPB number for month preview
+const fetchGeneralHpbNumber = async () => {
+  isFetchingGeneralHpb.value = true
+  try {
+    const { data, error } = await supabase.functions.invoke('accurate-create-hpb', {
+      body: { action: 'get-next-number' }
+    })
+    if (error) throw error
+    generalProposedHpb.value = data.proposedNumber || ''
+  } catch (err) {
+    console.error('Failed to fetch general HPB number:', err)
+    generalProposedHpb.value = ''
+  } finally {
+    isFetchingGeneralHpb.value = false
+  }
+}
+
 // Open HPB Modal for all active items in the cart
 const openHpbModalForAll = async () => {
   const activeItems = filteredItems.value
@@ -717,22 +762,31 @@ const openHpbModalForAll = async () => {
     items: activeItems
   }
   selectedHpbItemIds.value = activeItems.map(i => i.id)
-  proposedHpbNumber.value = 'Loading...'
-  isFetchingHpbNumber.value = true
-  showHpbModal.value = true
-
-  try {
-    const { data, error } = await supabase.functions.invoke('accurate-create-hpb', {
-      body: { action: 'get-next-number' }
-    })
-    if (error) throw error
-    proposedHpbNumber.value = data.proposedNumber || ''
-  } catch (err) {
-    console.error('Error fetching proposed HPB number:', err)
-    proposedHpbNumber.value = ''
-    alert('Gagal mengambil nomor HPB baru dari Accurate: ' + err.message)
-  } finally {
+  
+  // Use pre-loaded proposed number if available, otherwise fetch
+  if (generalProposedHpb.value && generalProposedHpb.value !== 'Gagal memuat') {
+    proposedHpbNumber.value = generalProposedHpb.value
     isFetchingHpbNumber.value = false
+    showHpbModal.value = true
+  } else {
+    proposedHpbNumber.value = 'Loading...'
+    isFetchingHpbNumber.value = true
+    showHpbModal.value = true
+
+    try {
+      const { data, error } = await supabase.functions.invoke('accurate-create-hpb', {
+        body: { action: 'get-next-number' }
+      })
+      if (error) throw error
+      proposedHpbNumber.value = data.proposedNumber || ''
+      generalProposedHpb.value = data.proposedNumber || ''
+    } catch (err) {
+      console.error('Error fetching proposed HPB number:', err)
+      proposedHpbNumber.value = ''
+      alert('Gagal mengambil nomor HPB baru dari Accurate: ' + err.message)
+    } finally {
+      isFetchingHpbNumber.value = false
+    }
   }
 }
 
@@ -768,6 +822,8 @@ const sendToHpb = async () => {
     alert(data.message || `HPB ${proposedHpbNumber.value} berhasil dibuat di Accurate!`)
     showHpbModal.value = false
     await fetchItems()
+    // Refresh next HPB number preview
+    await fetchGeneralHpbNumber()
   } catch (err) {
     console.error('Failed to send to HPB:', err)
     alert('Gagal mengirim ke HPB Accurate: ' + err.message)
@@ -789,6 +845,7 @@ const formatDate = (dateStr) => {
 
 onMounted(() => {
   fetchItems()
+  fetchGeneralHpbNumber()
 })
 </script>
 
