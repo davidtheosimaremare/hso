@@ -125,14 +125,23 @@
                       </span>
                     </div>
                     
-                    <!-- Group Action Option (Crosscheck All) -->
-                    <button
-                      @click="toggleGroupCrosscheck(group)"
-                      class="text-[10px] font-bold text-slate-500 hover:text-green-600 dark:text-slate-400 dark:hover:text-green-400 transition-colors flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-md border border-slate-200/50 dark:border-slate-700/50 hover:border-green-300 dark:hover:border-green-800 shadow-sm"
-                    >
-                      <CheckCircle2 class="w-3.5 h-3.5" />
-                      Crosscheck Semua
-                    </button>
+                    <!-- Group Action Options -->
+                    <div class="flex items-center gap-2">
+                      <button
+                        @click="toggleGroupCrosscheck(group)"
+                        class="text-[10px] font-bold text-slate-500 hover:text-green-600 dark:text-slate-400 dark:hover:text-green-400 transition-colors flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-md border border-slate-200/50 dark:border-slate-700/50 hover:border-green-300 dark:hover:border-green-800 shadow-sm"
+                      >
+                        <CheckCircle2 class="w-3.5 h-3.5" />
+                        Crosscheck Semua
+                      </button>
+                      <button
+                        @click="openHpbModal(group)"
+                        class="text-[10px] font-bold text-white hover:bg-amber-600 bg-amber-500 transition-colors flex items-center gap-1 px-2.5 py-1 rounded-md shadow-sm font-sans"
+                      >
+                        <Send class="w-3 h-3" />
+                        Kirim ke HPB Accurate
+                      </button>
+                    </div>
                   </div>
                 </TableCell>
               </TableRow>
@@ -197,16 +206,25 @@
               @click="toggleGroup(group.so_number)"
               class="p-4 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50 bg-slate-100/50 dark:bg-slate-900/50 cursor-pointer"
             >
-              <div class="flex items-center gap-2 max-w-[80%]">
+              <div class="flex items-center gap-2 max-w-[65%]">
                 <component :is="isGroupCollapsed(group.so_number) ? ChevronRight : ChevronDown" class="w-4 h-4 text-slate-500 shrink-0" />
                 <div class="min-w-0">
                   <span class="text-xs font-bold text-blue-600 dark:text-blue-400 block truncate">{{ group.so_number }}</span>
                   <span class="text-[10px] text-slate-600 dark:text-slate-400 block truncate font-medium mt-0.5">{{ group.company_name }}</span>
                 </div>
               </div>
-              <span class="text-[10px] bg-slate-200 dark:bg-slate-850 text-slate-700 dark:text-slate-300 rounded-full font-bold px-2 py-0.5 shrink-0">
-                {{ group.items.length }} Item
-              </span>
+              <div class="flex items-center gap-2 shrink-0">
+                <span class="text-[10px] bg-slate-200 dark:bg-slate-850 text-slate-700 dark:text-slate-300 rounded-full font-bold px-2 py-0.5">
+                  {{ group.items.length }} Item
+                </span>
+                <button
+                  @click.stop="openHpbModal(group)"
+                  class="text-[9px] font-bold text-white bg-amber-500 hover:bg-amber-600 px-2 py-1 rounded flex items-center gap-1 shadow-sm font-sans"
+                >
+                  <Send class="w-2.5 h-2.5" />
+                  Kirim
+                </button>
+              </div>
             </div>
             
             <!-- Group Items List -->
@@ -335,6 +353,111 @@
         </div>
       </div>
     </div>
+
+    <!-- Send to HPB Accurate Modal Dialog -->
+    <div v-if="showHpbModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <!-- Modal Header -->
+        <div class="p-6 pb-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
+          <div class="w-10 h-10 rounded-full bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center text-amber-500 shrink-0">
+            <Send class="w-5 h-5" />
+          </div>
+          <div>
+            <h3 class="text-base font-extrabold text-slate-900 dark:text-white">Kirim ke HPB Accurate (Permintaan Barang)</h3>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium">
+              Buat dokumen Permintaan Pembelian baru untuk HSO dan Client ini
+            </p>
+          </div>
+        </div>
+
+        <!-- Modal Body -->
+        <div class="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
+          <!-- HSO & Company details -->
+          <div class="grid grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-100 dark:border-slate-800/50 text-xs">
+            <div>
+              <span class="text-slate-400 block text-[9px] uppercase font-bold">Nomor HSO</span>
+              <span class="font-extrabold text-slate-900 dark:text-white block mt-0.5 font-sans">{{ activeGroupForHpb?.so_number }}</span>
+            </div>
+            <div>
+              <span class="text-slate-400 block text-[9px] uppercase font-bold">Perusahaan / Client</span>
+              <span class="font-extrabold text-slate-900 dark:text-white block mt-0.5 truncate">{{ activeGroupForHpb?.company_name }}</span>
+            </div>
+          </div>
+
+          <!-- Proposed HPB number input -->
+          <div class="space-y-1.5">
+            <label class="text-[11px] font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wide block">
+              Nomor HPB Accurate
+            </label>
+            <div class="relative">
+              <Input 
+                v-model="proposedHpbNumber" 
+                class="h-10 border-slate-200 dark:border-slate-800 rounded-xl w-full bg-white dark:bg-slate-950 font-bold text-xs" 
+                placeholder="Memuat nomor HPB baru..."
+                :disabled="isFetchingHpbNumber || isSendingHpb"
+              />
+              <Loader2 v-if="isFetchingHpbNumber" class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 animate-spin" />
+            </div>
+            <p class="text-[10px] text-slate-400">
+              *Diambil secara otomatis & bertambah (+1) berdasarkan nomor terakhir di bulan yang sama di Accurate.
+            </p>
+          </div>
+
+          <!-- Item list to select -->
+          <div class="space-y-2">
+            <label class="text-[11px] font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wide block">
+              Pilih Item yang akan dikirim ({{ selectedHpbItemIds.length }}/{{ activeGroupForHpb?.items.length }})
+            </label>
+            <div class="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-950/20 max-h-[180px] overflow-y-auto">
+              <div 
+                v-for="item in activeGroupForHpb?.items" 
+                :key="item.id" 
+                class="p-3 flex items-center justify-between text-xs hover:bg-slate-50/50 dark:hover:bg-slate-800/10 cursor-pointer"
+                @click="selectedHpbItemIds.includes(item.id) ? selectedHpbItemIds = selectedHpbItemIds.filter(id => id !== item.id) : selectedHpbItemIds.push(item.id)"
+              >
+                <div class="flex items-center gap-3">
+                  <input 
+                    type="checkbox" 
+                    class="w-4 h-4 rounded border-gray-300 text-amber-500 focus:ring-amber-500 cursor-pointer" 
+                    :checked="selectedHpbItemIds.includes(item.id)"
+                    @click.stop
+                    @change="selectedHpbItemIds.includes(item.id) ? selectedHpbItemIds = selectedHpbItemIds.filter(id => id !== item.id) : selectedHpbItemIds.push(item.id)"
+                  />
+                  <div class="min-w-0">
+                    <span class="font-bold text-slate-900 dark:text-white block font-mono">{{ item.item_code }}</span>
+                    <span class="text-[10px] text-slate-400 block truncate max-w-[280px]">{{ item.item_name }}</span>
+                  </div>
+                </div>
+                <div class="text-right shrink-0">
+                  <span class="text-[10px] text-slate-400 block uppercase font-bold">Qty</span>
+                  <span class="font-extrabold text-amber-600 dark:text-amber-400 block mt-0.5">{{ item.qty_to_order }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="px-6 py-4 bg-slate-50 dark:bg-slate-950/40 border-t border-slate-100 dark:border-slate-800/60 flex justify-end gap-2">
+          <Button 
+            variant="outline" 
+            class="h-9 px-4 rounded-xl border-slate-200 dark:border-slate-800 font-bold text-xs bg-white dark:bg-slate-950"
+            @click="showHpbModal = false"
+            :disabled="isSendingHpb"
+          >
+            Batal
+          </Button>
+          <Button 
+            class="h-9 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs"
+            @click="sendToHpb"
+            :disabled="isSendingHpb || isFetchingHpbNumber || !proposedHpbNumber"
+          >
+            <Loader2 v-if="isSendingHpb" class="w-4 h-4 animate-spin mr-1 inline-block" />
+            <span>Kirim Sekarang</span>
+          </Button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -353,7 +476,8 @@ import {
   Layers,
   Clock,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Send
 } from 'lucide-vue-next'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -373,6 +497,12 @@ const loading = ref(true)
 const searchQuery = ref('')
 const showClearConfirm = ref(false)
 const isClearing = ref(false)
+const showHpbModal = ref(false)
+const activeGroupForHpb = ref(null)
+const proposedHpbNumber = ref('')
+const isFetchingHpbNumber = ref(false)
+const isSendingHpb = ref(false)
+const selectedHpbItemIds = ref([])
 const activeTab = ref('all') // 'all', 'pending', 'checked'
 const currentPage = ref(1)
 const itemsPerPage = 15
@@ -570,6 +700,69 @@ const clearAllCart = async () => {
     alert("Gagal mengosongkan keranjang: " + err.message)
   } finally {
     isClearing.value = false
+  }
+}
+
+// Open HPB Modal and fetch proposed number
+const openHpbModal = async (group) => {
+  activeGroupForHpb.value = group
+  selectedHpbItemIds.value = group.items.map(i => i.id)
+  proposedHpbNumber.value = 'Loading...'
+  isFetchingHpbNumber.value = true
+  showHpbModal.value = true
+
+  try {
+    const { data, error } = await supabase.functions.invoke('accurate-create-hpb', {
+      body: { action: 'get-next-number' }
+    })
+    if (error) throw error
+    proposedHpbNumber.value = data.proposedNumber || ''
+  } catch (err) {
+    console.error('Error fetching proposed HPB number:', err)
+    proposedHpbNumber.value = ''
+    alert('Gagal mengambil nomor HPB baru dari Accurate: ' + err.message)
+  } finally {
+    isFetchingHpbNumber.value = false
+  }
+}
+
+// Send selected items to Accurate as Purchase Requisition (HPB)
+const sendToHpb = async () => {
+  if (!proposedHpbNumber.value) {
+    alert('Nomor HPB tidak boleh kosong!')
+    return
+  }
+  const selectedItems = activeGroupForHpb.value.items.filter(i => selectedHpbItemIds.value.includes(i.id))
+  if (selectedItems.length === 0) {
+    alert('Pilih setidaknya satu item untuk dikirim!')
+    return
+  }
+
+  isSendingHpb.value = true
+  try {
+    const { data, error } = await supabase.functions.invoke('accurate-create-hpb', {
+      body: {
+        action: 'create-hpb',
+        number: proposedHpbNumber.value,
+        items: selectedItems.map(i => ({
+          id: i.id,
+          item_code: i.item_code,
+          qty_to_order: i.qty_to_order,
+          so_number: activeGroupForHpb.value.so_number
+        }))
+      }
+    })
+
+    if (error) throw error
+
+    alert(data.message || `HPB ${proposedHpbNumber.value} berhasil dibuat di Accurate!`)
+    showHpbModal.value = false
+    await fetchItems()
+  } catch (err) {
+    console.error('Failed to send to HPB:', err)
+    alert('Gagal mengirim ke HPB Accurate: ' + err.message)
+  } finally {
+    isSendingHpb.value = false
   }
 }
 
