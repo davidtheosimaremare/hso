@@ -121,7 +121,7 @@ const addToPurchaseCart = async (item) => {
         item_code: item.code,
         item_name: item.name,
         qty_to_order: qty,
-        notes: item.admin_note || '',
+        notes: '',
         is_crosschecked: false,
         updated_at: new Date().toISOString()
       }, { onConflict: 'so_id,item_code' })

@@ -108,7 +108,7 @@
               <TableCell class="align-middle">
                 <div class="space-y-1">
                   <router-link
-                    :to="`/sales-order/${item.so_id}`"
+                    :to="`/sales-orders/${item.so_number.replace(/\//g, '-')}`"
                     class="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline"
                   >
                     <FileText class="w-3 h-3" />
@@ -206,7 +206,7 @@
               <div>
                 <span class="text-slate-400 block text-[9px] uppercase font-bold">HSO / Client</span>
                 <router-link
-                  :to="`/sales-order/${item.so_id}`"
+                  :to="`/sales-orders/${item.so_number.replace(/\//g, '-')}`"
                   class="font-bold text-blue-600 dark:text-blue-400 hover:underline block mt-0.5 truncate"
                 >
                   {{ item.so_number }}
