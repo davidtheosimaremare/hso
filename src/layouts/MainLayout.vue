@@ -12,6 +12,7 @@ import {
   User,
 
   ShoppingBag,
+  ShoppingCart,
   Truck,
   UploadCloud,
   Package,
@@ -64,6 +65,7 @@ onMounted(async () => {
 const menuItems = [
   { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
   { name: 'Sales Order', path: '/sales-orders', icon: FileText },
+  { name: 'Keranjang Pembelian', path: '/cart', icon: ShoppingCart },
   { name: 'Purchase Order', path: '/purchase-orders', icon: ShoppingBag },
   { name: 'Penerimaan Barang', path: '/receive-items', icon: Package },
   { name: 'Delivery Order', path: '/delivery-orders', icon: Truck },
@@ -190,6 +192,17 @@ const handleLogout = async () => {
           </SheetHeader>
           
           <div class="py-4 space-y-1.5 overflow-y-auto max-h-[50vh]">
+            <RouterLink 
+              to="/cart"
+              class="flex items-center gap-4 px-4 py-3 text-sm font-medium transition-all rounded-xl border border-transparent"
+              :class="route.path.startsWith('/cart') 
+                ? 'text-[#e60000] bg-red-50/50 dark:bg-red-950/20 border-red-100 dark:border-red-950' 
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30'"
+            >
+              <ShoppingCart class="w-5 h-5 text-slate-500 dark:text-slate-400" />
+              <span>Keranjang Pembelian</span>
+            </RouterLink>
+
             <RouterLink 
               to="/receive-items"
               class="flex items-center gap-4 px-4 py-3 text-sm font-medium transition-all rounded-xl border border-transparent"

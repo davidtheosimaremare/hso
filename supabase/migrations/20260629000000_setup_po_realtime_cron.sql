@@ -46,9 +46,23 @@ SELECT jobid, jobname, schedule, command FROM cron.job WHERE jobname = 'sync-rec
 -- -----------------------------------------------
 -- STEP 4: Enable Realtime untuk tabel PO
 -- -----------------------------------------------
--- Tambah tabel ke Realtime publication
-ALTER PUBLICATION supabase_realtime ADD TABLE accurate_purchase_order_items;
-ALTER PUBLICATION supabase_realtime ADD TABLE accurate_purchase_orders;
+-- Tambah tabel ke Realtime publication jika belum ada
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'accurate_purchase_order_items'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE accurate_purchase_order_items;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'accurate_purchase_orders'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE accurate_purchase_orders;
+  END IF;
+END $$;
 
 -- -----------------------------------------------
 -- STEP 5: Tambah kolom yang mungkin belum ada
@@ -61,8 +75,3 @@ ALTER TABLE accurate_purchase_order_items
 CREATE INDEX IF NOT EXISTS idx_po_items_hso_number
     ON accurate_purchase_order_items (hso_number)
     WHERE hso_number IS NOT NULL;
-
--- -----------------------------------------------
--- VERIFIKASI: Cek cron jobs yang berjalan
--- -----------------------------------------------
--- SELECT * FROM cron.job_run_details ORDER BY start_time DESC LIMIT 10;

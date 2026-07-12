@@ -82,9 +82,16 @@ alter table accurate_delivery_orders enable row level security;
 alter table accurate_delivery_order_items enable row level security;
 
 -- Policy to allow read access to authenticated users (adjust as needed)
+drop policy if exists "Allow read access for authenticated users" on accurate_purchase_orders;
 create policy "Allow read access for authenticated users" on accurate_purchase_orders for select using (auth.role() = 'authenticated');
+
+drop policy if exists "Allow read access for authenticated users" on accurate_purchase_order_items;
 create policy "Allow read access for authenticated users" on accurate_purchase_order_items for select using (auth.role() = 'authenticated');
+
+drop policy if exists "Allow read access for authenticated users" on accurate_delivery_orders;
 create policy "Allow read access for authenticated users" on accurate_delivery_orders for select using (auth.role() = 'authenticated');
+
+drop policy if exists "Allow read access for authenticated users" on accurate_delivery_order_items;
 create policy "Allow read access for authenticated users" on accurate_delivery_order_items for select using (auth.role() = 'authenticated');
 
 -- Function to update updated_at timestamp
@@ -96,11 +103,13 @@ begin
 end;
 $$ language plpgsql;
 
+drop trigger if exists update_accurate_po_modtime on accurate_purchase_orders;
 create trigger update_accurate_po_modtime
     before update on accurate_purchase_orders
     for each row
     execute function update_updated_at_column();
 
+drop trigger if exists update_accurate_do_modtime on accurate_delivery_orders;
 create trigger update_accurate_do_modtime
     before update on accurate_delivery_orders
     for each row

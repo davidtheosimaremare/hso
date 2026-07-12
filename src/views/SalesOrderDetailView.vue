@@ -48,6 +48,7 @@ const isModalOpen = ref(false)
 const isSyncing = ref(false) // State untuk sync HPO dari PO
 const isHpoSyncing = ref(false) // State khusus untuk HPO sync
 const isHdoSyncing = ref(false) // State khusus untuk HDO sync
+const isAddingToCart = ref(null)
 const syncProgress = ref(0) // Progress sync HPO 0-100
 const hpoMapping = ref({}) // Mapping item_code -> HPO number dari Accurate PO
 const hpoDetails = ref([]) // Full PO details with quantities
@@ -56,6 +57,50 @@ const uniqueTrackingCode = ref(null)
 const isLinkCopied = ref(false)
 const isSoNumberCopied = ref(false)
 const errorMessage = ref(null)
+
+const addToPurchaseCart = async (item) => {
+  if (!soDetail.value) return
+  isAddingToCart.value = item.code
+  
+  try {
+    let qty = item.qty_to_order || 0
+    const hpoEntries = getHpoEntries(item)
+    if (hpoEntries.length > 0) {
+      const totalPo = hpoEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
+      if (totalPo < item.qty_to_order) {
+        qty = item.qty_to_order - totalPo
+      }
+    }
+    
+    if (qty <= 0) {
+      alert("Kuantitas rencana pembelian tidak valid atau sudah terpenuhi.")
+      isAddingToCart.value = null
+      return
+    }
+
+    const { error } = await supabase
+      .from('purchase_cart')
+      .upsert({
+        so_id: String(soDetail.value.id),
+        so_number: soDetail.value.number,
+        company_name: soDetail.value.client,
+        item_code: item.code,
+        item_name: item.name,
+        qty_to_order: qty,
+        notes: item.admin_note || '',
+        is_crosschecked: false,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'so_id,item_code' })
+
+    if (error) throw error
+    alert(`Berhasil memasukkan item "${item.code}" ke keranjang pembelian!`)
+  } catch (err) {
+    console.error(err)
+    alert("Gagal memasukkan ke keranjang: " + err.message)
+  } finally {
+    isAddingToCart.value = null
+  }
+}
 
 const copySoNumber = () => {
   if (soDetail.value?.number) {
@@ -2739,7 +2784,21 @@ const sendReminderEmail = async () => {
                   </TableCell>
                   
                   <TableCell class="text-right pr-6 align-top pt-3">
-                    <Button v-if="!isSyncing" size="sm" variant="outline" class="h-8 px-3 rounded border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-600 dark:hover:border-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all bg-white dark:bg-slate-800 flex items-center gap-1.5 ml-auto" @click="openActionModal(item)"><Edit class="w-3.5 h-3.5"/><span class="text-xs font-bold">Edit</span></Button>
+                    <div class="flex items-center gap-2 justify-end">
+                      <Button 
+                        v-if="!isSyncing && (getRowStatus(item).text.startsWith('PERLU DIPESAN') || getRowStatus(item).text.startsWith('KURANG DIPESAN'))" 
+                        size="sm" 
+                        variant="outline" 
+                        class="h-8 px-2.5 rounded border-amber-300 dark:border-amber-700/50 text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-all flex items-center gap-1 bg-white dark:bg-slate-800 shadow-sm" 
+                        @click="addToPurchaseCart(item)"
+                        :disabled="isAddingToCart === item.code"
+                      >
+                        <Loader2 v-if="isAddingToCart === item.code" class="w-3.5 h-3.5 animate-spin" />
+                        <ShoppingCart v-else class="w-3.5 h-3.5" />
+                        <span class="text-xs font-bold">{{ isAddingToCart === item.code ? 'Memproses...' : '+ Keranjang' }}</span>
+                      </Button>
+                      <Button v-if="!isSyncing" size="sm" variant="outline" class="h-8 px-3 rounded border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-600 dark:hover:border-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all bg-white dark:bg-slate-800 flex items-center gap-1.5" @click="openActionModal(item)"><Edit class="w-3.5 h-3.5"/><span class="text-xs font-bold">Edit</span></Button>
+                    </div>
                   </TableCell>
                 </TableRow>
                 <TableRow v-if="filteredItems.length === 0">
@@ -2789,10 +2848,24 @@ const sendReminderEmail = async () => {
                 </div>
                 
                 <!-- Action Button (Edit) -->
-                <Button v-if="!isSyncing" size="sm" variant="outline" class="h-8 px-2.5 rounded-lg border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-600 bg-white dark:bg-slate-800 flex items-center gap-1 shrink-0 shadow-sm transition-all" @click="openActionModal(item)">
-                  <Edit class="w-3.5 h-3.5"/>
-                  <span class="text-xs font-bold">Edit</span>
-                </Button>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <Button 
+                    v-if="!isSyncing && (getRowStatus(item).text.startsWith('PERLU DIPESAN') || getRowStatus(item).text.startsWith('KURANG DIPESAN'))" 
+                    size="sm" 
+                    variant="outline" 
+                    class="h-8 w-8 p-0 rounded-lg border-amber-300 dark:border-amber-700/50 text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/20 bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm" 
+                    @click="addToPurchaseCart(item)"
+                    :disabled="isAddingToCart === item.code"
+                    title="Masukkan ke keranjang"
+                  >
+                    <Loader2 v-if="isAddingToCart === item.code" class="w-3.5 h-3.5 animate-spin" />
+                    <ShoppingCart v-else class="w-3.5 h-3.5" />
+                  </Button>
+                  <Button v-if="!isSyncing" size="sm" variant="outline" class="h-8 px-2.5 rounded-lg border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-600 bg-white dark:bg-slate-800 flex items-center gap-1 shadow-sm transition-all" @click="openActionModal(item)">
+                    <Edit class="w-3.5 h-3.5"/>
+                    <span class="text-xs font-bold">Edit</span>
+                  </Button>
+                </div>
               </div>
 
               <!-- Product Name -->

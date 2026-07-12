@@ -20,10 +20,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_forwarder_tracking_hpo_item
 ALTER TABLE public.raw_forwarder_tracking ENABLE ROW LEVEL SECURITY;
 
 -- Allow read/write access for authenticated users
+drop policy if exists "Allow read access for authenticated users" on public.raw_forwarder_tracking;
 CREATE POLICY "Allow read access for authenticated users" 
     ON public.raw_forwarder_tracking FOR SELECT 
     USING (auth.role() = 'authenticated');
 
+drop policy if exists "Allow write access for authenticated users" on public.raw_forwarder_tracking;
 CREATE POLICY "Allow write access for authenticated users" 
     ON public.raw_forwarder_tracking FOR ALL 
     USING (auth.role() = 'authenticated') 

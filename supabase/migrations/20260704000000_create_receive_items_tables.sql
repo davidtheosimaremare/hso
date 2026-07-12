@@ -39,5 +39,8 @@ ALTER TABLE public.accurate_receive_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.accurate_receive_item_items ENABLE ROW LEVEL SECURITY;
 
 -- Allow read access to authenticated users
+drop policy if exists "Allow read access for authenticated users" ON public.accurate_receive_items;
 CREATE POLICY "Allow read access for authenticated users" ON public.accurate_receive_items FOR SELECT USING (auth.role() = 'authenticated');
+
+drop policy if exists "Allow read access for authenticated users" ON public.accurate_receive_item_items;
 CREATE POLICY "Allow read access for authenticated users" ON public.accurate_receive_item_items FOR SELECT USING (auth.role() = 'authenticated');
