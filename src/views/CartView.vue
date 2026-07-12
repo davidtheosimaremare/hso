@@ -317,7 +317,7 @@ const fetchItems = async () => {
     const { data, error } = await supabase
       .from('purchase_cart')
       .select('*')
-      .order('created_at', { ascending: false })
+      .order('created_at', { ascending: true })
 
     if (error) throw error
     items.value = data || []
