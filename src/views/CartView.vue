@@ -11,15 +11,25 @@
           Daftar item yang perlu/kurang dipesan. Rencana ini dapat dilihat dan dikelola oleh seluruh tim.
         </p>
       </div>
-      <Button 
-        v-if="items.length > 0"
-        variant="outline" 
-        class="h-10 px-4 rounded-xl border-red-200 hover:border-red-300 dark:border-red-950 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all flex items-center gap-2 bg-white dark:bg-slate-950 font-bold text-xs uppercase tracking-wider shrink-0"
-        @click="showClearConfirm = true"
-      >
-        <Trash2 class="w-4 h-4" />
-        <span>Kosongkan Keranjang</span>
-      </Button>
+      <div class="flex items-center gap-2 shrink-0">
+        <Button 
+          v-if="items.length > 0"
+          variant="outline" 
+          class="h-10 px-4 rounded-xl border-red-200 hover:border-red-300 dark:border-red-950 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all flex items-center gap-2 bg-white dark:bg-slate-950 font-bold text-xs uppercase tracking-wider"
+          @click="showClearConfirm = true"
+        >
+          <Trash2 class="w-4 h-4" />
+          <span>Kosongkan Keranjang</span>
+        </Button>
+        <Button 
+          v-if="items.length > 0"
+          class="h-10 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs uppercase tracking-wider flex items-center gap-2 shadow-sm font-sans"
+          @click="openHpbModalForAll"
+        >
+          <Send class="w-4 h-4" />
+          <span>Kirim ke HPB Accurate</span>
+        </Button>
+      </div>
     </div>
 
     <!-- Filters & Search Card -->
@@ -125,23 +135,14 @@
                       </span>
                     </div>
                     
-                    <!-- Group Action Options -->
-                    <div class="flex items-center gap-2">
-                      <button
-                        @click="toggleGroupCrosscheck(group)"
-                        class="text-[10px] font-bold text-slate-500 hover:text-green-600 dark:text-slate-400 dark:hover:text-green-400 transition-colors flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-md border border-slate-200/50 dark:border-slate-700/50 hover:border-green-300 dark:hover:border-green-800 shadow-sm"
-                      >
-                        <CheckCircle2 class="w-3.5 h-3.5" />
-                        Crosscheck Semua
-                      </button>
-                      <button
-                        @click="openHpbModal(group)"
-                        class="text-[10px] font-bold text-white hover:bg-amber-600 bg-amber-500 transition-colors flex items-center gap-1 px-2.5 py-1 rounded-md shadow-sm font-sans"
-                      >
-                        <Send class="w-3 h-3" />
-                        Kirim ke HPB Accurate
-                      </button>
-                    </div>
+                    <!-- Group Action Option (Crosscheck All) -->
+                    <button
+                      @click="toggleGroupCrosscheck(group)"
+                      class="text-[10px] font-bold text-slate-500 hover:text-green-600 dark:text-slate-400 dark:hover:text-green-400 transition-colors flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-md border border-slate-200/50 dark:border-slate-700/50 hover:border-green-300 dark:hover:border-green-800 shadow-sm"
+                    >
+                      <CheckCircle2 class="w-3.5 h-3.5" />
+                      Crosscheck Semua
+                    </button>
                   </div>
                 </TableCell>
               </TableRow>
@@ -206,25 +207,16 @@
               @click="toggleGroup(group.so_number)"
               class="p-4 flex items-center justify-between border-b border-slate-100 dark:border-slate-800/50 bg-slate-100/50 dark:bg-slate-900/50 cursor-pointer"
             >
-              <div class="flex items-center gap-2 max-w-[65%]">
+              <div class="flex items-center gap-2 max-w-[80%]">
                 <component :is="isGroupCollapsed(group.so_number) ? ChevronRight : ChevronDown" class="w-4 h-4 text-slate-500 shrink-0" />
                 <div class="min-w-0">
                   <span class="text-xs font-bold text-blue-600 dark:text-blue-400 block truncate">{{ group.so_number }}</span>
                   <span class="text-[10px] text-slate-600 dark:text-slate-400 block truncate font-medium mt-0.5">{{ group.company_name }}</span>
                 </div>
               </div>
-              <div class="flex items-center gap-2 shrink-0">
-                <span class="text-[10px] bg-slate-200 dark:bg-slate-850 text-slate-700 dark:text-slate-300 rounded-full font-bold px-2 py-0.5">
-                  {{ group.items.length }} Item
-                </span>
-                <button
-                  @click.stop="openHpbModal(group)"
-                  class="text-[9px] font-bold text-white bg-amber-500 hover:bg-amber-600 px-2 py-1 rounded flex items-center gap-1 shadow-sm font-sans"
-                >
-                  <Send class="w-2.5 h-2.5" />
-                  Kirim
-                </button>
-              </div>
+              <span class="text-[10px] bg-slate-200 dark:bg-slate-850 text-slate-700 dark:text-slate-300 rounded-full font-bold px-2 py-0.5 shrink-0">
+                {{ group.items.length }} Item
+              </span>
             </div>
             
             <!-- Group Items List -->
@@ -376,11 +368,15 @@
           <div class="grid grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-100 dark:border-slate-800/50 text-xs">
             <div>
               <span class="text-slate-400 block text-[9px] uppercase font-bold">Nomor HSO</span>
-              <span class="font-extrabold text-slate-900 dark:text-white block mt-0.5 font-sans">{{ activeGroupForHpb?.so_number }}</span>
+              <span class="font-extrabold text-slate-900 dark:text-white block mt-0.5 font-sans">
+                {{ activeGroupForHpb?.so_number === 'Gabungan HSO' ? 'Gabungan HSO (' + activeGroupForHpb?.items.length + ' Item)' : activeGroupForHpb?.so_number }}
+              </span>
             </div>
             <div>
               <span class="text-slate-400 block text-[9px] uppercase font-bold">Perusahaan / Client</span>
-              <span class="font-extrabold text-slate-900 dark:text-white block mt-0.5 truncate">{{ activeGroupForHpb?.company_name }}</span>
+              <span class="font-extrabold text-slate-900 dark:text-white block mt-0.5 truncate">
+                {{ activeGroupForHpb?.so_number === 'Gabungan HSO' ? 'Multi-Perusahaan' : activeGroupForHpb?.company_name }}
+              </span>
             </div>
           </div>
 
@@ -424,7 +420,10 @@
                     @change="selectedHpbItemIds.includes(item.id) ? selectedHpbItemIds = selectedHpbItemIds.filter(id => id !== item.id) : selectedHpbItemIds.push(item.id)"
                   />
                   <div class="min-w-0">
-                    <span class="font-bold text-slate-900 dark:text-white block font-mono">{{ item.item_code }}</span>
+                    <div class="flex items-center gap-2">
+                      <span class="font-bold text-slate-900 dark:text-white block font-mono">{{ item.item_code }}</span>
+                      <span class="text-[9px] bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded font-extrabold font-sans shrink-0">{{ item.so_number }}</span>
+                    </div>
                     <span class="text-[10px] text-slate-400 block truncate max-w-[280px]">{{ item.item_name }}</span>
                   </div>
                 </div>
@@ -703,10 +702,21 @@ const clearAllCart = async () => {
   }
 }
 
-// Open HPB Modal and fetch proposed number
-const openHpbModal = async (group) => {
-  activeGroupForHpb.value = group
-  selectedHpbItemIds.value = group.items.map(i => i.id)
+// Open HPB Modal for all active items in the cart
+const openHpbModalForAll = async () => {
+  const activeItems = filteredItems.value
+  if (activeItems.length === 0) {
+    alert('Tidak ada item aktif di keranjang untuk dikirim!')
+    return
+  }
+
+  // Create mock group containing all active items
+  activeGroupForHpb.value = {
+    so_number: 'Gabungan HSO',
+    company_name: 'Multi-Perusahaan',
+    items: activeItems
+  }
+  selectedHpbItemIds.value = activeItems.map(i => i.id)
   proposedHpbNumber.value = 'Loading...'
   isFetchingHpbNumber.value = true
   showHpbModal.value = true
@@ -748,7 +758,7 @@ const sendToHpb = async () => {
           id: i.id,
           item_code: i.item_code,
           qty_to_order: i.qty_to_order,
-          so_number: activeGroupForHpb.value.so_number
+          so_number: i.so_number // Use individual item HSO reference
         }))
       }
     })
