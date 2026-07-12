@@ -58,6 +58,40 @@ const isLinkCopied = ref(false)
 const isSoNumberCopied = ref(false)
 const errorMessage = ref(null)
 
+const cartItems = ref([])
+
+const fetchCartItems = async () => {
+  if (!soDetail.value) return
+  try {
+    const { data, error } = await supabase
+      .from('purchase_cart')
+      .select('item_code, qty_to_order, is_crosschecked')
+      .eq('so_id', String(soDetail.value.id))
+    if (!error) {
+      cartItems.value = data || []
+    }
+  } catch (err) {
+    console.error('Error fetching cart items:', err)
+  }
+}
+
+const isInCart = (itemCode) => {
+  return cartItems.value.some(c => c.item_code === itemCode)
+}
+
+const needsOrdering = (item) => {
+  if (item.qty_to_order > 0) {
+    const hpoEntries = getHpoEntries(item)
+    const hasHpoInDb = item.logistics_hpo && item.logistics_hpo.trim().length > 0
+    if (hpoEntries.length > 0) {
+      const totalPo = hpoEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
+      return totalPo < item.qty_to_order
+    }
+    return !hasHpoInDb
+  }
+  return false
+}
+
 const addToPurchaseCart = async (item) => {
   if (!soDetail.value) return
   isAddingToCart.value = item.code
@@ -94,6 +128,7 @@ const addToPurchaseCart = async (item) => {
 
     if (error) throw error
     alert(`Berhasil memasukkan item "${item.code}" ke keranjang pembelian!`)
+    await fetchCartItems()
   } catch (err) {
     console.error(err)
     alert("Gagal memasukkan ke keranjang: " + err.message)
@@ -1483,6 +1518,7 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
       shipments: history.filter(h => h.historyType === 'DO').map(h => ({ no: h.historyNumber, date: h.historyDate, status: h.approvalStatus })),
       invoices: history.filter(h => h.historyType === 'SI').map(h => ({ no: h.historyNumber, date: h.historyDate, status: h.approvalStatus }))
     }
+    await fetchCartItems()
   } catch (err) {
     console.error("Fetch Error:", err)
     errorMessage.value = err.message || "Terjadi kesalahan tidak diketahui."
@@ -1699,9 +1735,15 @@ const getRowStatus = (item) => {
       const totalPo = hpoEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
       if (totalPo < item.qty_to_order) {
         const shortage = item.qty_to_order - totalPo
+        if (isInCart(item.code)) {
+          return { text: `DI KERANJANG (KURANG ${shortage} ${item.unit})`, class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: ShoppingCart }
+        }
         return { text: `KURANG DIPESAN (${shortage} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: AlertTriangle }
       }
     } else if (!hasHpoInDb) {
+      if (isInCart(item.code)) {
+        return { text: `DI KERANJANG (PERLU ${item.qty_to_order} ${item.unit})`, class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: ShoppingCart }
+      }
       return { text: `PERLU DIPESAN (${item.qty_to_order} ${item.unit})`, class: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800', icon: AlertCircle }
     }
   }
@@ -2786,7 +2828,16 @@ const sendReminderEmail = async () => {
                   <TableCell class="text-right pr-6 align-top pt-3">
                     <div class="flex items-center gap-2 justify-end">
                       <Button 
-                        v-if="!isSyncing && (getRowStatus(item).text.startsWith('PERLU DIPESAN') || getRowStatus(item).text.startsWith('KURANG DIPESAN'))" 
+                        v-if="!isSyncing && needsOrdering(item) && isInCart(item.code)" 
+                        size="sm" 
+                        variant="outline" 
+                        class="h-8 px-2.5 rounded border-green-300 dark:border-green-800 text-green-600 dark:text-green-400 bg-green-50/30 dark:bg-green-950/10 cursor-default pointer-events-none transition-all flex items-center gap-1 shadow-sm"
+                      >
+                        <CheckCircle2 class="w-3.5 h-3.5" />
+                        <span class="text-xs font-bold">Di Keranjang</span>
+                      </Button>
+                      <Button 
+                        v-else-if="!isSyncing && needsOrdering(item)" 
                         size="sm" 
                         variant="outline" 
                         class="h-8 px-2.5 rounded border-amber-300 dark:border-amber-700/50 text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-all flex items-center gap-1 bg-white dark:bg-slate-800 shadow-sm" 
@@ -2850,7 +2901,16 @@ const sendReminderEmail = async () => {
                 <!-- Action Button (Edit) -->
                 <div class="flex items-center gap-1.5 shrink-0">
                   <Button 
-                    v-if="!isSyncing && (getRowStatus(item).text.startsWith('PERLU DIPESAN') || getRowStatus(item).text.startsWith('KURANG DIPESAN'))" 
+                    v-if="!isSyncing && needsOrdering(item) && isInCart(item.code)" 
+                    size="sm" 
+                    variant="outline" 
+                    class="h-8 w-8 p-0 rounded-lg border-green-300 dark:border-green-800 text-green-600 dark:text-green-400 bg-green-50/30 dark:bg-green-950/10 cursor-default pointer-events-none flex items-center justify-center shadow-sm"
+                    title="Sudah di keranjang"
+                  >
+                    <CheckCircle2 class="w-3.5 h-3.5" />
+                  </Button>
+                  <Button 
+                    v-else-if="!isSyncing && needsOrdering(item)" 
                     size="sm" 
                     variant="outline" 
                     class="h-8 w-8 p-0 rounded-lg border-amber-300 dark:border-amber-700/50 text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/20 bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm" 
