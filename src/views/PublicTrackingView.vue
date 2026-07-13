@@ -204,9 +204,9 @@ const groupedData = computed(() => {
             shipped.push({ ...item, displayQty: item.qty_shipped });
         }
 
-        // 2. Remaining (Processing/In Process) - Exclude items that are already ready to send (is_ready) or stock items
+        // 2. Remaining (Processing/In Process)
         const remainingQty = item.qty_order - item.qty_shipped;
-        if (remainingQty > 0 && !item.is_ready) {
+        if (remainingQty > 0) {
             processing.push({ ...item, displayQty: remainingQty });
         }
     });

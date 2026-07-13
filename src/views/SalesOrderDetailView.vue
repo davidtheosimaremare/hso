@@ -283,7 +283,7 @@ const filteredItems = computed(() => {
       return isOrdered || (isFullyOrdered && isPartial)
     }
     if (itemStatusFilter.value === 'READY') {
-      return statusText === 'MENUNGGU PENGIRIMAN'
+      return statusText === 'MENUNGGU PENGIRIMAN' || statusText === 'SIAP DIKIRIM'
     }
     if (itemStatusFilter.value === 'PARTIAL') {
       return statusText.includes('DIKIRIM SEBAGIAN')
@@ -1721,8 +1721,8 @@ const getRowStatus = (item) => {
     if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) > 0) {
       return { text: `DIKIRIM SEBAGIAN (SISA ${getDisplayedQtyRemaining(item)} ${item.unit})`, class: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800', icon: Truck }
     }
-    // Belum ada pengiriman sama sekali → tunggu pengiriman
-    return { text: 'MENUNGGU PENGIRIMAN', class: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800', icon: Package }
+    // Belum ada pengiriman sama sekali → siap dikirim
+    return { text: 'SIAP DIKIRIM', class: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800', icon: Package }
   }
 
   // Cek HPO dari Accurate atau dari DB (hanya untuk item NO STOCK / qty_to_order > 0)
@@ -3410,11 +3410,11 @@ const sendReminderEmail = async () => {
                               <p class="text-sm text-red-600">Pesanan sudah {{ getDaysSinceOrder() }} hari belum ada PO</p>
                           </div>
                       </div>
-                      <!-- Jika ada stock, menunggu pengiriman -->
+                      <!-- Jika ada stock, siap dikirim -->
                       <div v-else class="flex items-center gap-2">
                           <Hourglass class="w-5 h-5 text-blue-600" />
                           <div>
-                              <p class="text-xs font-bold text-blue-700">MENUNGGU PENGIRIMAN</p>
+                              <p class="text-xs font-bold text-blue-700">SIAP DIKIRIM</p>
                               <p class="text-sm text-blue-600">Stok tersedia, siap kirim</p>
                           </div>
                       </div>
@@ -3464,7 +3464,7 @@ const sendReminderEmail = async () => {
                                  <CheckCircle2 class="w-6 h-6 text-blue-600"/>
                              </div>
                              <div>
-                                 <p class="text-base font-bold text-blue-800 dark:text-blue-300">Barang Ready / Menunggu Pengiriman</p>
+                                 <p class="text-base font-bold text-blue-800 dark:text-blue-300">Barang Ready / Siap Kirim</p>
                                  <p class="text-sm text-blue-600 dark:text-blue-400 mt-1">Stok tersedia. Silakan update keterangan atau Hold jika ditunda.</p>
                              </div>
                          </div>
