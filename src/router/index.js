@@ -16,6 +16,7 @@ import ReceiveItemListView from '@/views/ReceiveItemListView.vue'
 import ReceiveItemDetailView from '@/views/ReceiveItemDetailView.vue'
 import LogisticsDbView from '@/views/LogisticsDbView.vue'
 import CartView from '@/views/CartView.vue'
+import HpbListView from '@/views/HpbListView.vue'
 
 // Import Public
 import PublicLayout from '@/layouts/PublicLayout.vue'
@@ -47,6 +48,7 @@ const router = createRouter({
         { path: '/receive-items/:id', component: ReceiveItemDetailView },
         { path: '/logistics-db', component: LogisticsDbView },
         { path: '/cart', component: CartView },
+        { path: '/hpb', component: HpbListView },
         { path: '/settings', component: SettingsView },
       ]
     },

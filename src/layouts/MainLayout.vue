@@ -17,7 +17,9 @@ import {
   UploadCloud,
   Package,
   Menu,
-  Database
+  Database,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-vue-next'
 import {
   Sheet,
@@ -33,6 +35,14 @@ const route = useRoute()
 const router = useRouter()
 const userEmail = ref('Memuat...')
 const isDarkMode = ref(false)
+
+const isRencanaPembelianOpen = ref(route.path.startsWith('/cart') || route.path.startsWith('/hpb'))
+
+watch(() => route.path, (newPath) => {
+  if (newPath.startsWith('/cart') || newPath.startsWith('/hpb')) {
+    isRencanaPembelianOpen.value = true
+  }
+})
 
 // --- 1. Dark Mode Logic ---
 const toggleDarkMode = () => {
@@ -103,19 +113,57 @@ const handleLogout = async () => {
       
       <nav class="flex-1 px-4 space-y-1 mt-2">
         
-        <RouterLink 
-          v-for="item in menuItems" 
-          :key="item.path" 
-          :to="item.path"
-          class="flex items-center gap-4 px-4 py-3.5 text-sm font-medium transition-all border-l-4"
-          :class="route.path.startsWith(item.path) 
-            ? 'border-[#e60000] text-black dark:text-white bg-gray-50 dark:bg-slate-800/50' 
-            : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30'"
-        >
-          <span v-if="route.path.startsWith(item.path)" class="w-1.5 h-1.5 rounded-full bg-[#e60000] absolute left-8"></span>
-          
-          <span :class="route.path.startsWith(item.path) ? 'ml-2' : ''">{{ item.name }}</span>
-        </RouterLink>
+        <template v-for="item in menuItems" :key="item.name">
+          <!-- Rencana Pembelian Collapsible Dropdown -->
+          <template v-if="item.name === 'Keranjang Pembelian'">
+            <div class="space-y-0.5">
+              <button 
+                @click="isRencanaPembelianOpen = !isRencanaPembelianOpen"
+                class="flex items-center justify-between w-full px-4 py-3.5 text-sm font-medium transition-all rounded-md text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30"
+              >
+                <div class="flex items-center gap-4">
+                  <component :is="item.icon" class="w-4 h-4" />
+                  <span>Rencana Pembelian</span>
+                </div>
+                <component :is="isRencanaPembelianOpen ? ChevronUp : ChevronDown" class="w-4 h-4 text-gray-400" />
+              </button>
+              
+              <!-- Collapsible Content -->
+              <div v-show="isRencanaPembelianOpen" class="pl-8 space-y-1 mt-1 transition-all">
+                <RouterLink 
+                  to="/cart"
+                  class="flex items-center gap-3 px-4 py-2.5 text-xs font-medium transition-all rounded-md border-l-2"
+                  :class="route.path.startsWith('/cart') 
+                    ? 'border-[#e60000] text-black dark:text-white bg-gray-50 dark:bg-slate-800/50' 
+                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30'"
+                >
+                  <span>Keranjang</span>
+                </RouterLink>
+                <RouterLink 
+                  to="/hpb"
+                  class="flex items-center gap-3 px-4 py-2.5 text-xs font-medium transition-all rounded-md border-l-2"
+                  :class="route.path.startsWith('/hpb') 
+                    ? 'border-[#e60000] text-black dark:text-white bg-gray-50 dark:bg-slate-800/50' 
+                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30'"
+                >
+                  <span>Permintaan Barang (HPB)</span>
+                </RouterLink>
+              </div>
+            </div>
+          </template>
+
+          <RouterLink 
+            v-else
+            :to="item.path"
+            class="flex items-center gap-4 px-4 py-3.5 text-sm font-medium transition-all border-l-4"
+            :class="route.path.startsWith(item.path) 
+              ? 'border-[#e60000] text-black dark:text-white bg-gray-50 dark:bg-slate-800/50' 
+              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30'"
+          >
+            <span v-if="route.path.startsWith(item.path)" class="w-1.5 h-1.5 rounded-full bg-[#e60000] absolute left-8"></span>
+            <span :class="route.path.startsWith(item.path) ? 'ml-2' : ''">{{ item.name }}</span>
+          </RouterLink>
+        </template>
 
       </nav>
 
@@ -201,6 +249,17 @@ const handleLogout = async () => {
             >
               <ShoppingCart class="w-5 h-5 text-slate-500 dark:text-slate-400" />
               <span>Keranjang Pembelian</span>
+            </RouterLink>
+
+            <RouterLink 
+              to="/hpb"
+              class="flex items-center gap-4 px-4 py-3 text-sm font-medium transition-all rounded-xl border border-transparent"
+              :class="route.path.startsWith('/hpb') 
+                ? 'text-[#e60000] bg-red-50/50 dark:bg-red-950/20 border-red-100 dark:border-red-950' 
+                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30'"
+            >
+              <ShoppingCart class="w-5 h-5 text-slate-500 dark:text-slate-400" />
+              <span>Permintaan Barang (HPB)</span>
             </RouterLink>
 
             <RouterLink 

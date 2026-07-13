@@ -43,7 +43,61 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     const authHeaders = await buildAccurateHeaders()
-    const { action, number, items } = await req.json().catch(() => ({}))
+    const { action, number, items, id } = await req.json().catch(() => ({}))
+
+    if (action === 'list-hpb') {
+      // Fetch all PRs from Accurate page by page (page size 100)
+      let allData = []
+      let page = 1
+      const pageSize = 100
+      let hasMoreData = true
+
+      while (hasMoreData) {
+        const listUrl = `${BASE_API}/purchase-requisition/list.do?fields=id,number,transDate,description,statusName&sp.page=${page}&sp.pageSize=${pageSize}&sp.sort=transDate|desc`
+        const res = await fetch(listUrl, { headers: authHeaders })
+        
+        if (!res.ok) {
+          const errText = await res.text()
+          throw new Error(`Gagal mengambil list PR dari Accurate: ${errText}`)
+        }
+
+        const json = await res.json()
+        if (json.d && Array.isArray(json.d)) {
+          allData = allData.concat(json.d)
+          if (json.d.length < pageSize) {
+            hasMoreData = false
+          } else {
+            page++
+          }
+        } else {
+          hasMoreData = false
+        }
+      }
+
+      return new Response(JSON.stringify({ s: true, d: allData }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    if (action === 'detail-hpb') {
+      if (!id) throw new Error('ID HPB wajib ditentukan!')
+      const detailUrl = `${BASE_API}/purchase-requisition/detail.do?id=${id}`
+      const res = await fetch(detailUrl, { headers: authHeaders })
+      
+      if (!res.ok) {
+        const errText = await res.text()
+        throw new Error(`Gagal mengambil detail PR dari Accurate: ${errText}`)
+      }
+
+      const json = await res.json()
+      if (!json.s) {
+        throw new Error(`Accurate API Error: ${json.d || 'Gagal mengambil detail'}`)
+      }
+
+      return new Response(JSON.stringify({ s: true, d: json.d }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
 
     if (action === 'get-next-number') {
       // 1. Fetch latest PRs from Accurate
