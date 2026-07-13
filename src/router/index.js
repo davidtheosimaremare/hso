@@ -18,6 +18,10 @@ import LogisticsDbView from '@/views/LogisticsDbView.vue'
 import CartView from '@/views/CartView.vue'
 import HpbListView from '@/views/HpbListView.vue'
 import HpbDetailView from '@/views/HpbDetailView.vue'
+import HsqListView from '@/views/HsqListView.vue'
+import HsqDetailView from '@/views/HsqDetailView.vue'
+import SopGuideView from '@/views/SopGuideView.vue'
+
 
 // Import Public
 import PublicLayout from '@/layouts/PublicLayout.vue'
@@ -51,7 +55,10 @@ const router = createRouter({
         { path: '/cart', component: CartView },
         { path: '/hpb', component: HpbListView },
         { path: '/hpb/:id', component: HpbDetailView },
+        { path: '/hsq', component: HsqListView },
+        { path: '/hsq/:id', component: HsqDetailView },
         { path: '/settings', component: SettingsView },
+        { path: '/sop-guide', component: SopGuideView },
       ]
     },
     {

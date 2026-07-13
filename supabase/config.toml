@@ -10,6 +10,12 @@ entrypoint = "./functions/accurate-list-so/index.ts"
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/accurate-list-so/*.html" ]
 
+[functions.accurate-list-sq]
+enabled = true
+verify_jwt = true
+import_map = "./functions/accurate-list-sq/deno.json"
+entrypoint = "./functions/accurate-list-sq/index.ts"
+
 [functions.accurate-detail-so]
 enabled = true
 verify_jwt = true
