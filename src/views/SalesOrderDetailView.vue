@@ -2713,7 +2713,7 @@ const sendReminderEmail = async () => {
                         </div>
                         
                         <!-- HPO Number + Logistics Status Combined (Support Multiple POs) -->
-                        <div v-if="!isDisplayedFullyShipped(item) && getHpoEntries(item).length > 0" class="mt-1.5 space-y-2">
+                        <div v-if="!isDisplayedFullyShipped(item) && getNoteType(item.admin_note) !== 'stock' && getHpoEntries(item).length > 0" class="mt-1.5 space-y-2">
                             <template v-for="(hpo, idx) in getHpoEntries(item)" :key="idx">
                             <div v-show="!(getDisplayedQtyShipped(item) > 0 && getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya')" class="bg-white dark:bg-slate-800 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-3">
                                 <!-- HPO Number -->
@@ -2758,7 +2758,7 @@ const sendReminderEmail = async () => {
                         </div>
                         
                         <!-- Fallback HPO from DB (when not found in PO sync list, e.g. manual input/import) -->
-                        <div v-else-if="!isDisplayedFullyShipped(item) && item.logistics_hpo" class="mt-1.5 bg-white dark:bg-slate-800 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-3">
+                        <div v-else-if="!isDisplayedFullyShipped(item) && getNoteType(item.admin_note) !== 'stock' && item.logistics_hpo" class="mt-1.5 bg-white dark:bg-slate-800 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-3">
                             <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-gray-200 dark:border-gray-700">
                                 <ShoppingCart class="w-4 h-4 text-green-600 dark:text-green-400" />
                                 <span class="text-xs font-bold text-gray-600 dark:text-gray-400">HPO:</span>
@@ -3020,7 +3020,7 @@ const sendReminderEmail = async () => {
                   </div>
 
                   <!-- HPO List -->
-                  <div v-if="!isDisplayedFullyShipped(item) && getHpoEntries(item).length > 0" class="space-y-2">
+                  <div v-if="!isDisplayedFullyShipped(item) && getNoteType(item.admin_note) !== 'stock' && getHpoEntries(item).length > 0" class="space-y-2">
                     <div v-for="(hpo, idx) in getHpoEntries(item)" :key="idx" 
                          v-show="!(getDisplayedQtyShipped(item) > 0 && getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya')"
                          class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
@@ -3063,7 +3063,7 @@ const sendReminderEmail = async () => {
                   </div>
 
                   <!-- Fallback HPO from DB (imported status/manual PO) -->
-                  <div v-else-if="!isDisplayedFullyShipped(item) && item.logistics_hpo" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
+                  <div v-else-if="!isDisplayedFullyShipped(item) && getNoteType(item.admin_note) !== 'stock' && item.logistics_hpo" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
                     <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-slate-100 dark:border-slate-700">
                       <ShoppingCart class="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
                       <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">PO Siemens</span>

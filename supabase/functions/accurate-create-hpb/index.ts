@@ -168,7 +168,6 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
-
     throw new Error('Action tidak valid!')
 
   } catch (error) {

@@ -3,9 +3,17 @@
     <!-- Header Section -->
     <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+        <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-3">
           <ShoppingCart class="w-6 h-6 text-amber-500" />
-          Rencana Pembelian (Keranjang)
+          <span>Rencana Pembelian</span>
+          <!-- Compact HPB preview badge -->
+          <span 
+            v-if="items.length > 0" 
+            class="text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full font-mono font-extrabold border border-amber-500/25 flex items-center gap-1 shrink-0"
+          >
+            <Loader2 v-if="isFetchingGeneralHpb" class="w-3 h-3 animate-spin text-amber-500" />
+            <span>Next HPB: {{ isFetchingGeneralHpb ? 'Checking...' : (generalProposedHpb || 'N/A') }}</span>
+          </span>
         </h1>
         <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
           Daftar item yang perlu/kurang dipesan. Rencana ini dapat dilihat dan dikelola oleh seluruh tim.
@@ -27,7 +35,7 @@
           @click="openHpbModalForAll"
         >
           <Send class="w-4 h-4" />
-          <span>Kirim ke HPB Accurate</span>
+          <span>Kirim ke HPB {{ generalProposedHpb ? '(' + generalProposedHpb + ')' : '' }}</span>
         </Button>
       </div>
     </div>
@@ -155,9 +163,17 @@
                   class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/40 dark:hover:bg-slate-800/10 transition-colors"
                 >
                   <!-- SKU -->
-                  <TableCell class="font-bold text-slate-900 dark:text-white text-xs align-middle pl-10 font-mono tracking-tight">
-                    {{ item.item_code }}
-                  </TableCell>
+                  <TableCell class="align-middle pl-10">
+                     <div 
+                       @click="copyToClipboard(item.item_code)"
+                       class="group/sku inline-flex items-center gap-1.5 cursor-pointer text-slate-900 dark:text-white hover:text-amber-500 dark:hover:text-amber-400 transition-colors font-mono font-bold text-xs tracking-tight select-all"
+                       title="Klik untuk menyalin SKU"
+                     >
+                       <span>{{ item.item_code }}</span>
+                       <Copy v-if="copiedSku !== item.item_code" class="w-3 h-3 text-slate-400 opacity-0 group-hover/sku:opacity-100 transition-opacity shrink-0" />
+                       <Check v-else class="w-3 h-3 text-green-500 animate-in zoom-in duration-200 shrink-0" />
+                     </div>
+                   </TableCell>
 
                   <!-- Description -->
                   <TableCell class="text-xs text-slate-600 dark:text-slate-400 align-middle max-w-xs truncate" :title="item.item_name">
@@ -185,14 +201,26 @@
 
                   <!-- Actions -->
                   <TableCell class="text-right pr-6 align-middle">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      class="h-8 w-8 p-0 rounded-lg border-slate-200 dark:border-slate-800 text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-900/30 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all"
-                      @click="deleteItem(item)"
-                    >
-                      <Trash2 class="w-4 h-4" />
-                    </Button>
+                    <div class="flex items-center justify-end gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        class="h-8 px-2.5 rounded-lg border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-900/30 hover:bg-blue-50 dark:hover:bg-blue-950/20 transition-all text-xs font-semibold flex items-center gap-1.5 shadow-sm"
+                        @click="checkStockAvailability(item.item_code)"
+                      >
+                        <Boxes class="w-4 h-4 text-blue-500" />
+                        <span>Cek Stok</span>
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        class="h-8 w-8 p-0 rounded-lg border-slate-200 dark:border-slate-800 text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-900/30 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all shadow-sm"
+                        @click="deleteItem(item)"
+                      >
+                        <Trash2 class="w-4 h-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               </template>
@@ -229,9 +257,15 @@
                 <!-- SKU & Crosscheck -->
                 <div class="flex items-start justify-between gap-2">
                   <div>
-                    <span class="text-xs font-bold text-slate-900 dark:text-white block font-mono">
-                      {{ item.item_code }}
-                    </span>
+                    <div 
+                      @click="copyToClipboard(item.item_code)"
+                      class="group/sku inline-flex items-center gap-1.5 cursor-pointer text-slate-900 dark:text-white hover:text-amber-500 dark:hover:text-amber-400 transition-colors font-mono font-bold text-xs tracking-tight select-all"
+                      title="Klik untuk menyalin SKU"
+                    >
+                      <span>{{ item.item_code }}</span>
+                      <Copy v-if="copiedSku !== item.item_code" class="w-3 h-3 text-slate-400 opacity-0 group-hover/sku:opacity-100 transition-opacity shrink-0" />
+                      <Check v-else class="w-3 h-3 text-green-500 animate-in zoom-in duration-200 shrink-0" />
+                    </div>
                     <span class="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 block max-w-[200px] truncate">
                       {{ item.item_name }}
                     </span>
@@ -264,18 +298,28 @@
                   </span>
                 </div>
 
-                <!-- Card Actions -->
-                <div class="flex items-center justify-end pt-1">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    class="h-7 px-2.5 rounded-lg border-slate-200 dark:border-slate-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 text-[10px] font-bold flex items-center gap-1 shadow-sm"
-                    @click="deleteItem(item)"
-                  >
-                    <Trash2 class="w-3.5 h-3.5" />
-                    Hapus
-                  </Button>
-                </div>
+                 <!-- Card Actions -->
+                 <div class="flex items-center justify-end gap-2 pt-1">
+                   <Button
+                     size="sm"
+                     variant="outline"
+                     class="h-7 px-2.5 rounded-lg border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-[10px] font-bold flex items-center gap-1 shadow-sm"
+                     @click="checkStockAvailability(item.item_code)"
+                   >
+                     <Boxes class="w-3.5 h-3.5 text-blue-500" />
+                     Cek Stok
+                   </Button>
+
+                   <Button
+                     size="sm"
+                     variant="outline"
+                     class="h-7 px-2.5 rounded-lg border-slate-200 dark:border-slate-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 text-[10px] font-bold flex items-center gap-1 shadow-sm"
+                     @click="deleteItem(item)"
+                   >
+                     <Trash2 class="w-3.5 h-3.5" />
+                     Hapus
+                   </Button>
+                 </div>
               </div>
             </div>
           </div>
@@ -309,32 +353,6 @@
         </div>
       </div>
     </Card>
-
-    <!-- Info Section for Next HPB Number -->
-    <div v-if="items.length > 0" class="bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/20 dark:border-amber-500/30 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-      <div class="flex items-start gap-3">
-        <div class="w-9 h-9 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-600 dark:text-amber-400 shrink-0">
-          <Send class="w-4 h-4" />
-        </div>
-        <div>
-          <h4 class="text-xs font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">Nomor HPB Selanjutnya yang Akan Dibuat</h4>
-          <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Jika dikirimkan ke Accurate, transaksi akan terbuat menggunakan penomoran otomatis bulan ini.
-          </p>
-        </div>
-      </div>
-      <div class="flex items-center gap-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2 sm:self-center">
-        <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Proposed HPB:</span>
-        <div class="flex items-center gap-1.5 min-w-[120px]">
-          <span v-if="isFetchingGeneralHpb" class="text-xs text-slate-400 font-bold flex items-center gap-1">
-            <Loader2 class="w-3.5 h-3.5 animate-spin" /> Pengecekan...
-          </span>
-          <span v-else class="text-xs text-amber-600 dark:text-amber-400 font-extrabold font-mono">
-            {{ generalProposedHpb || 'Tidak Tersedia' }}
-          </span>
-        </div>
-      </div>
-    </div>
 
     <!-- Clear Cart Confirmation Dialog -->
     <div v-if="showClearConfirm" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -484,6 +502,161 @@
       </div>
     </div>
   </div>
+
+  <!-- Modal: Rincian Ketersediaan Stok Penjualan -->
+  <div v-if="showStockModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <!-- Backdrop -->
+    <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" @click="showStockModal = false"></div>
+    
+    <!-- Modal Content -->
+    <div class="relative bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800/80 rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in-95 duration-200">
+      
+      <!-- Modal Header -->
+      <div class="p-6 border-b border-slate-100 dark:border-slate-800/60 flex items-start justify-between">
+        <div class="flex-1 text-center">
+          <span class="text-[10px] tracking-widest font-black uppercase text-slate-400 dark:text-slate-500 block">PT HOKIINDO RAYA</span>
+          <h3 class="text-lg font-black text-rose-600 dark:text-rose-400 tracking-tight mt-1">Rincian Ketersediaan Stok Penjualan</h3>
+          <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 mt-1 block">Per Tgl. {{ new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }) }}</span>
+        </div>
+        <button 
+          @click="showStockModal = false"
+          class="absolute right-4 top-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+        >
+          <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Loading State -->
+      <div v-if="isFetchingStock" class="p-12 flex flex-col items-center justify-center gap-3">
+        <Loader2 class="w-8 h-8 text-blue-500 animate-spin" />
+        <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Menghubungkan ke Accurate Online...</span>
+      </div>
+
+      <!-- Content State -->
+      <div v-else-if="stockData" class="flex-1 overflow-y-auto p-6 space-y-6">
+        
+        <!-- Meta Details Info -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-50 dark:bg-slate-900/30 p-4 rounded-xl border border-slate-100 dark:border-slate-800/50">
+          <!-- Left Col (Item Basic) -->
+          <div class="space-y-2 text-xs">
+            <div class="flex items-start">
+              <span class="w-24 font-bold text-slate-400 uppercase tracking-wider text-[10px]">Kode Barang</span>
+              <span class="font-mono font-black text-slate-900 dark:text-white">: {{ stockData.item_code }}</span>
+            </div>
+            <div class="flex items-start">
+              <span class="w-24 font-bold text-slate-400 uppercase tracking-wider text-[10px]">Nama Barang</span>
+              <span class="font-bold text-slate-800 dark:text-slate-300">: {{ stockData.item_name }}</span>
+            </div>
+            <div class="flex items-start">
+              <span class="w-24 font-bold text-slate-400 uppercase tracking-wider text-[10px]">Satuan</span>
+              <span class="font-bold text-slate-800 dark:text-slate-300">: {{ stockData.unit_name }}</span>
+            </div>
+          </div>
+
+          <!-- Right Col (Stock Levels) -->
+          <div class="space-y-2 text-xs border-t md:border-t-0 md:border-l border-slate-200 dark:border-slate-800 pt-3 md:pt-0 md:pl-6">
+            <div class="flex justify-between items-center">
+              <span class="font-bold text-slate-500 text-[10px] uppercase">Stok Gudang</span>
+              <span class="font-black text-slate-900 dark:text-white bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded">{{ stockData.stock_warehouse }}</span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="font-bold text-slate-500 text-[10px] uppercase">Dipesan (PO)</span>
+              <span class="font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 px-2 py-0.5 rounded">+ {{ stockData.stock_ordered }}</span>
+            </div>
+            <div class="flex justify-between items-center">
+              <span class="font-bold text-slate-500 text-[10px] uppercase">Dijual (SO)</span>
+              <span class="font-black text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/30 px-2 py-0.5 rounded">- {{ stockData.stock_sold }}</span>
+            </div>
+            <div class="flex justify-between items-center border-t border-slate-200 dark:border-slate-800 pt-2 mt-1">
+              <span class="font-black text-slate-700 dark:text-slate-300 text-[10px] uppercase">Stok Dapat Dijual</span>
+              <span class="font-black text-white px-2.5 py-0.5 rounded-lg" :class="stockData.stock_available > 0 ? 'bg-green-600' : 'bg-rose-600'">{{ stockData.stock_available }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Reference Table -->
+        <div class="space-y-2">
+          <h4 class="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">Mutasi Detail Persediaan & Reservasi</h4>
+          <div class="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm">
+            <Table>
+              <TableHeader class="bg-slate-50 dark:bg-slate-900/50">
+                <TableRow class="border-b border-slate-200 dark:border-slate-800">
+                  <TableHead class="text-xs font-bold text-slate-500 dark:text-slate-400">No Referensi</TableHead>
+                  <TableHead class="text-xs font-bold text-slate-500 dark:text-slate-400">Tgl Estimasi</TableHead>
+                  <TableHead class="text-xs font-bold text-slate-500 dark:text-slate-400">Nama Referensi</TableHead>
+                  <TableHead class="text-xs font-bold text-slate-500 dark:text-slate-400 text-center">Dipesan (PO)</TableHead>
+                  <TableHead class="text-xs font-bold text-slate-500 dark:text-slate-400 text-center">Dijual (SO)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody class="bg-white dark:bg-slate-950/20">
+                <TableRow 
+                  v-for="(ref, index) in stockData.references" 
+                  :key="index"
+                  class="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/10 transition-colors text-xs"
+                >
+                  <!-- No Referensi -->
+                  <TableCell class="font-bold">
+                    <span 
+                      class="px-2 py-0.5 rounded font-mono font-extrabold text-[10px]"
+                      :class="ref.type === 'PO' ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400' : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400'"
+                    >
+                      {{ ref.no_referensi }}
+                    </span>
+                  </TableCell>
+                  
+                  <!-- Tgl Estimasi -->
+                  <TableCell class="text-slate-600 dark:text-slate-400 font-medium">
+                    {{ ref.tgl_estimasi }}
+                  </TableCell>
+                  
+                  <!-- Nama Referensi -->
+                  <TableCell class="font-bold text-slate-700 dark:text-slate-300 max-w-[200px] truncate" :title="ref.nama_referensi">
+                    {{ ref.nama_referensi }}
+                  </TableCell>
+                  
+                  <!-- Dipesan -->
+                  <TableCell class="text-center font-extrabold" :class="ref.dipesan > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-slate-300 dark:text-slate-700'">
+                    {{ ref.dipesan }}
+                  </TableCell>
+                  
+                  <!-- Dijual -->
+                  <TableCell class="text-center font-extrabold" :class="ref.dijual > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-300 dark:text-slate-700'">
+                    {{ ref.dijual }}
+                  </TableCell>
+                </TableRow>
+                
+                <TableRow v-if="stockData.references.length === 0">
+                  <TableCell colspan="5" class="text-center py-8 text-slate-400 dark:text-slate-600 font-bold">
+                    Tidak ada reservasi aktif (SO/PO) untuk barang ini.
+                  </TableCell>
+                </TableRow>
+                
+                <!-- Totals Row -->
+                <TableRow v-if="stockData.references.length > 0" class="bg-slate-50/50 dark:bg-slate-900/20 font-bold border-t border-slate-200 dark:border-slate-800">
+                  <TableCell colspan="3" class="text-right uppercase tracking-wider text-[10px] text-slate-500 pr-6">Total</TableCell>
+                  <TableCell class="text-center text-blue-600 dark:text-blue-400 font-black border-l border-slate-100 dark:border-slate-800/40">{{ stockData.stock_ordered }}</TableCell>
+                  <TableCell class="text-center text-rose-600 dark:text-rose-400 font-black border-l border-slate-100 dark:border-slate-800/40">{{ stockData.stock_sold }}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-6 py-4 bg-slate-50 dark:bg-slate-950/40 border-t border-slate-100 dark:border-slate-800/60 flex justify-end">
+        <Button 
+          variant="outline" 
+          class="h-9 px-4 rounded-xl border-slate-200 dark:border-slate-800 font-bold text-xs bg-white dark:bg-slate-950"
+          @click="showStockModal = false"
+        >
+          Tutup
+        </Button>
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup>
@@ -502,7 +675,10 @@ import {
   Clock,
   ChevronDown,
   ChevronRight,
-  Send
+  Send,
+  Copy,
+  Check,
+  Boxes
 } from 'lucide-vue-next'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -530,6 +706,11 @@ const isSendingHpb = ref(false)
 const selectedHpbItemIds = ref([])
 const generalProposedHpb = ref('')
 const isFetchingGeneralHpb = ref(false)
+const copiedSku = ref('')
+const showStockModal = ref(false)
+const isFetchingStock = ref(false)
+const stockData = ref(null)
+const activeStockSku = ref('')
 const activeTab = ref('all') // 'all', 'pending', 'checked'
 const currentPage = ref(1)
 const itemsPerPage = 15
@@ -829,6 +1010,46 @@ const sendToHpb = async () => {
     alert('Gagal mengirim ke HPB Accurate: ' + err.message)
   } finally {
     isSendingHpb.value = false
+  }
+}
+
+// Copy text to clipboard helper
+const copyToClipboard = async (text) => {
+  try {
+    await navigator.clipboard.writeText(text)
+    copiedSku.value = text
+    setTimeout(() => {
+      if (copiedSku.value === text) {
+        copiedSku.value = ''
+      }
+    }, 1500)
+  } catch (err) {
+    console.error('Failed to copy SKU:', err)
+  }
+}
+
+// Get Stock Availability helper
+const checkStockAvailability = async (itemCode) => {
+  activeStockSku.value = itemCode
+  stockData.value = null
+  showStockModal.value = true
+  isFetchingStock.value = true
+  
+  try {
+    const { data, error } = await supabase.functions.invoke('get-stock-availability', {
+      body: { item_code: itemCode }
+    })
+    
+    if (error) throw error
+    if (!data || !data.s) throw new Error(data?.message || 'Gagal memuat ketersediaan stok')
+    
+    stockData.value = data.data
+  } catch (err) {
+    console.error('Failed to get stock availability:', err)
+    alert('Gagal mengambil ketersediaan stok dari Accurate: ' + err.message)
+    showStockModal.value = false
+  } finally {
+    isFetchingStock.value = false
   }
 }
 
