@@ -135,29 +135,33 @@ const fetchTrackingData = async () => {
 
         soItems.value = d.detailItem.map(item => {
             const itemCode = item.item?.no || item.detailName;
-            const logistik = shipmentsMap[itemCode] || {};
             
             const note = item.detailNotes || '';
             const lowerNote = note.toLowerCase();
-            let isReady = false;
+            let isStock = false;
             
-            // 1. Cek dari logistik status
-            if (['Already in Hokiindo Raya'].includes(logistik.status)) {
-                isReady = true;
-            }
-            
-            // 2. Cek dari note (seperti di admin)
+            // Cek apakah item adalah STOCK
             if (!lowerNote.includes('no stock') && !lowerNote.includes('non stock') && !lowerNote.includes('kosong') && !lowerNote.includes('indent')) {
                 const match = lowerNote.match(/(?:stock|stok|sisa)\s*[:.]?\s*(\d+)/);
                 if (!match && (lowerNote.includes('stock') || lowerNote.includes('stok') || lowerNote.includes('ready'))) {
-                    isReady = true;
+                    isStock = true;
                 } else if (match) {
                     const stockQty = parseInt(match[1]);
                     const qtyRemaining = item.quantity - (item.shipQuantity || 0);
                     if (stockQty >= qtyRemaining && qtyRemaining > 0) {
-                        isReady = true;
+                        isStock = true;
                     }
                 }
+            }
+
+            // Jika item adalah STOCK, abaikan data logistik dari DB karena tidak ada HPO impor untuk stock
+            const logistik = isStock ? {} : (shipmentsMap[itemCode] || {});
+            
+            let isReady = isStock;
+            
+            // Jika bukan stock, cek dari status logistik apakah sudah sampai di Hokiindo
+            if (!isStock && ['Already in Hokiindo Raya'].includes(logistik.status)) {
+                isReady = true;
             }
             
             return {
@@ -165,7 +169,7 @@ const fetchTrackingData = async () => {
                 code: itemCode,
                 qty_order: item.quantity,
                 qty_shipped: item.shipQuantity || 0,
-                status: logistik.status || 'NO ACTION',
+                status: isStock ? 'Ready Stock' : (logistik.status || 'NO ACTION'),
                 is_ready: isReady,
                 hpo: logistik.hpo || null,
                 exwork_date: logistik.exwork_date || null,
