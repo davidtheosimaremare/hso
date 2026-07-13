@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { 
   Loader2, AlertCircle, FileText, ArrowLeft, Calendar, 
-  FileSpreadsheet, Download, ChevronRight 
+  FileSpreadsheet, Download, ChevronRight, ExternalLink
 } from 'lucide-vue-next'
 import * as XLSX from 'xlsx'
 import { Button } from '@/components/ui/button'
@@ -110,6 +110,17 @@ const getStatusClass = (status) => {
 
 const goBack = () => {
   router.push('/hpb')
+}
+
+const navigateToHso = (hsoNumber) => {
+  const cleanNumber = hsoNumber.toUpperCase().replace(/\//g, '-')
+  router.push(`/sales-orders/${cleanNumber}`)
+}
+
+const extractHso = (note) => {
+  if (!note) return null
+  const match = note.match(/HSO\/\d{2}\/\d{2}\/\d+/i)
+  return match ? match[0] : null
 }
 
 onMounted(() => {
@@ -221,7 +232,26 @@ onMounted(() => {
                 <td class="py-3.5 px-4 font-medium text-slate-900 dark:text-white leading-normal">{{ item.item?.name || item.detailName || '-' }}</td>
                 <td class="py-3.5 px-4 text-right font-black text-slate-900 dark:text-white text-sm">{{ item.quantity || 0 }}</td>
                 <td class="py-3.5 px-4 text-center font-bold text-slate-600 dark:text-slate-400">{{ item.unit?.name || '-' }}</td>
-                <td class="py-3.5 px-4 font-mono font-semibold text-slate-600 dark:text-slate-400">{{ item.detailNotes || '-' }}</td>
+                <td class="py-3.5 px-4 font-mono font-semibold text-slate-600 dark:text-slate-400">
+                  <template v-if="extractHso(item.detailNotes)">
+                    <span class="inline-flex items-center gap-1">
+                      <a 
+                        href="#"
+                        @click.prevent="navigateToHso(extractHso(item.detailNotes))"
+                        class="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 hover:underline transition-colors inline-flex items-center gap-0.5"
+                      >
+                        {{ extractHso(item.detailNotes) }}
+                        <ExternalLink class="w-3 h-3" />
+                      </a>
+                      <span v-if="item.detailNotes.replace(extractHso(item.detailNotes), '').trim()" class="text-slate-500 font-sans font-normal text-xs ml-1">
+                        {{ item.detailNotes.replace(extractHso(item.detailNotes), '').trim() }}
+                      </span>
+                    </span>
+                  </template>
+                  <template v-else>
+                    <span class="text-slate-400 dark:text-slate-600">{{ item.detailNotes || '-' }}</span>
+                  </template>
+                </td>
               </tr>
             </tbody>
           </table>

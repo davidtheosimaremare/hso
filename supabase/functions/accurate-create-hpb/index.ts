@@ -43,7 +43,63 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     const authHeaders = await buildAccurateHeaders()
-    const { action, number, items, id } = await req.json().catch(() => ({}))
+    const { action, number, items, id, soNumber } = await req.json().catch(() => ({}))
+
+    if (action === 'find-hpb-by-so') {
+      if (!soNumber) throw new Error('soNumber wajib ditentukan!')
+
+      // 1. Fetch recent PRs from Accurate
+      const listUrl = `${BASE_API}/purchase-requisition/list.do?fields=id,number,transDate,statusName&sp.pageSize=100&sp.sort=transDate|desc`
+      const res = await fetch(listUrl, { headers: authHeaders })
+      
+      if (!res.ok) {
+        const errText = await res.text()
+        throw new Error(`Gagal mengambil list PR dari Accurate: ${errText}`)
+      }
+
+      const json = await res.json()
+      const prList = json.d || []
+
+      // Filter: Keep only PRs that are active (Draft, Outstanding, Partial)
+      const activePrs = prList.filter((pr: any) => {
+        const status = (pr.statusName || '').toLowerCase()
+        return status.includes('draft') || status.includes('outstanding') || status.includes('partial') || status.includes('menunggu') || status.includes('sebagian')
+      })
+
+      // Fetch details in parallel
+      const matches: any[] = []
+      
+      const fetchDetail = async (pr: any) => {
+        try {
+          const detailUrl = `${BASE_API}/purchase-requisition/detail.do?id=${pr.id}`
+          const dres = await fetch(detailUrl, { headers: authHeaders })
+          if (dres.ok) {
+            const djson = await dres.json()
+            if (djson.s && djson.d && djson.d.detailItem) {
+              for (const item of djson.d.detailItem) {
+                const note = (item.detailNotes || '').trim()
+                if (note.toLowerCase().includes(soNumber.toLowerCase())) {
+                  matches.push({
+                    itemCode: item.item?.no,
+                    hpbNumber: pr.number,
+                    hpbId: pr.id,
+                    statusName: pr.statusName
+                  })
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error(`Failed to fetch detail for PR ${pr.number}:`, err.message)
+        }
+      }
+
+      await Promise.all(activePrs.map(fetchDetail))
+
+      return new Response(JSON.stringify({ s: true, matches }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
 
     if (action === 'list-hpb') {
       // Fetch all PRs from Accurate page by page (page size 100)

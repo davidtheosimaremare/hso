@@ -54,6 +54,7 @@ const hpoMapping = ref({}) // Mapping item_code -> HPO number dari Accurate PO
 const hpoDetails = ref([]) // Full PO details with quantities
 const hdoMapping = ref({}) // Mapping item_code -> HDO number dari Accurate DO
 const uniqueTrackingCode = ref(null)
+const linkedHpbs = ref([])
 const isLinkCopied = ref(false)
 const isSoNumberCopied = ref(false)
 const errorMessage = ref(null)
@@ -77,6 +78,10 @@ const fetchCartItems = async () => {
 
 const isInCart = (itemCode) => {
   return cartItems.value.some(c => c.item_code === itemCode)
+}
+
+const hasHpb = (itemCode) => {
+  return linkedHpbs.value.some(h => h.itemCode === itemCode)
 }
 
 const needsOrdering = (item) => {
@@ -1327,6 +1332,21 @@ const applyExcelUpdates = async () => {
   fetchDetail()
 }
 
+const fetchLinkedHpb = async () => {
+  if (!soDetail.value?.number) return
+  try {
+    const { data, error } = await supabase.functions.invoke('accurate-create-hpb', {
+      body: { action: 'find-hpb-by-so', soNumber: soDetail.value.number }
+    })
+    if (!error && data?.s) {
+      linkedHpbs.value = data.matches || []
+      console.log('Linked HPBs loaded:', linkedHpbs.value)
+    }
+  } catch (err) {
+    console.error('Failed to fetch linked HPBs:', err)
+  }
+}
+
 // --- 2. DATA FETCHING ---
 const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
   errorMessage.value = null
@@ -1519,6 +1539,7 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
       invoices: history.filter(h => h.historyType === 'SI').map(h => ({ no: h.historyNumber, date: h.historyDate, status: h.approvalStatus }))
     }
     await fetchCartItems()
+    fetchLinkedHpb()
   } catch (err) {
     console.error("Fetch Error:", err)
     errorMessage.value = err.message || "Terjadi kesalahan tidak diketahui."
@@ -1741,6 +1762,15 @@ const getRowStatus = (item) => {
         return { text: `KURANG DIPESAN (${shortage} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: AlertTriangle }
       }
     } else if (!hasHpoInDb) {
+      const matchedHpb = linkedHpbs.value.find(h => h.itemCode === item.code)
+      if (matchedHpb) {
+        return { 
+          text: `HPB: ${matchedHpb.hpbNumber}`, 
+          class: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-850', 
+          icon: FileText,
+          hpbId: matchedHpb.hpbId 
+        }
+      }
       if (isInCart(item.code)) {
         return { text: `DI KERANJANG (PERLU ${item.qty_to_order} ${item.unit})`, class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: ShoppingCart }
       }
@@ -2671,7 +2701,15 @@ const sendReminderEmail = async () => {
                     <!-- Status tampil langsung jika stock cukup, atau setelah sync selesai -->
                     <div v-else class="space-y-2">
                         <!-- General Status Badge -->
-                        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md border text-xs font-bold shadow-sm" :class="getRowStatus(item).class">
+                        <div v-if="getRowStatus(item).hpbId"
+                             @click="router.push('/hpb/' + getRowStatus(item).hpbId)"
+                             class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md border text-xs font-bold shadow-sm cursor-pointer hover:opacity-80 hover:scale-105 active:scale-95 transition-all" 
+                             :class="getRowStatus(item).class"
+                        >
+                            <component :is="getRowStatus(item).icon" class="w-3.5 h-3.5" />
+                            {{ getRowStatus(item).text }}
+                        </div>
+                        <div v-else class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md border text-xs font-bold shadow-sm" :class="getRowStatus(item).class">
                             <component :is="getRowStatus(item).icon" class="w-3.5 h-3.5" />
                             {{ getRowStatus(item).text }}
                         </div>
@@ -2828,7 +2866,7 @@ const sendReminderEmail = async () => {
                   <TableCell class="text-right pr-6 align-top pt-3">
                     <div class="flex items-center gap-2 justify-end">
                       <Button 
-                        v-if="!isSyncing && needsOrdering(item) && isInCart(item.code)" 
+                        v-if="!isSyncing && needsOrdering(item) && !hasHpb(item.code) && isInCart(item.code)" 
                         size="sm" 
                         variant="outline" 
                         class="h-8 px-2.5 rounded border-green-300 dark:border-green-800 text-green-600 dark:text-green-400 bg-green-50/30 dark:bg-green-950/10 cursor-default pointer-events-none transition-all flex items-center gap-1 shadow-sm"
@@ -2837,7 +2875,7 @@ const sendReminderEmail = async () => {
                         <span class="text-xs font-bold">Di Keranjang</span>
                       </Button>
                       <Button 
-                        v-else-if="!isSyncing && needsOrdering(item)" 
+                        v-else-if="!isSyncing && needsOrdering(item) && !hasHpb(item.code)" 
                         size="sm" 
                         variant="outline" 
                         class="h-8 px-2.5 rounded border-amber-300 dark:border-amber-700/50 text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-all flex items-center gap-1 bg-white dark:bg-slate-800 shadow-sm" 
@@ -2901,7 +2939,7 @@ const sendReminderEmail = async () => {
                 <!-- Action Button (Edit) -->
                 <div class="flex items-center gap-1.5 shrink-0">
                   <Button 
-                    v-if="!isSyncing && needsOrdering(item) && isInCart(item.code)" 
+                    v-if="!isSyncing && needsOrdering(item) && !hasHpb(item.code) && isInCart(item.code)" 
                     size="sm" 
                     variant="outline" 
                     class="h-8 w-8 p-0 rounded-lg border-green-300 dark:border-green-800 text-green-600 dark:text-green-400 bg-green-50/30 dark:bg-green-950/10 cursor-default pointer-events-none flex items-center justify-center shadow-sm"
@@ -2910,7 +2948,7 @@ const sendReminderEmail = async () => {
                     <CheckCircle2 class="w-3.5 h-3.5" />
                   </Button>
                   <Button 
-                    v-else-if="!isSyncing && needsOrdering(item)" 
+                    v-else-if="!isSyncing && needsOrdering(item) && !hasHpb(item.code)" 
                     size="sm" 
                     variant="outline" 
                     class="h-8 w-8 p-0 rounded-lg border-amber-300 dark:border-amber-700/50 text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/20 bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm" 
@@ -2980,7 +3018,15 @@ const sendReminderEmail = async () => {
                 <div v-else class="space-y-3">
                   <!-- General Status Badge -->
                   <div>
-                    <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold shadow-sm" :class="getRowStatus(item).class">
+                    <div v-if="getRowStatus(item).hpbId"
+                         @click="router.push('/hpb/' + getRowStatus(item).hpbId)"
+                         class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold shadow-sm cursor-pointer hover:opacity-80 transition-all" 
+                         :class="getRowStatus(item).class"
+                    >
+                      <component :is="getRowStatus(item).icon" class="w-4 h-4" />
+                      {{ getRowStatus(item).text }}
+                    </div>
+                    <div v-else class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold shadow-sm" :class="getRowStatus(item).class">
                       <component :is="getRowStatus(item).icon" class="w-4 h-4" />
                       {{ getRowStatus(item).text }}
                     </div>
