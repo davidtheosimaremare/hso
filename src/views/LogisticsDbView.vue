@@ -11,7 +11,8 @@ import {
 import { 
   Database, Loader2, UploadCloud, FileSpreadsheet, Trash2, 
   CheckCircle2, AlertTriangle, Search, ChevronLeft, ChevronRight,
-  ArrowUpDown, X, RefreshCw
+  ArrowUpDown, X, RefreshCw, ChevronDown, ChevronRight as ChevronRightIcon,
+  Download, Link
 } from 'lucide-vue-next'
 import {
   Dialog,
@@ -66,21 +67,20 @@ const fetchTrackingStats = async () => {
 const fetchTrackingData = async () => {
   isLoading.value = true
   try {
+    const from = (currentPage.value - 1) * pageSize
+    const to = from + pageSize - 1
+    
     let query = supabase
       .from('raw_forwarder_tracking')
       .select('*', { count: 'exact' })
+      .order('hpo_number', { ascending: false })
     
     if (searchQuery.value.trim()) {
       const q = searchQuery.value.trim()
       query = query.or(`hpo_number.ilike.%${q}%,item_code.ilike.%${q}%`)
     }
     
-    const from = (currentPage.value - 1) * pageSize
-    const to = from + pageSize - 1
-    
-    const { data, count, error } = await query
-      .order('updated_at', { ascending: false })
-      .range(from, to)
+    const { data, error, count } = await query.range(from, to)
       
     if (error) throw error
     
@@ -93,19 +93,273 @@ const fetchTrackingData = async () => {
   }
 }
 
-// Watch for search and page changes
+// Watch for search changes
 watch(searchQuery, () => {
   currentPage.value = 1
   fetchTrackingData()
 })
 
-const handlePageChange = (page) => {
+watch(currentPage, () => {
+  fetchTrackingData()
+})
+
+const totalPages = computed(() => Math.max(1, Math.ceil(totalRows.value / pageSize)))
+
+const visiblePages = computed(() => {
+  const maxVisible = 5
+  const pages = []
+  
+  if (totalPages.value <= maxVisible) {
+    for (let i = 1; i <= totalPages.value; i++) pages.push(i)
+  } else {
+    const half = Math.floor(maxVisible / 2)
+    let start = currentPage.value - half
+    let end = currentPage.value + half
+    
+    if (start < 1) {
+      end += 1 - start
+      start = 1
+    }
+    if (end > totalPages.value) {
+      start -= end - totalPages.value
+      end = totalPages.value
+    }
+    
+    start = Math.max(1, start)
+    
+    for (let i = start; i <= end; i++) pages.push(i)
+  }
+  
+  return pages
+})
+
+const goToPage = (page) => {
   if (page < 1 || page > totalPages.value) return
   currentPage.value = page
-  fetchTrackingData()
 }
 
-const totalPages = computed(() => Math.ceil(totalRows.value / pageSize))
+const nextPage = () => goToPage(currentPage.value + 1)
+const prevPage = () => goToPage(currentPage.value - 1)
+
+// --- HSO CACHE & TREE STATE ---
+const hsoCache = ref({})
+const expandedRows = ref({})
+
+const toggleRowExpand = (rowId) => {
+  expandedRows.value[rowId] = !expandedRows.value[rowId]
+}
+
+const parseHpoSortKey = (hpo) => {
+  const h = String(hpo).trim().toUpperCase()
+  const m = h.match(/HP[O0]\/(\d{2})\/(\d{2})\/(\d+)/)
+  if (m) {
+    const year = 2000 + parseInt(m[1])
+    const month = parseInt(m[2])
+    const inc = parseInt(m[3])
+    return { year, month, inc, sort: year * 10000 + month * 1000 + inc }
+  }
+  return { year: 0, month: 0, inc: 0, sort: 0 }
+}
+
+const sortByHpo = (data) => {
+  if (!data || !data.length) return []
+  const sorted = [...data].sort((a, b) => {
+    const ka = parseHpoSortKey(a.hpo_number)
+    const kb = parseHpoSortKey(b.hpo_number)
+    return kb.sort - ka.sort
+  })
+  return sorted
+}
+
+const fetchHsoReferences = async () => {
+  try {
+    console.log('[LogisticsDb] Starting fetch HSO references...')
+    
+    let allPoItems = []
+    let page = 0
+    const pageSize = 1000
+    let hasMore = true
+    
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('accurate_purchase_order_items')
+        .select('po_id, hso_number, item_code, detail_notes, quantity')
+        .range(page * pageSize, (page + 1) * pageSize - 1)
+      
+      if (error) {
+        console.error('[LogisticsDb] Query error:', error)
+        throw error
+      }
+      if (data && data.length > 0) {
+        allPoItems = allPoItems.concat(data)
+        if (data.length < pageSize) hasMore = false
+        else page++
+      } else {
+        hasMore = false
+      }
+    }
+    
+    console.log('[LogisticsDb] Fetched', allPoItems.length, 'PO items')
+    
+    if (allPoItems.length === 0) {
+      hsoCache.value = {}
+      return
+    }
+    
+    const poIds = [...new Set(allPoItems.map(item => item.po_id).filter(Boolean))]
+    console.log('[LogisticsDb] Unique PO IDs:', poIds.length)
+    
+    let poMap = {}
+    if (poIds.length > 0) {
+      const { data: pos, error: poError } = await supabase
+        .from('accurate_purchase_orders')
+        .select('id, number')
+        .in('id', poIds)
+      
+      if (poError) {
+        console.error('[LogisticsDb] PO fetch error:', poError)
+      } else if (pos) {
+        pos.forEach(po => {
+          poMap[po.id] = po.number
+        })
+        console.log('[LogisticsDb] Fetched', pos.length, 'POs')
+      }
+    }
+    
+    const cache = {}
+    
+    const extractHsos = (notes) => {
+      if (!notes) return []
+      const matches = String(notes).match(/HSO\/[\w\d\/-]+/gi)
+      return matches ? matches.map(m => m.replace(/\s/g, '').toUpperCase()) : []
+    }
+    
+    console.log('[LogisticsDb] Processing', allPoItems.length, 'PO items')
+    
+    allPoItems.forEach((item, idx) => {
+      const itemCode = String(item.item_code || '').trim()
+      if (!itemCode) return
+      
+      const quantity = item.quantity ? parseFloat(item.quantity) : 0
+      const hpoNumber = poMap[item.po_id] || ''
+      
+      const hsoList = new Set()
+      if (item.hso_number) {
+        const hso = String(item.hso_number).trim().toUpperCase()
+        hsoList.add(hso)
+        if (idx < 5) console.log(`[Item ${idx}] hso_number: ${hso}, hpo: ${hpoNumber}, qty: ${quantity}`)
+      }
+      
+      const fromNotes = extractHsos(item.detail_notes)
+      fromNotes.forEach(h => hsoList.add(h))
+      if (fromNotes.length > 0 && idx < 5) {
+        console.log(`[Item ${idx}] from notes: ${fromNotes.join(', ')}`)
+      }
+      
+      if (hsoList.size === 0) return
+      
+      const hsos = Array.from(hsoList)
+      
+      if (hpoNumber) {
+        const hpoKey = `${hpoNumber.toLowerCase()}||${itemCode.toLowerCase()}`
+        if (!cache[hpoKey]) cache[hpoKey] = {}
+        hsos.forEach(h => {
+          if (!cache[hpoKey][h]) {
+            cache[hpoKey][h] = quantity
+          } else {
+            cache[hpoKey][h] += quantity
+          }
+        })
+      }
+      
+      hsos.forEach(h => {
+        const itemOnlyKey = `*||${itemCode.toLowerCase()}`
+        if (!cache[itemOnlyKey]) cache[itemOnlyKey] = {}
+        if (!cache[itemOnlyKey][h]) {
+          cache[itemOnlyKey][h] = quantity
+        } else {
+          cache[itemOnlyKey][h] += quantity
+        }
+      })
+    })
+    
+    hsoCache.value = cache
+    console.log('[LogisticsDb] Cache ready:', Object.keys(cache).length, 'keys')
+    if (Object.keys(cache).length > 0) {
+      const sampleKey = Object.keys(cache)[0]
+      console.log('[LogisticsDb] Sample cache:', sampleKey, '=', cache[sampleKey])
+    }
+  } catch (err) {
+    console.error('Error fetching HSO references:', err)
+  }
+}
+
+const getHsoRefsForRow = (row) => {
+  const itemCode = String(row.item_code || '').trim().toLowerCase()
+  const hpoNumber = String(row.hpo_number || '').trim().toLowerCase()
+  
+  // Try direct match
+  const directKey = `${hpoNumber}||${itemCode}`
+  if (hsoCache.value[directKey]) {
+    return Object.entries(hsoCache.value[directKey]).map(([hsoNumber, quantity]) => ({
+      hsoNumber,
+      quantity
+    }))
+  }
+  
+  // Try item-only match (any HPO with this item_code)
+  const itemOnlyKey = `*||${itemCode}`
+  if (hsoCache.value[itemOnlyKey]) {
+    return Object.entries(hsoCache.value[itemOnlyKey]).map(([hsoNumber, quantity]) => ({
+      hsoNumber,
+      quantity
+    }))
+  }
+  
+  return []
+}
+
+const getTotalQtyForRow = (row) => {
+  const refs = getHsoRefsForRow(row)
+  return refs.reduce((sum, h) => sum + (h.quantity || 0), 0)
+}
+
+const getStockQtyForRow = (row) => {
+  const totalHpo = parseFloat(row.quantity) || 0
+  const totalHso = getTotalQtyForRow(row)
+  return Math.max(0, totalHpo - totalHso)
+}
+
+// --- EXCEL EXPORT ---
+const exportExcel = () => {
+  if (trackingData.value.length === 0) return
+  
+  const rows = trackingData.value.map(row => {
+    const hsoRefs = getHsoRefsForRow(row)
+    const hsoText = hsoRefs.map(h => h.quantity ? `${h.hsoNumber} (${h.quantity} pcs)` : h.hsoNumber).join(', ') || '-'
+    return {
+      'HPO': row.hpo_number,
+      'Kode Produk (SKU)': row.item_code,
+      'Qty': row.quantity || 0,
+      'Referensi HSO': hsoText,
+      'Status': row.status || '-',
+      'Ex-Works': row.exwork_waiting ? 'Waiting Confirmation' : (row.exwork_date || '-'),
+      'ETA JKT': row.eta_date || '-',
+      'Delivery Date': row.delivery_date || '-',
+      'Pembaruan': formatDateTime(row.updated_at)
+    }
+  })
+  
+  const ws = XLSX.utils.json_to_sheet(rows)
+  const wscols = [
+    { wch: 22 }, { wch: 22 }, { wch: 28 }, { wch: 18 },
+    { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 20 }
+  ]
+  ws['!cols'] = wscols
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Logistik')
+  XLSX.writeFile(wb, `LOGISTIK_DB_${new Date().toISOString().split('T')[0]}.xlsx`)
+}
 
 const triggerExcelFileInput = () => {
   if (excelFileInput.value) excelFileInput.value.click()
@@ -136,7 +390,7 @@ const handleExcelUpload = async (e) => {
       
       // Auto detect columns
       const headers = Object.keys(rows[0])
-      let hpoCol = '', itemCol = '', exworkCol = '', etaCol = '', deliveryCol = '', statusCol = ''
+      let hpoCol = '', itemCol = '', exworkCol = '', etaCol = '', deliveryCol = '', statusCol = '', qtyCol = ''
       
       headers.forEach(header => {
         const h = header.toLowerCase().replace(/[\s\_\-]/g, '')
@@ -147,6 +401,7 @@ const handleExcelUpload = async (e) => {
         else if (h.includes('hpo') || h.includes('customerpo') || h.includes('nopembelian') || (h.includes('po') && !h.includes('product'))) hpoCol = header
         else if (h.includes('mlfb') || h.includes('sku') || h.includes('nomorproduct') || h.includes('itemcode') || h.includes('productcode')) itemCol = header
         else if (h.includes('item') || h.includes('code')) itemCol = header
+        else if (h.includes('qty') || h.includes('quantity') || h.includes('jumlah') || h.includes('jml')) qtyCol = header
       })
       
       if (!hpoCol || !itemCol) {
@@ -219,7 +474,8 @@ const handleExcelUpload = async (e) => {
       // Deduplicate rows to prevent "ON CONFLICT DO UPDATE command cannot affect row a second time"
       const deduplicatedMap = {}
       rows.forEach(row => {
-        const rawHpo = String(row[hpoCol]).trim()
+        let rawHpo = String(row[hpoCol]).trim()
+        rawHpo = rawHpo.replace(/HP0\//gi, 'HPO/')
         const rawItem = String(row[itemCol]).trim()
         if (!rawHpo || !rawItem) return
         
@@ -235,12 +491,22 @@ const handleExcelUpload = async (e) => {
         
         const status = statusCol ? String(row[statusCol]).trim() : null
         
+        let quantity = 0
+        if (qtyCol) {
+          const rawQty = row[qtyCol]
+          if (rawQty !== undefined && rawQty !== null && rawQty !== '') {
+            quantity = parseFloat(rawQty)
+            if (isNaN(quantity)) quantity = 0
+          }
+        }
+        
         const key = `${rawHpo.toLowerCase()}||${rawItem.toLowerCase()}`
         const score = (exworkDate ? 1 : 0) + (etaDate ? 1 : 0) + (deliveryDate ? 1 : 0) + (status ? 1 : 0)
         
         const newRecord = {
           hpo_number: rawHpo,
           item_code: rawItem,
+          quantity,
           status,
           exwork_date: exworkDate,
           exwork_waiting: isWaiting,
@@ -885,6 +1151,7 @@ const applyAllSyncUpdates = async () => {
 onMounted(() => {
   fetchTrackingStats()
   fetchTrackingData()
+  fetchHsoReferences()
 })
 </script>
 
@@ -1014,31 +1281,54 @@ onMounted(() => {
             Cari HPO Siemens atau SKU produk untuk memeriksa status terdaftar.
           </p>
         </div>
-        <!-- Search Input -->
-        <div class="relative w-full sm:w-80">
-          <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <Input 
-            v-model="searchQuery"
-            placeholder="Cari HPO atau SKU..."
-            class="pl-9 pr-8 bg-slate-50/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 focus-visible:ring-red-500 focus-visible:border-red-500 text-sm font-semibold rounded-xl h-10 w-full"
-          />
-          <button 
-            v-if="searchQuery" 
-            @click="searchQuery = ''"
-            class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+        <div class="flex items-center gap-3">
+          <!-- Search Input -->
+          <div class="relative w-full sm:w-72">
+            <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Input 
+              v-model="searchQuery"
+              placeholder="Cari HPO atau SKU..."
+              class="pl-9 pr-8 bg-slate-50/50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-800 focus-visible:ring-red-500 focus-visible:border-red-500 text-sm font-semibold rounded-xl h-10 w-full"
+            />
+            <button 
+              v-if="searchQuery" 
+              @click="searchQuery = ''"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+            >
+              <X class="w-4 h-4" />
+            </button>
+          </div>
+          <!-- Download Excel Button -->
+          <Button
+            size="sm"
+            class="w-full sm:w-auto shadow-sm border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-400 bg-emerald-50/20 hover:bg-emerald-100/40 dark:bg-emerald-950/5 dark:hover:bg-emerald-950/20 transition-all duration-200 hover:shadow-xs active:scale-95 flex items-center justify-center gap-1.5 font-bold h-10"
+            @click="exportExcel"
+            :disabled="trackingData.length === 0"
           >
-            <X class="w-4 h-4" />
-          </button>
+            <Download class="w-4 h-4"/>
+            <span>Download Excel</span>
+          </Button>
         </div>
       </div>
 
-      <!-- Table -->
-      <div class="relative overflow-x-auto border border-slate-100 dark:border-slate-800 rounded-xl">
+      <!-- Table with expandable HSO tree -->
+      <div v-if="isLoading" class="flex flex-col items-center justify-center py-16">
+        <Loader2 class="w-8 h-8 text-red-600 dark:text-red-500 animate-spin" />
+        <span class="text-xs text-slate-500 dark:text-slate-400 font-medium mt-3">Memuat data pelacakan...</span>
+      </div>
+      <div v-else-if="trackingData.length === 0" class="flex flex-col items-center justify-center py-16 text-slate-500 dark:text-slate-400">
+        <Database class="w-10 h-10 text-slate-300 dark:text-slate-700" />
+        <span class="text-sm font-bold mt-2">Tidak ada data pelacakan.</span>
+        <span class="text-xs text-slate-400 mt-1">Silakan unggah Excel logistik untuk memulai.</span>
+      </div>
+      <div v-else class="relative overflow-x-auto border border-slate-100 dark:border-slate-800 rounded-xl">
         <Table>
           <TableHeader class="bg-slate-50 dark:bg-slate-800/50">
             <TableRow>
+              <TableHead class="w-8"></TableHead>
               <TableHead class="font-bold text-slate-700 dark:text-slate-300 text-xs">HPO Siemens</TableHead>
               <TableHead class="font-bold text-slate-700 dark:text-slate-300 text-xs">Kode Produk (SKU)</TableHead>
+              <TableHead class="font-bold text-slate-700 dark:text-slate-300 text-xs text-center w-16">Qty</TableHead>
               <TableHead class="font-bold text-slate-700 dark:text-slate-300 text-xs">Status</TableHead>
               <TableHead class="font-bold text-slate-700 dark:text-slate-300 text-xs text-center">Ex-Works</TableHead>
               <TableHead class="font-bold text-slate-700 dark:text-slate-300 text-xs text-center">ETA JKT</TableHead>
@@ -1047,94 +1337,133 @@ onMounted(() => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            <TableRow v-if="isLoading" class="hover:bg-transparent">
-              <TableCell colspan="7" class="text-center py-10">
-                <div class="flex flex-col items-center justify-center gap-2">
-                  <Loader2 class="w-8 h-8 text-red-600 dark:text-red-500 animate-spin" />
-                  <span class="text-xs text-slate-500 dark:text-slate-400 font-medium">Memuat data pelacakan...</span>
-                </div>
-              </TableCell>
-            </TableRow>
-            <TableRow v-else-if="trackingData.length === 0" class="hover:bg-transparent">
-              <TableCell colspan="7" class="text-center py-12 text-slate-500 dark:text-slate-400">
-                <div class="flex flex-col items-center justify-center gap-2">
-                  <Database class="w-10 h-10 text-slate-300 dark:text-slate-700" />
-                  <span class="text-sm font-bold">Tidak ada data pelacakan.</span>
-                  <span class="text-xs text-slate-400">Silakan unggah Excel logistik untuk memulai.</span>
-                </div>
-              </TableCell>
-            </TableRow>
-            <TableRow 
-              v-else 
-              v-for="row in trackingData" 
-              :key="`${row.hpo_number}-${row.item_code}`"
-              class="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 text-xs font-semibold text-slate-700 dark:text-slate-300"
-            >
-              <TableCell class="font-black text-slate-900 dark:text-white uppercase tracking-tight py-3.5">{{ row.hpo_number }}</TableCell>
-              <TableCell class="font-mono text-slate-600 dark:text-slate-400">{{ row.item_code }}</TableCell>
-              <TableCell>
-                <Badge variant="outline" class="font-bold text-[10px] px-2 py-0.5 bg-slate-50/50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700">
-                  {{ row.status || '-' }}
-                </Badge>
-              </TableCell>
-              <TableCell class="text-center">
-                <span v-if="row.exwork_waiting" class="text-amber-600 dark:text-amber-400 font-bold bg-amber-50 dark:bg-amber-950/20 px-1.5 py-0.5 rounded border border-amber-100/50 dark:border-amber-900/30 text-[10px]">
-                  Waiting Confirmation
-                </span>
-                <span v-else-if="row.exwork_date" class="font-mono text-slate-600 dark:text-slate-400">
-                  {{ row.exwork_date }}
-                </span>
-                <span v-else class="text-slate-400">-</span>
-              </TableCell>
-              <TableCell class="text-center font-mono text-slate-600 dark:text-slate-400">
-                {{ row.eta_date || '-' }}
-              </TableCell>
-              <TableCell class="text-center font-mono text-slate-600 dark:text-slate-400">
-                {{ row.delivery_date || '-' }}
-              </TableCell>
-              <TableCell class="text-right text-slate-500 dark:text-slate-500 text-[10px]">
-                {{ formatDateTime(row.updated_at) }}
-              </TableCell>
-            </TableRow>
+            <template v-for="row in trackingData" :key="`${row.hpo_number}-${row.item_code}`">
+              <!-- Main Row -->
+              <TableRow
+                class="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer"
+                :class="{ 'bg-slate-50/80 dark:bg-slate-800/40': expandedRows[`${row.hpo_number}-${row.item_code}`] }"
+                @click="toggleRowExpand(`${row.hpo_number}-${row.item_code}`)"
+              >
+                <TableCell class="py-3.5">
+                  <component :is="expandedRows[`${row.hpo_number}-${row.item_code}`] ? ChevronDown : ChevronRightIcon" class="w-3.5 h-3.5 text-slate-400" />
+                </TableCell>
+                <TableCell class="font-black text-slate-900 dark:text-white uppercase tracking-tight py-3.5">{{ row.hpo_number }}</TableCell>
+                <TableCell class="font-mono text-slate-600 dark:text-slate-400">{{ row.item_code }}</TableCell>
+                <TableCell class="text-center font-mono font-bold text-slate-800 dark:text-slate-200">{{ row.quantity || '-' }}</TableCell>
+                <TableCell>
+                  <Badge variant="outline" class="font-bold text-[10px] px-2 py-0.5 bg-slate-50/50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700">
+                    {{ row.status || '-' }}
+                  </Badge>
+                </TableCell>
+                <TableCell class="text-center">
+                  <span v-if="row.exwork_waiting" class="text-amber-600 dark:text-amber-400 font-bold bg-amber-50 dark:bg-amber-950/20 px-1.5 py-0.5 rounded border border-amber-100/50 dark:border-amber-900/30 text-[10px]">
+                    Waiting
+                  </span>
+                  <span v-else-if="row.exwork_date" class="font-mono text-slate-600 dark:text-slate-400">
+                    {{ row.exwork_date }}
+                  </span>
+                  <span v-else class="text-slate-400">-</span>
+                </TableCell>
+                <TableCell class="text-center font-mono text-slate-600 dark:text-slate-400">
+                  {{ row.eta_date || '-' }}
+                </TableCell>
+                <TableCell class="text-center font-mono text-slate-600 dark:text-slate-400">
+                  {{ row.delivery_date || '-' }}
+                </TableCell>
+                <TableCell class="text-right text-slate-500 dark:text-slate-500 text-[10px]">
+                  {{ formatDateTime(row.updated_at) }}
+                </TableCell>
+              </TableRow>
+              <!-- Expanded HSO Tree Row -->
+              <TableRow v-if="expandedRows[`${row.hpo_number}-${row.item_code}`]" class="bg-blue-50/30 dark:bg-blue-950/10 border-b border-slate-100 dark:border-slate-800">
+                <TableCell colspan="9" class="py-3 px-8">
+                  <div class="flex flex-col gap-1.5">
+                    <div class="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
+                      <Link class="w-3 h-3" />
+                      Breakdown ({{ row.quantity }} total)
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <div
+                        v-for="hso in getHsoRefsForRow(row)"
+                        :key="hso.hsoNumber"
+                        class="inline-flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50"
+                      >
+                        <span>{{ hso.hsoNumber }}</span>
+                        <span v-if="hso.quantity" class="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 bg-blue-200/50 dark:bg-blue-800/50 rounded text-[10px] font-semibold">
+                          <span class="opacity-70">Qty:</span>
+                          <span class="font-mono">{{ hso.quantity }}</span>
+                        </span>
+                      </div>
+                      <div
+                        v-if="getStockQtyForRow(row) > 0"
+                        class="inline-flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800/50"
+                      >
+                        <span>STOCK</span>
+                        <span class="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 bg-amber-200/50 dark:bg-amber-800/50 rounded text-[10px] font-semibold">
+                          <span class="opacity-70">Qty:</span>
+                          <span class="font-mono">{{ getStockQtyForRow(row) }}</span>
+                        </span>
+                      </div>
+                    </div>
+                    <span v-if="getHsoRefsForRow(row).length === 0 && getStockQtyForRow(row) === 0" class="text-[11px] text-slate-400 italic">Tidak ada referensi HSO</span>
+                  </div>
+                </TableCell>
+              </TableRow>
+            </template>
           </TableBody>
         </Table>
-      </div>
-
-      <!-- Pagination controls -->
-      <div v-if="totalPages > 1" class="flex items-center justify-between pt-4">
-        <span class="text-xs text-slate-500 dark:text-slate-400 font-bold">
-          Menampilkan {{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, totalRows) }} dari {{ totalRows }} data
-        </span>
-        <div class="flex items-center gap-1.5">
-          <Button 
-            variant="outline" 
-            size="sm"
-            class="h-8 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold px-3 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg active:scale-95 transition-all"
-            :disabled="currentPage === 1"
-            @click="handlePageChange(currentPage - 1)"
-          >
-            <ChevronLeft class="w-4 h-4 mr-1"/>
-            <span>Sebelumnya</span>
-          </Button>
+        
+        <!-- Pagination -->
+        <div class="flex items-center justify-between px-4 py-3 border-t border-slate-100 dark:border-slate-800">
+          <span class="text-xs font-medium text-slate-500 dark:text-slate-400">
+            {{ totalRows }} baris — Halaman {{ currentPage }} dari {{ totalPages }}
+          </span>
           <div class="flex items-center gap-1">
-            <span class="text-xs font-black text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50">
-              {{ currentPage }}
-            </span>
-            <span class="text-xs text-slate-400">/</span>
-            <span class="text-xs font-bold text-slate-500 dark:text-slate-400 px-2 py-1">
-              {{ totalPages }}
-            </span>
+            <Button
+              variant="outline" size="sm"
+              class="h-8 w-8 p-0 rounded-lg border-slate-200 dark:border-slate-800"
+              :disabled="currentPage <= 1"
+              @click="goToPage(1)"
+            >
+              <span class="text-xs font-bold">&laquo;</span>
+            </Button>
+            <Button
+              variant="outline" size="sm"
+              class="h-8 w-8 p-0 rounded-lg border-slate-200 dark:border-slate-800"
+              :disabled="currentPage <= 1"
+              @click="prevPage"
+            >
+              <span class="text-xs font-bold">&lsaquo;</span>
+            </Button>
+            <span v-if="visiblePages[0] > 1" class="text-xs text-slate-400 px-1">...</span>
+            <Button
+              v-for="p in visiblePages"
+              :key="p"
+              variant="outline" size="sm"
+              class="h-8 w-8 p-0 rounded-lg text-xs font-bold"
+              :class="p === currentPage ? 'bg-red-600 text-white border-red-600 hover:bg-red-500' : 'border-slate-200 dark:border-slate-800'"
+              @click="goToPage(p)"
+            >
+              {{ p }}
+            </Button>
+            <span v-if="visiblePages[visiblePages.length - 1] < totalPages" class="text-xs text-slate-400 px-1">...</span>
+            <Button
+              variant="outline" size="sm"
+              class="h-8 w-8 p-0 rounded-lg border-slate-200 dark:border-slate-800"
+              :disabled="currentPage >= totalPages"
+              @click="nextPage"
+            >
+              <span class="text-xs font-bold">&rsaquo;</span>
+            </Button>
+            <Button
+              variant="outline" size="sm"
+              class="h-8 w-8 p-0 rounded-lg border-slate-200 dark:border-slate-800"
+              :disabled="currentPage >= totalPages"
+              @click="goToPage(totalPages)"
+            >
+              <span class="text-xs font-bold">&raquo;</span>
+            </Button>
           </div>
-          <Button 
-            variant="outline" 
-            size="sm"
-            class="h-8 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-bold px-3 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg active:scale-95 transition-all"
-            :disabled="currentPage === totalPages"
-            @click="handlePageChange(currentPage + 1)"
-          >
-            <span>Berikutnya</span>
-            <ChevronRight class="w-4 h-4 ml-1"/>
-          </Button>
         </div>
       </div>
     </div>

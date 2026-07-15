@@ -393,6 +393,34 @@ const paginatedGroups = computed(() => {
 
 const totalPages = computed(() => Math.ceil(filteredGroups.value.length / itemsPerPage))
 
+const visiblePages = computed(() => {
+    const maxVisible = 5
+    const pages = []
+    
+    if (totalPages.value <= maxVisible) {
+        for (let i = 1; i <= totalPages.value; i++) pages.push(i)
+    } else {
+        const half = Math.floor(maxVisible / 2)
+        let start = currentPage.value - half
+        let end = currentPage.value + half
+        
+        if (start < 1) {
+            end += 1 - start
+            start = 1
+        }
+        if (end > totalPages.value) {
+            start -= end - totalPages.value
+            end = totalPages.value
+        }
+        
+        start = Math.max(1, start)
+        
+        for (let i = start; i <= end; i++) pages.push(i)
+    }
+    
+    return pages
+})
+
 const goToPage = (page) => {
     if (page >= 1 && page <= totalPages.value) {
         currentPage.value = page;
@@ -647,8 +675,9 @@ const openDetail = (soNumber, itemCode) => {
         </Button>
         
         <div class="flex items-center gap-2">
+            <span v-if="visiblePages[0] > 1" class="text-slate-400">...</span>
             <Button 
-                v-for="page in Math.min(5, totalPages)" 
+                v-for="page in visiblePages" 
                 :key="page"
                 variant="outline" 
                 size="sm"
@@ -657,9 +686,9 @@ const openDetail = (soNumber, itemCode) => {
             >
                 {{ page }}
             </Button>
-            <span v-if="totalPages > 5" class="text-slate-400">...</span>
+            <span v-if="visiblePages[visiblePages.length - 1] < totalPages" class="text-slate-400">...</span>
             <Button 
-                v-if="totalPages > 5"
+                v-if="visiblePages[visiblePages.length - 1] < totalPages"
                 variant="outline" 
                 size="sm"
                 :class="currentPage === totalPages ? 'bg-red-600 text-white border-red-600' : 'border-slate-300 dark:border-slate-600'"
