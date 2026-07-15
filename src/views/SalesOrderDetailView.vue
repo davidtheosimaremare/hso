@@ -27,7 +27,7 @@ import {
   Edit, CheckCircle2, Clock, Anchor, Factory, FileText, 
   PackageCheck, Share2, Info, ExternalLink, Package, Hourglass, 
   Layers, AlertCircle, ShoppingCart, Download, AlertTriangle,
-  ChevronDown, ChevronUp, Plane, Box, Copy, Search, UploadCloud, FileSpreadsheet, Mail
+  ChevronDown, ChevronUp, Plane, Box, Copy, Search, UploadCloud, FileSpreadsheet, Mail, Bell
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -459,24 +459,38 @@ const exportReminderExcel = () => {
         if (isDisplayedFullyShipped(item)) return;
         
         const hpos = getHpoEntries(item);
-        const siemensHpos = hpos.filter(hpo => hpo.vendorName && hpo.vendorName.toLowerCase().includes('siemens'));
+        const siemensHpos = hpos
+            .filter(hpo => hpo.vendorName && hpo.vendorName.toLowerCase().includes('siemens'))
+            .sort((a, b) => {
+                const typeA = getHpoReferenceType(a, soDetail.value?.number || '')
+                const typeB = getHpoReferenceType(b, soDetail.value?.number || '')
+                if (typeA === 'THIS_HSO' && typeB !== 'THIS_HSO') return -1
+                if (typeA !== 'THIS_HSO' && typeB === 'THIS_HSO') return 1
+                return 0
+            });
         
+        let remainingToPush = item.qty_to_order;
         if (siemensHpos.length > 0) {
             siemensHpos.forEach(hpo => {
                 const shipment = getHpoShipment(item, hpo.poNumber);
                 const status = getVisualStatus(shipment);
                 if (['Follow up with our forwarder', 'ETA Port JKT', 'Already in siemens Warehouse'].includes(status)) {
-                    reminderItems.push({
-                        hpoNumber: hpo.poNumber,
-                        itemCode: item.code,
-                        itemName: item.name,
-                        qty: hpo.quantity || item.qty_order,
-                        status: status === 'Follow up with our forwarder' ? 'Ex-Works' : status === 'ETA Port JKT' ? 'ETA JKT' : 'Tiba Dunex',
-                        exworkDate: shipment.exwork_waiting ? 'Waiting for confirmation' : (shipment.exwork_date || '-'),
-                        etaDate: shipment.eta_date || '-',
-                        dunexDate: shipment.dunex_date || '-',
-                        note: shipment.admin_notes || '-'
-                    });
+                    const pushQty = Math.min(hpo.quantity || 0, remainingToPush);
+                    if (pushQty > 0) {
+                        reminderItems.push({
+                            hpoNumber: hpo.poNumber,
+                            itemCode: item.code,
+                            itemName: item.name,
+                            qty: pushQty,
+                            hpoFullQty: hpo.quantity,
+                            status: status === 'Follow up with our forwarder' ? 'Ex-Works' : status === 'ETA Port JKT' ? 'ETA JKT' : 'Tiba Dunex',
+                            exworkDate: shipment.exwork_waiting ? 'Waiting for confirmation' : (shipment.exwork_date || '-'),
+                            etaDate: shipment.eta_date || '-',
+                            dunexDate: shipment.dunex_date || '-',
+                            note: shipment.admin_notes || '-'
+                        });
+                        remainingToPush -= pushQty;
+                    }
                 }
             });
         }
@@ -496,7 +510,8 @@ const exportReminderExcel = () => {
         "No HPO (Purchase Order)": item.hpoNumber,
         "Kode Barang (MLFB)": item.itemCode,
         "Nama Barang": item.itemName,
-        "Qty": item.qty,
+        "Qty (Kebutuhan Order)": item.qty,
+        "Qty HPO Keseluruhan": item.hpoFullQty,
         "Status Logistik": item.status,
         "Tanggal Ex-Works": item.exworkDate,
         "Tanggal ETA JKT": item.etaDate,
@@ -513,7 +528,8 @@ const exportReminderExcel = () => {
         { wch: 22 }, // No HPO
         { wch: 22 }, // Kode Barang
         { wch: 45 }, // Nama Barang
-        { wch: 8 },  // Qty
+        { wch: 20 }, // Qty (Kebutuhan Order)
+        { wch: 20 }, // Qty HPO Keseluruhan
         { wch: 18 }, // Status Logistik
         { wch: 18 }, // Tanggal Ex-Works
         { wch: 18 }, // Tanggal ETA JKT
@@ -697,6 +713,7 @@ const fetchHpoInBackground = async (soNumber) => {
         itemName: item.item_name,
         quantity: item.quantity,
         description: item.detail_notes,
+        hsoNumber: item.hso_number,
         vendorName: item.header?.vendor_name
       }))
     }
@@ -1576,6 +1593,11 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
             }
         }, 500)
     }
+
+    // Set search query from URL param if present
+    if (route.query.search) {
+        itemSearchQuery.value = route.query.search
+    }
   }
 }
 
@@ -1756,6 +1778,11 @@ const getRowStatus = (item) => {
       const totalPo = hpoEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
       if (totalPo < item.qty_to_order) {
         const shortage = item.qty_to_order - totalPo
+        // Prioritaskan badge HPB jika sudah ada (meskipun sudah punya HPO)
+        const matchedHpb = linkedHpbs.value.find(h => h.itemCode === item.code)
+        if (matchedHpb) {
+          return { text: `HPB: ${matchedHpb.hpbNumber}`, class: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-850', icon: FileText, hpbId: matchedHpb.hpbId }
+        }
         if (isInCart(item.code)) {
           return { text: `DI KERANJANG (KURANG ${shortage} ${item.unit})`, class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: ShoppingCart }
         }
@@ -1845,8 +1872,61 @@ const getHpoEntries = (item) => {
     poDate: p.poDate,
     quantity: p.quantity,
     description: p.description,
+    hsoNumber: p.hsoNumber,
     vendorName: p.vendorName
   }))
+}
+
+// Helper: Determine reference type of a HPO entry
+const getHpoReferenceType = (hpoEntry, soNumber) => {
+  const hsoNum = (hpoEntry.hsoNumber || '').trim().toUpperCase()
+  const desc = (hpoEntry.description || '').trim().toUpperCase()
+  
+  if (hsoNum) {
+    if (hsoNum.includes('HSO/')) {
+      const currentSoClean = (soNumber || '').replace(/\//g, '').toUpperCase()
+      const hsoClean = hsoNum.replace(/\//g, '').toUpperCase()
+      if (hsoClean.includes(currentSoClean)) return 'THIS_HSO'
+      return 'OTHER_HSO'
+    }
+    if (hsoNum.includes('HSQ/')) return 'HSQ'
+    return 'REF'
+  }
+  
+  if (desc) {
+    if (desc.includes('STOCK') || desc.includes('STOK') || desc.includes('PERSEDIAAN')) return 'STOCK'
+    if (desc.includes('HSO/')) {
+      const currentSoClean = (soNumber || '').replace(/\//g, '').toUpperCase()
+      if (desc.includes(currentSoClean)) return 'THIS_HSO'
+      return 'OTHER_HSO'
+    }
+    if (desc.includes('HSQ/')) return 'HSQ'
+  }
+  
+  return 'UNKNOWN'
+}
+
+// Helper: Get breakdown of HPO quantities by reference type
+const getHpoBreakdown = (item) => {
+  const entries = getHpoEntries(item)
+  if (entries.length === 0) return null
+  
+  const totalPo = entries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
+  const soNumber = soDetail.value?.number || ''
+  
+  const breakdown = { THIS_HSO: 0, OTHER_HSO: 0, HSQ: 0, STOCK: 0, REF: 0, UNKNOWN: 0 }
+  
+  entries.forEach(hpo => {
+    const type = getHpoReferenceType(hpo, soNumber)
+    breakdown[type] = (breakdown[type] || 0) + (hpo.quantity || 0)
+  })
+  
+  return {
+    totalPo,
+    qtyNeeded: item.qty_to_order,
+    excess: totalPo - item.qty_to_order,
+    breakdown
+  }
 }
 
 // Helper: Get specific shipment record for an HPO
@@ -2146,20 +2226,33 @@ const siemensPushItems = computed(() => {
     if (!isNoStock) return
 
     const hpos = getHpoEntries(item)
+        .sort((a, b) => {
+          const typeA = getHpoReferenceType(a, soDetail.value?.number || '')
+          const typeB = getHpoReferenceType(b, soDetail.value?.number || '')
+          if (typeA === 'THIS_HSO' && typeB !== 'THIS_HSO') return -1
+          if (typeA !== 'THIS_HSO' && typeB === 'THIS_HSO') return 1
+          return 0
+        })
+    let remainingToPush = item.qty_to_order
+
     hpos.forEach(hpo => {
       const shipment = getHpoShipment(item, hpo.poNumber)
       const visualStatus = getVisualStatus(shipment)
       
       // Status must NOT be "Already in Hokiindo Raya"
       if (visualStatus !== 'Already in Hokiindo Raya') {
-        list.push({
-          code: item.code,
-          name: item.name,
-          hpo: hpo.poNumber,
-          qty: hpo.quantity,
-          status: visualStatus === 'Follow up with our forwarder' ? 'Ex-Works' : visualStatus === 'ETA Port JKT' ? 'ETA JKT' : visualStatus === 'Already in siemens Warehouse' ? 'Tiba Dunex' : visualStatus,
-          date: getVisualStatusDate(shipment)
-        })
+        const pushQty = Math.min(hpo.quantity, remainingToPush)
+        if (pushQty > 0) {
+          list.push({
+            code: item.code,
+            name: item.name,
+            hpo: hpo.poNumber,
+            qty: pushQty,
+            status: visualStatus === 'Follow up with our forwarder' ? 'Ex-Works' : visualStatus === 'ETA Port JKT' ? 'ETA JKT' : visualStatus === 'Already in siemens Warehouse' ? 'Tiba Dunex' : visualStatus,
+            date: getVisualStatusDate(shipment)
+          })
+          remainingToPush -= pushQty
+        }
       }
     })
   })
@@ -2482,7 +2575,7 @@ const sendReminderEmail = async () => {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" class="dark:bg-slate-800 dark:border-slate-700 rounded-xl w-64 p-1.5 shadow-lg border border-gray-150">
                   <DropdownMenuItem @click="exportReminderExcel" class="dark:hover:bg-slate-700 dark:text-slate-300 rounded-lg cursor-pointer py-2.5 px-3 flex items-start gap-2.5 focus:bg-emerald-50 dark:focus:bg-emerald-950/30">
-                    <FileSpreadsheet class="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+                    <Bell class="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
                     <div class="flex flex-col">
                       <span class="font-bold text-xs text-gray-800 dark:text-gray-200">Export Reminder PO</span>
                       <span class="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">Filter PO Siemens & Status Aktif</span>
@@ -2793,6 +2886,35 @@ const sendReminderEmail = async () => {
                                 </template>
                             </div>
                             </template>
+                            <!-- HPO Breakdown Summary -->
+                            <div v-if="getHpoBreakdown(item) && (getHpoBreakdown(item).excess > 0 || (getHpoBreakdown(item).breakdown.OTHER_HSO > 0 || getHpoBreakdown(item).breakdown.HSQ > 0 || getHpoBreakdown(item).breakdown.STOCK > 0))" class="bg-amber-50/80 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/50 rounded-lg px-3 py-2 space-y-1">
+                                <div class="flex items-center justify-between gap-2">
+                                    <span class="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">Breakdown PO</span>
+                                    <span class="text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                                        Total: {{ getHpoBreakdown(item).totalPo }} {{ item.unit }}
+                                        <span v-if="getHpoBreakdown(item).excess > 0" class="text-red-600 dark:text-red-400">
+                                            (Kelebihan {{ getHpoBreakdown(item).excess }} {{ item.unit }})
+                                        </span>
+                                    </span>
+                                </div>
+                                <div class="flex flex-wrap items-center gap-1.5">
+                                    <span v-if="getHpoBreakdown(item).breakdown.THIS_HSO > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400 border border-green-200 dark:border-green-800">
+                                        {{ getHpoBreakdown(item).breakdown.THIS_HSO }} {{ item.unit }} HSO
+                                    </span>
+                                    <span v-if="getHpoBreakdown(item).breakdown.OTHER_HSO > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
+                                        {{ getHpoBreakdown(item).breakdown.OTHER_HSO }} {{ item.unit }} HSO Lain
+                                    </span>
+                                    <span v-if="getHpoBreakdown(item).breakdown.HSQ > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 dark:bg-purple-950/30 dark:text-purple-400 border border-purple-200 dark:border-purple-800">
+                                        {{ getHpoBreakdown(item).breakdown.HSQ }} {{ item.unit }} HSQ
+                                    </span>
+                                    <span v-if="getHpoBreakdown(item).breakdown.STOCK > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                                        {{ getHpoBreakdown(item).breakdown.STOCK }} {{ item.unit }} Stock
+                                    </span>
+                                    <span v-if="getHpoBreakdown(item).breakdown.UNKNOWN > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
+                                        {{ getHpoBreakdown(item).breakdown.UNKNOWN }} {{ item.unit }} Lainnya
+                                    </span>
+                                </div>
+                            </div>
                         </div>
                         
                         <!-- Fallback HPO from DB (when not found in PO sync list, e.g. manual input/import) -->
@@ -3105,6 +3227,36 @@ const sendReminderEmail = async () => {
                           </div>
                         </div>
                       </template>
+                    </div>
+                  </div>
+
+                  <!-- HPO Breakdown Mobile -->
+                  <div v-if="getHpoBreakdown(item) && (getHpoBreakdown(item).excess > 0 || (getHpoBreakdown(item).breakdown.OTHER_HSO > 0 || getHpoBreakdown(item).breakdown.HSQ > 0 || getHpoBreakdown(item).breakdown.STOCK > 0))" class="bg-amber-50/80 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/50 rounded-lg px-3 py-2 space-y-1">
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">Breakdown PO</span>
+                      <span class="text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                        Total: {{ getHpoBreakdown(item).totalPo }} {{ item.unit }}
+                        <span v-if="getHpoBreakdown(item).excess > 0" class="text-red-600 dark:text-red-400">
+                          (Kelebihan {{ getHpoBreakdown(item).excess }} {{ item.unit }})
+                        </span>
+                      </span>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-1.5">
+                      <span v-if="getHpoBreakdown(item).breakdown.THIS_HSO > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400 border border-green-200 dark:border-green-800">
+                        {{ getHpoBreakdown(item).breakdown.THIS_HSO }} {{ item.unit }} HSO
+                      </span>
+                      <span v-if="getHpoBreakdown(item).breakdown.OTHER_HSO > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
+                        {{ getHpoBreakdown(item).breakdown.OTHER_HSO }} {{ item.unit }} HSO Lain
+                      </span>
+                      <span v-if="getHpoBreakdown(item).breakdown.HSQ > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 dark:bg-purple-950/30 dark:text-purple-400 border border-purple-200 dark:border-purple-800">
+                        {{ getHpoBreakdown(item).breakdown.HSQ }} {{ item.unit }} HSQ
+                      </span>
+                      <span v-if="getHpoBreakdown(item).breakdown.STOCK > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                        {{ getHpoBreakdown(item).breakdown.STOCK }} {{ item.unit }} Stock
+                      </span>
+                      <span v-if="getHpoBreakdown(item).breakdown.UNKNOWN > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
+                        {{ getHpoBreakdown(item).breakdown.UNKNOWN }} {{ item.unit }} Lainnya
+                      </span>
                     </div>
                   </div>
 

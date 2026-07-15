@@ -1,10 +1,10 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { 
   Loader2, AlertCircle, FileText, ArrowLeft, Calendar, 
-  FileSpreadsheet, Download, ChevronRight, User, DollarSign, Tag
+  FileSpreadsheet, Download, ChevronRight, User, DollarSign, Tag, Search
 } from 'lucide-vue-next'
 import * as XLSX from 'xlsx'
 import { Button } from '@/components/ui/button'
@@ -16,6 +16,19 @@ const hsqId = route.params.id
 const isLoading = ref(true)
 const selectedHsq = ref(null)
 const fetchError = ref(null)
+const itemSearchQuery = ref('')
+
+const filteredItems = computed(() => {
+  if (!selectedHsq.value?.detailItem) return []
+  const query = itemSearchQuery.value.trim().toLowerCase()
+  if (!query) return selectedHsq.value.detailItem
+  return selectedHsq.value.detailItem.filter(item => {
+    const code = (item.item?.no || '').toLowerCase()
+    const name = (item.item?.name || item.detailName || '').toLowerCase()
+    const notes = (item.detailNotes || '').toLowerCase()
+    return code.includes(query) || name.includes(query) || notes.includes(query)
+  })
+})
 
 // --- FETCH HSQ DETAIL ---
 const fetchHsqDetail = async () => {
@@ -32,6 +45,19 @@ const fetchHsqDetail = async () => {
     if (!data?.s) throw new Error(data?.error || 'Gagal mengambil detail HSQ')
     
     selectedHsq.value = data.d
+
+    // Auto scroll & search if highlight param exists
+    if (route.query.highlight) {
+      setTimeout(() => {
+        const el = document.getElementById(`hsq-item-${route.query.highlight}`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 500)
+    }
+    if (route.query.search) {
+      itemSearchQuery.value = route.query.search
+    }
   } catch (err) {
     console.error('Fetch HSQ detail error:', err)
     fetchError.value = err.message
@@ -284,11 +310,23 @@ onMounted(() => {
 
       <!-- Items Section -->
       <div class="bg-white dark:bg-[#1e293b] rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-        <div class="px-5 py-4 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50 dark:bg-[#0f172a] flex items-center justify-between">
-          <h3 class="text-xs font-black uppercase text-slate-500 tracking-wider">Daftar Barang Penawaran</h3>
-          <span class="text-xs font-bold text-slate-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2.5 py-0.5 rounded-full">
-            {{ selectedHsq.detailItem?.length || 0 }} Items
-          </span>
+        <div class="px-5 py-4 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50 dark:bg-[#0f172a] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <h3 class="text-xs font-black uppercase text-slate-500 tracking-wider">Daftar Barang Penawaran</h3>
+            <span class="text-xs font-bold text-slate-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2.5 py-0.5 rounded-full">
+              {{ filteredItems.length }} dari {{ selectedHsq.detailItem?.length || 0 }} Items
+            </span>
+          </div>
+          <!-- Search Input -->
+          <div class="relative w-full sm:w-56">
+            <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+            <input
+              v-model="itemSearchQuery"
+              type="text"
+              placeholder="Cari kode / nama barang..."
+              class="pl-8 pr-3 py-1.5 w-full text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-red-500"
+            />
+          </div>
         </div>
         
         <div class="overflow-x-auto">
@@ -307,10 +345,12 @@ onMounted(() => {
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
-              <tr 
-                v-for="(item, idx) in selectedHsq.detailItem" 
-                :key="idx" 
+              <tr
+                v-for="(item, idx) in filteredItems"
+                :key="idx"
+                :id="`hsq-item-${item.item?.no}`"
                 class="hover:bg-slate-50/40 dark:hover:bg-[#0f172a]/20 transition-colors"
+                :class="{ 'bg-yellow-100 dark:bg-yellow-900/30': route.query.highlight === item.item?.no }"
               >
                 <td class="py-3.5 px-4 text-center text-slate-400 font-bold">{{ idx + 1 }}</td>
                 <td class="py-3.5 px-4 font-mono font-bold text-slate-700 dark:text-slate-300">{{ item.item?.no || '-' }}</td>
@@ -324,6 +364,11 @@ onMounted(() => {
               </tr>
             </tbody>
           </table>
+          <!-- Empty state when filtered -->
+          <div v-if="filteredItems.length === 0 && selectedHsq.detailItem?.length" class="text-center py-8 text-slate-400">
+            <p class="text-xs font-bold">Produk tidak ditemukan</p>
+            <p class="text-[10px] mt-1">Coba gunakan kata kunci pencarian lain.</p>
+          </div>
         </div>
       </div>
     </template>

@@ -29,7 +29,7 @@ import {
   Calendar as CalendarIcon, XCircle, ChevronLeft, ChevronRight, 
   Download, FileSpreadsheet, File as FileIcon, Filter,
   ChevronsUpDown, ArrowUp, ArrowDown, Check, X,
-  ShoppingCart, CheckCircle2, AlertCircle
+  ShoppingCart, CheckCircle2, AlertCircle, Bell
 } from 'lucide-vue-next'
 import { Checkbox } from '@/components/ui/checkbox'
 
@@ -660,6 +660,7 @@ const bulkDownloadReminderPO = async () => {
                     itemName: item.item_name,
                     quantity: item.quantity,
                     description: item.detail_notes,
+                    hsoNumber: item.hso_number,
                     vendorName: item.header?.vendor_name
                 }))
             }
@@ -695,8 +696,34 @@ const bulkDownloadReminderPO = async () => {
                     poDate: p.poDate,
                     quantity: p.quantity,
                     description: p.description,
+                    hsoNumber: p.hsoNumber,
                     vendorName: p.vendorName
                 }))
+            }
+            
+            const getHpoReferenceType = (hpoEntry, soNumber) => {
+              const hsoNum = (hpoEntry.hsoNumber || '').trim().toUpperCase()
+              const desc = (hpoEntry.description || '').trim().toUpperCase()
+              if (hsoNum) {
+                if (hsoNum.includes('HSO/')) {
+                  const currentSoClean = (soNumber || '').replace(/\//g, '').toUpperCase()
+                  const hsoClean = hsoNum.replace(/\//g, '').toUpperCase()
+                  if (hsoClean.includes(currentSoClean)) return 'THIS_HSO'
+                  return 'OTHER_HSO'
+                }
+                if (hsoNum.includes('HSQ/')) return 'HSQ'
+                return 'REF'
+              }
+              if (desc) {
+                if (desc.includes('STOCK') || desc.includes('STOK') || desc.includes('PERSEDIAAN')) return 'STOCK'
+                if (desc.includes('HSO/')) {
+                  const currentSoClean = (soNumber || '').replace(/\//g, '').toUpperCase()
+                  if (desc.includes(currentSoClean)) return 'THIS_HSO'
+                  return 'OTHER_HSO'
+                }
+                if (desc.includes('HSQ/')) return 'HSQ'
+              }
+              return 'UNKNOWN'
             }
             
             const getHpoShipment = (item, hpoNumber) => {
@@ -734,26 +761,38 @@ const bulkDownloadReminderPO = async () => {
                 if (qty_to_order <= 0) return
                 if (isDisplayedFullyShipped(item)) return
                 const hpos = getHpoEntries(item)
+                    .sort((a, b) => {
+                        const typeA = getHpoReferenceType(a, soNumber)
+                        const typeB = getHpoReferenceType(b, soNumber)
+                        if (typeA === 'THIS_HSO' && typeB !== 'THIS_HSO') return -1
+                        if (typeA !== 'THIS_HSO' && typeB === 'THIS_HSO') return 1
+                        return 0
+                    })
                 const siemensHpos = hpos.filter(hpo => hpo.vendorName && hpo.vendorName.toLowerCase().includes('siemens'))
                 
+                let remainingToPush = qty_to_order
                 if (siemensHpos.length > 0) {
                     siemensHpos.forEach(hpo => {
                         const shipment = getHpoShipment(item, hpo.poNumber)
                         const status = getVisualStatus(shipment)
                         if (['Follow up with our forwarder', 'ETA Port JKT', 'Already in siemens Warehouse'].includes(status)) {
-                            reminderItems.push({
-                                hsoNumber: soNumber,
-                                customerName: customerName,
-                                hpoNumber: hpo.poNumber,
-                                itemCode: item.item?.no || item.detailName,
-                                itemName: item.item?.name || item.detailName,
-                                qty: qty_order, // Using SO Qty Order as requested
-                                status: status === 'Follow up with our forwarder' ? 'Ex-Works' : status === 'ETA Port JKT' ? 'ETA JKT' : 'Tiba Dunex',
-                                exworkDate: shipment ? (shipment.exwork_waiting ? 'Waiting for confirmation' : (shipment.exwork_date || '-')) : '-',
-                                etaDate: shipment ? (shipment.eta_date || '-') : '-',
-                                dunexDate: shipment ? (shipment.dunex_date || '-') : '-',
-                                note: shipment ? (shipment.admin_notes || '-') : '-'
-                            })
+                            const pushQty = Math.min(hpo.quantity || 0, remainingToPush)
+                            if (pushQty > 0) {
+                                reminderItems.push({
+                                    hsoNumber: soNumber,
+                                    customerName: customerName,
+                                    hpoNumber: hpo.poNumber,
+                                    itemCode: item.item?.no || item.detailName,
+                                    itemName: item.item?.name || item.detailName,
+                                    qty: pushQty,
+                                    status: status === 'Follow up with our forwarder' ? 'Ex-Works' : status === 'ETA Port JKT' ? 'ETA JKT' : 'Tiba Dunex',
+                                    exworkDate: shipment ? (shipment.exwork_waiting ? 'Waiting for confirmation' : (shipment.exwork_date || '-')) : '-',
+                                    etaDate: shipment ? (shipment.eta_date || '-') : '-',
+                                    dunexDate: shipment ? (shipment.dunex_date || '-') : '-',
+                                    note: shipment ? (shipment.admin_notes || '-') : '-'
+                                })
+                                remainingToPush -= pushQty
+                            }
                         }
                     })
                 }
@@ -911,7 +950,7 @@ const getStatusColor = (status) => {
             ]"
             @mouseenter="showReminderTooltip = true"
             @mouseleave="showReminderTooltip = false">
-            <Package class="w-4 h-4"/>
+            <Bell class="w-4 h-4"/>
             <span v-if="!isBulkMode">Reminder PO</span>
             <span v-else-if="selectedOrders.length === 0">Pilih SO...</span>
             <span v-else>Reminder ({{ selectedOrders.length }} SO)</span>
@@ -921,7 +960,7 @@ const getStatusColor = (status) => {
           <div v-if="showReminderTooltip && !isBulkMode"
             class="absolute top-full right-0 md:left-0 mt-2 z-50 w-72 bg-slate-900 dark:bg-slate-950 text-white text-xs rounded-xl p-3.5 shadow-2xl border border-slate-700 pointer-events-none">
             <div class="flex items-center gap-2 mb-2 pb-2 border-b border-slate-700">
-              <Package class="w-4 h-4 text-purple-400 shrink-0"/>
+              <Bell class="w-4 h-4 text-purple-400 shrink-0"/>
               <span class="font-bold text-sm text-white">Reminder PO (Bulk)</span>
             </div>
             <p class="text-slate-300 leading-relaxed mb-2">Generate list item PO Siemens yang <strong class="text-purple-400">sedang dalam proses pengiriman</strong> (Ex-Works, ETA JKT, Tiba Dunex).</p>

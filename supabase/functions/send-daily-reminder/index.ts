@@ -211,20 +211,28 @@ serve(async (req) => {
                     const itemHpos = hpoDetails.filter((p: any) => p.itemCode === code)
                     const totalPo = itemHpos.reduce((sum: number, hpo: any) => sum + (hpo.quantity || 0), 0)
 
-                    // Category A: Needs PO / Under Ordered
+                    // Category A: Needs PO / Purchasing Status
                     if (qty_to_order > 0) {
-                        if (totalPo < qty_to_order) {
-                            const statusText = totalPo === 0 ? 'PERLU DIPESAN' : 'KURANG DIPESAN'
-                            itemsToPurchase.push({
-                                code: code,
-                                name: item.item?.name || item.detailName,
-                                qty_order: qty_order,
-                                qty_to_order: qty_to_order,
-                                total_po: totalPo,
-                                shortage: qty_to_order - totalPo,
-                                status: statusText
-                            })
+                        const shortage = Math.max(0, qty_to_order - totalPo)
+                        let statusText
+                        if (totalPo === 0) {
+                            statusText = 'PERLU DIPESAN'
+                        } else if (shortage > 0) {
+                            statusText = 'KURANG DIPESAN'
+                        } else if (totalPo === qty_to_order) {
+                            statusText = 'SUDAH DIPESAN'
+                        } else {
+                            statusText = 'KELEBIHAN DIPESAN'
                         }
+                        itemsToPurchase.push({
+                            code: code,
+                            name: item.item?.name || item.detailName,
+                            qty_order: qty_order,
+                            qty_to_order: qty_to_order,
+                            total_po: totalPo,
+                            shortage: shortage,
+                            status: statusText
+                        })
                     }
 
                     // Category B: Arrived at Hokiindo but not fully shipped to customer
@@ -329,7 +337,7 @@ serve(async (req) => {
             // Category A: Needs PO
             if (hso.itemsToPurchase.length > 0) {
                 htmlBody += `
-                <div class="section-title purchase">⚠️ KEKURANGAN PEMBELIAN (BUTUH PO KE PRINCIPLE)</div>
+                <div class="section-title purchase">⚠️ STATUS PEMBELIAN (KEBUTUHAN PO KE PRINCIPLE)</div>
                 <table>
                     <thead>
                         <tr>
@@ -343,13 +351,18 @@ serve(async (req) => {
                     <tbody>
                 `
                 hso.itemsToPurchase.forEach((item: any) => {
-                    const badgeClass = item.status === 'PERLU DIPESAN' ? 'red' : 'amber'
+                    let badgeClass = 'amber'
+                    if (item.status === 'PERLU DIPESAN' || item.status === 'KURANG DIPESAN') {
+                        badgeClass = 'red'
+                    } else if (item.status === 'SUDAH DIPESAN') {
+                        badgeClass = 'green'
+                    }
                     htmlBody += `
                     <tr>
                         <td style="font-family: monospace; font-weight: bold;">${item.code}</td>
                         <td>${item.name}</td>
                         <td style="text-align: center; font-weight: bold;">${item.qty_to_order}</td>
-                        <td style="text-align: center; color: #b91c1c; font-weight: bold;">${item.shortage}</td>
+                        <td style="text-align: center; color: ${item.shortage > 0 ? '#b91c1c' : '#059669'}; font-weight: bold;">${item.shortage}</td>
                         <td style="text-align: center;"><span class="badge ${badgeClass}">${item.status}</span></td>
                     </tr>
                     `

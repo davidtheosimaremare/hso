@@ -181,7 +181,7 @@ const getStatusColor = (status) => {
                                         <div class="flex items-center gap-1">
                                             <span class="text-xs text-slate-400">Ref:</span>
                                             <span class="text-xs font-bold text-slate-700 dark:text-slate-200">{{ item.hso_number }}</span>
-                                            <span class="cursor-pointer text-[10px] text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium ml-1 underline" @click.stop="router.push(`/sales-orders?search=${item.hso_number}`)">
+                                            <span class="cursor-pointer text-[10px] text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium ml-1 underline" @click.stop="router.push(`/sales-orders/${item.hso_number.replace(/\//g, '-')}?search=${item.item_code}&highlight=${item.item_code}`)">
                                                 (Lihat HSO)
                                             </span>
                                         </div>
