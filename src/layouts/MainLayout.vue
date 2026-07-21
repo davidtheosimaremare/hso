@@ -128,7 +128,7 @@ const menuGroups = [
   {
     type: 'item',
     name: 'Dashboard',
-    path: '/',
+    path: '/dashboard',
     icon: LayoutDashboard,
     moduleKey: 'dashboard'
   },
@@ -249,7 +249,7 @@ const handleLogout = async () => {
             v-if="group.type === 'item'"
             :to="group.path"
             class="flex items-center gap-4 px-4 py-3.5 text-sm font-medium transition-all border-l-4 relative"
-            :class="(group.path === '/' ? route.path === '/' : route.path.startsWith(group.path)) 
+            :class="route.path.startsWith(group.path) 
               ? 'border-[#e60000] text-black dark:text-white bg-gray-50 dark:bg-slate-800/50' 
               : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30'"
           >
@@ -371,7 +371,7 @@ const handleLogout = async () => {
                 v-if="group.type === 'item'"
                 :to="group.path"
                 class="flex items-center gap-4 px-4 py-3 text-sm font-medium transition-all rounded-xl border border-transparent"
-                :class="(group.path === '/' ? route.path === '/' : route.path.startsWith(group.path)) 
+                :class="route.path.startsWith(group.path) 
                   ? 'text-[#e60000] bg-red-50/50 dark:bg-red-950/20 border-red-100 dark:border-red-950' 
                   : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30'"
               >
