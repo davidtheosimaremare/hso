@@ -1,0 +1,402 @@
+[
+  {
+    "hash": "30d954485f8b71ccbe035455192929601da70836",
+    "shortHash": "30d9544",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Jul 15 14:33:22 2026 +0700",
+    "message": "feat: update order views, send-daily-reminder function, and add quantity column to raw_forwarder_tracking migration"
+  },
+  {
+    "hash": "3f7cb3158e3c4a3e3540ddd8e93ef795ba44f99c",
+    "shortHash": "3f7cb31",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Jul 15 13:52:57 2026 +0700",
+    "message": "fix: HP0 typo to HPO, pagination sliding window, STOCK breakdown in LogisticsDb"
+  },
+  {
+    "hash": "ee2a66abbbbc1313942abcb7dc8ea83774ee95f7",
+    "shortHash": "ee2a66a",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Jul 14 13:09:24 2026 +0700",
+    "message": "fix: allow HPO display on items with partial stock notes when qty_to_order > 0"
+  },
+  {
+    "hash": "ae0d0f74fe7b83bc600b319275011089ab3684c2",
+    "shortHash": "ae0d0f7",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Mon Jul 13 23:54:19 2026 +0700",
+    "message": "feat: add SOP and User Guide view and navigation menu"
+  },
+  {
+    "hash": "21604bb73ae92c9cd8a5c5575919eab31c8765a2",
+    "shortHash": "21604bb",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Mon Jul 13 17:42:50 2026 +0700",
+    "message": "feat: add clickable HSO Ref links in HPB details and sync HSO with HPB flow improvements"
+  },
+  {
+    "hash": "1ba0602b5b4ce33218ea0ebd2b32b2524b886e3c",
+    "shortHash": "1ba0602",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Mon Jul 13 16:27:12 2026 +0700",
+    "message": "feat: replace HPB modal with a dedicated detail sub-page view (/hpb/:id)"
+  },
+  {
+    "hash": "c64fbbc68df382b143711b8772bac5facf7fada9",
+    "shortHash": "c64fbbc",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Mon Jul 13 16:22:57 2026 +0700",
+    "message": "feat: add Rencana Pembelian collapsible menu and Permintaan Barang (HPB) list & detail views with Excel export"
+  },
+  {
+    "hash": "fbea158db93683e2b99d730f462741f161a3e2c3",
+    "shortHash": "fbea158",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Mon Jul 13 12:07:30 2026 +0700",
+    "message": "feat: hide logistics dates on public tracking for STOCK items"
+  },
+  {
+    "hash": "4a5c95c7003ca5c84c7e4a9e0f57661e45a44447",
+    "shortHash": "4a5c95c",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Mon Jul 13 12:04:02 2026 +0700",
+    "message": "feat: show SIAP DIKIRIM for stock items without logistics details and revert public tracking changes"
+  },
+  {
+    "hash": "38cf72762161b0d789a607b392dc9e2af35f83ee",
+    "shortHash": "38cf727",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Mon Jul 13 12:00:11 2026 +0700",
+    "message": "feat: exclude ready/stock items from public tracking in-process section"
+  },
+  {
+    "hash": "4f3b8604795adc1255611d20ec186126f7aadcb1",
+    "shortHash": "4f3b860",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Mon Jul 13 11:54:36 2026 +0700",
+    "message": "feat: implement stock availability modal, SKU clipboard, and STOCK HPO visual exclusion"
+  },
+  {
+    "hash": "14d7de698e727699282d32916179b7e347f3964d",
+    "shortHash": "14d7de6",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Sun Jul 12 21:37:36 2026 +0700",
+    "message": "feat: Add persistent HPB proposed number preview section at the bottom of CartView"
+  },
+  {
+    "hash": "dac2b8a3f2c98f3a6fa42367518c7b32bce5f584",
+    "shortHash": "dac2b8a",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Sun Jul 12 21:35:51 2026 +0700",
+    "message": "feat: Adjust HPB Accurate integration to send all active items in cart as a single HPB instead of per HSO group"
+  },
+  {
+    "hash": "b51a6b1015fbe576b6f5c6e11ae3a2ae592e95c4",
+    "shortHash": "b51a6b1",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Sun Jul 12 21:31:56 2026 +0700",
+    "message": "feat: Add send to HPB Accurate integration, including proposed number calculator and dialog"
+  },
+  {
+    "hash": "68f4ef23df517d7eb78f0d0d9e97bd2d5fcb6b74",
+    "shortHash": "68f4ef2",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Sun Jul 12 17:23:37 2026 +0700",
+    "message": "feat: Add collapsible HSO grouping and batch crosscheck features in CartView"
+  },
+  {
+    "hash": "ca56f10f984fb9abb08d10f7185f8f8ce46af72a",
+    "shortHash": "ca56f10",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Sun Jul 12 10:25:37 2026 +0700",
+    "message": "feat: Clear pre-filled HSO notes when adding to cart and fix HSO redirect links in CartView"
+  },
+  {
+    "hash": "eda124c3e8880642ac2ccf5da70a6c66fdcbcff3",
+    "shortHash": "eda124c",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Sun Jul 12 10:21:06 2026 +0700",
+    "message": "feat: Sort purchase cart items by earliest added (created_at ascending)"
+  },
+  {
+    "hash": "ab8d7605e8733ff76838c86b893a6d1738783213",
+    "shortHash": "ab8d760",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Sun Jul 12 10:17:49 2026 +0700",
+    "message": "feat: Update HSO item status to 'DI KERANJANG' and show checked button when in cart"
+  },
+  {
+    "hash": "be5d3e32505d48b9e288a22fe639b125d92c94ec",
+    "shortHash": "be5d3e3",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Sun Jul 12 10:04:34 2026 +0700",
+    "message": "feat: Add Purchase Cart feature and convert database migrations to standard 14-digit format"
+  },
+  {
+    "hash": "87e92fcb5c4e7cf1bc0a8f746f0cdb22dc16f7c0",
+    "shortHash": "87e92fc",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Sat Jul 11 19:27:58 2026 +0700",
+    "message": "feat: implement centralized logistics database sync and bulk active HSOs updates"
+  },
+  {
+    "hash": "d58f69d4746c0ddaae05ff64deb8a62b6659a6fa",
+    "shortHash": "d58f69d",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Jul 10 23:33:53 2026 +0700",
+    "message": "feat: implement dual responsive card layout for product items and optimize mobile views"
+  },
+  {
+    "hash": "a266c9822b65ef557edce75eefedcf98dde939de",
+    "shortHash": "a266c98",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Jul 10 23:04:52 2026 +0700",
+    "message": "feat: group HPO export buttons into dropdown, add fallback HPO display, improve date parsing and count indicator"
+  },
+  {
+    "hash": "a2400c658b73e386c3c61f2975467cfc57fa2829",
+    "shortHash": "a2400c6",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Jul 10 18:02:57 2026 +0700",
+    "message": "fix: reference error in applyExcelUpdates due to block scoping of column variables"
+  },
+  {
+    "hash": "6f2e9064e18d8e439e2b906d488bfaf1bba7417b",
+    "shortHash": "6f2e906",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Jul 10 17:29:19 2026 +0700",
+    "message": "fix: skip fully-shipped items in Excel import modal and Export Reminder PO"
+  },
+  {
+    "hash": "33305c22431797d1a25c4c6399eddaca008d09fd",
+    "shortHash": "33305c2",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 18:12:29 2026 +0700",
+    "message": "fix: comprehensive HDO display — 2-step fallback in getHdosForItem, getSingleHdoQty, and loading state in template"
+  },
+  {
+    "hash": "a3ad98dc6962e921b51cb556dc3b6a8b64a9c2a7",
+    "shortHash": "a3ad98d",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 18:02:43 2026 +0700",
+    "message": "fix: STOCK items (qty_to_order=0) now correctly show MENUNGGU PENGIRIMAN instead of SUDAH DIPESAN caused by stale HPO in DB"
+  },
+  {
+    "hash": "8062c51ecc6f778121946057dd61a41e8a9b01f9",
+    "shortHash": "8062c51",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 18:00:13 2026 +0700",
+    "message": "fix: move getHdosForItem and getSingleHdoQty before getDisplayedQtyShipped to fix const TDZ — HDO box now shows correctly"
+  },
+  {
+    "hash": "d48eb94f7159f6dd796c98dd0388010da8104251",
+    "shortHash": "d48eb94",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 17:58:16 2026 +0700",
+    "message": "fix: correct note-aware HDO matching — getDisplayedQtyShipped and getSingleHdoQty now respect STOCK vs NO STOCK split"
+  },
+  {
+    "hash": "99e271373b88c31dcc0dc5d24289b1ef46f37dc8",
+    "shortHash": "99e2713",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 17:44:35 2026 +0700",
+    "message": "fix: resolve duplicate HDO display between stock and no-stock rows by strictly matching notes"
+  },
+  {
+    "hash": "f592dd826607215c8c6c37fd038b01b91877beca",
+    "shortHash": "f592dd8",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 14:09:29 2026 +0700",
+    "message": "fix: resolve duplicate Excel row matching and handle date cleaning on status transitions"
+  },
+  {
+    "hash": "da35f51a85525aaa1a2076f8acf81d9bc978014c",
+    "shortHash": "da35f51",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 14:00:12 2026 +0700",
+    "message": "feat: support extracting date from status text column automatically (e.g. ETA Port JKT 03 Jul 26)"
+  },
+  {
+    "hash": "65970e9280fc477d0a6278a851ecdfe60e2cd62a",
+    "shortHash": "65970e9",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 13:08:24 2026 +0700",
+    "message": "feat: show supplier (vendor) name badge under HPO number in tracking card"
+  },
+  {
+    "hash": "b6e4d39ae20894b0f1a107910f3996dda037e307",
+    "shortHash": "b6e4d39",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 13:06:03 2026 +0700",
+    "message": "revert: restore stock item restriction for HPO display"
+  },
+  {
+    "hash": "66f88dcbe0bff98fd5841e3e8c88a99eb9979813",
+    "shortHash": "66f88dc",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 13:01:31 2026 +0700",
+    "message": "fix: allow HPOs to be displayed for stock items"
+  },
+  {
+    "hash": "604c699bd7fbfbce63928ddc06098a12e7eaa519",
+    "shortHash": "604c699",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 12:58:54 2026 +0700",
+    "message": "fix: resolve blank page by moving paginatedOrders watch below its initialization"
+  },
+  {
+    "hash": "f2f315a0eb6473d90f5b406d2ecefa70ca7211b3",
+    "shortHash": "f2f315a",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 12:55:43 2026 +0700",
+    "message": "fix: smart HPO completion logic based on no-stock items and quantity matching"
+  },
+  {
+    "hash": "7d21f0fdefbd1f48f4c5530e8b0b7e1ce704c626",
+    "shortHash": "7d21f0f",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 12:53:07 2026 +0700",
+    "message": "fix: HPO indicator logic - only show for active SOs without HPO, hide for Terproses/Ditutup/100%"
+  },
+  {
+    "hash": "b3e330bea10f393de362247f095cba0c51157c9d",
+    "shortHash": "b3e330b",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 12:47:30 2026 +0700",
+    "message": "feat: add HPO completion indicator on SO list - shows Lengkap/Belum Lengkap per HSO"
+  },
+  {
+    "hash": "57f194a2d6a836a6733a9b44cdd4d08654334927",
+    "shortHash": "57f194a",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 12:42:38 2026 +0700",
+    "message": "fix: make HPO status card inline - Ex-Works | ⏳ Waiting on same row"
+  },
+  {
+    "hash": "7b18befd0b2a5cfdeecb6e76529a7326f3d83493",
+    "shortHash": "7b18bef",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 12:40:34 2026 +0700",
+    "message": "fix: improve HPO status card layout - fix 'Waiting for confirmation' wrapping issue"
+  },
+  {
+    "hash": "27857cc7c778748038350d83dca357c4ba435484",
+    "shortHash": "27857cc",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 12:38:37 2026 +0700",
+    "message": "fix: use exwork_waiting boolean flag instead of text in DATE column - fixes invalid syntax error"
+  },
+  {
+    "hash": "9efa1d43dae0afecd91fa63dcf4d99f3ca2efa6b",
+    "shortHash": "9efa1d4",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 12:17:36 2026 +0700",
+    "message": "fix: simplify Excel import matching - prioritize DB shipments with HPO, never overwrite dunex_date if already set"
+  },
+  {
+    "hash": "320145d8617e8a63ee096da99db94db4ec73c9b0",
+    "shortHash": "320145d",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 12:13:04 2026 +0700",
+    "message": "fix: detect items with no hpoMapping via DB shipments or Excel HPO column; improve isItemMatch fuzzy matching"
+  },
+  {
+    "hash": "7664de4b553ff9b5d86d004e84ae875c6cd02d66",
+    "shortHash": "7664de4",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 12:07:42 2026 +0700",
+    "message": "fix: don't overwrite existing dunex/hokiindo date with today when re-importing Excel"
+  },
+  {
+    "hash": "01bfde87255d0a162c4fe99deb678db33f5e6dc8",
+    "shortHash": "01bfde8",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 12:03:40 2026 +0700",
+    "message": "fix: improve Excel column detection priority - status first, add debug logs"
+  },
+  {
+    "hash": "b16f1646869916547f76719690920361e3f797f2",
+    "shortHash": "b16f164",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 9 11:56:25 2026 +0700",
+    "message": "feat: support 'Waiting for confirmation' text in Excel exwork date column"
+  },
+  {
+    "hash": "22da89d140561198bc698f342229a136e6efbea6",
+    "shortHash": "22da89d",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Jul 7 20:53:45 2026 +0700",
+    "message": "fix: add pg_cron extension creation statement in cron setup migration"
+  },
+  {
+    "hash": "ee09d658c21b20bafb0f5a03cb4eeac8e05e3daa",
+    "shortHash": "ee09d65",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Jul 7 20:50:40 2026 +0700",
+    "message": "feat: add send-daily-reminder edge function and migration for logistics email reminders"
+  },
+  {
+    "hash": "a0303fa857698e566c549a8fca98a3ad9ac78d7b",
+    "shortHash": "a0303fa",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Jul 7 16:52:40 2026 +0700",
+    "message": "fix: exclude items without purchase shortage (menunggu pengiriman) from reminder PO export"
+  },
+  {
+    "hash": "35fe9c3ddb7a072a2e29da6d368c2aea40e2c585",
+    "shortHash": "35fe9c3",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Jul 7 16:16:26 2026 +0700",
+    "message": "fix: resolve customer name mapping in excel export and enhance header responsive UI"
+  }
+]

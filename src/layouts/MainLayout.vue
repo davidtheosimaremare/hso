@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch, computed, provide } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { 
@@ -20,7 +20,8 @@ import {
   Database,
   ChevronDown,
   ChevronUp,
-  BookOpen
+  BookOpen,
+  Code
 } from 'lucide-vue-next'
 import {
   Sheet,
@@ -36,12 +37,26 @@ const route = useRoute()
 const router = useRouter()
 const userEmail = ref('Memuat...')
 const isDarkMode = ref(false)
+const userRole = ref('STAFF')
+const allowedModules = ref([])
 
-const isRencanaPembelianOpen = ref(route.path.startsWith('/cart') || route.path.startsWith('/hpb'))
+// Provide roles & permissions to child components reactively
+provide('userRole', userRole)
+provide('allowedModules', allowedModules)
+
+const isPembelianOpen = ref(route.path.startsWith('/cart') || route.path.startsWith('/hpb') || route.path.startsWith('/purchase-orders'))
+const isLogistikOpen = ref(route.path.startsWith('/logistics-db') || route.path.startsWith('/delivery-orders') || route.path.startsWith('/receive-items'))
+const isSettingOpen = ref(route.path.startsWith('/settings'))
 
 watch(() => route.path, (newPath) => {
-  if (newPath.startsWith('/cart') || newPath.startsWith('/hpb')) {
-    isRencanaPembelianOpen.value = true
+  if (newPath.startsWith('/cart') || newPath.startsWith('/hpb') || newPath.startsWith('/purchase-orders')) {
+    isPembelianOpen.value = true
+  }
+  if (newPath.startsWith('/logistics-db') || newPath.startsWith('/delivery-orders') || newPath.startsWith('/receive-items')) {
+    isLogistikOpen.value = true
+  }
+  if (newPath.startsWith('/settings')) {
+    isSettingOpen.value = true
   }
 })
 
@@ -56,12 +71,43 @@ const toggleDarkMode = () => {
     localStorage.setItem('theme', 'light')
   }
 }
-
-// Init Theme & User
+// Init Theme & User & Permissions
 onMounted(async () => {
   // Check User
   const { data: { user } } = await supabase.auth.getUser()
-  if (user) userEmail.value = user.email
+  if (user) {
+    userEmail.value = user.email
+    try {
+      const { data } = await supabase
+        .from('user_access')
+        .select('role, allowed_modules')
+        .eq('email', user.email)
+        .maybeSingle()
+
+      if (data) {
+        userRole.value = data.role || 'STAFF'
+        allowedModules.value = data.allowed_modules || ['dashboard:read']
+      } else {
+        userRole.value = 'ADMIN'
+        allowedModules.value = [
+          'dashboard:read', 'dashboard:write',
+          'sales-orders:read', 'sales-orders:write',
+          'hsq:read', 'hsq:write',
+          'cart:read', 'cart:write',
+          'purchase-orders:read', 'purchase-orders:write',
+          'receive-items:read', 'receive-items:write',
+          'delivery-orders:read', 'delivery-orders:write',
+          'logistics-db:read', 'logistics-db:write',
+          'sop-guide:read', 'sop-guide:write',
+          'settings:read', 'settings:write'
+        ]
+      }
+    } catch (err) {
+      console.error('Error fetching permissions:', err)
+      userRole.value = 'STAFF'
+      allowedModules.value = ['dashboard:read']
+    }
+  }
 
   // Check Theme Preference
   const savedTheme = localStorage.getItem('theme')
@@ -73,18 +119,87 @@ onMounted(async () => {
   }
 })
 
-const menuItems = [
-  { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-  { name: 'Sales Order', path: '/sales-orders', icon: FileText },
-  { name: 'Sales Quotation (HSQ)', path: '/hsq', icon: FileText },
-  { name: 'Keranjang Pembelian', path: '/cart', icon: ShoppingCart },
-  { name: 'Purchase Order', path: '/purchase-orders', icon: ShoppingBag },
-  { name: 'Penerimaan Barang', path: '/receive-items', icon: Package },
-  { name: 'Delivery Order', path: '/delivery-orders', icon: Truck },
-  { name: 'Database Logistik', path: '/logistics-db', icon: Database },
-  { name: 'SOP & Panduan', path: '/sop-guide', icon: BookOpen },
-  { name: 'Manage Account', path: '/settings', icon: Settings },
+const menuGroups = [
+  {
+    type: 'item',
+    name: 'Penawaran',
+    path: '/hsq',
+    icon: FileText,
+    moduleKey: 'hsq'
+  },
+  {
+    type: 'item',
+    name: 'Penjualan',
+    path: '/sales-orders',
+    icon: FileText,
+    moduleKey: 'sales-orders'
+  },
+  {
+    type: 'group',
+    name: 'Pembelian',
+    icon: ShoppingCart,
+    isOpen: isPembelianOpen,
+    children: [
+      { name: 'Perencanaan Pembelian (Keranjang)', path: '/cart', moduleKey: 'cart' },
+      { name: 'HPB', path: '/hpb', moduleKey: 'cart' },
+      { name: 'Purchase Order', path: '/purchase-orders', moduleKey: 'purchase-orders' }
+    ]
+  },
+  {
+    type: 'group',
+    name: 'Logistik',
+    icon: Truck,
+    isOpen: isLogistikOpen,
+    children: [
+      { name: 'Status Logistik (Database Logistik)', path: '/logistics-db', moduleKey: 'logistics-db' },
+      { name: 'Pengiriman', path: '/delivery-orders', moduleKey: 'delivery-orders' },
+      { name: 'Penerimaan Barang', path: '/receive-items', moduleKey: 'receive-items' }
+    ]
+  },
+  {
+    type: 'item',
+    name: 'SOP & Panduan',
+    path: '/sop-guide',
+    icon: BookOpen,
+    moduleKey: 'sop-guide'
+  },
+  {
+    type: 'group',
+    name: 'Setting',
+    icon: Settings,
+    isOpen: isSettingOpen,
+    children: [
+      { name: 'Manage Account', path: '/settings', moduleKey: 'settings' }
+    ]
+  },
+  {
+    type: 'item',
+    name: 'Development',
+    path: '/development',
+    icon: Code,
+    moduleKey: 'settings'
+  }
 ]
+
+const filteredMenuGroups = computed(() => {
+  return menuGroups.map(group => {
+    if (group.type === 'item') {
+      const isAllowed = userRole.value === 'ADMIN' || allowedModules.value.includes(`${group.moduleKey}:read`)
+      return isAllowed ? group : null
+    } else {
+      const allowedChildren = group.children.filter(child => {
+        return userRole.value === 'ADMIN' || allowedModules.value.includes(`${child.moduleKey}:read`)
+      })
+      if (allowedChildren.length > 0) {
+        return {
+          ...group,
+          children: allowedChildren
+        }
+      }
+      return null
+    }
+  }).filter(Boolean)
+})
 
 const handleLogout = async () => {
   await supabase.auth.signOut()
@@ -116,56 +231,48 @@ const handleLogout = async () => {
       
       <nav class="flex-1 px-4 space-y-1 mt-2">
         
-        <template v-for="item in menuItems" :key="item.name">
-          <!-- Rencana Pembelian Collapsible Dropdown -->
-          <template v-if="item.name === 'Keranjang Pembelian'">
-            <div class="space-y-0.5">
-              <button 
-                @click="isRencanaPembelianOpen = !isRencanaPembelianOpen"
-                class="flex items-center justify-between w-full px-4 py-3.5 text-sm font-medium transition-all rounded-md text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30"
-              >
-                <div class="flex items-center gap-4">
-                  <component :is="item.icon" class="w-4 h-4" />
-                  <span>Rencana Pembelian</span>
-                </div>
-                <component :is="isRencanaPembelianOpen ? ChevronUp : ChevronDown" class="w-4 h-4 text-gray-400" />
-              </button>
-              
-              <!-- Collapsible Content -->
-              <div v-show="isRencanaPembelianOpen" class="pl-8 space-y-1 mt-1 transition-all">
-                <RouterLink 
-                  to="/cart"
-                  class="flex items-center gap-3 px-4 py-2.5 text-xs font-medium transition-all rounded-md border-l-2"
-                  :class="route.path.startsWith('/cart') 
-                    ? 'border-[#e60000] text-black dark:text-white bg-gray-50 dark:bg-slate-800/50' 
-                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30'"
-                >
-                  <span>Keranjang</span>
-                </RouterLink>
-                <RouterLink 
-                  to="/hpb"
-                  class="flex items-center gap-3 px-4 py-2.5 text-xs font-medium transition-all rounded-md border-l-2"
-                  :class="route.path.startsWith('/hpb') 
-                    ? 'border-[#e60000] text-black dark:text-white bg-gray-50 dark:bg-slate-800/50' 
-                    : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30'"
-                >
-                  <span>Permintaan Barang (HPB)</span>
-                </RouterLink>
-              </div>
-            </div>
-          </template>
-
+        <template v-for="group in filteredMenuGroups" :key="group.name">
+          <!-- Single Menu Item -->
           <RouterLink 
-            v-else
-            :to="item.path"
-            class="flex items-center gap-4 px-4 py-3.5 text-sm font-medium transition-all border-l-4"
-            :class="route.path.startsWith(item.path) 
+            v-if="group.type === 'item'"
+            :to="group.path"
+            class="flex items-center gap-4 px-4 py-3.5 text-sm font-medium transition-all border-l-4 relative"
+            :class="route.path.startsWith(group.path) 
               ? 'border-[#e60000] text-black dark:text-white bg-gray-50 dark:bg-slate-800/50' 
               : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30'"
           >
-            <span v-if="route.path.startsWith(item.path)" class="w-1.5 h-1.5 rounded-full bg-[#e60000] absolute left-8"></span>
-            <span :class="route.path.startsWith(item.path) ? 'ml-2' : ''">{{ item.name }}</span>
+            <component :is="group.icon" class="w-4 h-4 text-gray-500 dark:text-gray-400" />
+            <span>{{ group.name }}</span>
           </RouterLink>
+
+          <!-- Group Collapsible Menu -->
+          <div v-else class="space-y-0.5">
+            <button 
+              @click="group.isOpen.value = !group.isOpen.value"
+              class="flex items-center justify-between w-full px-4 py-3.5 text-sm font-medium transition-all rounded-md text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30"
+            >
+              <div class="flex items-center gap-4">
+                <component :is="group.icon" class="w-4 h-4" />
+                <span>{{ group.name }}</span>
+              </div>
+              <component :is="group.isOpen.value ? ChevronUp : ChevronDown" class="w-4 h-4 text-gray-400" />
+            </button>
+            
+            <!-- Collapsible Content -->
+            <div v-show="group.isOpen.value" class="pl-8 space-y-1 mt-1 transition-all">
+              <RouterLink 
+                v-for="child in group.children"
+                :key="child.name"
+                :to="child.path"
+                class="flex items-center gap-3 px-4 py-2.5 text-xs font-medium transition-all rounded-md border-l-2"
+                :class="route.path.startsWith(child.path) 
+                  ? 'border-[#e60000] text-black dark:text-white bg-gray-50 dark:bg-slate-800/50' 
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30'"
+              >
+                <span>{{ child.name }}</span>
+              </RouterLink>
+            </div>
+          </div>
         </template>
 
       </nav>
@@ -199,30 +306,33 @@ const handleLogout = async () => {
     <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-[#1e293b] border-t border-gray-200 dark:border-slate-800 flex justify-around items-center p-2 z-50 pb-safe shadow-lg transition-colors duration-300">
       
       <RouterLink 
-        to="/dashboard"
+        v-if="userRole === 'ADMIN' || allowedModules.includes('hsq:read')"
+        to="/hsq"
         class="flex flex-col items-center justify-center p-2 rounded-lg w-full transition-colors"
-        :class="route.path.startsWith('/dashboard') ? 'text-[#e60000] font-bold' : 'text-gray-400 dark:text-gray-400'"
+        :class="route.path.startsWith('/hsq') ? 'text-[#e60000] font-bold' : 'text-gray-400 dark:text-gray-400'"
       >
-        <LayoutDashboard class="w-5 h-5 mb-1" />
-        <span class="text-[10px]">Dashboard</span>
+        <FileText class="w-5 h-5 mb-1" />
+        <span class="text-[10px]">Penawaran</span>
       </RouterLink>
 
       <RouterLink 
+        v-if="userRole === 'ADMIN' || allowedModules.includes('sales-orders:read')"
         to="/sales-orders"
         class="flex flex-col items-center justify-center p-2 rounded-lg w-full transition-colors"
         :class="route.path.startsWith('/sales-orders') ? 'text-[#e60000] font-bold' : 'text-gray-400 dark:text-gray-400'"
       >
         <FileText class="w-5 h-5 mb-1" />
-        <span class="text-[10px]">Sales Order</span>
+        <span class="text-[10px]">Penjualan</span>
       </RouterLink>
 
       <RouterLink 
-        to="/purchase-orders"
+        v-if="userRole === 'ADMIN' || allowedModules.includes('cart:read')"
+        to="/cart"
         class="flex flex-col items-center justify-center p-2 rounded-lg w-full transition-colors"
-        :class="route.path.startsWith('/purchase-orders') ? 'text-[#e60000] font-bold' : 'text-gray-400 dark:text-gray-400'"
+        :class="route.path.startsWith('/cart') ? 'text-[#e60000] font-bold' : 'text-gray-400 dark:text-gray-400'"
       >
-        <ShoppingBag class="w-5 h-5 mb-1" />
-        <span class="text-[10px]">PO Siemens</span>
+        <ShoppingCart class="w-5 h-5 mb-1" />
+        <span class="text-[10px]">Keranjang</span>
       </RouterLink>
 
       <!-- More Menu using Sheet Drawer -->
@@ -243,82 +353,49 @@ const handleLogout = async () => {
           </SheetHeader>
           
           <div class="py-4 space-y-1.5 overflow-y-auto max-h-[50vh]">
-            <RouterLink 
-              to="/cart"
-              class="flex items-center gap-4 px-4 py-3 text-sm font-medium transition-all rounded-xl border border-transparent"
-              :class="route.path.startsWith('/cart') 
-                ? 'text-[#e60000] bg-red-50/50 dark:bg-red-950/20 border-red-100 dark:border-red-950' 
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30'"
-            >
-              <ShoppingCart class="w-5 h-5 text-slate-500 dark:text-slate-400" />
-              <span>Keranjang Pembelian</span>
-            </RouterLink>
+            <template v-for="group in filteredMenuGroups" :key="'mob-' + group.name">
+              <!-- Render Single Item Mobile -->
+              <RouterLink 
+                v-if="group.type === 'item'"
+                :to="group.path"
+                class="flex items-center gap-4 px-4 py-3 text-sm font-medium transition-all rounded-xl border border-transparent"
+                :class="route.path.startsWith(group.path) 
+                  ? 'text-[#e60000] bg-red-50/50 dark:bg-red-950/20 border-red-100 dark:border-red-950' 
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30'"
+              >
+                <component :is="group.icon" class="w-5 h-5 text-slate-500 dark:text-slate-400" />
+                <span>{{ group.name }}</span>
+              </RouterLink>
 
-            <RouterLink 
-              to="/hpb"
-              class="flex items-center gap-4 px-4 py-3 text-sm font-medium transition-all rounded-xl border border-transparent"
-              :class="route.path.startsWith('/hpb') 
-                ? 'text-[#e60000] bg-red-50/50 dark:bg-red-950/20 border-red-100 dark:border-red-950' 
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30'"
-            >
-              <ShoppingCart class="w-5 h-5 text-slate-500 dark:text-slate-400" />
-              <span>Permintaan Barang (HPB)</span>
-            </RouterLink>
-
-            <RouterLink 
-              to="/hsq"
-              class="flex items-center gap-4 px-4 py-3 text-sm font-medium transition-all rounded-xl border border-transparent"
-              :class="route.path.startsWith('/hsq') 
-                ? 'text-[#e60000] bg-red-50/50 dark:bg-red-950/20 border-red-100 dark:border-red-950' 
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30'"
-            >
-              <FileText class="w-5 h-5 text-slate-500 dark:text-slate-400" />
-              <span>Sales Quotation (HSQ)</span>
-            </RouterLink>
-
-            <RouterLink 
-              to="/receive-items"
-              class="flex items-center gap-4 px-4 py-3 text-sm font-medium transition-all rounded-xl border border-transparent"
-              :class="route.path.startsWith('/receive-items') 
-                ? 'text-[#e60000] bg-red-50/50 dark:bg-red-950/20 border-red-100 dark:border-red-950' 
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30'"
-            >
-              <Package class="w-5 h-5 text-slate-500 dark:text-slate-400" />
-              <span>Penerimaan Barang</span>
-            </RouterLink>
-            
-            <RouterLink 
-              to="/delivery-orders"
-              class="flex items-center gap-4 px-4 py-3 text-sm font-medium transition-all rounded-xl border border-transparent"
-              :class="route.path.startsWith('/delivery-orders') 
-                ? 'text-[#e60000] bg-red-50/50 dark:bg-red-950/20 border-red-100 dark:border-red-950' 
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30'"
-            >
-              <Truck class="w-5 h-5 text-slate-500 dark:text-slate-400" />
-              <span>Delivery Order</span>
-            </RouterLink>
-
-            <RouterLink 
-              to="/sop-guide"
-              class="flex items-center gap-4 px-4 py-3 text-sm font-medium transition-all rounded-xl border border-transparent"
-              :class="route.path.startsWith('/sop-guide') 
-                ? 'text-[#e60000] bg-red-50/50 dark:bg-red-950/20 border-red-100 dark:border-red-950' 
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30'"
-            >
-              <BookOpen class="w-5 h-5 text-slate-500 dark:text-slate-400" />
-              <span>SOP & Panduan</span>
-            </RouterLink>
-
-            <RouterLink 
-              to="/settings"
-              class="flex items-center gap-4 px-4 py-3 text-sm font-medium transition-all rounded-xl border border-transparent"
-              :class="route.path.startsWith('/settings') 
-                ? 'text-[#e60000] bg-red-50/50 dark:bg-red-950/20 border-red-100 dark:border-red-950' 
-                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30'"
-            >
-              <Settings class="w-5 h-5 text-slate-500 dark:text-slate-400" />
-              <span>Manage Account</span>
-            </RouterLink>
+              <!-- Render Group Mobile -->
+              <div v-else class="space-y-0.5">
+                <button 
+                  @click="group.isOpen.value = !group.isOpen.value"
+                  class="flex items-center justify-between w-full px-4 py-3 text-sm font-medium transition-all rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30"
+                >
+                  <div class="flex items-center gap-4">
+                    <component :is="group.icon" class="w-5 h-5 text-slate-500 dark:text-slate-400" />
+                    <span>{{ group.name }}</span>
+                  </div>
+                  <component :is="group.isOpen.value ? ChevronUp : ChevronDown" class="w-4 h-4 text-slate-400" />
+                </button>
+                
+                <!-- Collapsible Content Mobile -->
+                <div v-show="group.isOpen.value" class="pl-9 space-y-1 mt-1 transition-all">
+                  <RouterLink 
+                    v-for="child in group.children"
+                    :key="'mob-' + child.name"
+                    :to="child.path"
+                    class="flex items-center gap-3 px-4 py-2.5 text-xs font-medium transition-all rounded-lg border-l-2"
+                    :class="route.path.startsWith(child.path) 
+                      ? 'border-[#e60000] text-black dark:text-white bg-gray-50 dark:bg-slate-800/50' 
+                      : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30'"
+                  >
+                    <span>{{ child.name }}</span>
+                  </RouterLink>
+                </div>
+              </div>
+            </template>
             
             <div class="border-t border-slate-100 dark:border-slate-800 my-3"></div>
             

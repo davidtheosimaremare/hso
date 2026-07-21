@@ -21,7 +21,7 @@
       </div>
       <div class="flex items-center gap-2 shrink-0">
         <Button 
-          v-if="items.length > 0"
+          v-if="items.length > 0 && canWrite"
           variant="outline" 
           class="h-10 px-4 rounded-xl border-red-200 hover:border-red-300 dark:border-red-950 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all flex items-center gap-2 bg-white dark:bg-slate-950 font-bold text-xs uppercase tracking-wider"
           @click="showClearConfirm = true"
@@ -30,7 +30,7 @@
           <span>Kosongkan Keranjang</span>
         </Button>
         <Button 
-          v-if="items.length > 0"
+          v-if="items.length > 0 && canWrite"
           class="h-10 px-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs uppercase tracking-wider flex items-center gap-2 shadow-sm font-sans"
           @click="openHpbModalForAll"
         >
@@ -145,6 +145,7 @@
                     
                     <!-- Group Action Option (Crosscheck All) -->
                     <button
+                      v-if="canWrite"
                       @click="toggleGroupCrosscheck(group)"
                       class="text-[10px] font-bold text-slate-500 hover:text-green-600 dark:text-slate-400 dark:hover:text-green-400 transition-colors flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-md border border-slate-200/50 dark:border-slate-700/50 hover:border-green-300 dark:hover:border-green-800 shadow-sm"
                     >
@@ -188,8 +189,9 @@
                   <!-- Crosscheck Toggle -->
                   <TableCell class="text-center align-middle">
                     <button
+                      :disabled="!canWrite"
                       @click="toggleCrosscheck(item)"
-                      class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all border shadow-sm"
+                      class="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[10px] font-bold transition-all border shadow-sm disabled:opacity-75 disabled:cursor-not-allowed"
                       :class="item.is_crosschecked
                         ? 'bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-400 hover:bg-green-500/20'
                         : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'"
@@ -213,6 +215,7 @@
                       </Button>
 
                       <Button
+                        v-if="canWrite"
                         size="sm"
                         variant="outline"
                         class="h-8 w-8 p-0 rounded-lg border-slate-200 dark:border-slate-800 text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-900/30 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all shadow-sm"
@@ -273,13 +276,14 @@
 
                   <div class="flex items-center gap-1.5">
                     <button
+                      :disabled="!canWrite"
                       @click="toggleCrosscheck(item)"
-                      class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-bold transition-all border"
+                      class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[9px] font-bold transition-all border disabled:opacity-75 disabled:cursor-not-allowed"
                       :class="item.is_crosschecked
                         ? 'bg-green-500/10 border-green-500/20 text-green-700 dark:text-green-400'
                         : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'"
                     >
-                      <component :is="item.is_crosschecked ? CheckCircle2 : ShieldQuestion" class="w-3 h-3" />
+                      <component :is="item.is_crosschecked ? CheckCircle2 : ShieldQuestion" class="w-3.5 h-3.5" />
                       {{ item.is_crosschecked ? 'Checked' : 'Pending' }}
                     </button>
                   </div>
@@ -311,6 +315,7 @@
                    </Button>
 
                    <Button
+                     v-if="canWrite"
                      size="sm"
                      variant="outline"
                      class="h-7 px-2.5 rounded-lg border-slate-200 dark:border-slate-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 text-[10px] font-bold flex items-center gap-1 shadow-sm"
@@ -660,8 +665,15 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, inject } from 'vue'
 import { supabase } from '@/lib/supabase'
+
+const userRole = inject('userRole')
+const allowedModules = inject('allowedModules')
+
+const canWrite = computed(() => {
+  return userRole?.value === 'ADMIN' || allowedModules?.value?.includes('cart:write')
+})
 import {
   ShoppingCart,
   Search,

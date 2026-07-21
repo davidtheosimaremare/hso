@@ -1,8 +1,8 @@
 <script setup>
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
-import { Loader2, AlertCircle, Search, FileText, Calendar, Eye, RefreshCw, DollarSign } from 'lucide-vue-next'
+import { Loader2, AlertCircle, Search, FileText, Calendar, Eye, RefreshCw, DollarSign, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 
 const router = useRouter()
@@ -37,6 +37,7 @@ const fetchHsqList = async () => {
     if (!data?.s) throw new Error(data?.error || 'Gagal mengambil data list HSQ')
     
     hsqList.value = data.d || []
+    await fetchProgressDataMap()
   } catch (err) {
     console.error('Fetch HSQ error:', err)
     fetchError.value = err.message
@@ -45,8 +46,88 @@ const fetchHsqList = async () => {
   }
 }
 
-const goToDetail = (id) => {
-  router.push(`/hsq/${id}`)
+// --- HSQ TRACKING & PIPELINE MAP ---
+const progressMap = ref({})
+const pendingTasksMap = ref({})
+
+const fetchProgressDataMap = async () => {
+  const pMap = {}
+  const tMap = {}
+
+  // 1. Try Supabase
+  try {
+    const { data: pData, error: pErr } = await supabase.from('hsq_progress').select('hsq_number, stage, probability')
+    if (!pErr && pData) {
+      pData.forEach(item => {
+        if (item.hsq_number) pMap[item.hsq_number] = item
+      })
+    }
+
+    const { data: tData, error: tErr } = await supabase.from('hsq_tasks').select('hsq_number').eq('status', 'Pending')
+    if (!tErr && tData) {
+      tData.forEach(item => {
+        if (item.hsq_number) {
+          tMap[item.hsq_number] = (tMap[item.hsq_number] || 0) + 1
+        }
+      })
+    }
+  } catch (err) {
+    console.warn('Supabase fetch failed, scanning local storage fallback:', err)
+  }
+
+  // 2. Scan localStorage fallback
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.startsWith('hsq_progress_')) {
+        const num = key.replace('hsq_progress_', '')
+        try {
+          const val = JSON.parse(localStorage.getItem(key))
+          if (val && !pMap[num]) pMap[num] = val
+        } catch {}
+      } else if (key && key.startsWith('hsq_tasks_')) {
+        const num = key.replace('hsq_tasks_', '')
+        try {
+          const val = JSON.parse(localStorage.getItem(key))
+          if (Array.isArray(val)) {
+            const pendingCount = val.filter(t => t.status === 'Pending').length
+            if (pendingCount > 0) tMap[num] = Math.max(tMap[num] || 0, pendingCount)
+          }
+        } catch {}
+      }
+    }
+  } catch {}
+
+  progressMap.value = pMap
+  pendingTasksMap.value = tMap
+}
+
+const formatHsqUrlSlug = (num) => {
+  if (!num) return ''
+  return String(num).replace(/\//g, '-')
+}
+
+const getHsqProgress = (num) => {
+  if (!num) return null
+  const str = String(num)
+  const slashNum = str.replace(/-/g, '/')
+  const hyphenNum = str.replace(/\//g, '-')
+  return progressMap.value[str] || progressMap.value[slashNum] || progressMap.value[hyphenNum] || null
+}
+
+const getHsqPendingTasks = (num) => {
+  if (!num) return 0
+  const str = String(num)
+  const slashNum = str.replace(/-/g, '/')
+  const hyphenNum = str.replace(/\//g, '-')
+  return pendingTasksMap.value[str] || pendingTasksMap.value[slashNum] || pendingTasksMap.value[hyphenNum] || 0
+}
+
+const goToDetail = (item) => {
+  const targetId = typeof item === 'object' ? (item.id || item.number) : item
+  if (targetId) {
+    router.push(`/hsq/${encodeURIComponent(targetId)}`)
+  }
 }
 
 onMounted(() => {
@@ -100,6 +181,32 @@ const filteredHsqList = computed(() => {
   return result
 })
 
+// --- PAGINATION ---
+const currentPage = ref(1)
+const itemsPerPage = ref(20)
+
+watch([searchQuery, statusFilter, startDate, endDate, itemsPerPage], () => {
+  currentPage.value = 1
+})
+
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredHsqList.value.length / itemsPerPage.value)))
+
+const paginatedHsqList = computed(() => {
+  const start = (currentPage.value - 1) * itemsPerPage.value
+  return filteredHsqList.value.slice(start, start + itemsPerPage.value)
+})
+
+const startIndex = computed(() => filteredHsqList.value.length === 0 ? 0 : (currentPage.value - 1) * itemsPerPage.value + 1)
+const endIndex = computed(() => Math.min(currentPage.value * itemsPerPage.value, filteredHsqList.value.length))
+
+const prevPage = () => {
+  if (currentPage.value > 1) currentPage.value--
+}
+
+const nextPage = () => {
+  if (currentPage.value < totalPages.value) currentPage.value++
+}
+
 // --- DATE SHORTCUTS ---
 const setDateFilter = (type) => {
   const now = new Date()
@@ -132,6 +239,7 @@ const resetFilter = () => {
   startDate.value = ''
   endDate.value = ''
   statusFilter.value = 'all'
+  currentPage.value = 1
 }
 
 // --- UTILS ---
@@ -166,6 +274,15 @@ const getStatusClass = (status) => {
   }
   return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/60'
 }
+
+const getStageBadgeClass = (stage) => {
+  if (!stage || stage === 'Prospecting') return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+  if (stage.includes('Pitching') || stage.includes('Dikirim')) return 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/20 dark:text-blue-400'
+  if (stage.includes('Negosiasi')) return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400'
+  if (stage.includes('Won')) return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400'
+  if (stage.includes('Lost')) return 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400'
+  return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+}
 </script>
 
 <template>
@@ -178,7 +295,7 @@ const getStatusClass = (status) => {
           Sales Quotation (HSQ)
         </h1>
         <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-          Daftar dokumen Penawaran Penjualan (Sales Quotation) yang diambil dari Accurate Online secara real-time.
+          Daftar dokumen Penawaran Penjualan (Sales Quotation) dengan pelacakan progress & probabilitas deal.
         </p>
       </div>
       <div class="flex items-center gap-3">
@@ -276,22 +393,35 @@ const getStatusClass = (status) => {
               <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider w-36">Tanggal</th>
               <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider">Customer</th>
               <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider">Nilai Total</th>
-              <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider w-32 text-center">Status</th>
+              <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider w-40 text-center">Progress & Win %</th>
+              <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider w-28 text-center">Status</th>
               <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider w-24 text-center">Aksi</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100 dark:divide-slate-800/60">
             <tr 
-              v-for="(hsq, idx) in filteredHsqList" 
+              v-for="(hsq, idx) in paginatedHsqList" 
               :key="hsq.id" 
               class="hover:bg-slate-50/70 dark:hover:bg-[#0f172a]/30 transition-colors cursor-pointer group"
-              @click="goToDetail(hsq.id)"
+              @click="goToDetail(hsq)"
             >
-              <td class="py-3.5 px-4 text-center text-xs font-bold text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white">{{ idx + 1 }}</td>
+              <td class="py-3.5 px-4 text-center text-xs font-bold text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white">
+                {{ (currentPage - 1) * itemsPerPage + idx + 1 }}
+              </td>
               <td class="py-3.5 px-4">
-                <span class="text-sm font-bold text-slate-900 dark:text-white group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors">
-                  {{ hsq.number }}
-                </span>
+                <div class="flex items-center gap-2">
+                  <span class="text-sm font-bold text-slate-900 dark:text-white group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors">
+                    {{ hsq.number }}
+                  </span>
+                  <!-- Pending task badge if any -->
+                  <span 
+                    v-if="getHsqPendingTasks(hsq)" 
+                    title="Ada tugas pending"
+                    class="px-1.5 py-0.5 rounded text-[9px] font-black bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 border border-red-200 dark:border-red-900"
+                  >
+                    {{ getHsqPendingTasks(hsq) }} Task
+                  </span>
+                </div>
               </td>
               <td class="py-3.5 px-4 text-xs font-bold text-slate-600 dark:text-slate-400">
                 <div class="flex items-center gap-1.5">
@@ -306,6 +436,20 @@ const getStatusClass = (status) => {
               <td class="py-3.5 px-4 text-xs font-bold text-slate-700 dark:text-slate-300">
                 {{ formatCurrency(hsq.totalAmount) }}
               </td>
+              <!-- Pipeline Progress & Prob -->
+              <td class="py-3.5 px-4 text-center">
+                <div v-if="getHsqProgress(hsq)" class="flex flex-col items-center gap-1">
+                  <span class="inline-flex px-2 py-0.5 rounded text-[10px] font-bold border" :class="getStageBadgeClass(getHsqProgress(hsq).stage)">
+                    {{ getHsqProgress(hsq).stage }}
+                  </span>
+                  <div v-if="getHsqProgress(hsq).probability !== undefined && getHsqProgress(hsq).probability !== null" class="flex items-center gap-1 text-[10px]">
+                    <span class="font-bold text-emerald-600 dark:text-emerald-400">
+                      {{ getHsqProgress(hsq).probability }}% Win
+                    </span>
+                  </div>
+                </div>
+                <span v-else class="text-xs font-bold text-slate-400 dark:text-slate-600">-</span>
+              </td>
               <td class="py-3.5 px-4 text-center">
                 <span class="inline-flex px-2 py-0.5 rounded text-[10px] font-bold border" :class="getStatusClass(hsq.statusName)">
                   {{ hsq.statusName || 'Outstanding' }}
@@ -314,7 +458,7 @@ const getStatusClass = (status) => {
               <td class="py-3.5 px-4 text-center">
                 <button 
                   class="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/20 dark:hover:bg-blue-950/40 border border-blue-100 dark:border-blue-950 px-2 py-1 rounded transition-all"
-                  @click.stop="goToDetail(hsq.id)"
+                  @click.stop="goToDetail(hsq)"
                 >
                   <Eye class="w-3.5 h-3.5" /> Detail
                 </button>
@@ -322,6 +466,51 @@ const getStatusClass = (status) => {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- Pagination Footer -->
+      <div class="flex flex-col sm:flex-row items-center justify-between px-6 py-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 gap-4 text-xs">
+        <div class="flex items-center gap-4">
+          <div class="flex items-center gap-2">
+            <span class="text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">Baris/halaman:</span>
+            <select 
+              v-model.number="itemsPerPage" 
+              class="bg-white dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg text-xs outline-none focus:ring-2 focus:ring-red-500 dark:text-slate-200 font-bold"
+            >
+              <option :value="10">10</option>
+              <option :value="20">20</option>
+              <option :value="50">50</option>
+              <option :value="100">100</option>
+            </select>
+          </div>
+          <span class="text-slate-500 dark:text-slate-400 hidden sm:inline">
+            Menampilkan <strong class="text-slate-800 dark:text-slate-200">{{ startIndex }} - {{ endIndex }}</strong> dari <strong class="text-slate-800 dark:text-slate-200">{{ filteredHsqList.length }}</strong> dokumen
+          </span>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <span class="text-slate-500 dark:text-slate-400">
+            Halaman <strong class="text-slate-800 dark:text-slate-200">{{ currentPage }}</strong> dari <strong class="text-slate-800 dark:text-slate-200">{{ totalPages }}</strong>
+          </span>
+          <div class="flex gap-1">
+            <button 
+              :disabled="currentPage === 1" 
+              @click="prevPage"
+              class="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-red-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              title="Halaman Sebelumnya"
+            >
+              <ChevronLeft class="w-4 h-4"/>
+            </button>
+            <button 
+              :disabled="currentPage >= totalPages" 
+              @click="nextPage"
+              class="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-red-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              title="Halaman Selanjutnya"
+            >
+              <ChevronRight class="w-4 h-4"/>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>

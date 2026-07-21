@@ -13,12 +13,12 @@ serve(async (req) => {
     try {
       // Run the migration SQL
       await connection.queryObject`
-        ALTER TABLE accurate_purchase_order_items ADD COLUMN IF NOT EXISTS item_seq INTEGER DEFAULT 0;
-        ALTER TABLE accurate_delivery_order_items ADD COLUMN IF NOT EXISTS item_seq INTEGER DEFAULT 0;
+        DROP INDEX IF EXISTS public.idx_raw_forwarder_tracking_hpo_item;
+        CREATE INDEX IF NOT EXISTS idx_raw_forwarder_tracking_hpo_item ON public.raw_forwarder_tracking(hpo_number, item_code);
       `
 
       return new Response(
-        JSON.stringify({ message: "Migration successful: Added item_seq columns" }),
+        JSON.stringify({ message: "Migration successful: Dropped unique index idx_raw_forwarder_tracking_hpo_item" }),
         { headers: { "Content-Type": "application/json" } },
       )
     } finally {

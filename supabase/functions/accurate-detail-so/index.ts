@@ -29,7 +29,7 @@ serve(async (req) => {
     const { id, type } = await req.json()
     const moduleType = type || 'sales-order'
     
-    if (!id) throw new Error('ID Database wajib dikirim!')
+    if (!id) throw new Error('ID Database atau Nomor Dokumen wajib dikirim!')
 
     // 1. DETAIL UTAMA (SO)
     const timestamp = new Date().toISOString()
@@ -39,13 +39,47 @@ serve(async (req) => {
       signatureHeader = { 'X-Api-Timestamp': timestamp, 'X-Api-Signature': sig }
     }
 
-    // Ambil Data SO
-    const resDoc = await fetch(`${BASE_API}/${moduleType}/detail.do?id=${id}`, {
-      headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json', ...signatureHeader }
-    })
-    
-    if (!resDoc.ok) throw new Error(`Gagal ambil SO: ${await resDoc.text()}`)
-    const jsonDoc = await resDoc.json()
+    const reqId = String(id).trim()
+    const isNumberParam = reqId.includes('.') || reqId.includes('/') || reqId.includes('-') || isNaN(Number(reqId))
+
+    // Build candidate parameters to try sequentially
+    const candidateParams: string[] = []
+
+    if (isNumberParam) {
+      candidateParams.push(`number=${encodeURIComponent(reqId)}`)
+      // If reqId contains hyphen -, try replacing hyphen with slash /
+      if (reqId.includes('-')) {
+        candidateParams.push(`number=${encodeURIComponent(reqId.replace(/-/g, '/'))}`)
+        candidateParams.push(`number=${encodeURIComponent(reqId.replace(/-/g, '.'))}`)
+      }
+      candidateParams.push(`id=${encodeURIComponent(reqId)}`)
+    } else {
+      candidateParams.push(`id=${encodeURIComponent(reqId)}`)
+      candidateParams.push(`number=${encodeURIComponent(reqId)}`)
+    }
+
+    let jsonDoc: any = null
+    for (const paramStr of candidateParams) {
+      try {
+        const res = await fetch(`${BASE_API}/${moduleType}/detail.do?${paramStr}`, {
+          headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json', ...signatureHeader }
+        })
+        if (res.ok) {
+          const json = await res.json()
+          if (json.s && json.d) {
+            jsonDoc = json
+            break
+          }
+        }
+      } catch (e) {
+        console.warn(`Fetch candidate ${paramStr} failed:`, e)
+      }
+    }
+
+    if (!jsonDoc || !jsonDoc.s || !jsonDoc.d) {
+      throw new Error(jsonDoc?.d || jsonDoc?.error || `Gagal mengambil detail ${moduleType}`)
+    }
+
     const docData = jsonDoc.d
 
     // 2. CEK STOK REAL (PARALLEL FETCH KE ITEM DETAIL)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed } from 'vue'
+import { onMounted, onUnmounted, ref, computed, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 
@@ -20,6 +20,13 @@ const poDetail = ref(null)
 const isLoading = ref(true)
 const errorMessage = ref(null)
 const copiedSku = ref('')
+
+const userRole = inject('userRole')
+const allowedModules = inject('allowedModules')
+
+const canWrite = computed(() => {
+  return userRole?.value === 'ADMIN' || allowedModules?.value?.includes('purchase-orders:write')
+})
 
 const copySku = async (sku) => {
   try {
@@ -156,18 +163,12 @@ const extractRef = (note) => {
     return m ? m[1] : null
 }
 
-const goToHsqDetail = async (number, itemCode) => {
-  try {
-    const { data, error } = await supabase.functions.invoke('accurate-list-sq', {
-      body: { filterNumber: number, fields: 'id,number', limit: 1 }
-    })
-    if (data?.d?.[0]?.id) {
-      router.push(`/hsq/${data.d[0].id}?search=${itemCode}&highlight=${itemCode}`)
-    } else {
-      router.push(`/hsq?search=${number}`)
-    }
-  } catch {
-    router.push(`/hsq?search=${number}`)
+const goToHsqDetail = (number, itemCode) => {
+  if (number) {
+    const formatted = String(number).replace(/\//g, '-')
+    router.push(`/hsq/${encodeURIComponent(formatted)}?search=${itemCode}&highlight=${itemCode}`)
+  } else {
+    router.push('/hsq')
   }
 }
 
@@ -335,7 +336,7 @@ const getCustomerName = (refNumber) => {
               </div>
             </Transition>
 
-            <Button @click="refreshSinglePO" :disabled="isRefreshing" size="sm" variant="outline"
+            <Button v-if="canWrite" @click="refreshSinglePO" :disabled="isRefreshing" size="sm" variant="outline"
                     class="gap-2 border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 hover:border-slate-400 transition-all">
               <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isRefreshing }" />
               {{ isRefreshing ? 'Memperbarui...' : 'Refresh' }}

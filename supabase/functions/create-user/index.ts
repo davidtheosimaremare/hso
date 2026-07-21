@@ -24,7 +24,7 @@ serve(async (req) => {
             throw new Error('Invalid JSON body')
         }
 
-        const { email, password } = body
+        const { email, password, role, allowed_modules } = body
 
         if (!email || !password) {
             throw new Error('Email dan password wajib diisi!')
@@ -71,7 +71,12 @@ serve(async (req) => {
         try {
             await supabaseAdmin
                 .from('user_access')
-                .upsert({ email: email, is_active: true }, { onConflict: 'email' })
+                .upsert({ 
+                    email: email, 
+                    is_active: true,
+                    role: role || 'STAFF',
+                    allowed_modules: allowed_modules || ['dashboard']
+                }, { onConflict: 'email' })
         } catch (e) {
             console.log('Note: user_access table update skipped:', e.message)
         }

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
+import { onMounted, onUnmounted, ref, computed, watch, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 
@@ -38,6 +38,13 @@ const resolvedSoId = ref(null)
 // --- 1. STATE MANAGEMENT ---
 const soDetail = ref(null)
 const shipmentList = ref([])
+
+const userRole = inject('userRole')
+const allowedModules = inject('allowedModules')
+
+const canWrite = computed(() => {
+  return userRole?.value === 'ADMIN' || allowedModules?.value?.includes('sales-orders:write')
+})
 const activityLogs = ref([])  // Activity log untuk tracking siapa melakukan apa
 const currentUser = ref(null) // User yang sedang login
 const isLoading = ref(true)
@@ -2554,12 +2561,12 @@ const sendReminderEmail = async () => {
             <!-- Actions (Top Right) -->
             <div class="flex flex-wrap items-center gap-2.5 w-full xl:w-auto xl:justify-end mt-1 xl:mt-0">
               <!-- BULK EDIT BUTTON -->
-              <Button v-if="selectedItemCodes.length > 0" size="sm" class="w-full sm:w-auto shadow-sm bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 transition-all animate-in zoom-in-95 duration-200 flex items-center justify-center gap-1.5 font-bold" @click="openBulkEditModal">
+              <Button v-if="selectedItemCodes.length > 0 && canWrite" size="sm" class="w-full sm:w-auto shadow-sm bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 transition-all animate-in zoom-in-95 duration-200 flex items-center justify-center gap-1.5 font-bold" @click="openBulkEditModal">
                 <Layers class="w-4 h-4"/> Update ({{ selectedItemCodes.length }}) Item
               </Button>
 
               <!-- SYNC LOGISTICS BUTTON -->
-              <Button size="sm" variant="outline" class="w-full sm:w-auto shadow-sm border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-all duration-200 hover:shadow-xs active:scale-95 flex items-center justify-center gap-1.5 font-bold" @click="syncFromLogisticsDb" :disabled="isExcelParsing || isLoading">
+              <Button v-if="canWrite" size="sm" variant="outline" class="w-full sm:w-auto shadow-sm border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-all duration-200 hover:shadow-xs active:scale-95 flex items-center justify-center gap-1.5 font-bold" @click="syncFromLogisticsDb" :disabled="isExcelParsing || isLoading">
                 <RefreshCw class="w-4 h-4 shrink-0" :class="isExcelParsing ? 'animate-spin' : ''"/>
                 <span>{{ isExcelParsing ? 'Mensinkronkan...' : 'Sync Logistik (Database)' }}</span>
               </Button>
@@ -2592,13 +2599,13 @@ const sendReminderEmail = async () => {
               </DropdownMenu>
 
               <!-- SEND REMINDER EMAIL BUTTON -->
-              <Button size="sm" variant="outline" class="w-full sm:w-auto shadow-sm border-blue-600 text-blue-600 dark:border-blue-500 dark:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-all duration-200 hover:shadow-xs active:scale-95 flex items-center justify-center gap-1.5 font-bold" @click="openEmailModal" :disabled="isLoading">
+              <Button v-if="canWrite" size="sm" variant="outline" class="w-full sm:w-auto shadow-sm border-blue-600 text-blue-600 dark:border-blue-500 dark:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-all duration-200 hover:shadow-xs active:scale-95 flex items-center justify-center gap-1.5 font-bold" @click="openEmailModal" :disabled="isLoading">
                 <Mail class="w-4 h-4 shrink-0"/>
                 <span>Kirim Email Reminder</span>
               </Button>
 
               <!-- SHARE TRACKING LINK BUTTON -->
-              <Button size="sm" class="w-full sm:w-auto shadow-sm transition-all duration-300 active:scale-95 flex items-center justify-center gap-1.5 text-white font-bold" :class="isLinkCopied ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-emerald-500/10' : 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 shadow-red-500/10'" @click="shareToClient" :disabled="isLinkCopied || isLoading">
+              <Button v-if="canWrite" size="sm" class="w-full sm:w-auto shadow-sm transition-all duration-300 active:scale-95 flex items-center justify-center gap-1.5 text-white font-bold" :class="isLinkCopied ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-emerald-500/10' : 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 shadow-red-500/10'" @click="shareToClient" :disabled="isLinkCopied || isLoading">
                 <component :is="isLinkCopied ? CheckCircle2 : Share2" class="w-4 h-4 shrink-0"/>
                 <span>{{ isLinkCopied ? 'Link Disalin!' : 'Share Tracking Link' }}</span>
               </Button>
@@ -2997,7 +3004,7 @@ const sendReminderEmail = async () => {
                         <span class="text-xs font-bold">Di Keranjang</span>
                       </Button>
                       <Button 
-                        v-else-if="!isSyncing && needsOrdering(item) && !hasHpb(item.code)" 
+                        v-else-if="!isSyncing && needsOrdering(item) && !hasHpb(item.code) && canWrite" 
                         size="sm" 
                         variant="outline" 
                         class="h-8 px-2.5 rounded border-amber-300 dark:border-amber-700/50 text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-all flex items-center gap-1 bg-white dark:bg-slate-800 shadow-sm" 
@@ -3008,7 +3015,7 @@ const sendReminderEmail = async () => {
                         <ShoppingCart v-else class="w-3.5 h-3.5" />
                         <span class="text-xs font-bold">{{ isAddingToCart === item.code ? 'Memproses...' : '+ Keranjang' }}</span>
                       </Button>
-                      <Button v-if="!isSyncing" size="sm" variant="outline" class="h-8 px-3 rounded border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-600 dark:hover:border-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all bg-white dark:bg-slate-800 flex items-center gap-1.5" @click="openActionModal(item)"><Edit class="w-3.5 h-3.5"/><span class="text-xs font-bold">Edit</span></Button>
+                      <Button v-if="!isSyncing && canWrite" size="sm" variant="outline" class="h-8 px-3 rounded border-gray-300 dark:border-slate-600 text-gray-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-600 dark:hover:border-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all bg-white dark:bg-slate-800 flex items-center gap-1.5" @click="openActionModal(item)"><Edit class="w-3.5 h-3.5"/><span class="text-xs font-bold">Edit</span></Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -3070,7 +3077,7 @@ const sendReminderEmail = async () => {
                     <CheckCircle2 class="w-3.5 h-3.5" />
                   </Button>
                   <Button 
-                    v-else-if="!isSyncing && needsOrdering(item) && !hasHpb(item.code)" 
+                    v-else-if="!isSyncing && needsOrdering(item) && !hasHpb(item.code) && canWrite" 
                     size="sm" 
                     variant="outline" 
                     class="h-8 w-8 p-0 rounded-lg border-amber-300 dark:border-amber-700/50 text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-950/20 bg-white dark:bg-slate-800 flex items-center justify-center shadow-sm" 
@@ -3081,7 +3088,7 @@ const sendReminderEmail = async () => {
                     <Loader2 v-if="isAddingToCart === item.code" class="w-3.5 h-3.5 animate-spin" />
                     <ShoppingCart v-else class="w-3.5 h-3.5" />
                   </Button>
-                  <Button v-if="!isSyncing" size="sm" variant="outline" class="h-8 px-2.5 rounded-lg border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-600 bg-white dark:bg-slate-800 flex items-center gap-1 shadow-sm transition-all" @click="openActionModal(item)">
+                  <Button v-if="!isSyncing && canWrite" size="sm" variant="outline" class="h-8 px-2.5 rounded-lg border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-600 bg-white dark:bg-slate-800 flex items-center gap-1 shadow-sm transition-all" @click="openActionModal(item)">
                     <Edit class="w-3.5 h-3.5"/>
                     <span class="text-xs font-bold">Edit</span>
                   </Button>

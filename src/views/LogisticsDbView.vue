@@ -1,6 +1,13 @@
 <script setup>
-import { onMounted, ref, computed, watch } from 'vue'
+import { onMounted, ref, computed, watch, inject } from 'vue'
 import { supabase } from '@/lib/supabase'
+
+const userRole = inject('userRole')
+const allowedModules = inject('allowedModules')
+
+const canWrite = computed(() => {
+  return userRole?.value === 'ADMIN' || allowedModules?.value?.includes('logistics-db:write')
+})
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -471,12 +478,12 @@ const handleExcelUpload = async (e) => {
         return null
       }
       
-      // Deduplicate rows to prevent "ON CONFLICT DO UPDATE command cannot affect row a second time"
-      const deduplicatedMap = {}
+      // Collect all valid rows (including partial shipments for the same HPO & SKU)
+      const parsedRows = []
       rows.forEach(row => {
-        let rawHpo = String(row[hpoCol]).trim()
+        let rawHpo = String(row[hpoCol] || '').trim()
         rawHpo = rawHpo.replace(/HP0\//gi, 'HPO/')
-        const rawItem = String(row[itemCol]).trim()
+        const rawItem = String(row[itemCol] || '').trim()
         if (!rawHpo || !rawItem) return
         
         const rawExwork = exworkCol ? parseExcelDateLocal(row[exworkCol]) : null
@@ -489,7 +496,7 @@ const handleExcelUpload = async (e) => {
         let deliveryDate = deliveryCol ? parseExcelDateLocal(row[deliveryCol]) : null
         if (deliveryDate === '__waiting__') deliveryDate = null
         
-        const status = statusCol ? String(row[statusCol]).trim() : null
+        const status = statusCol ? String(row[statusCol] || '').trim() : null
         
         let quantity = 0
         if (qtyCol) {
@@ -500,10 +507,7 @@ const handleExcelUpload = async (e) => {
           }
         }
         
-        const key = `${rawHpo.toLowerCase()}||${rawItem.toLowerCase()}`
-        const score = (exworkDate ? 1 : 0) + (etaDate ? 1 : 0) + (deliveryDate ? 1 : 0) + (status ? 1 : 0)
-        
-        const newRecord = {
+        parsedRows.push({
           hpo_number: rawHpo,
           item_code: rawItem,
           quantity,
@@ -513,41 +517,32 @@ const handleExcelUpload = async (e) => {
           eta_date: etaDate,
           delivery_date: deliveryDate,
           updated_at: new Date().toISOString()
-        }
-        
-        const existing = deduplicatedMap[key]
-        if (!existing) {
-          deduplicatedMap[key] = newRecord
-        } else {
-          const existingScore = (existing.exwork_date ? 1 : 0) + (existing.eta_date ? 1 : 0) + (existing.delivery_date ? 1 : 0) + (existing.status ? 1 : 0)
-          if (score >= existingScore) {
-            deduplicatedMap[key] = newRecord
-          }
-        }
+        })
       })
       
-      const upsertRows = Object.values(deduplicatedMap)
-      
-      if (upsertRows.length === 0) {
+      if (parsedRows.length === 0) {
         alert("Tidak ada baris data valid (HPO & Item SKU lengkap) untuk disimpan.")
         isUploading.value = false
         return
       }
       
+      // Clear existing raw tracking table before inserting new import batch
+      await supabase.from('raw_forwarder_tracking').delete().neq('hpo_number', '')
+
       const chunkSize = 100
       let successCount = 0
-      for (let i = 0; i < upsertRows.length; i += chunkSize) {
-        const chunk = upsertRows.slice(i, i + chunkSize)
+      for (let i = 0; i < parsedRows.length; i += chunkSize) {
+        const chunk = parsedRows.slice(i, i + chunkSize)
         const { error } = await supabase
           .from('raw_forwarder_tracking')
-          .upsert(chunk, { onConflict: 'hpo_number,item_code' })
+          .insert(chunk)
         
         if (error) {
-          console.error("Error upserting chunk:", error)
+          console.error("Error inserting chunk:", error)
           throw new Error(error.message)
         }
         successCount += chunk.length
-        uploadProgress.value = Math.round((successCount / upsertRows.length) * 100)
+        uploadProgress.value = Math.round((successCount / parsedRows.length) * 100)
       }
       
       uploadResult.value = {
@@ -1171,6 +1166,7 @@ onMounted(() => {
         </p>
       </div>
       <Button 
+        v-if="canWrite"
         size="sm" 
         class="w-full sm:w-auto shadow-md bg-gradient-to-r from-red-650 to-rose-650 hover:from-red-550 hover:to-rose-550 text-white font-bold transition-all duration-200 hover:shadow-lg active:scale-95 flex items-center justify-center gap-1.5 py-5 sm:py-4 px-4.5 rounded-xl text-xs uppercase tracking-wider bg-red-600 hover:bg-red-500 border border-transparent shadow-red-500/20"
         @click="startGlobalSync"
@@ -1211,7 +1207,7 @@ onMounted(() => {
             </span>
           </div>
           <Button 
-            v-if="trackingStats.count > 0"
+            v-if="trackingStats.count > 0 && canWrite"
             variant="ghost" 
             size="sm" 
             class="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 rounded-lg p-2 ml-2"
@@ -1225,11 +1221,12 @@ onMounted(() => {
 
       <!-- Dropzone area -->
       <div 
-        @click="triggerExcelFileInput"
+        @click="canWrite ? triggerExcelFileInput() : null"
         class="border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl p-8 text-center cursor-pointer hover:border-slate-400 dark:hover:border-slate-600 transition-all hover:bg-slate-50/50 dark:hover:bg-slate-800/20 flex flex-col items-center justify-center space-y-3 relative group"
-        :class="{ 'opacity-60 pointer-events-none': isUploading }"
+        :class="{ 'opacity-60 pointer-events-none cursor-not-allowed': isUploading || !canWrite }"
       >
         <input 
+          v-if="canWrite"
           type="file" 
           ref="excelFileInput" 
           class="hidden" 
@@ -1243,7 +1240,7 @@ onMounted(() => {
         
         <div class="space-y-1">
           <p class="text-sm font-bold text-slate-700 dark:text-slate-300">
-            {{ isUploading ? 'Sedang memproses database...' : 'Klik untuk memilih atau seret file Excel di sini' }}
+            {{ isUploading ? 'Sedang memproses database...' : canWrite ? 'Klik untuk memilih atau seret file Excel di sini' : 'Unggah dinonaktifkan (Read-only)' }}
           </p>
           <p class="text-xs text-slate-400 dark:text-slate-500">
             Mendukung .xlsx, .xls. Kolom wajib: "Customer PO / HPO Number" dan "MLFB / SKU / Product Code".
@@ -1337,15 +1334,15 @@ onMounted(() => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            <template v-for="row in trackingData" :key="`${row.hpo_number}-${row.item_code}`">
+            <template v-for="(row, rIdx) in trackingData" :key="row.id || `${row.hpo_number}-${row.item_code}-${rIdx}`">
               <!-- Main Row -->
               <TableRow
                 class="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer"
-                :class="{ 'bg-slate-50/80 dark:bg-slate-800/40': expandedRows[`${row.hpo_number}-${row.item_code}`] }"
-                @click="toggleRowExpand(`${row.hpo_number}-${row.item_code}`)"
+                :class="{ 'bg-slate-50/80 dark:bg-slate-800/40': expandedRows[row.id || `${row.hpo_number}-${row.item_code}-${rIdx}`] }"
+                @click="toggleRowExpand(row.id || `${row.hpo_number}-${row.item_code}-${rIdx}`)"
               >
                 <TableCell class="py-3.5">
-                  <component :is="expandedRows[`${row.hpo_number}-${row.item_code}`] ? ChevronDown : ChevronRightIcon" class="w-3.5 h-3.5 text-slate-400" />
+                  <component :is="expandedRows[row.id || `${row.hpo_number}-${row.item_code}-${rIdx}`] ? ChevronDown : ChevronRightIcon" class="w-3.5 h-3.5 text-slate-400" />
                 </TableCell>
                 <TableCell class="font-black text-slate-900 dark:text-white uppercase tracking-tight py-3.5">{{ row.hpo_number }}</TableCell>
                 <TableCell class="font-mono text-slate-600 dark:text-slate-400">{{ row.item_code }}</TableCell>
@@ -1375,7 +1372,7 @@ onMounted(() => {
                 </TableCell>
               </TableRow>
               <!-- Expanded HSO Tree Row -->
-              <TableRow v-if="expandedRows[`${row.hpo_number}-${row.item_code}`]" class="bg-blue-50/30 dark:bg-blue-950/10 border-b border-slate-100 dark:border-slate-800">
+              <TableRow v-if="expandedRows[row.id || `${row.hpo_number}-${row.item_code}-${rIdx}`]" class="bg-blue-50/30 dark:bg-blue-950/10 border-b border-slate-100 dark:border-slate-800">
                 <TableCell colspan="9" class="py-3 px-8">
                   <div class="flex flex-col gap-1.5">
                     <div class="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
@@ -1569,7 +1566,7 @@ onMounted(() => {
           <Button 
             class="w-full sm:w-auto shadow-md bg-gradient-to-r from-red-650 to-rose-650 hover:from-red-550 hover:to-rose-550 text-white font-bold text-xs uppercase tracking-wider h-10 rounded-xl active:scale-95 transition-all flex items-center justify-center gap-1.5 bg-red-600 hover:bg-red-500 shadow-red-500/20"
             @click="applyAllSyncUpdates"
-            :disabled="isApplyingGlobalChanges"
+            :disabled="isApplyingGlobalChanges || !canWrite"
           >
             <Loader2 v-if="isApplyingGlobalChanges" class="w-4 h-4 animate-spin" />
             <RefreshCw v-else class="w-4 h-4" />
