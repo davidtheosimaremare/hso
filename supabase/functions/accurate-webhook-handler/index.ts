@@ -102,7 +102,20 @@ async function handlePurchaseOrder(id: number, authHeaders: Record<string, strin
         if (iErr) throw new Error(`PO items insert: ${iErr.message}`)
     }
 
-    return `PO ${po.number} synced (${items.length} items)`
+    // ── Update shipments: link item_code → HPO number ──────────────────────────
+    // Ensures shipments rows have correct hpo_number for future HRI/HDO matching
+    let linkedShipments = 0
+    for (const item of items) {
+        if (!item.item_code || !header.number) continue
+        const { error: sErr } = await supabase
+            .from('shipments')
+            .update({ hpo_number: header.number, updated_at: new Date().toISOString() })
+            .eq('item_code', item.item_code)
+            .is('hpo_number', null) // Only update rows that don't have HPO yet
+        if (!sErr) linkedShipments++
+    }
+
+    return `PO ${po.number} synced (${items.length} items, ${linkedShipments} shipments linked)`
 }
 
 /** Sync a single Delivery Order (Pengiriman Pesanan) */
@@ -144,7 +157,40 @@ async function handleDeliveryOrder(id: number, authHeaders: Record<string, strin
         if (iErr) throw new Error(`DO items insert: ${iErr.message}`)
     }
 
-    return `DO ${doc.number} synced (${items.length} items)`
+    // ── Update shipments: mark as "Shipped" when DO exists ──────────────────────
+    // DO means goods left the supplier warehouse — update logistics accordingly
+    let updatedShipments = 0
+    for (const item of items) {
+        const itemCode = item.item_code
+        const hsoNumber = item.hso_number
+        if (!itemCode) continue
+
+        // Build update payload — always record DO number
+        const updatePayload: Record<string, unknown> = {
+            hdo_number: header.number,
+            updated_at: new Date().toISOString()
+        }
+
+        // Build match condition: prefer hso_number match, fallback to item_code
+        let query = supabase.from('shipments').update(updatePayload)
+
+        if (hsoNumber) {
+            // Match via HSO number extracted from detailNotes
+            const { error } = await query
+                .eq('item_code', itemCode)
+                .eq('hso_number', hsoNumber)
+                .in('current_status', ['ETA Port', 'Arrived at Port', 'Custom Clearance', 'Exwork'])
+            if (!error) updatedShipments++
+        } else {
+            // Fallback: match by item_code only (less precise)
+            const { error } = await query
+                .eq('item_code', itemCode)
+                .in('current_status', ['ETA Port', 'Arrived at Port', 'Custom Clearance', 'Exwork'])
+            if (!error) updatedShipments++
+        }
+    }
+
+    return `DO ${doc.number} synced (${items.length} items, ${updatedShipments} shipments updated)`
 }
 
 /** Sync a single Sales Order (Pesanan Penjualan) — update fields in existing SO table */
