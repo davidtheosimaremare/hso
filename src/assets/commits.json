@@ -1,5 +1,13 @@
 [
   {
+    "hash": "ee69dfb202c4140d02ad867b60b2fd976be76484",
+    "shortHash": "ee69dfb",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Jul 21 16:28:42 2026 +0700",
+    "message": "feat: add Accurate sync panel to Dashboard with background auto-sync"
+  },
+  {
     "hash": "1318bbd2d2e95ed6671fce799661f944ae7675c3",
     "shortHash": "1318bbd",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Jul 7 20:50:40 2026 +0700",
     "message": "feat: add send-daily-reminder edge function and migration for logistics email reminders"
-  },
-  {
-    "hash": "a0303fa857698e566c549a8fca98a3ad9ac78d7b",
-    "shortHash": "a0303fa",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Jul 7 16:52:40 2026 +0700",
-    "message": "fix: exclude items without purchase shortage (menunggu pengiriman) from reminder PO export"
   }
 ]

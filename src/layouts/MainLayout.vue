@@ -127,6 +127,13 @@ onMounted(async () => {
 const menuGroups = [
   {
     type: 'item',
+    name: 'Dashboard',
+    path: '/',
+    icon: LayoutDashboard,
+    moduleKey: 'dashboard'
+  },
+  {
+    type: 'item',
     name: 'Penawaran',
     path: '/hsq',
     icon: FileText,
