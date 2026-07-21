@@ -729,6 +729,34 @@ const startGlobalSync = async () => {
     if (trackDbError) throw trackDbError
     const trackingList = trackingRows || []
     
+    // 5b. Fetch Receive Items (HRI - Penerimaan Barang) from database
+    const { data: riHeaders } = await supabase.from('accurate_receive_items').select('*')
+    const { data: riItems } = await supabase.from('accurate_receive_item_items').select('*')
+
+    const riHeaderMap = {}
+    if (riHeaders) {
+      riHeaders.forEach(h => { riHeaderMap[h.id] = h })
+    }
+
+    if (riItems) {
+      riItems.forEach(item => {
+        const parentHeader = riHeaderMap[item.receive_item_id]
+        const hpo = parentHeader?.po_number || ''
+        const itemCode = item.item_code
+        if (itemCode) {
+          trackingList.push({
+            hpo_number: hpo,
+            item_code: itemCode,
+            status: 'Already in Hokiindo Raya',
+            delivery_date: parentHeader?.trans_date || null,
+            exwork_date: null,
+            eta_date: null,
+            exwork_waiting: false
+          })
+        }
+      })
+    }
+    
     // 6. In-Memory Matching
     const matches = []
     const statusLevels = {

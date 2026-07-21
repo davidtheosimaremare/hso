@@ -226,16 +226,14 @@ async function handleReceiveItem(id: number, authHeaders: Record<string, string>
         if (iErr) throw new Error(`RI items insert: ${iErr.message}`)
     }
 
-    if (!poNumber) {
-        return `RI ${doc.number} synced (No PO linked, DB saved, skipped shipment update)`
-    }
-
     let updatedShipments = 0
     const items = doc.detailItem ?? []
     
     for (const item of items) {
         const itemCode = item.item?.no
         if (!itemCode) continue
+        const itemPoNumber = item.purchaseOrder?.number || item.poNumber || poNumber
+        if (!itemPoNumber) continue
 
         // Update shipments table where item_code and hpo_number match
         const { error } = await supabase
@@ -246,12 +244,12 @@ async function handleReceiveItem(id: number, authHeaders: Record<string, string>
                 updated_at: new Date().toISOString()
             })
             .eq('item_code', itemCode)
-            .eq('hpo_number', poNumber)
+            .eq('hpo_number', itemPoNumber)
 
         if (!error) {
             updatedShipments++
         } else {
-            console.error(`[webhook] Failed to update shipment for ${itemCode} / ${poNumber}:`, error.message)
+            console.error(`[webhook] Failed to update shipment for ${itemCode} / ${itemPoNumber}:`, error.message)
         }
     }
 

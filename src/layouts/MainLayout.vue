@@ -2,6 +2,7 @@
 import { onMounted, ref, watch, computed, provide } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
+import { useAccurateSync } from '@/composables/useAccurateSync'
 import { 
   LayoutDashboard, 
   FileText, 
@@ -117,6 +118,10 @@ onMounted(async () => {
     isDarkMode.value = true
     document.documentElement.classList.add('dark')
   }
+
+  // Background sync: trigger HRI silently after a short delay (let UI render first)
+  const { triggerBackgroundSync } = useAccurateSync()
+  setTimeout(() => triggerBackgroundSync(), 3000)
 })
 
 const menuGroups = [

@@ -172,24 +172,24 @@ serve(async (req) => {
                     await supabase.from('accurate_receive_item_items').insert(data.items)
                 }
 
-                // Update shipments if PO exists
-                if (data.poNumber) {
-                    for (const item of data.originalDocItems) {
-                        const itemCode = item.item?.no
-                        if (!itemCode) continue
+                // Update shipments for each received item (check item-level PO or header PO)
+                for (const item of data.originalDocItems) {
+                    const itemCode = item.item?.no
+                    if (!itemCode) continue
+                    const poNum = item.purchaseOrder?.number || item.poNumber || data.poNumber
+                    if (!poNum) continue
 
-                        const { error: shipErr } = await supabase
-                            .from('shipments')
-                            .update({
-                                current_status: 'Already in Hokiindo Raya',
-                                hokiindo_date: data.transDate,
-                                updated_at: new Date().toISOString()
-                            })
-                            .eq('item_code', itemCode)
-                            .eq('hpo_number', data.poNumber)
+                    const { error: shipErr } = await supabase
+                        .from('shipments')
+                        .update({
+                            current_status: 'Already in Hokiindo Raya',
+                            hokiindo_date: data.transDate,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('item_code', itemCode)
+                        .eq('hpo_number', poNum)
 
-                        if (!shipErr) successCount++
-                    }
+                    if (!shipErr) successCount++
                 }
             }
         }

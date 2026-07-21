@@ -1,5 +1,13 @@
 [
   {
+    "hash": "1318bbd2d2e95ed6671fce799661f944ae7675c3",
+    "shortHash": "1318bbd",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Jul 21 10:23:19 2026 +0700",
+    "message": "feat: add HSQ progress tracking, dev updates view, and support partial shipments in logistics db"
+  },
+  {
     "hash": "30d954485f8b71ccbe035455192929601da70836",
     "shortHash": "30d9544",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Jul 7 16:52:40 2026 +0700",
     "message": "fix: exclude items without purchase shortage (menunggu pengiriman) from reminder PO export"
-  },
-  {
-    "hash": "35fe9c3ddb7a072a2e29da6d368c2aea40e2c585",
-    "shortHash": "35fe9c3",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Jul 7 16:16:26 2026 +0700",
-    "message": "fix: resolve customer name mapping in excel export and enhance header responsive UI"
   }
 ]

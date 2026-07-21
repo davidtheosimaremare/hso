@@ -2,6 +2,7 @@
 import { onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
+import { useAccurateSync } from '@/composables/useAccurateSync'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -12,7 +13,8 @@ import {
   BarChart3, Loader2, TrendingUp, Users, RefreshCw,
   AlertCircle, Package, Trophy, Medal, Award, ShoppingCart, Calendar,
   ChevronLeft, ChevronRight, ArrowUpRight, Clock, Zap,
-  UploadCloud, FileSpreadsheet, Trash2, CheckCircle2, AlertTriangle
+  UploadCloud, FileSpreadsheet, Trash2, CheckCircle2, AlertTriangle,
+  RefreshCcw, Database, PackageCheck, Truck, ShoppingBag, CheckCircle, XCircle, Info
 } from 'lucide-vue-next'
 
 
@@ -186,6 +188,36 @@ const getStatusColor = (status) => {
 const getRankIcon = (i) => { if (i===0) return Trophy; if (i===1) return Medal; if (i===2) return Award; return null }
 const getRankColor = (i) => { if (i===0) return 'text-yellow-500'; if (i===1) return 'text-slate-400'; if (i===2) return 'text-amber-600'; return 'text-slate-400' }
 
+// ─── Accurate Sync ──────────────────────────────────────────────────────────
+const {
+  isSyncing, syncStep, syncProgress, syncLog,
+  lastSyncFormatted, shouldAutoSync,
+  syncAll, syncHri, syncHpo, syncHdo
+} = useAccurateSync()
+
+const syncStepLabel = computed(() => {
+  switch (syncStep.value) {
+    case 'hri': return 'Menyinkronkan HRI (Penerimaan Barang)...'
+    case 'hpo': return 'Menyinkronkan HPO (Purchase Order)...'
+    case 'hdo': return 'Menyinkronkan HDO (Delivery Order)...'
+    case 'done': return 'Selesai!'
+    default: return ''
+  }
+})
+
+const syncLogIcon = (type) => {
+  if (type === 'success') return CheckCircle
+  if (type === 'error' || type === 'warn') return XCircle
+  return Info
+}
+
+const syncLogColor = (type) => {
+  if (type === 'success') return 'text-emerald-500'
+  if (type === 'error') return 'text-red-500'
+  if (type === 'warn') return 'text-amber-500'
+  return 'text-blue-400'
+}
+
 onMounted(() => { 
   fetchData() 
 })
@@ -213,6 +245,106 @@ onMounted(() => {
         <RefreshCw :class="['w-4 h-4', isLoading && 'animate-spin']"/>
         {{ isLoading ? 'Memuat...' : 'Refresh' }}
       </button>
+    </div>
+
+    <!-- ─── Accurate Sync Panel ──────────────────────────────────────────────── -->
+    <div class="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm shadow-sm overflow-hidden">
+      <!-- Header row -->
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+        <div class="flex items-center gap-3">
+          <div class="p-2 bg-gradient-to-br from-violet-500 to-indigo-600 rounded-xl shadow-md shadow-violet-500/20">
+            <Database class="w-4 h-4 text-white"/>
+          </div>
+          <div>
+            <h2 class="font-bold text-slate-900 dark:text-white text-sm">Sinkronisasi Data Accurate</h2>
+            <p class="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+              <span v-if="lastSyncFormatted">Terakhir sync: <span class="font-semibold text-slate-600 dark:text-slate-300">{{ lastSyncFormatted }}</span></span>
+              <span v-else class="text-amber-500">Belum pernah sync</span>
+              <span v-if="isSyncing" class="ml-2 text-violet-500 font-medium animate-pulse">• {{ syncStepLabel }}</span>
+            </p>
+          </div>
+        </div>
+        <!-- Sync all button -->
+        <button
+          @click="syncAll()"
+          :disabled="isSyncing"
+          class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white shadow-md shadow-violet-500/20 transition-all hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed whitespace-nowrap"
+        >
+          <RefreshCcw :class="['w-4 h-4', isSyncing && 'animate-spin']"/>
+          {{ isSyncing ? 'Menyinkronkan...' : 'Sync Semua' }}
+        </button>
+      </div>
+
+      <!-- Progress bar (visible while syncing) -->
+      <div v-if="isSyncing" class="px-5 pt-3 pb-0">
+        <div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
+          <span class="font-medium text-violet-600 dark:text-violet-400">{{ syncStepLabel }}</span>
+          <span>{{ syncProgress }}%</span>
+        </div>
+        <div class="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
+          <div
+            class="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full transition-all duration-500"
+            :style="{ width: syncProgress + '%' }"
+          />
+        </div>
+      </div>
+
+      <!-- Per-step buttons + last log line -->
+      <div class="px-5 py-4">
+        <div class="flex flex-wrap gap-2 mb-3">
+          <button
+            @click="syncHri()"
+            :disabled="isSyncing"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <PackageCheck class="w-3.5 h-3.5"/>
+            Sync HRI
+            <span class="text-emerald-500 font-normal opacity-70">(Penerimaan Barang)</span>
+          </button>
+          <button
+            @click="syncHpo()"
+            :disabled="isSyncing"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-blue-200 bg-blue-50 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ShoppingBag class="w-3.5 h-3.5"/>
+            Sync HPO
+            <span class="text-blue-500 font-normal opacity-70">(Purchase Order)</span>
+          </button>
+          <button
+            @click="syncHdo()"
+            :disabled="isSyncing"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-amber-200 bg-amber-50 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/20 dark:hover:bg-amber-900/40 text-amber-700 dark:text-amber-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Truck class="w-3.5 h-3.5"/>
+            Sync HDO
+            <span class="text-amber-500 font-normal opacity-70">(Delivery Order)</span>
+          </button>
+        </div>
+
+        <!-- Sync Log -->
+        <div v-if="syncLog.length > 0" class="space-y-1 max-h-36 overflow-y-auto pr-1">
+          <div
+            v-for="(log, i) in syncLog"
+            :key="i"
+            class="flex items-start gap-2 text-xs py-1 px-2 rounded-lg"
+            :class="{
+              'bg-emerald-50 dark:bg-emerald-900/10': log.type === 'success',
+              'bg-red-50 dark:bg-red-900/10': log.type === 'error',
+              'bg-amber-50 dark:bg-amber-900/10': log.type === 'warn',
+              'bg-slate-50 dark:bg-slate-800/40': log.type === 'info',
+            }"
+          >
+            <component :is="syncLogIcon(log.type)" class="w-3.5 h-3.5 mt-0.5 flex-shrink-0" :class="syncLogColor(log.type)"/>
+            <span class="text-slate-700 dark:text-slate-300 flex-1">{{ log.message }}</span>
+            <span class="text-slate-400 dark:text-slate-500 flex-shrink-0">
+              {{ log.timestamp.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }}
+            </span>
+          </div>
+        </div>
+        <div v-else class="text-xs text-slate-400 dark:text-slate-500 italic">
+          Tekan "Sync Semua" untuk menyinkronkan data HPO, HRI, dan HDO dari Accurate ke sistem
+        </div>
+      </div>
     </div>
 
     <!-- KPI Cards -->
