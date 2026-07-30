@@ -42,6 +42,7 @@ const modulesList = [
   { key: 'receive-items', label: 'Penerimaan Barang' },
   { key: 'delivery-orders', label: 'Pengiriman' },
   { key: 'logistics-db', label: 'Database Logistik' },
+  { key: 'permintaan', label: 'Permintaan (BOQ)' },
   { key: 'sop-guide', label: 'SOP & Panduan' },
   { key: 'settings', label: 'Manage Account (Settings)' }
 ]

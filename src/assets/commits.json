@@ -1,5 +1,37 @@
 [
   {
+    "hash": "5f2d4a9a9f6e4963cdefceceac166fb2f64c0c7d",
+    "shortHash": "5f2d4a9",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Jul 21 16:53:38 2026 +0700",
+    "message": "feat: webhook HPO/HDO/HRI fully operational"
+  },
+  {
+    "hash": "b1b12cdb7fafd78ff816474483bf32aa00c1ef37",
+    "shortHash": "b1b12cd",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Jul 21 16:35:48 2026 +0700",
+    "message": "fix: correct Dashboard menu path to /dashboard and restore active state logic"
+  },
+  {
+    "hash": "3a00f331b90b6b18eef531ebffe8f8aa67231512",
+    "shortHash": "3a00f33",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Jul 21 16:33:56 2026 +0700",
+    "message": "fix: Dashboard sidebar active state — use exact match for '/' path"
+  },
+  {
+    "hash": "e4eefa40ab6a0ccea93f4a7715b6e965d408e041",
+    "shortHash": "e4eefa4",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Jul 21 16:30:32 2026 +0700",
+    "message": "fix: add Dashboard menu item to sidebar"
+  },
+  {
     "hash": "ee69dfb202c4140d02ad867b60b2fd976be76484",
     "shortHash": "ee69dfb",
     "author": "davidtheosimaremare",
@@ -366,37 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Thu Jul 9 12:07:42 2026 +0700",
     "message": "fix: don't overwrite existing dunex/hokiindo date with today when re-importing Excel"
-  },
-  {
-    "hash": "01bfde87255d0a162c4fe99deb678db33f5e6dc8",
-    "shortHash": "01bfde8",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 12:03:40 2026 +0700",
-    "message": "fix: improve Excel column detection priority - status first, add debug logs"
-  },
-  {
-    "hash": "b16f1646869916547f76719690920361e3f797f2",
-    "shortHash": "b16f164",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 11:56:25 2026 +0700",
-    "message": "feat: support 'Waiting for confirmation' text in Excel exwork date column"
-  },
-  {
-    "hash": "22da89d140561198bc698f342229a136e6efbea6",
-    "shortHash": "22da89d",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Jul 7 20:53:45 2026 +0700",
-    "message": "fix: add pg_cron extension creation statement in cron setup migration"
-  },
-  {
-    "hash": "ee09d658c21b20bafb0f5a03cb4eeac8e05e3daa",
-    "shortHash": "ee09d65",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Jul 7 20:50:40 2026 +0700",
-    "message": "feat: add send-daily-reminder edge function and migration for logistics email reminders"
   }
 ]

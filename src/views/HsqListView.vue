@@ -16,22 +16,29 @@ const startDate = ref('')
 const endDate = ref('')
 const statusFilter = ref('all')
 
-// Status options for Sales Quotations
-const availableStatuses = [
-  { val: 'all', label: 'Semua Status' },
-  { val: 'Draf', label: 'Draf' },
-  { val: 'Diajukan', label: 'Diajukan' },
-  { val: 'Disetujui', label: 'Disetujui' },
-  { val: 'Terproses', label: 'Terproses' },
-  { val: 'Ditutup', label: 'Ditutup' }
-]
+// Status options dynamically generated from the fetched data
+const availableStatuses = computed(() => {
+  const statuses = new Set()
+  hsqList.value.forEach(hsq => {
+    if (hsq.statusName) statuses.add(hsq.statusName)
+  })
+  
+  const statusArray = Array.from(statuses).sort()
+  
+  return [
+    { val: 'all', label: 'Semua Status' },
+    ...statusArray.map(s => ({ val: s, label: s }))
+  ]
+})
 
 // --- FETCH HSQ LIST ---
 const fetchHsqList = async () => {
   isLoading.value = true
   fetchError.value = null
   try {
-    const { data, error } = await supabase.functions.invoke('accurate-list-sq')
+    const { data, error } = await supabase.functions.invoke('accurate-list-sq', {
+      body: { fields: 'id,number,transDate,customer,totalAmount,statusName,description,detailItem' }
+    })
     
     if (error) throw new Error(error.message || 'Gagal mengambil data dari Edge Function')
     if (!data?.s) throw new Error(data?.error || 'Gagal mengambil data list HSQ')
@@ -242,6 +249,22 @@ const resetFilter = () => {
   currentPage.value = 1
 }
 
+const extractProjectName = (hsq) => {
+  let text = hsq.description || ''
+  if (!text.toLowerCase().includes('pro') && hsq.detailItem && hsq.detailItem.length > 0) {
+    text = hsq.detailItem[0].detailNotes || ''
+  }
+  if (!text) return null
+  
+  // Match "project" or "proyek", optional colon/dash, then capture everything until ">" or "status" or end of string.
+  const regex = /pro(?:ject|yek)\s*[:\-]?\s*(.*?)(?=\s*(?:>|status|$))/i
+  const match = text.match(regex)
+  if (match && match[1]) {
+    return match[1].replace(/[\s\-]+$/, '').trim()
+  }
+  return null
+}
+
 // --- UTILS ---
 const formatDate = (dateStr) => {
   if (!dateStr) return '-'
@@ -261,16 +284,19 @@ const formatCurrency = (val) => {
 const getStatusClass = (status) => {
   const name = (status || '').toLowerCase()
   if (name.includes('closed') || name.includes('selesai') || name.includes('ditutup') || name.includes('terproses')) {
+    if (name.includes('sebagian')) {
+      return 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/20 dark:text-blue-400 dark:border-blue-900/60'
+    }
     return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/60'
   }
-  if (name.includes('disetujui')) {
-    return 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/20 dark:text-blue-400 dark:border-blue-900/60'
+  if (name.includes('menunggu') || name.includes('diajukan') || name.includes('disetujui')) {
+    return 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900/60'
   }
   if (name.includes('draft') || name.includes('draf')) {
     return 'bg-gray-50 text-gray-700 border-gray-200 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700'
   }
-  if (name.includes('diajukan')) {
-    return 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900/60'
+  if (name.includes('tolak') || name.includes('batal') || name.includes('gagal')) {
+    return 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/60'
   }
   return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/60'
 }
@@ -392,6 +418,7 @@ const getStageBadgeClass = (stage) => {
               <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider">No. Quotation</th>
               <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider w-36">Tanggal</th>
               <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider">Customer</th>
+              <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider">Proyek</th>
               <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider">Nilai Total</th>
               <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider w-40 text-center">Progress & Win %</th>
               <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider w-28 text-center">Status</th>
@@ -432,6 +459,11 @@ const getStageBadgeClass = (stage) => {
               <td class="py-3.5 px-4">
                 <div class="text-xs font-bold text-slate-900 dark:text-white">{{ hsq.customer?.name || '-' }}</div>
                 <div class="text-[10px] text-slate-400">{{ hsq.customer?.customerNo || '' }}</div>
+              </td>
+              <td class="py-3.5 px-4">
+                <div class="text-[11px] font-semibold text-slate-700 dark:text-slate-300 line-clamp-2 leading-snug">
+                  {{ extractProjectName(hsq) || '-' }}
+                </div>
               </td>
               <td class="py-3.5 px-4 text-xs font-bold text-slate-700 dark:text-slate-300">
                 {{ formatCurrency(hsq.totalAmount) }}

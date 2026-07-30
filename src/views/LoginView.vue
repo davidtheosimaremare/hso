@@ -45,7 +45,7 @@ const handleLogin = async () => {
           H
         </div>
         <div class="text-2xl font-bold text-[#333333] tracking-tighter">
-          HSO TRACKER
+          HIR WORKSPACE
         </div>
       </div>
 

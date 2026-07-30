@@ -22,6 +22,9 @@ import HsqListView from '@/views/HsqListView.vue'
 import HsqDetailView from '@/views/HsqDetailView.vue'
 import SopGuideView from '@/views/SopGuideView.vue'
 import DevUpdatesView from '@/views/DevUpdatesView.vue'
+import PermintaanView from '@/views/PermintaanView.vue'
+import PermintaanDetailView from '@/views/PermintaanDetailView.vue'
+import MarketingHubView from '@/views/MarketingHubView.vue'
 
 
 // Import Public
@@ -61,6 +64,9 @@ const router = createRouter({
         { path: '/settings', component: SettingsView },
         { path: '/sop-guide', component: SopGuideView },
         { path: '/development', component: DevUpdatesView },
+        { path: '/permintaan', component: PermintaanView },
+        { path: '/permintaan/:id', component: PermintaanDetailView },
+        { path: '/marketing-hub', component: MarketingHubView },
       ]
     },
     {
@@ -76,7 +82,14 @@ const router = createRouter({
       name: 'public-tracking',
       component: PublicTrackingView
     }
-  ]
+  ],
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) {
+      return savedPosition
+    } else {
+      return { top: 0 }
+    }
+  }
 })
 
 // --- CACHED PERMISSION STATE ---
@@ -92,6 +105,7 @@ function getRequiredModule(path) {
   if (path.startsWith('/receive-items')) return 'receive-items'
   if (path.startsWith('/delivery-orders')) return 'delivery-orders'
   if (path.startsWith('/logistics-db')) return 'logistics-db'
+  if (path.startsWith('/permintaan')) return 'permintaan'
   if (path.startsWith('/sop-guide')) return 'sop-guide'
   if (path.startsWith('/settings') || path.startsWith('/development')) return 'settings'
   return null
@@ -109,6 +123,7 @@ function getFirstAllowedPath(allowedModules) {
     'receive-items:read': '/receive-items',
     'delivery-orders:read': '/delivery-orders',
     'logistics-db:read': '/logistics-db',
+    'permintaan:read': '/permintaan',
     'sop-guide:read': '/sop-guide',
     'settings:read': '/settings'
   }
@@ -166,6 +181,7 @@ router.beforeEach(async (to, from, next) => {
               'receive-items:read', 'receive-items:write',
               'delivery-orders:read', 'delivery-orders:write',
               'logistics-db:read', 'logistics-db:write',
+              'permintaan:read', 'permintaan:write',
               'sop-guide:read', 'sop-guide:write',
               'settings:read', 'settings:write'
             ]

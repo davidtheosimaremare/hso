@@ -1,8 +1,7 @@
 <script setup>
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, onUnmounted, ref, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
-import { useAccurateSync } from '@/composables/useAccurateSync'
 
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -16,14 +15,22 @@ import {
   UploadCloud, FileSpreadsheet, Trash2, CheckCircle2, AlertTriangle,
   RefreshCcw, Database, PackageCheck, Truck, ShoppingBag, CheckCircle, XCircle, Info
 } from 'lucide-vue-next'
+import StandingSection from '@/components/dashboard/StandingSection.vue'
 
 
 const router = useRouter()
 const isLoading = ref(true)
+const sqList = ref([])
 const soList = ref([])
+const siList = ref([])
 const poList = ref([])
 
-// PO Filter
+// Summary Date Filter (HSQ, HSO, HSI Cards)
+const summaryDateFilter = ref('month') // 'month', 'year', 'lastYear', 'custom'
+const summaryCustomStartDate = ref('')
+const summaryCustomEndDate = ref('')
+
+// PO & Chart Filter
 const poDateFilter = ref('year')
 const poCustomStartDate = ref('')
 const poCustomEndDate = ref('')
@@ -31,37 +38,318 @@ const chartZoom = ref(100)
 const statusFilter = ref('all')
 const hsoStatusFilter = ref('month')
 
+// Target Penjualan & Month Carousel Controller
+const targetYear = ref(new Date().getFullYear())
+const targetViewMode = ref('table') // 'table' or 'grid'
+const selectedMonthIdx = ref(new Date().getMonth())
+const monthCarouselRef = ref(null)
+const shipmentsList = ref([])
+
+const monthShortNames = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+  'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'
+]
+
+const selectMonth = (idx) => {
+  selectedMonthIdx.value = idx
+  scrollToMonthCard(idx)
+}
+
+const prevMonth = () => {
+  if (selectedMonthIdx.value > 0) {
+    selectMonth(selectedMonthIdx.value - 1)
+  }
+}
+
+const nextMonth = () => {
+  if (selectedMonthIdx.value < 11) {
+    selectMonth(selectedMonthIdx.value + 1)
+  }
+}
+
+const scrollToMonthCard = (idx) => {
+  nextTick(() => {
+    if (!monthCarouselRef.value) return
+    const cardEl = monthCarouselRef.value.querySelector(`[data-month-idx="${idx}"]`)
+    if (cardEl) {
+      const container = monthCarouselRef.value
+      const targetLeft = cardEl.offsetLeft - (container.clientWidth / 2) + (cardEl.clientWidth / 2)
+      container.scrollTo({ left: targetLeft, behavior: 'smooth' })
+    }
+  })
+}
+
+watch(targetYear, () => {
+  scrollToMonthCard(selectedMonthIdx.value)
+})
+
 const fetchData = async () => {
   isLoading.value = true
   try {
-    const { data: soData, error: soError } = await supabase.functions.invoke('accurate-list-so')
-    if (!soError) {
-      soList.value = (soData?.d || []).map(so => ({
+    const [soRes, sqRes, siRes, poRes] = await Promise.allSettled([
+      supabase.functions.invoke('accurate-list-so', {
+        body: { fields: 'id,number,transDate,customer,totalAmount,statusName,percentShipped,salesman' }
+      }),
+      supabase.functions.invoke('accurate-list-sq', {
+        body: { fields: 'id,number,transDate,customer,totalAmount,statusName,description,salesman' }
+      }),
+      supabase.functions.invoke('accurate-list-si', {
+        body: { fields: 'id,number,transDate,customer,totalAmount,statusName,dueDate,outstandingAmount,salesman' }
+      }),
+      supabase.functions.invoke('accurate-list-all-po', {
+        body: { fields: 'id,number,transDate,statusName,totalAmount,vendor', limit: 10000 }
+      })
+    ])
+
+    if (soRes.status === 'fulfilled' && !soRes.value.error) {
+      const data = soRes.value.data
+      soList.value = (data?.d || []).map(so => ({
         id: so.id,
         number: so.number,
         customer: so.customer?.name || 'Unknown',
         transDate: so.transDate,
-        totalAmount: so.totalAmount || 0,
+        totalAmount: Number(so.totalAmount) || 0,
         statusName: so.statusName || '',
-        percentShipped: so.percentShipped || 0
+        percentShipped: so.percentShipped || 0,
+        salesmanName: so.salesman?.name || '-'
       }))
     }
-    const { data: poData, error: poError } = await supabase.functions.invoke('accurate-list-all-po', {
-      body: { fields: 'id,number,transDate,statusName,totalAmount,vendor', limit: 10000 }
-    })
-    if (!poError) {
-      poList.value = (poData?.d || []).map(po => ({
+
+    if (sqRes.status === 'fulfilled' && !sqRes.value.error) {
+      const data = sqRes.value.data
+      sqList.value = (data?.d || []).map(sq => ({
+        id: sq.id,
+        number: sq.number,
+        customer: sq.customer?.name || 'Unknown',
+        transDate: sq.transDate,
+        totalAmount: Number(sq.totalAmount) || 0,
+        statusName: sq.statusName || '',
+        salesmanName: sq.salesman?.name || '-'
+      }))
+    }
+
+    if (siRes.status === 'fulfilled' && !siRes.value.error) {
+      const data = siRes.value.data
+      siList.value = (data?.d || []).map(si => ({
+        id: si.id,
+        number: si.number,
+        customer: si.customer?.name || 'Unknown',
+        transDate: si.transDate,
+        totalAmount: Number(si.totalAmount) || 0,
+        statusName: si.statusName || '',
+        dueDate: si.dueDate,
+        outstandingAmount: Number(si.outstandingAmount) || Number(si.totalAmount) || 0,
+        salesmanName: si.salesman?.name || '-'
+      }))
+    }
+
+    if (poRes.status === 'fulfilled' && !poRes.value.error) {
+      const data = poRes.value.data
+      poList.value = (data?.d || []).map(po => ({
         id: po.id, number: po.number, transDate: po.transDate,
-        statusName: po.statusName || 'Open', totalAmount: po.totalAmount || 0,
+        statusName: po.statusName || 'Open', totalAmount: Number(po.totalAmount) || 0,
         vendorName: po.vendor?.name || 'Unknown'
       }))
     }
+
+    // Fetch logistics shipments from Supabase
+    const { data: shipData } = await supabase
+      .from('shipments')
+      .select('so_id, item_code, current_status, hpo_number, exwork_date, eta_date, dunex_date, hokiindo_date, exwork_waiting')
+    
+    if (shipData) {
+      shipmentsList.value = shipData
+    }
   } catch (error) {
-    console.error('Error:', error)
+    console.error('Error fetching dashboard data:', error)
   } finally {
     isLoading.value = false
+    nextTick(() => {
+      scrollToMonthCard(selectedMonthIdx.value)
+    })
   }
 }
+
+const parseInputDate = (dateStr, isEnd = false) => {
+  if (!dateStr) return null
+  const parts = dateStr.split('-')
+  if (parts.length !== 3) return null
+  if (isEnd) {
+    return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 23, 59, 59)
+  }
+  return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 0, 0, 0)
+}
+
+const getSummaryDateRange = () => {
+  const now = new Date()
+  let startDate, endDate
+  if (summaryDateFilter.value === 'all') {
+    startDate = new Date(1990, 0, 1, 0, 0, 0)
+    endDate = new Date(2100, 11, 31, 23, 59, 59)
+  } else if (summaryDateFilter.value === 'month') {
+    startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0)
+    endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+  } else if (summaryDateFilter.value === 'year') {
+    startDate = new Date(now.getFullYear(), 0, 1, 0, 0, 0)
+    endDate = new Date(now.getFullYear(), 11, 31, 23, 59, 59)
+  } else if (summaryDateFilter.value === 'lastYear') {
+    startDate = new Date(now.getFullYear() - 1, 0, 1, 0, 0, 0)
+    endDate = new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59)
+  } else if (summaryDateFilter.value === 'custom') {
+    if (summaryCustomStartDate.value && summaryCustomEndDate.value) {
+      startDate = parseInputDate(summaryCustomStartDate.value, false)
+      endDate = parseInputDate(summaryCustomEndDate.value, true)
+    } else if (summaryCustomStartDate.value) {
+      startDate = parseInputDate(summaryCustomStartDate.value, false)
+      endDate = new Date(2100, 11, 31, 23, 59, 59)
+    } else if (summaryCustomEndDate.value) {
+      startDate = new Date(1990, 0, 1, 0, 0, 0)
+      endDate = parseInputDate(summaryCustomEndDate.value, true)
+    } else {
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0)
+      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+    }
+  } else {
+    startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0)
+    endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+  }
+  return { startDate, endDate }
+}
+
+const summaryData = computed(() => {
+  const { startDate, endDate } = getSummaryDateRange()
+
+  const filterByDate = (list) => {
+    return list.filter(item => {
+      const d = parseAccurateDate(item.transDate)
+      return d && d >= startDate && d <= endDate
+    })
+  }
+
+  const filteredSQ = filterByDate(sqList.value)
+  const filteredSO = filterByDate(soList.value)
+  const filteredSI = filterByDate(siList.value)
+
+  return {
+    hsq: {
+      qty: filteredSQ.length,
+      nominal: filteredSQ.reduce((sum, item) => sum + (Number(item.totalAmount) || 0), 0)
+    },
+    hso: {
+      qty: filteredSO.length,
+      nominal: filteredSO.reduce((sum, item) => sum + (Number(item.totalAmount) || 0), 0)
+    },
+    hsi: {
+      qty: filteredSI.length,
+      nominal: filteredSI.reduce((sum, item) => sum + (Number(item.totalAmount) || 0), 0)
+    }
+  }
+})
+
+// Target Tahunan: 2024 = 6 Miliar (500 Juta / bulan), 2025 = 12 Miliar (1 Miliar / bulan), 2026+ = 24 Miliar (2 Miliar / bulan)
+const yearlyTarget = computed(() => {
+  if (targetYear.value === 2024) {
+    return 6_000_000_000 // 6 Miliar
+  }
+  if (targetYear.value === 2025) {
+    return 12_000_000_000 // 12 Miliar
+  }
+  return 24_000_000_000 // 24 Miliar
+})
+
+const monthlyTargetBase = computed(() => yearlyTarget.value / 12)
+
+const monthNames = [
+  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+]
+
+const targetSalesData = computed(() => {
+  const selectedYear = targetYear.value
+  const baseTargetPerMonth = monthlyTargetBase.value
+
+  const monthlyActuals = Array(12).fill(0)
+  const monthlyQtys = Array(12).fill(0)
+
+  soList.value.forEach(so => {
+    const d = parseAccurateDate(so.transDate)
+    if (d && d.getFullYear() === selectedYear) {
+      const monthIdx = d.getMonth()
+      monthlyActuals[monthIdx] += (Number(so.totalAmount) || 0)
+      monthlyQtys[monthIdx] += 1
+    }
+  })
+
+  let runCumulativeActual = 0
+  let runCumulativeTarget = 0
+
+  const monthlyBreakdown = monthNames.map((name, idx) => {
+    const actualMonthly = monthlyActuals[idx]
+    const qtyMonthly = monthlyQtys[idx]
+    const targetMonthly = baseTargetPerMonth
+    const varianceMonthly = actualMonthly - targetMonthly
+    const monthlyAchievementPercent = targetMonthly > 0 ? (actualMonthly / targetMonthly) * 100 : 0
+
+    runCumulativeActual += actualMonthly
+    runCumulativeTarget += targetMonthly
+    const varianceYTD = runCumulativeActual - runCumulativeTarget
+    const ytdAchievementPercent = runCumulativeTarget > 0 ? (runCumulativeActual / runCumulativeTarget) * 100 : 0
+
+    const now = new Date()
+    const isCurrentYear = selectedYear === now.getFullYear()
+    const isFutureMonth = isCurrentYear && idx > now.getMonth()
+
+    let ytdStatus = 'Sesuai Target'
+    let ytdStatusKey = 'ontrack'
+    if (isFutureMonth) {
+      ytdStatus = 'Belum Mulai'
+      ytdStatusKey = 'upcoming'
+    } else {
+      if (varianceYTD > 0) {
+        ytdStatus = 'Diatas Target'
+        ytdStatusKey = 'ahead'
+      } else if (varianceYTD < 0) {
+        ytdStatus = 'Di Bawah Target'
+        ytdStatusKey = 'behind'
+      }
+    }
+
+    return {
+      monthIdx: idx,
+      monthName: name,
+      qtyMonthly,
+      
+      // SECTION A: Monthly Performance (Primary KPI)
+      actualMonthly,
+      targetMonthly,
+      varianceMonthly,
+      monthlyAchievementPercent: Math.min(Math.round(monthlyAchievementPercent * 10) / 10, 999),
+      
+      // SECTION B: Year-to-Date (YTD) Position (Secondary KPI)
+      runCumulativeActual: isFutureMonth ? null : runCumulativeActual, // Actual YTD
+      runCumulativeTarget, // Expected YTD
+      varianceYTD: isFutureMonth ? null : varianceYTD, // YTD Difference (+/-)
+      ytdAchievementPercent: isFutureMonth ? 0 : Math.min(Math.round(ytdAchievementPercent * 10) / 10, 999),
+      ytdStatus,
+      ytdStatusKey
+    }
+  })
+
+  const totalActualYear = runCumulativeActual
+  const totalTargetYear = yearlyTarget.value
+  const totalVarianceYear = totalActualYear - totalTargetYear
+  const totalAchievementYearPercent = totalTargetYear > 0 ? Math.round((totalActualYear / totalTargetYear) * 1000) / 10 : 0
+
+  return {
+    year: selectedYear,
+    yearlyTarget: totalTargetYear,
+    monthlyTargetBase: baseTargetPerMonth,
+    totalActualYear,
+    totalVarianceYear,
+    totalAchievementYearPercent,
+    monthlyBreakdown
+  }
+})
 
 const parseAccurateDate = (dateStr) => {
   if (!dateStr) return null
@@ -169,9 +457,14 @@ const formatCurrency = (val) =>
   new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val)
 
 const formatCurrencyShort = (val) => {
-  if (val >= 1e9) return `${(val/1e9).toFixed(1)}M`
-  if (val >= 1e6) return `${(val/1e6).toFixed(0)}jt`
-  return `${(val/1e3).toFixed(0)}rb`
+  if (val === null || val === undefined || isNaN(val)) return '-'
+  const isNegative = val < 0
+  const absVal = Math.abs(val)
+  let formatted = ''
+  if (absVal >= 1e9) formatted = `${(absVal/1e9).toFixed(1)}M`
+  else if (absVal >= 1e6) formatted = `${(absVal/1e6).toFixed(0)}jt`
+  else formatted = `${(absVal/1e3).toFixed(0)}rb`
+  return isNegative ? `-${formatted}` : formatted
 }
 
 const getStatusColor = (status) => {
@@ -188,38 +481,22 @@ const getStatusColor = (status) => {
 const getRankIcon = (i) => { if (i===0) return Trophy; if (i===1) return Medal; if (i===2) return Award; return null }
 const getRankColor = (i) => { if (i===0) return 'text-yellow-500'; if (i===1) return 'text-slate-400'; if (i===2) return 'text-amber-600'; return 'text-slate-400' }
 
-// ─── Accurate Sync ──────────────────────────────────────────────────────────
-const {
-  isSyncing, syncStep, syncProgress, syncLog,
-  lastSyncFormatted, shouldAutoSync,
-  syncAll, syncHri, syncHpo, syncHdo
-} = useAccurateSync()
 
-const syncStepLabel = computed(() => {
-  switch (syncStep.value) {
-    case 'hri': return 'Menyinkronkan HRI (Penerimaan Barang)...'
-    case 'hpo': return 'Menyinkronkan HPO (Purchase Order)...'
-    case 'hdo': return 'Menyinkronkan HDO (Delivery Order)...'
-    case 'done': return 'Selesai!'
-    default: return ''
-  }
-})
 
-const syncLogIcon = (type) => {
-  if (type === 'success') return CheckCircle
-  if (type === 'error' || type === 'warn') return XCircle
-  return Info
-}
-
-const syncLogColor = (type) => {
-  if (type === 'success') return 'text-emerald-500'
-  if (type === 'error') return 'text-red-500'
-  if (type === 'warn') return 'text-amber-500'
-  return 'text-blue-400'
-}
+let refreshInterval = null
 
 onMounted(() => { 
   fetchData() 
+  // Refresh automatically every 5 minutes
+  refreshInterval = setInterval(() => {
+    fetchData()
+  }, 5 * 60 * 1000)
+})
+
+onUnmounted(() => {
+  if (refreshInterval) {
+    clearInterval(refreshInterval)
+  }
 })
 </script>
 
@@ -247,468 +524,417 @@ onMounted(() => {
       </button>
     </div>
 
-    <!-- ─── Accurate Sync Panel ──────────────────────────────────────────────── -->
-    <div class="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm shadow-sm overflow-hidden">
-      <!-- Header row -->
-      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-5 py-4 border-b border-slate-100 dark:border-slate-800">
-        <div class="flex items-center gap-3">
-          <div class="p-2 bg-gradient-to-br from-violet-500 to-indigo-600 rounded-xl shadow-md shadow-violet-500/20">
-            <Database class="w-4 h-4 text-white"/>
-          </div>
-          <div>
-            <h2 class="font-bold text-slate-900 dark:text-white text-sm">Sinkronisasi Data Accurate</h2>
-            <p class="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-              <span v-if="lastSyncFormatted">Terakhir sync: <span class="font-semibold text-slate-600 dark:text-slate-300">{{ lastSyncFormatted }}</span></span>
-              <span v-else class="text-amber-500">Belum pernah sync</span>
-              <span v-if="isSyncing" class="ml-2 text-violet-500 font-medium animate-pulse">• {{ syncStepLabel }}</span>
-            </p>
-          </div>
-        </div>
-        <!-- Sync all button -->
-        <button
-          @click="syncAll()"
-          :disabled="isSyncing"
-          class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white shadow-md shadow-violet-500/20 transition-all hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed whitespace-nowrap"
-        >
-          <RefreshCcw :class="['w-4 h-4', isSyncing && 'animate-spin']"/>
-          {{ isSyncing ? 'Menyinkronkan...' : 'Sync Semua' }}
-        </button>
-      </div>
 
-      <!-- Progress bar (visible while syncing) -->
-      <div v-if="isSyncing" class="px-5 pt-3 pb-0">
-        <div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
-          <span class="font-medium text-violet-600 dark:text-violet-400">{{ syncStepLabel }}</span>
-          <span>{{ syncProgress }}%</span>
+    <!-- Summary Section: Filter Toolbar + 3 Main Cards (HSQ, HSO, HSI) -->
+    <div class="space-y-4">
+      <!-- Filter Toolbar -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div class="flex items-center gap-2">
+          <div class="p-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg">
+            <Calendar class="w-4 h-4" />
+          </div>
+          <span class="text-sm font-bold text-slate-800 dark:text-slate-200">Filter Periode Ringkasan</span>
         </div>
-        <div class="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
-          <div
-            class="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full transition-all duration-500"
-            :style="{ width: syncProgress + '%' }"
-          />
-        </div>
-      </div>
 
-      <!-- Per-step buttons + last log line -->
-      <div class="px-5 py-4">
-        <div class="flex flex-wrap gap-2 mb-3">
-          <button
-            @click="syncHri()"
-            :disabled="isSyncing"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        <div class="flex flex-wrap items-center gap-2">
+          <button v-for="f in [
+            { v: 'all', l: 'Semua Periode' },
+            { v: 'month', l: 'Bulan Ini' },
+            { v: 'year', l: 'Tahun Ini' },
+            { v: 'lastYear', l: 'Tahun Lalu' },
+            { v: 'custom', l: 'Range Tanggal' }
+          ]" :key="f.v"
+            @click="summaryDateFilter = f.v"
+            :class="[
+              'px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer',
+              summaryDateFilter === f.v 
+                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md' 
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            ]"
           >
-            <PackageCheck class="w-3.5 h-3.5"/>
-            Sync HRI
-            <span class="text-emerald-500 font-normal opacity-70">(Penerimaan Barang)</span>
+            {{ f.l }}
           </button>
-          <button
-            @click="syncHpo()"
-            :disabled="isSyncing"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-blue-200 bg-blue-50 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <ShoppingBag class="w-3.5 h-3.5"/>
-            Sync HPO
-            <span class="text-blue-500 font-normal opacity-70">(Purchase Order)</span>
-          </button>
-          <button
-            @click="syncHdo()"
-            :disabled="isSyncing"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-amber-200 bg-amber-50 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-900/20 dark:hover:bg-amber-900/40 text-amber-700 dark:text-amber-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Truck class="w-3.5 h-3.5"/>
-            Sync HDO
-            <span class="text-amber-500 font-normal opacity-70">(Delivery Order)</span>
-          </button>
-        </div>
 
-        <!-- Sync Log -->
-        <div v-if="syncLog.length > 0" class="space-y-1 max-h-36 overflow-y-auto pr-1">
-          <div
-            v-for="(log, i) in syncLog"
-            :key="i"
-            class="flex items-start gap-2 text-xs py-1 px-2 rounded-lg"
-            :class="{
-              'bg-emerald-50 dark:bg-emerald-900/10': log.type === 'success',
-              'bg-red-50 dark:bg-red-900/10': log.type === 'error',
-              'bg-amber-50 dark:bg-amber-900/10': log.type === 'warn',
-              'bg-slate-50 dark:bg-slate-800/40': log.type === 'info',
-            }"
-          >
-            <component :is="syncLogIcon(log.type)" class="w-3.5 h-3.5 mt-0.5 flex-shrink-0" :class="syncLogColor(log.type)"/>
-            <span class="text-slate-700 dark:text-slate-300 flex-1">{{ log.message }}</span>
-            <span class="text-slate-400 dark:text-slate-500 flex-shrink-0">
-              {{ log.timestamp.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }}
-            </span>
-          </div>
-        </div>
-        <div v-else class="text-xs text-slate-400 dark:text-slate-500 italic">
-          Tekan "Sync Semua" untuk menyinkronkan data HPO, HRI, dan HDO dari Accurate ke sistem
-        </div>
-      </div>
-    </div>
-
-    <!-- KPI Cards -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      <!-- Total HSO -->
-      <div class="relative overflow-hidden bg-gradient-to-br from-blue-600 to-blue-700 dark:from-blue-700 dark:to-blue-900 rounded-2xl p-5 shadow-lg shadow-blue-500/20">
-        <div class="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full"></div>
-        <div class="absolute -right-2 top-8 w-16 h-16 bg-white/5 rounded-full"></div>
-        <p class="text-blue-200 text-xs font-semibold uppercase tracking-wide mb-2">Total HSO</p>
-        <div v-if="isLoading" class="h-8 w-20 bg-white/20 rounded animate-pulse"></div>
-        <p v-else class="text-4xl font-black text-white">{{ soList.length }}</p>
-        <p class="text-blue-200 text-xs mt-1">Semua periode</p>
-      </div>
-
-      <!-- Revenue -->
-      <div class="relative overflow-hidden bg-gradient-to-br from-emerald-500 to-teal-600 dark:from-emerald-700 dark:to-teal-900 rounded-2xl p-5 shadow-lg shadow-emerald-500/20">
-        <div class="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full"></div>
-        <div class="absolute -right-2 top-8 w-16 h-16 bg-white/5 rounded-full"></div>
-        <p class="text-emerald-100 text-xs font-semibold uppercase tracking-wide mb-2">Total Revenue</p>
-        <div v-if="isLoading" class="h-8 w-28 bg-white/20 rounded animate-pulse"></div>
-        <p v-else class="text-3xl font-black text-white leading-tight">{{ formatCurrencyShort(soList.reduce((s,so)=>s+(so.totalAmount||0),0)) }}</p>
-        <p class="text-emerald-100 text-xs mt-1">Akumulasi semua SO</p>
-      </div>
-
-      <!-- Status Bulan Ini -->
-      <div class="relative overflow-hidden bg-gradient-to-br from-violet-600 to-purple-700 dark:from-violet-800 dark:to-purple-900 rounded-2xl p-5 shadow-lg shadow-violet-500/20">
-        <div class="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full"></div>
-        <p class="text-violet-200 text-xs font-semibold uppercase tracking-wide mb-2">Bulan Ini</p>
-        <div v-if="isLoading" class="h-8 w-16 bg-white/20 rounded animate-pulse"></div>
-        <p v-else class="text-4xl font-black text-white">{{ hsoStatusData.total }}</p>
-        <p class="text-violet-200 text-xs mt-1">{{ hsoStatusData.terproses }} terproses</p>
-      </div>
-
-      <!-- Menunggu -->
-      <div class="relative overflow-hidden bg-gradient-to-br from-amber-500 to-orange-600 dark:from-amber-700 dark:to-orange-900 rounded-2xl p-5 shadow-lg shadow-amber-500/20">
-        <div class="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full"></div>
-        <p class="text-amber-100 text-xs font-semibold uppercase tracking-wide mb-2">Menunggu</p>
-        <div v-if="isLoading" class="h-8 w-16 bg-white/20 rounded animate-pulse"></div>
-        <p v-else class="text-4xl font-black text-white">{{ hsoStatusData.menunggu }}</p>
-        <p class="text-amber-100 text-xs mt-1">Perlu diproses</p>
-      </div>
-    </div>
-
-    <!-- Main Chart Card -->
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
-      <!-- Card Header -->
-      <div class="px-6 pt-6 pb-4 border-b border-slate-100 dark:border-slate-800">
-        <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-          <div>
-            <h2 class="text-xl font-bold text-slate-900 dark:text-white">Sales Order Chart</h2>
-            <div class="flex items-baseline gap-3 mt-1">
-              <span class="text-3xl font-black text-slate-900 dark:text-white">{{ soIndividualData.data.length }} HSO</span>
-              <span class="text-lg font-bold text-emerald-600 dark:text-emerald-400">{{ formatCurrencyShort(soIndividualData.total) }}</span>
-            </div>
-          </div>
-
-          <div class="flex flex-col gap-3">
-            <!-- Date Filter -->
-            <div class="flex flex-wrap gap-1.5">
-              <button v-for="f in [{v:'all',l:'Semua'},{v:'today',l:'Hari Ini'},{v:'week',l:'Minggu'},{v:'month',l:'Bulan Ini'},{v:'year',l:'Tahun Ini'},{v:'lastYear',l:'Tahun Lalu'}]" :key="f.v"
-                @click="poDateFilter = f.v"
-                :class="['px-3 py-1.5 rounded-lg text-xs font-semibold transition-all', poDateFilter === f.v ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700']"
-              >{{ f.l }}</button>
-            </div>
-            <!-- Status Filter -->
-            <div class="flex flex-wrap gap-1.5">
-              <button v-for="f in [{v:'all',l:'Semua',dot:''},{v:'terproses',l:'Terproses',dot:'bg-blue-500'},{v:'menunggu',l:'Menunggu',dot:'bg-emerald-500'},{v:'lainnya',l:'Lainnya',dot:'bg-red-500'}]" :key="f.v"
-                @click="statusFilter = f.v"
-                :class="['inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all', statusFilter === f.v ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-sm' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700']"
-              >
-                <span v-if="f.dot" :class="['w-1.5 h-1.5 rounded-full', f.dot]"></span>
-                {{ f.l }}
-              </button>
-            </div>
-            <!-- Custom Date -->
-            <div class="flex items-center gap-2 text-xs text-slate-500">
-              <input type="date" v-model="poCustomStartDate" @change="poDateFilter='custom'"
-                class="px-2 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-xs bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300"/>
-              <span>→</span>
-              <input type="date" v-model="poCustomEndDate" @change="poDateFilter='custom'"
-                class="px-2 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-xs bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300"/>
-            </div>
+          <!-- Custom Date Inputs -->
+          <div v-if="summaryDateFilter === 'custom'" class="flex items-center gap-2 ml-1">
+            <input type="date" v-model="summaryCustomStartDate"
+              class="px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <span class="text-xs text-slate-400 font-medium">s/d</span>
+            <input type="date" v-model="summaryCustomEndDate"
+              class="px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
         </div>
       </div>
 
-      <div class="p-6">
-        <div v-if="isLoading" class="h-72 bg-slate-100 dark:bg-slate-800 rounded-xl animate-pulse flex items-center justify-center">
-          <Loader2 class="w-8 h-8 text-slate-400 animate-spin"/>
-        </div>
+      <!-- 3 Summary Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        
+        <!-- 1. TOTAL HSQ -->
+        <div class="relative overflow-hidden bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+          <div class="absolute -right-6 -top-6 w-28 h-28 bg-blue-50 dark:bg-blue-900/10 rounded-full blur-2xl pointer-events-none"></div>
 
-        <div v-else-if="soIndividualData.data.length === 0" class="flex flex-col items-center justify-center py-16 text-slate-400">
-          <Package class="w-14 h-14 mb-3 opacity-30"/>
-          <p class="text-sm font-medium">Tidak ada SO untuk periode ini</p>
-        </div>
-
-        <div v-else>
-          <!-- Zoom Controls -->
-          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700/50">
-            <div class="flex items-center gap-3">
-              <span class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Zoom</span>
-              <button @click="chartZoom = Math.max(30, chartZoom-10)" :disabled="chartZoom<=30"
-                class="w-7 h-7 flex items-center justify-center rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-100 disabled:opacity-40 transition-all shadow-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-              </button>
-              <input type="range" v-model="chartZoom" min="30" max="200" step="10"
-                class="w-28 h-1.5 bg-slate-200 dark:bg-slate-600 rounded-full appearance-none cursor-pointer accent-slate-900 dark:accent-white"/>
-              <button @click="chartZoom = Math.min(200, chartZoom+10)" :disabled="chartZoom>=200"
-                class="w-7 h-7 flex items-center justify-center rounded-lg bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-100 disabled:opacity-40 transition-all shadow-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
-              </button>
-              <span class="text-xs font-bold text-slate-700 dark:text-slate-300 w-10 text-center">{{ chartZoom }}px</span>
+          <div class="relative z-10">
+            <div class="flex items-center justify-between mb-4">
+              <span class="px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs font-black tracking-wider uppercase border border-blue-200 dark:border-blue-800/50">
+                TOTAL HSQ
+              </span>
+              <span class="text-[11px] text-slate-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-900/50 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">Sales Quotation</span>
             </div>
-            <div class="flex gap-1">
-              <button v-for="z in [50,100,150,200]" :key="z" @click="chartZoom=z"
-                :class="['px-2.5 py-1 rounded-lg text-xs font-semibold transition-all', chartZoom===z ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900' : 'bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:bg-slate-100']">
-                {{ z }}%
-              </button>
+
+            <div v-if="isLoading" class="space-y-3 py-2">
+              <div class="h-8 w-24 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
+              <div class="h-6 w-36 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
             </div>
-          </div>
 
-          <!-- Chart -->
-          <div class="relative bg-slate-50 dark:bg-slate-800/50 rounded-xl p-4 border border-slate-100 dark:border-slate-700/50 overflow-x-auto">
-            <div class="flex pb-20 items-end" :style="`gap: ${Math.max(chartZoom/25,2)}px; min-width: max-content;`">
-              <div v-for="(item) in soIndividualData.data" :key="item.id"
-                class="group relative flex flex-col items-center"
-                :style="`min-width: ${chartZoom}px; max-width: ${chartZoom}px;`">
+            <div v-else class="grid grid-cols-2 gap-3 my-1">
+              <!-- QTY -->
+              <div class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700/50">
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider mb-1">QTY</p>
+                <p class="text-3xl font-black tracking-tight text-slate-800 dark:text-white">{{ summaryData.hsq.qty }}</p>
+                <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Penawaran</p>
+              </div>
 
-                <!-- Amount label above bar -->
-                <div v-if="chartZoom >= 60"
-                  class="font-bold mb-1 text-center whitespace-nowrap overflow-hidden"
-                  :class="[
-                    chartZoom < 80 ? 'text-[8px]' : 'text-[10px]',
-                    item.color === 'blue' ? 'text-blue-600 dark:text-blue-400' : item.color === 'green' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
-                  ]">
-                  {{ chartZoom < 80 ? (item.amount/1e6).toFixed(0)+'jt' : formatCurrencyShort(item.amount) }}
-                </div>
-
-                <!-- Bar -->
-                <div class="relative w-full" :style="`height: ${Math.max(chartZoom*2.5,150)}px;`">
-                  <div class="absolute bottom-0 left-0 right-0 w-full transition-all cursor-pointer rounded-t-md"
-                    :class="{
-                      'bg-gradient-to-t from-blue-600 to-blue-400 hover:from-blue-700 hover:to-blue-500': item.color === 'blue',
-                      'bg-gradient-to-t from-emerald-600 to-emerald-400 hover:from-emerald-700 hover:to-emerald-500': item.color === 'green',
-                      'bg-gradient-to-t from-red-600 to-red-400 hover:from-red-700 hover:to-red-500': item.color === 'red'
-                    }"
-                    :style="`height: ${Math.max((item.amount/soIndividualData.maxCount)*100,2)}%;`">
-                    <!-- Tooltip -->
-                    <div class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-slate-900 text-white text-xs rounded-xl opacity-0 group-hover:opacity-100 transition-all whitespace-nowrap pointer-events-none z-30 shadow-xl border border-slate-700">
-                      <div class="font-bold mb-1">{{ item.number }}</div>
-                      <div class="text-slate-300">{{ item.customerName }}</div>
-                      <div class="font-bold mt-1" :class="item.color === 'blue' ? 'text-blue-300' : item.color === 'green' ? 'text-emerald-300' : 'text-red-300'">
-                        {{ formatCurrency(item.amount) }}
-                      </div>
-                      <div class="text-slate-400 text-[10px] mt-0.5">{{ item.date }} • {{ item.status }}</div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Labels below -->
-                <div class="flex flex-col items-center gap-0.5 text-center mt-1.5 w-full overflow-hidden">
-                  <div class="font-bold text-slate-700 dark:text-slate-300 w-full truncate px-0.5"
-                    :class="{ 'text-[8px]': chartZoom < 60, 'text-[9px]': chartZoom >= 60 && chartZoom < 100, 'text-[11px]': chartZoom >= 100 }"
-                    :title="item.number">
-                    {{ chartZoom < 60 ? item.number.split('/').pop() : item.number }}
-                  </div>
-                  <div v-if="chartZoom >= 50"
-                    class="font-medium text-slate-500 dark:text-slate-400 w-full truncate px-0.5"
-                    :class="{ 'text-[7px]': chartZoom < 80, 'text-[10px]': chartZoom >= 80 }"
-                    :title="item.customerName">
-                    {{ chartZoom < 80 ? item.customerName.split(' ')[0] : item.customerName }}
-                  </div>
-                </div>
+              <!-- Nominal -->
+              <div class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700/50 overflow-hidden">
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider mb-1">Nominal</p>
+                <p class="text-xl font-black text-slate-800 dark:text-white truncate" :title="formatCurrency(summaryData.hsq.nominal)">
+                  {{ formatCurrencyShort(summaryData.hsq.nominal) }}
+                </p>
+                <p class="text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5" :title="formatCurrency(summaryData.hsq.nominal)">
+                  {{ formatCurrency(summaryData.hsq.nominal) }}
+                </p>
               </div>
             </div>
           </div>
+        </div>
 
-          <!-- Legend -->
-          <div class="flex items-center justify-center gap-5 mt-3">
-            <div class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-gradient-to-t from-blue-600 to-blue-400"></span><span class="text-xs text-slate-500 dark:text-slate-400">Terproses</span></div>
-            <div class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-gradient-to-t from-emerald-600 to-emerald-400"></span><span class="text-xs text-slate-500 dark:text-slate-400">Menunggu</span></div>
-            <div class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-sm bg-gradient-to-t from-red-600 to-red-400"></span><span class="text-xs text-slate-500 dark:text-slate-400">Lainnya</span></div>
+        <!-- 2. TOTAL HSO -->
+        <div class="relative overflow-hidden bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+          <div class="absolute -right-6 -top-6 w-28 h-28 bg-emerald-50 dark:bg-emerald-900/10 rounded-full blur-2xl pointer-events-none"></div>
+
+          <div class="relative z-10">
+            <div class="flex items-center justify-between mb-4">
+              <span class="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-black tracking-wider uppercase border border-emerald-200 dark:border-emerald-800/50">
+                TOTAL HSO
+              </span>
+              <span class="text-[11px] text-slate-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-900/50 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">Sales Order</span>
+            </div>
+
+            <div v-if="isLoading" class="space-y-3 py-2">
+              <div class="h-8 w-24 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
+              <div class="h-6 w-36 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
+            </div>
+
+            <div v-else class="grid grid-cols-2 gap-3 my-1">
+              <!-- QTY -->
+              <div class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700/50">
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider mb-1">QTY</p>
+                <p class="text-3xl font-black tracking-tight text-slate-800 dark:text-white">{{ summaryData.hso.qty }}</p>
+                <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Pesanan (SO)</p>
+              </div>
+
+              <!-- Nominal -->
+              <div class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700/50 overflow-hidden">
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider mb-1">Nominal</p>
+                <p class="text-xl font-black text-slate-800 dark:text-white truncate" :title="formatCurrency(summaryData.hso.nominal)">
+                  {{ formatCurrencyShort(summaryData.hso.nominal) }}
+                </p>
+                <p class="text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5" :title="formatCurrency(summaryData.hso.nominal)">
+                  {{ formatCurrency(summaryData.hso.nominal) }}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
+
+        <!-- 3. TOTAL INVOICE (HSI) -->
+        <div class="relative overflow-hidden bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
+          <div class="absolute -right-6 -top-6 w-28 h-28 bg-violet-50 dark:bg-violet-900/10 rounded-full blur-2xl pointer-events-none"></div>
+
+          <div class="relative z-10">
+            <div class="flex items-center justify-between mb-4">
+              <span class="px-2.5 py-1 rounded-lg bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 text-xs font-black tracking-wider uppercase border border-violet-200 dark:border-violet-800/50">
+                TOTAL INVOICE
+              </span>
+              <span class="text-[11px] text-slate-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-900/50 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">Faktur Penjualan (HSI)</span>
+            </div>
+
+            <div v-if="isLoading" class="space-y-3 py-2">
+              <div class="h-8 w-24 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
+              <div class="h-6 w-36 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
+            </div>
+
+            <div v-else class="grid grid-cols-2 gap-3 my-1">
+              <!-- QTY -->
+              <div class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700/50">
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider mb-1">QTY</p>
+                <p class="text-3xl font-black tracking-tight text-slate-800 dark:text-white">{{ summaryData.hsi.qty }}</p>
+                <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Faktur (HSI)</p>
+              </div>
+
+              <!-- Nominal -->
+              <div class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700/50 overflow-hidden">
+                <p class="text-[11px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider mb-1">Nominal</p>
+                <p class="text-xl font-black text-slate-800 dark:text-white truncate" :title="formatCurrency(summaryData.hsi.nominal)">
+                  {{ formatCurrencyShort(summaryData.hsi.nominal) }}
+                </p>
+                <p class="text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5" :title="formatCurrency(summaryData.hsi.nominal)">
+                  {{ formatCurrency(summaryData.hsi.nominal) }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
 
-    <!-- Stats + Recent HSO Row -->
-    <div class="grid gap-6 md:grid-cols-2">
-      
-      <!-- HSO Status Card -->
-      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
-        <div class="px-6 pt-6 pb-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <TrendingUp class="w-5 h-5 text-blue-500"/>
-            <h3 class="font-bold text-slate-900 dark:text-white">HSO Status</h3>
+    <!-- Standing Hari Ini Section (Priority Work Center) -->
+    <StandingSection 
+      :sqList="sqList" 
+      :soList="soList" 
+      :siList="siList" 
+      :poList="poList"
+      :shipmentsList="shipmentsList"
+      :yearlyTarget="yearlyTarget" 
+      :targetYear="targetYear" 
+      :isLoading="isLoading" 
+      @refresh="fetchData"
+    />
+
+    <!-- Target Penjualan Section (Compact Horizontal Carousel Slider) -->
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden space-y-0">
+      <!-- Section Header -->
+      <div class="p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="p-2.5 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl text-white shadow-md shadow-amber-500/20">
+            <Trophy class="w-5 h-5" />
           </div>
-          <div class="flex gap-1">
-            <button v-for="f in [{v:'week',l:'Minggu'},{v:'month',l:'Bulan'},{v:'year',l:'Tahun'}]" :key="f.v"
-              @click="hsoStatusFilter = f.v"
-              :class="['px-2.5 py-1 rounded-lg text-xs font-semibold transition-all', hsoStatusFilter===f.v ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800']">
-              {{ f.l }}
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">Target Penjualan {{ targetSalesData.year }}</h2>
+              <span class="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 text-xs font-bold border border-amber-200 dark:border-amber-800">
+                {{ formatCurrencyShort(targetSalesData.yearlyTarget) }} / Tahun
+              </span>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Pemisahan Evaluasi Bulanan (KPI Sales: {{ formatCurrencyShort(targetSalesData.monthlyTargetBase) }}/bulan) & Posisi YTD (Progress Terhadap Target Tahunan)</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <!-- Year Selector -->
+          <div class="flex items-center gap-1.5">
+            <span class="text-xs font-semibold text-slate-500">Tahun:</span>
+            <select v-model="targetYear" class="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 focus:outline-none cursor-pointer">
+              <option :value="2024">2024</option>
+              <option :value="2025">2025</option>
+              <option :value="2026">2026</option>
+            </select>
+          </div>
+
+          <!-- Carousel Prev / Next Controls -->
+          <div class="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+            <button @click="prevMonth" :disabled="selectedMonthIdx === 0"
+              class="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
+              title="Bulan Sebelumnya">
+              <ChevronLeft class="w-4 h-4" />
+            </button>
+            <span class="text-xs font-extrabold text-slate-700 dark:text-slate-300 px-1 min-w-[70px] text-center">
+              {{ monthShortNames[selectedMonthIdx] }} {{ targetSalesData.year }}
+            </span>
+            <button @click="nextMonth" :disabled="selectedMonthIdx === 11"
+              class="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
+              title="Bulan Berikutnya">
+              <ChevronRight class="w-4 h-4" />
             </button>
           </div>
         </div>
+      </div>
 
-        <div class="p-6">
-          <div v-if="isLoading" class="h-48 bg-slate-100 dark:bg-slate-800 rounded-xl animate-pulse"></div>
-          <div v-else>
-            <!-- Total -->
-            <div class="text-center mb-6">
-              <p class="text-6xl font-black text-slate-900 dark:text-white">{{ hsoStatusData.total }}</p>
-              <p class="text-sm text-slate-400 mt-1">Total HSO</p>
+      <!-- Executive Overview Banner -->
+      <div class="p-6 bg-slate-50/60 dark:bg-slate-800/30 border-b border-slate-100 dark:border-slate-800">
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <!-- Target Annual -->
+          <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
+            <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Target Total {{ targetYear }}</p>
+            <p class="text-2xl font-black text-slate-900 dark:text-white">{{ formatCurrencyShort(targetSalesData.yearlyTarget) }}</p>
+            <p class="text-[11px] text-slate-500 mt-0.5">{{ formatCurrency(targetSalesData.monthlyTargetBase) }} / Bulan</p>
+          </div>
+
+          <!-- Actual HSO -->
+          <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
+            <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Realisasi Sales {{ targetYear }}</p>
+            <p class="text-2xl font-black text-emerald-600 dark:text-emerald-400">{{ formatCurrencyShort(targetSalesData.totalActualYear) }}</p>
+            <p class="text-[11px] text-slate-500 mt-0.5 truncate" :title="formatCurrency(targetSalesData.totalActualYear)">
+              {{ formatCurrency(targetSalesData.totalActualYear) }}
+            </p>
+          </div>
+
+          <!-- YTD Position Summary -->
+          <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
+            <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Deviasi YTD {{ targetYear }}</p>
+            <p :class="['text-2xl font-black', targetSalesData.totalVarianceYear >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400']">
+              {{ targetSalesData.totalVarianceYear >= 0 ? '+' : '' }}{{ formatCurrencyShort(targetSalesData.totalVarianceYear) }}
+            </p>
+            <p class="text-[11px] text-slate-500 mt-0.5 truncate" :title="formatCurrency(targetSalesData.totalVarianceYear)">
+              {{ targetSalesData.totalVarianceYear >= 0 ? 'Diatas Target' : 'Di Bawah Target' }}
+            </p>
+          </div>
+
+          <!-- Total Achievement -->
+          <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
+            <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Pencapaian Tahunan</p>
+            <div class="flex items-baseline gap-2">
+              <p class="text-2xl font-black text-indigo-600 dark:text-indigo-400">{{ targetSalesData.totalAchievementYearPercent }}%</p>
             </div>
-
-            <!-- Progress bars -->
-            <div class="space-y-4">
-              <!-- Terproses -->
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
-                    <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">Terproses</span>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <span class="text-lg font-bold text-blue-600 dark:text-blue-400">{{ hsoStatusData.terproses }}</span>
-                    <span class="text-xs text-slate-400">({{ hsoStatusData.terprosesPercent }}%)</span>
-                  </div>
-                </div>
-                <div class="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                  <div class="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full transition-all duration-700" :style="`width: ${hsoStatusData.terprosesPercent}%`"></div>
-                </div>
-              </div>
-              <!-- Menunggu -->
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-                    <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">Menunggu</span>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <span class="text-lg font-bold text-emerald-600 dark:text-emerald-400">{{ hsoStatusData.menunggu }}</span>
-                    <span class="text-xs text-slate-400">({{ hsoStatusData.menungguPercent }}%)</span>
-                  </div>
-                </div>
-                <div class="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                  <div class="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full transition-all duration-700" :style="`width: ${hsoStatusData.menungguPercent}%`"></div>
-                </div>
-              </div>
-              <!-- Lainnya -->
-              <div>
-                <div class="flex items-center justify-between mb-1.5">
-                  <div class="flex items-center gap-2">
-                    <span class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
-                    <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">Lainnya</span>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <span class="text-lg font-bold text-red-600 dark:text-red-400">{{ hsoStatusData.lainnya }}</span>
-                    <span class="text-xs text-slate-400">({{ hsoStatusData.lainnyaPercent }}%)</span>
-                  </div>
-                </div>
-                <div class="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                  <div class="h-full bg-gradient-to-r from-red-500 to-red-400 rounded-full transition-all duration-700" :style="`width: ${hsoStatusData.lainnyaPercent}%`"></div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Revenue for period -->
-            <div class="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-              <span class="text-xs text-slate-400 font-medium uppercase tracking-wide">Total Revenue</span>
-              <span class="text-sm font-bold text-emerald-600 dark:text-emerald-400">{{ formatCurrency(hsoStatusData.totalRevenue) }}</span>
+            <div class="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden mt-1.5">
+              <div class="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full transition-all duration-500"
+                :style="`width: ${Math.min(targetSalesData.totalAchievementYearPercent, 100)}%`"></div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Recent HSOs -->
-      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
-        <div class="px-6 pt-6 pb-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2">
-          <Clock class="w-5 h-5 text-violet-500"/>
-          <h3 class="font-bold text-slate-900 dark:text-white">HSO Terbaru</h3>
+      <!-- Quick Month Navigation Pills Bar -->
+      <div class="px-6 pt-4 pb-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
+        <div class="flex items-center gap-1.5">
+          <button v-for="(mName, idx) in monthShortNames" :key="idx"
+            @click="selectMonth(idx)"
+            :class="[
+              'px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5',
+              selectedMonthIdx === idx 
+                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md' 
+                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-700/80 hover:bg-slate-100 dark:hover:bg-slate-700'
+            ]">
+            <span v-if="idx === new Date().getMonth() && targetYear === new Date().getFullYear()" class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+            {{ mName }}
+          </button>
         </div>
 
-        <div class="p-4">
-          <div v-if="isLoading" class="space-y-3">
-            <div v-for="i in 4" :key="i" class="h-16 bg-slate-100 dark:bg-slate-800 rounded-xl animate-pulse"></div>
-          </div>
-          <div v-else-if="latestHSOs.length === 0" class="flex flex-col items-center py-12 text-slate-400">
-            <Package class="w-12 h-12 mb-2 opacity-30"/>
-            <p class="text-sm">Belum ada SO</p>
-          </div>
-          <div v-else class="space-y-2">
-            <div v-for="so in latestHSOs" :key="so.id"
-              class="group flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition-all cursor-pointer"
-              @click="router.push(`/sales-orders/${so.number.replace(/\//g, '-')}`)">
-              <div class="min-w-0">
-                <p class="font-bold text-slate-900 dark:text-white text-sm truncate">{{ so.number }}</p>
-                <p class="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">{{ so.customer }}</p>
-              </div>
-              <div class="flex items-center gap-3 ml-3 shrink-0">
-                <div class="text-right">
-                  <p class="text-sm font-bold text-slate-700 dark:text-slate-300">{{ formatCurrencyShort(so.totalAmount) }}</p>
-                  <Badge variant="outline" :class="getStatusColor(so.statusName)" class="text-[10px] mt-0.5 px-1.5 py-0">
-                    {{ so.statusName }}
-                  </Badge>
-                </div>
-                <ArrowUpRight class="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors"/>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-
-
-    <!-- Customer Analytics -->
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
-      <div class="px-6 pt-6 pb-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2">
-        <div class="p-1.5 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
-          <Users class="w-4 h-4 text-emerald-600 dark:text-emerald-400"/>
-        </div>
-        <h3 class="font-bold text-slate-900 dark:text-white">Top 20 Customer</h3>
-        <span class="text-xs text-slate-400 ml-1">berdasarkan total nilai pesanan</span>
+        <span class="text-[11px] font-semibold text-slate-400 whitespace-nowrap hidden sm:inline-block">
+          Geser / klik bulan untuk fokus
+        </span>
       </div>
 
+      <!-- Main Body: Horizontal Month Carousel Slider Container -->
       <div class="p-6">
-        <div v-if="isLoading" class="space-y-2">
-          <div v-for="i in 5" :key="i" class="h-14 bg-slate-100 dark:bg-slate-800 rounded-xl animate-pulse"></div>
-        </div>
-        <div v-else-if="customerAnalytics.length === 0" class="text-center py-12 text-slate-400">
-          Tidak ada data customer
-        </div>
-        <div v-else class="overflow-x-auto rounded-xl border border-slate-100 dark:border-slate-800">
-          <Table>
-            <TableHeader class="bg-slate-900 dark:bg-slate-950">
-              <TableRow class="hover:bg-slate-900 dark:hover:bg-slate-950 border-none">
-                <TableHead class="text-slate-400 font-semibold text-xs w-14 text-center">#</TableHead>
-                <TableHead class="text-slate-400 font-semibold text-xs">Customer</TableHead>
-                <TableHead class="text-slate-400 font-semibold text-xs text-right">Total Nilai</TableHead>
-                <TableHead class="text-slate-400 font-semibold text-xs text-center">Jumlah SO</TableHead>
-                <TableHead class="text-slate-400 font-semibold text-xs text-right">Rata-rata</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow v-for="(customer, index) in customerAnalytics" :key="customer.name"
-                class="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-b border-slate-100 dark:border-slate-800 last:border-0">
-                <TableCell class="text-center">
-                  <component v-if="getRankIcon(index)" :is="getRankIcon(index)" :class="getRankColor(index)" class="w-5 h-5 mx-auto"/>
-                  <span v-else class="text-xs text-slate-400 font-medium">{{ index+1 }}</span>
-                </TableCell>
-                <TableCell class="font-semibold text-slate-900 dark:text-white text-sm">{{ customer.name }}</TableCell>
-                <TableCell class="text-right">
-                  <span class="font-bold text-emerald-600 dark:text-emerald-400">{{ formatCurrencyShort(customer.totalValue) }}</span>
-                </TableCell>
-                <TableCell class="text-center">
-                  <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800">
-                    {{ customer.orderCount }} SO
+        <div ref="monthCarouselRef" class="flex gap-5 overflow-x-auto snap-x snap-mandatory py-2 px-1 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+          
+          <div v-for="m in targetSalesData.monthlyBreakdown" :key="m.monthIdx"
+            :data-month-idx="m.monthIdx"
+            @click="selectMonth(m.monthIdx)"
+            :class="[
+              'min-w-[320px] sm:min-w-[350px] max-w-[370px] shrink-0 snap-center rounded-2xl border transition-all duration-300 flex flex-col justify-between p-5 cursor-pointer',
+              selectedMonthIdx === m.monthIdx
+                ? 'ring-2 ring-blue-500/80 dark:ring-blue-400/80 border-blue-400 dark:border-blue-600 bg-white dark:bg-slate-900 shadow-xl transform scale-[1.01]'
+                : 'bg-slate-50/80 dark:bg-slate-800/40 border-slate-200/80 dark:border-slate-700/80 opacity-85 hover:opacity-100 hover:border-slate-300 dark:hover:border-slate-600'
+            ]">
+            
+            <!-- Top Section -->
+            <div>
+              <!-- Card Header -->
+              <div class="flex items-center justify-between mb-3.5">
+                <div class="flex items-center gap-2">
+                  <h4 class="font-black text-slate-900 dark:text-white text-base">{{ m.monthName }} {{ targetSalesData.year }}</h4>
+                </div>
+                <span class="text-xs font-bold px-2 py-0.5 rounded-md bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300/50 dark:border-slate-600/50">
+                  {{ m.qtyMonthly }} SO
+                </span>
+              </div>
+
+              <!-- SECTION A: Monthly Performance (Primary KPI) -->
+              <div class="bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200/70 dark:border-slate-700/70 space-y-2.5 mb-3.5 shadow-2xs">
+                <div class="flex justify-between items-center text-xs">
+                  <span class="text-slate-400 font-bold uppercase text-[10px] tracking-wider">Kinerja Bulan Ini</span>
+                  <span :class="[
+                    'text-xs font-black px-2.5 py-0.5 rounded-md border',
+                    m.monthlyAchievementPercent >= 100 
+                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' 
+                      : m.monthlyAchievementPercent >= 80 
+                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 border-amber-200 dark:border-amber-800' 
+                        : 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                  ]">
+                    {{ m.monthlyAchievementPercent }}%
                   </span>
-                </TableCell>
-                <TableCell class="text-right text-sm text-slate-500 dark:text-slate-400">{{ formatCurrencyShort(customer.averageValue) }}</TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
+                </div>
+
+                <div class="space-y-1.5 text-xs pt-0.5">
+                  <div class="flex justify-between items-center text-slate-500 dark:text-slate-400">
+                    <span>Target Bulan:</span>
+                    <span class="font-semibold text-slate-700 dark:text-slate-300">{{ formatCurrencyShort(m.targetMonthly) }}</span>
+                  </div>
+                  <div class="flex justify-between items-center text-slate-500 dark:text-slate-400">
+                    <span>Penjualan Aktual:</span>
+                    <span class="font-bold text-slate-900 dark:text-white" :title="formatCurrency(m.actualMonthly)">
+                      {{ formatCurrencyShort(m.actualMonthly) }}
+                    </span>
+                  </div>
+                  <div class="flex justify-between items-center pt-1.5 border-t border-slate-100 dark:border-slate-700/80">
+                    <span class="text-slate-500 dark:text-slate-400">Selisih Bulan:</span>
+                    <span :class="['font-extrabold', m.varianceMonthly >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400']" :title="formatCurrency(m.varianceMonthly)">
+                      {{ m.varianceMonthly >= 0 ? '+' : '' }}{{ formatCurrencyShort(m.varianceMonthly) }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Monthly Only Progress Bar -->
+                <div class="pt-0.5">
+                  <div class="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                    <div :class="[
+                      'h-full rounded-full transition-all duration-300',
+                      m.monthlyAchievementPercent >= 100 ? 'bg-emerald-500' : m.monthlyAchievementPercent >= 80 ? 'bg-amber-500' : 'bg-rose-500'
+                    ]" :style="`width: ${Math.min(m.monthlyAchievementPercent, 100)}%`"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- SECTION B: YTD Position (Secondary KPI - Compact ERP Info Panel) -->
+            <div class="bg-slate-100/90 dark:bg-slate-900/60 p-3.5 rounded-xl border border-slate-200/70 dark:border-slate-700/60">
+              <div class="flex items-center justify-between text-xs mb-2">
+                <span class="font-bold text-slate-800 dark:text-slate-200">Posisi YTD</span>
+                <span :class="[
+                  'text-xs font-black px-2 py-0.5 rounded-md flex items-center gap-1.5 border',
+                  m.ytdStatusKey === 'ahead' 
+                    ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' 
+                    : m.ytdStatusKey === 'ontrack' 
+                      ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800' 
+                      : m.ytdStatusKey === 'upcoming'
+                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                        : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                ]">
+                  <span :class="[
+                    'w-1.5 h-1.5 rounded-full',
+                    m.ytdStatusKey === 'ahead' ? 'bg-emerald-500' : m.ytdStatusKey === 'ontrack' ? 'bg-blue-500' : m.ytdStatusKey === 'upcoming' ? 'bg-slate-400' : 'bg-rose-500'
+                  ]"></span>
+                  {{ m.ytdStatus }}
+                </span>
+              </div>
+
+              <div class="grid grid-cols-3 gap-1.5 text-xs text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-200/60 dark:border-slate-700/50">
+                <div>
+                  <p class="text-[10px] font-semibold uppercase text-slate-400">TARGET YTD</p>
+                  <p class="font-bold text-slate-800 dark:text-slate-200 truncate" :title="formatCurrency(m.runCumulativeTarget)">
+                    {{ formatCurrencyShort(m.runCumulativeTarget) }}
+                  </p>
+                </div>
+                <div>
+                  <p class="text-[10px] font-semibold uppercase text-slate-400">AKTUAL YTD</p>
+                  <p class="font-black text-slate-900 dark:text-white truncate" :title="formatCurrency(m.runCumulativeActual)">
+                    {{ formatCurrencyShort(m.runCumulativeActual) }}
+                  </p>
+                </div>
+                <div class="text-right">
+                  <p class="text-[10px] font-semibold uppercase text-slate-400">DEVIASI</p>
+                  <p :class="['font-black truncate text-xs', m.varianceYTD === null ? 'text-slate-400' : m.varianceYTD >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400']" :title="formatCurrency(m.varianceYTD)">
+                    {{ m.varianceYTD === null ? '-' : (m.varianceYTD >= 0 ? '+' : '') + formatCurrencyShort(m.varianceYTD) }}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
         </div>
       </div>
     </div>

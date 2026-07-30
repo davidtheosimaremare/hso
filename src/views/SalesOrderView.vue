@@ -680,12 +680,14 @@ const bulkDownloadReminderPO = async () => {
             }
             
             const getVisualStatus = (shipment) => {
-                if (!shipment) return 'Pending Process'
+                if (!shipment || Object.keys(shipment).length === 0) return 'Pending Process'
                 if (shipment.current_status === 'Hold by Customer') return 'Hold by Customer'
                 if (shipment.hokiindo_date) return 'Already in Hokiindo Raya'
                 if (shipment.dunex_date) return 'Already in siemens Warehouse'
                 if (shipment.eta_date) return 'ETA Port JKT'
-                return shipment.current_status || 'Follow up with our forwarder'
+                if (shipment.exwork_date || shipment.exwork_waiting) return 'Follow up with our forwarder'
+                if (shipment.current_status === 'Follow up with our forwarder') return 'Follow up with our forwarder'
+                return shipment.current_status || 'Pending Process'
             }
             
             const getHpoEntries = (item) => {

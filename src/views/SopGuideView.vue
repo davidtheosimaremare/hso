@@ -35,7 +35,7 @@ const activeTab = ref('sop') // 'sop' or 'flow'
           <span>SOP & Panduan Penggunaan Aplikasi</span>
         </h1>
         <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Dokumentasi alur kerja end-to-end, SOP pemeriksaan pemesanan barang, dan panduan operasional sistem HSO Tracker.
+          Dokumentasi alur kerja end-to-end, SOP pemeriksaan pemesanan barang, dan panduan operasional sistem HIR Workspace.
         </p>
       </div>
       
@@ -91,7 +91,7 @@ const activeTab = ref('sop') // 'sop' or 'flow'
                   <Badge variant="outline" class="text-[10px] border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900">Mulai</Badge>
                 </h3>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Sales Order (HSO) baru didaftarkan dan di-approve di Accurate Online oleh tim sales admin. Dokumen ini secara otomatis akan tersinkronisasi ke aplikasi HSO Tracker.
+                  Sales Order (HSO) baru didaftarkan dan di-approve di Accurate Online oleh tim sales admin. Dokumen ini secara otomatis akan tersinkronisasi ke aplikasi HIR Workspace.
                 </p>
               </div>
             </div>
@@ -207,7 +207,7 @@ const activeTab = ref('sop') // 'sop' or 'flow'
                   <Activity class="w-3.5 h-3.5 text-indigo-500" />
                 </h3>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Setelah HPO diterbitkan di Accurate, sistem HSO Tracker secara otomatis akan melacak siklus hidup item barang tersebut dari tahap pemesanan (HPO), status transit logistik, penerimaan di gudang (RI), hingga pengiriman akhir ke customer (HDO).
+                  Setelah HPO diterbitkan di Accurate, sistem HIR Workspace secara otomatis akan melacak siklus hidup item barang tersebut dari tahap pemesanan (HPO), status transit logistik, penerimaan di gudang (RI), hingga pengiriman akhir ke customer (HDO).
                 </p>
               </div>
             </div>

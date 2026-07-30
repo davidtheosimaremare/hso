@@ -6,7 +6,7 @@ import {
   Loader2, AlertCircle, FileText, ArrowLeft, Calendar, 
   FileSpreadsheet, Download, ChevronRight, User, DollarSign, Tag, Search,
   TrendingUp, Plus, Clock, CheckSquare, ListTodo, MessageSquare, PhoneCall,
-  Users, Edit, CheckCircle2, XCircle, Send, Activity
+  Users, Edit, CheckCircle2, XCircle, Send, Activity, Share2, Check
 } from 'lucide-vue-next'
 import * as XLSX from 'xlsx'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,29 @@ const isLoading = ref(true)
 const selectedHsq = ref(null)
 const fetchError = ref(null)
 const itemSearchQuery = ref('')
+const isCopied = ref(false)
+
+const shareLink = async () => {
+  const url = window.location.href
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(url)
+    } else {
+      const textArea = document.createElement('textarea')
+      textArea.value = url
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+    }
+    isCopied.value = true
+    setTimeout(() => {
+      isCopied.value = false
+    }, 2500)
+  } catch (err) {
+    console.error('Failed to copy link:', err)
+  }
+}
 
 const filteredItems = computed(() => {
   if (!selectedHsq.value?.detailItem) return []
@@ -103,12 +126,9 @@ const taskForm = ref({
 })
 
 const availableStages = [
-  { val: 'Prospecting', label: 'Prospecting (Penjajakan)', defaultProb: 10 },
-  { val: 'Pitching / Presentasi', label: 'Pitching / Presentasi', defaultProb: 25 },
-  { val: 'Penawaran Dikirim', label: 'Penawaran Dikirim', defaultProb: 50 },
-  { val: 'Negosiasi', label: 'Negosiasi', defaultProb: 75 },
-  { val: 'Won (Disetujui)', label: 'Won (Disetujui & Deal)', defaultProb: 100 },
-  { val: 'Lost (Batal)', label: 'Lost (Batal / Gagal)', defaultProb: 0 }
+  { val: 'Negosiasi', label: 'Negosiasi', defaultProb: 50 },
+  { val: 'Won', label: 'Won (Disetujui & Deal)', defaultProb: 100 },
+  { val: 'Lost', label: 'Lost (Batal / Gagal)', defaultProb: 0 }
 ]
 
 const activityTypes = [
@@ -141,6 +161,21 @@ const fetchHsoUsers = async () => {
   }
 }
 
+const extractProjectName = (hsq) => {
+  let text = hsq?.description || ''
+  if (!text.toLowerCase().includes('pro') && hsq?.detailItem && hsq.detailItem.length > 0) {
+    text = hsq.detailItem[0].detailNotes || ''
+  }
+  if (!text) return null
+  
+  const regex = /pro(?:ject|yek)\s*[:\-]?\s*(.*?)(?=\s*(?:>|status|$))/i
+  const match = text.match(regex)
+  if (match && match[1]) {
+    return match[1].replace(/[\s\-]+$/, '').trim()
+  }
+  return null
+}
+
 const getLocalData = (key) => {
   try {
     const d = localStorage.getItem(key)
@@ -170,8 +205,8 @@ const fetchHsqTrackingData = async () => {
     if (!pErr && pData && pData.stage) {
       hsqProgress.value = pData
       progressForm.value = {
-        stage: pData.stage || 'Prospecting',
-        probability: pData.probability !== undefined ? pData.probability : 10,
+        stage: pData.stage || 'Negosiasi',
+        probability: pData.probability !== undefined ? pData.probability : 50,
         expected_closing_date: pData.expected_closing_date || '',
         notes: pData.notes || ''
       }
@@ -180,8 +215,8 @@ const fetchHsqTrackingData = async () => {
       if (localP && localP.stage) {
         hsqProgress.value = localP
         progressForm.value = {
-          stage: localP.stage || 'Prospecting',
-          probability: localP.probability !== undefined ? localP.probability : 10,
+          stage: localP.stage || 'Negosiasi',
+          probability: localP.probability !== undefined ? localP.probability : 50,
           expected_closing_date: localP.expected_closing_date || '',
           notes: localP.notes || ''
         }
@@ -230,8 +265,8 @@ const fetchHsqTrackingData = async () => {
 // Open Progress Modal
 const openUpdateProgressModal = () => {
   progressForm.value = {
-    stage: hsqProgress.value?.stage || 'Prospecting',
-    probability: hsqProgress.value?.probability !== undefined && hsqProgress.value?.probability !== null ? hsqProgress.value.probability : 10,
+    stage: hsqProgress.value?.stage || 'Negosiasi',
+    probability: hsqProgress.value?.probability !== undefined && hsqProgress.value?.probability !== null ? hsqProgress.value.probability : 50,
     expected_closing_date: hsqProgress.value?.expected_closing_date || '',
     notes: hsqProgress.value?.notes || ''
   }
@@ -545,16 +580,19 @@ const formatCurrency = (val) => {
 const getStatusClass = (status) => {
   const name = (status || '').toLowerCase()
   if (name.includes('closed') || name.includes('selesai') || name.includes('ditutup') || name.includes('terproses')) {
+    if (name.includes('sebagian')) {
+      return 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/20 dark:text-blue-400 dark:border-blue-900/60'
+    }
     return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/60'
   }
-  if (name.includes('disetujui')) {
-    return 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/20 dark:text-blue-400 dark:border-blue-900/60'
+  if (name.includes('menunggu') || name.includes('diajukan') || name.includes('disetujui')) {
+    return 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900/60'
   }
   if (name.includes('draft') || name.includes('draf')) {
     return 'bg-gray-50 text-gray-700 border-gray-200 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700'
   }
-  if (name.includes('diajukan')) {
-    return 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900/60'
+  if (name.includes('tolak') || name.includes('batal') || name.includes('gagal')) {
+    return 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/60'
   }
   return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/60'
 }
@@ -604,8 +642,30 @@ onMounted(() => {
 
     <template v-else-if="selectedHsq">
       <!-- Title & Main Actions Card -->
-      <div class="bg-white dark:bg-[#1e293b] p-5 md:p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-        <div class="flex items-center gap-3">
+      <div class="relative bg-white dark:bg-[#1e293b] p-5 md:p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 overflow-hidden">
+        
+        <!-- STAMPEL GAGAL / LOST -->
+        <div v-if="hsqProgress && hsqProgress.stage === 'Lost'" class="absolute right-4 md:right-32 top-1/2 -translate-y-1/2 -rotate-12 opacity-30 pointer-events-none z-10">
+          <div class="border-[6px] border-red-600 text-red-600 px-6 py-3 rounded-2xl text-5xl font-black uppercase tracking-widest bg-transparent border-double drop-shadow-sm">
+            GAGAL
+          </div>
+        </div>
+
+        <!-- STAMPEL WON / DEAL -->
+        <div v-if="hsqProgress && hsqProgress.stage === 'Won'" class="absolute right-4 md:right-32 top-1/2 -translate-y-1/2 -rotate-12 opacity-30 pointer-events-none z-10">
+          <div class="border-[6px] border-emerald-600 text-emerald-600 px-6 py-3 rounded-2xl text-5xl font-black uppercase tracking-widest bg-transparent border-double drop-shadow-sm">
+            WON!
+          </div>
+        </div>
+        
+        <!-- STAMPEL NEGOSIASI -->
+        <div v-if="hsqProgress && hsqProgress.stage === 'Negosiasi'" class="absolute right-4 md:right-32 top-1/2 -translate-y-1/2 -rotate-12 opacity-30 pointer-events-none z-10">
+          <div class="border-[6px] border-blue-600 text-blue-600 px-6 py-3 rounded-2xl text-5xl font-black uppercase tracking-widest bg-transparent border-double drop-shadow-sm">
+            NEGOSIASI
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 relative z-20">
           <div class="bg-red-50 dark:bg-red-950/20 p-2.5 rounded-xl border border-red-100 dark:border-red-950/60">
             <FileText class="w-6 h-6 text-red-600" />
           </div>
@@ -624,6 +684,17 @@ onMounted(() => {
             {{ selectedHsq.statusName || 'Outstanding' }}
           </span>
           
+          <Button 
+            @click="shareLink"
+            variant="outline"
+            class="h-9.5 px-3.5 text-xs font-bold gap-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg shadow-sm"
+            :class="{ 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300': isCopied }"
+          >
+            <Check v-if="isCopied" class="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <Share2 v-else class="w-4 h-4 text-slate-500 dark:text-slate-400" />
+            <span>{{ isCopied ? 'Link Disalin!' : 'Bagikan Link' }}</span>
+          </Button>
+
           <Button 
             @click="exportToExcel"
             class="h-9.5 px-4 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 shadow-sm rounded-lg"
@@ -859,6 +930,14 @@ onMounted(() => {
           <div class="text-[10px] text-slate-400">
             Kode: {{ selectedHsq.customer?.customerNo || '-' }}
           </div>
+          <div v-if="extractProjectName(selectedHsq)" class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+              Nama Proyek
+            </div>
+            <div class="text-xs font-semibold text-slate-700 dark:text-slate-300">
+              {{ extractProjectName(selectedHsq) }}
+            </div>
+          </div>
         </div>
 
         <!-- Total Value -->
@@ -988,18 +1067,27 @@ onMounted(() => {
 
           <!-- Probability Slider / Number -->
           <div class="space-y-1.5">
-            <div class="flex justify-between items-center">
-              <label class="font-bold text-slate-700 dark:text-slate-300">Probabilitas Penutupan Proyek (%)</label>
-              <span class="text-sm font-black text-emerald-600 dark:text-emerald-400">{{ progressForm.probability }}%</span>
+            <label class="font-bold text-slate-700 dark:text-slate-300">Probabilitas Penutupan Proyek (%)</label>
+            <div class="flex items-center gap-4">
+              <input 
+                type="range" 
+                min="0" 
+                max="100" 
+                step="1"
+                v-model.number="progressForm.probability"
+                class="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-red-600"
+              />
+              <div class="relative w-24">
+                <input 
+                  type="number"
+                  min="0"
+                  max="100"
+                  v-model.number="progressForm.probability"
+                  class="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 pl-3 pr-6 py-1.5 rounded-lg outline-none focus:ring-2 focus:ring-red-500 font-black text-emerald-600 dark:text-emerald-400 text-center"
+                />
+                <span class="absolute right-3 top-1/2 -translate-y-1/2 font-black text-emerald-600 dark:text-emerald-400">%</span>
+              </div>
             </div>
-            <input 
-              type="range" 
-              min="0" 
-              max="100" 
-              step="5"
-              v-model.number="progressForm.probability"
-              class="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-red-600"
-            />
           </div>
 
           <!-- Expected Closing Date -->

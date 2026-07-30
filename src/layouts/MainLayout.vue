@@ -11,7 +11,10 @@ import {
   Moon, 
   Sun,
   User,
-
+  Bell,
+  Search,
+  X,
+  Megaphone,
   ShoppingBag,
   ShoppingCart,
   Truck,
@@ -22,7 +25,8 @@ import {
   ChevronDown,
   ChevronUp,
   BookOpen,
-  Code
+  Code,
+  ClipboardList
 } from 'lucide-vue-next'
 import {
   Sheet,
@@ -31,6 +35,7 @@ import {
   SheetTitle,
   SheetTrigger
 } from '@/components/ui/sheet'
+import AccurateSyncWidget from '@/components/AccurateSyncWidget.vue'
 
 
 
@@ -134,6 +139,13 @@ const menuGroups = [
   },
   {
     type: 'item',
+    name: 'Permintaan',
+    path: '/permintaan',
+    icon: ClipboardList,
+    moduleKey: 'permintaan'
+  },
+  {
+    type: 'item',
     name: 'Penawaran',
     path: '/hsq',
     icon: FileText,
@@ -170,11 +182,19 @@ const menuGroups = [
   },
   {
     type: 'item',
+    name: 'Marketing Hub',
+    path: '/marketing-hub',
+    icon: Megaphone,
+    moduleKey: 'marketing-hub'
+  },
+  {
+    type: 'item',
     name: 'SOP & Panduan',
     path: '/sop-guide',
     icon: BookOpen,
     moduleKey: 'sop-guide'
   },
+
   {
     type: 'group',
     name: 'Setting',
@@ -217,6 +237,126 @@ const handleLogout = async () => {
   await supabase.auth.signOut()
   router.push('/')
 }
+
+// --- Global Search ---
+const globalSearch = ref('')
+const isSearchFocused = ref(false)
+const isSearchLoading = ref(false)
+const searchResults = ref({ hsq: [], hso: [], permintaan: [] })
+let searchDebounceTimer = null
+
+const doGlobalSearch = async (query) => {
+  if (!query || query.trim().length < 2) {
+    searchResults.value = { hsq: [], hso: [], permintaan: [] }
+    isSearchLoading.value = false
+    return
+  }
+  isSearchLoading.value = true
+  const q = query.trim().toLowerCase()
+  try {
+    // Search HSQ (Sales Quotation) from Accurate
+    const hsqRes = await supabase.functions.invoke('accurate-list-sq', {
+      body: { fields: 'id,number,transDate,customer,totalAmount,statusName,description' }
+    })
+    const hsqAll = hsqRes.data?.d || []
+    searchResults.value.hsq = hsqAll.filter(h =>
+      (h.number || '').toLowerCase().includes(q) ||
+      (h.customer?.name || '').toLowerCase().includes(q) ||
+      (h.description || '').toLowerCase().includes(q)
+    ).slice(0, 4)
+
+    // Search HSO (Sales Order) from Accurate
+    const hsoRes = await supabase.functions.invoke('accurate-list-so', {
+      body: { fields: 'id,number,transDate,customer,totalAmount,statusName' }
+    })
+    const hsoAll = hsoRes.data?.d || []
+    searchResults.value.hso = hsoAll.filter(h =>
+      (h.number || '').toLowerCase().includes(q) ||
+      (h.customer?.name || '').toLowerCase().includes(q)
+    ).slice(0, 4)
+
+    // Search Permintaan from Supabase
+    const { data: permData } = await supabase
+      .from('permintaan')
+      .select('id, title, status, created_by, delegated_to')
+      .or(`title.ilike.%${query.trim()}%,created_by.ilike.%${query.trim()}%`)
+      .limit(4)
+    searchResults.value.permintaan = permData || []
+  } catch (e) {
+    console.error('Global search error:', e)
+  } finally {
+    isSearchLoading.value = false
+  }
+}
+
+const onSearchInput = () => {
+  clearTimeout(searchDebounceTimer)
+  if (!globalSearch.value.trim()) {
+    searchResults.value = { hsq: [], hso: [], permintaan: [] }
+    return
+  }
+  searchDebounceTimer = setTimeout(() => doGlobalSearch(globalSearch.value), 400)
+}
+
+const hasSearchResults = computed(() =>
+  searchResults.value.hsq.length > 0 ||
+  searchResults.value.hso.length > 0 ||
+  searchResults.value.permintaan.length > 0
+)
+
+const navigateResult = (path) => {
+  router.push(path)
+  globalSearch.value = ''
+  isSearchFocused.value = false
+  searchResults.value = { hsq: [], hso: [], permintaan: [] }
+}
+
+const handleSearchEnter = () => {
+  if (!globalSearch.value.trim()) return
+  router.push({ path: '/hsq', query: { q: globalSearch.value.trim() } })
+  globalSearch.value = ''
+  isSearchFocused.value = false
+  searchResults.value = { hsq: [], hso: [], permintaan: [] }
+}
+
+// Close all dropdowns on escape / outside click
+const closeAllDropdowns = (e) => {
+  // Only close if click is outside any dropdown trigger
+  isNotifOpen.value = false
+  isProfileOpen.value = false
+}
+
+// --- Notifications ---
+const isNotifOpen = ref(false)
+const notifications = ref([])
+const unreadCount = computed(() => notifications.value.filter(n => !n.read).length)
+
+const fetchNotifications = async () => {
+  try {
+    const { data } = await supabase
+      .from('permintaan')
+      .select('id, title, status, created_at, delegated_to')
+      .eq('status', 'TODO')
+      .eq('delegated_to', userEmail.value)
+      .order('created_at', { ascending: false })
+      .limit(5)
+    notifications.value = (data || []).map(n => ({ ...n, read: false }))
+  } catch {}
+}
+
+const markAllRead = () => {
+  notifications.value = notifications.value.map(n => ({ ...n, read: true }))
+}
+
+// --- Profile Dropdown ---
+const isProfileOpen = ref(false)
+const userInitials = computed(() => {
+  const email = userEmail.value || ''
+  if (email === 'Memuat...') return '?'
+  const parts = email.split('@')[0].split('.')
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
+  return email.substring(0, 2).toUpperCase()
+})
 </script>
 
 <template>
@@ -226,7 +366,7 @@ const handleLogout = async () => {
     <header class="md:hidden flex items-center justify-between px-6 py-4 bg-white dark:bg-[#1e293b] border-b border-gray-200 dark:border-slate-800 sticky top-0 z-40 shadow-sm transition-colors duration-300">
       <div class="flex items-center gap-3">
         <img src="https://shop.hokiindo.co.id/favicon.ico" alt="Hokiindo Logo" class="w-8 h-8 object-contain" />
-        <h1 class="text-lg font-bold text-slate-900 dark:text-white tracking-tight">HSO TRACKER</h1>
+        <h1 class="text-lg font-bold text-slate-900 dark:text-white tracking-tight">HIR WORKSPACE</h1>
       </div>
       <div class="w-8 h-8 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 flex items-center justify-center font-bold text-xs">
         H
@@ -238,7 +378,7 @@ const handleLogout = async () => {
       
       <div class="p-6 flex items-center gap-3">
         <img src="https://shop.hokiindo.co.id/favicon.ico" alt="Hokiindo Logo" class="w-8 h-8 object-contain" />
-        <h1 class="text-xl font-bold text-black dark:text-white tracking-tight">HSO TRACKER</h1>
+        <h1 class="text-xl font-bold text-black dark:text-white tracking-tight">HIR WORKSPACE</h1>
       </div>
       
       <nav class="flex-1 px-4 space-y-1 mt-2">
@@ -289,29 +429,239 @@ const handleLogout = async () => {
 
       </nav>
 
-      <div class="p-4 border-t border-gray-200 dark:border-slate-800 space-y-2">
-        
-        <button 
-          @click="toggleDarkMode"
-          class="flex items-center gap-3 px-4 py-3 w-full text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30 transition-all rounded-md"
-        >
-          <component :is="isDarkMode ? Sun : Moon" class="w-4 h-4" />
-          {{ isDarkMode ? 'Light Mode' : 'Dark Mode' }}
-        </button>
-
-        <button 
-          @click="handleLogout"
-          class="flex items-center gap-3 px-4 py-3 w-full text-sm font-semibold text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all rounded-md border border-transparent hover:border-red-150 dark:hover:border-red-900/30"
-        >
-          <LogOut class="w-4 h-4 text-slate-400 hover:text-red-500 transition-colors" />
-          Logout
-        </button>
-      </div>
     </aside>
 
     <!-- Main Content Area -->
-    <main class="flex-1 p-4 md:p-8 pb-24 md:pb-8 overflow-y-auto bg-gray-50/50 dark:bg-[#0f172a] text-black dark:text-gray-200 transition-colors duration-300">
-      <RouterView />
+    <main class="flex-1 overflow-y-auto bg-gray-50/50 dark:bg-[#0f172a] text-black dark:text-gray-200 transition-colors duration-300 flex flex-col">
+
+      <!-- Desktop Top Bar -->
+      <header class="hidden md:flex sticky top-0 z-30 items-center justify-between px-6 py-3 bg-white/80 dark:bg-[#1e293b]/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-sm">
+        
+        <!-- Left: Global Search -->
+        <div class="flex items-center gap-3 flex-1">
+          <!-- Global Search Bar -->
+          <div class="relative flex-1 max-w-lg">
+            <div
+              class="flex items-center gap-2 bg-slate-100 dark:bg-slate-800/80 rounded-xl px-3 py-2 border border-transparent transition-all"
+              :class="isSearchFocused ? 'border-red-400 dark:border-red-600' : ''"
+            >
+              <Search class="w-4 h-4 text-slate-400 shrink-0" />
+              <input
+                v-model="globalSearch"
+                @input="onSearchInput"
+                @keyup.enter="handleSearchEnter"
+                @focus="isSearchFocused = true"
+                @blur="setTimeout(() => isSearchFocused = false, 200)"
+                type="text"
+                placeholder="Cari nomor SO, SQ, penawaran, customer, permintaan..."
+                class="flex-1 bg-transparent outline-none text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500"
+              />
+              <span v-if="isSearchLoading" class="w-3.5 h-3.5 border-2 border-red-400 border-t-transparent rounded-full animate-spin"></span>
+              <button v-else-if="globalSearch" @click="globalSearch = ''; searchResults = { hsq: [], hso: [], permintaan: [] }" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                <X class="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <!-- Search Results Dropdown -->
+            <div
+              v-if="isSearchFocused && globalSearch.length >= 2"
+              class="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-[#1e293b] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden z-50"
+            >
+              <!-- Loading -->
+              <div v-if="isSearchLoading" class="py-8 text-center">
+                <span class="w-5 h-5 border-2 border-red-400 border-t-transparent rounded-full animate-spin inline-block"></span>
+                <p class="text-xs text-slate-400 mt-2">Mencari di semua modul...</p>
+              </div>
+
+              <!-- No Results -->
+              <div v-else-if="!hasSearchResults" class="py-8 text-center">
+                <Search class="w-6 h-6 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
+                <p class="text-xs text-slate-400">Tidak ditemukan hasil untuk "{{ globalSearch }}"</p>
+                <p class="text-[10px] text-slate-300 dark:text-slate-600 mt-1">Coba tekan Enter untuk cari di halaman HSQ</p>
+              </div>
+
+              <!-- Results -->
+              <div v-else class="max-h-[420px] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                
+                <!-- HSQ Results -->
+                <div v-if="searchResults.hsq.length > 0">
+                  <div class="px-4 pt-3 pb-1.5 flex items-center justify-between">
+                    <span class="text-[10px] font-black uppercase tracking-widest text-slate-400">Penawaran (HSQ)</span>
+                    <button @click="navigateResult('/hsq')" class="text-[10px] text-red-500 font-bold hover:underline">Lihat Semua →</button>
+                  </div>
+                  <div
+                    v-for="hsq in searchResults.hsq"
+                    :key="'hsq-' + hsq.id"
+                    @click="navigateResult('/hsq/' + hsq.id)"
+                    class="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
+                  >
+                    <div class="w-7 h-7 rounded-lg bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center shrink-0">
+                      <FileText class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-xs font-bold text-slate-800 dark:text-slate-200 font-mono">{{ hsq.number }}</p>
+                      <p class="text-[10px] text-slate-400 truncate">{{ hsq.customer?.name || '-' }}</p>
+                    </div>
+                    <span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-slate-100 dark:bg-slate-800 text-slate-500">{{ hsq.statusName }}</span>
+                  </div>
+                </div>
+
+                <!-- HSO Results -->
+                <div v-if="searchResults.hso.length > 0">
+                  <div class="px-4 pt-3 pb-1.5 flex items-center justify-between">
+                    <span class="text-[10px] font-black uppercase tracking-widest text-slate-400">Penjualan (HSO)</span>
+                    <button @click="navigateResult('/sales-orders')" class="text-[10px] text-red-500 font-bold hover:underline">Lihat Semua →</button>
+                  </div>
+                  <div
+                    v-for="hso in searchResults.hso"
+                    :key="'hso-' + hso.id"
+                    @click="navigateResult('/sales-orders/' + hso.id)"
+                    class="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
+                  >
+                    <div class="w-7 h-7 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center shrink-0">
+                      <FileText class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-xs font-bold text-slate-800 dark:text-slate-200 font-mono">{{ hso.number }}</p>
+                      <p class="text-[10px] text-slate-400 truncate">{{ hso.customer?.name || '-' }}</p>
+                    </div>
+                    <span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-slate-100 dark:bg-slate-800 text-slate-500">{{ hso.statusName }}</span>
+                  </div>
+                </div>
+
+                <!-- Permintaan Results -->
+                <div v-if="searchResults.permintaan.length > 0">
+                  <div class="px-4 pt-3 pb-1.5 flex items-center justify-between">
+                    <span class="text-[10px] font-black uppercase tracking-widest text-slate-400">Antrian Permintaan</span>
+                    <button @click="navigateResult('/permintaan')" class="text-[10px] text-red-500 font-bold hover:underline">Lihat Semua →</button>
+                  </div>
+                  <div
+                    v-for="p in searchResults.permintaan"
+                    :key="'p-' + p.id"
+                    @click="navigateResult('/permintaan')"
+                    class="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
+                  >
+                    <div class="w-7 h-7 rounded-lg bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center shrink-0">
+                      <ClipboardList class="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">{{ p.title }}</p>
+                      <p class="text-[10px] text-slate-400">{{ p.created_by || '-' }}</p>
+                    </div>
+                    <span class="text-[10px] px-2 py-0.5 rounded-full font-bold" :class="p.status === 'DONE' ? 'bg-emerald-50 text-emerald-600' : p.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'">{{ p.status }}</span>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Notifications + Profile -->
+        <div class="flex items-center gap-2 ml-4">
+          
+          <!-- Notifications Bell -->
+          <div class="relative">
+            <button
+              @click="isNotifOpen = !isNotifOpen; if(isNotifOpen) fetchNotifications()"
+              class="relative p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-white transition-all"
+            >
+              <Bell class="w-5 h-5" />
+              <span v-if="unreadCount > 0" class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+            </button>
+
+            <!-- Notif Dropdown -->
+            <div
+              v-if="isNotifOpen"
+              class="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-[#1e293b] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden z-50"
+            >
+              <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+                <span class="text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-400">Notifikasi</span>
+                <button v-if="unreadCount > 0" @click="markAllRead" class="text-[10px] text-red-500 hover:text-red-600 font-bold">Tandai Semua Dibaca</button>
+              </div>
+              <div v-if="notifications.length === 0" class="py-10 text-center">
+                <Bell class="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
+                <p class="text-xs text-slate-400">Tidak ada notifikasi baru</p>
+              </div>
+              <div v-else class="max-h-72 overflow-y-auto">
+                <div
+                  v-for="notif in notifications"
+                  :key="notif.id"
+                  @click="router.push('/permintaan'); isNotifOpen = false"
+                  class="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer border-b border-slate-50 dark:border-slate-800/50 last:border-0 transition-colors"
+                  :class="{ 'bg-red-50/50 dark:bg-red-950/10': !notif.read }"
+                >
+                  <div class="w-2 h-2 rounded-full mt-1.5 shrink-0" :class="notif.read ? 'bg-slate-300' : 'bg-red-500'"></div>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">{{ notif.title }}</p>
+                    <p class="text-[10px] text-slate-400 mt-0.5">Didelegasikan ke Anda · <span class="font-mono">{{ notif.status }}</span></p>
+                  </div>
+                </div>
+              </div>
+              <div class="px-4 py-2 border-t border-slate-100 dark:border-slate-800">
+                <button @click="router.push('/permintaan'); isNotifOpen = false" class="w-full text-center text-xs text-red-500 hover:text-red-600 font-bold py-1">Lihat Semua Permintaan →</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Profile Avatar -->
+          <div class="relative">
+            <button
+              @click="isProfileOpen = !isProfileOpen"
+              class="flex items-center gap-2.5 pl-1 pr-3 py-1 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all group"
+            >
+              <div class="w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-red-700 text-white flex items-center justify-center font-black text-xs shadow-sm">
+                {{ userInitials }}
+              </div>
+              <div class="text-left">
+                <div class="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight max-w-[120px] truncate">{{ userEmail.split('@')[0] }}</div>
+                <div class="text-[10px] text-slate-400 font-mono leading-tight">{{ userRole }}</div>
+              </div>
+              <ChevronDown class="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-transform" :class="{ 'rotate-180': isProfileOpen }" />
+            </button>
+
+            <!-- Profile Dropdown -->
+            <div
+              v-if="isProfileOpen"
+              class="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-[#1e293b] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden z-50"
+            >
+              <div class="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+                <p class="text-xs font-black text-slate-800 dark:text-white truncate">{{ userEmail }}</p>
+                <p class="text-[10px] text-slate-400 mt-0.5">{{ userRole }}</p>
+              </div>
+              <div class="py-1">
+                <button
+                  @click="() => { toggleDarkMode(); isProfileOpen = false }"
+                  class="flex items-center gap-3 px-4 py-2.5 w-full text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white transition-colors"
+                >
+                  <component :is="isDarkMode ? Sun : Moon" class="w-4 h-4" />
+                  {{ isDarkMode ? 'Light Mode' : 'Dark Mode' }}
+                </button>
+                <button
+                  @click="router.push('/settings'); isProfileOpen = false"
+                  class="flex items-center gap-3 px-4 py-2.5 w-full text-xs font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-white transition-colors"
+                >
+                  <Settings class="w-4 h-4" />
+                  Pengaturan
+                </button>
+                <button
+                  @click="handleLogout"
+                  class="flex items-center gap-3 px-4 py-2.5 w-full text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
+                >
+                  <LogOut class="w-4 h-4" />
+                  Logout
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </header>
+
+      <!-- Page Content -->
+      <div class="flex-1 p-4 md:p-8 pb-24 md:pb-8">
+        <RouterView />
+      </div>
     </main>
 
     <!-- Mobile Bottom Navigation Bar (Capped at 4 items) -->
@@ -359,7 +709,7 @@ const handleLogout = async () => {
           <SheetHeader class="pb-4 border-b border-gray-100 dark:border-slate-800">
             <div class="flex items-center gap-3">
               <img src="https://shop.hokiindo.co.id/favicon.ico" alt="Hokiindo Logo" class="w-7 h-7 object-contain" />
-              <SheetTitle class="text-base font-bold text-slate-900 dark:text-white">HSO TRACKER</SheetTitle>
+              <SheetTitle class="text-base font-bold text-slate-900 dark:text-white">HIR WORKSPACE</SheetTitle>
             </div>
             <div class="text-[11px] text-slate-400 dark:text-slate-500 mt-1 font-mono break-all">{{ userEmail }}</div>
           </SheetHeader>
@@ -434,6 +784,8 @@ const handleLogout = async () => {
 
     <!-- Sync Log Modal -->
 
+    <!-- Floating Sync Widget -->
+    <AccurateSyncWidget />
 
   </div>
 </template>

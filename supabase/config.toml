@@ -16,6 +16,12 @@ verify_jwt = true
 import_map = "./functions/accurate-list-sq/deno.json"
 entrypoint = "./functions/accurate-list-sq/index.ts"
 
+[functions.accurate-list-si]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/accurate-list-si/index.ts"
+
+
 [functions.accurate-detail-so]
 enabled = true
 verify_jwt = true
@@ -75,3 +81,25 @@ entrypoint = "./functions/temp-migration-hso/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/accurate-webhook-handler/index.ts"
+
+[functions.sync-calendar]
+enabled = true
+verify_jwt = false
+import_map = "./functions/sync-calendar/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/sync-calendar/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/sync-calendar/*.html" ]
+
+[functions.upload-to-drive]
+enabled = true
+verify_jwt = false
+import_map = "./functions/upload-to-drive/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/upload-to-drive/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/upload-to-drive/*.html" ]

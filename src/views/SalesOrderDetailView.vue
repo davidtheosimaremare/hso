@@ -53,6 +53,14 @@ const loadingMessage = ref('Memuat data HSO...') // Pesan loading
 const isSubmitting = ref(false)
 const isModalOpen = ref(false)
 const isSyncing = ref(false) // State untuk sync HPO dari PO
+
+const handleBack = () => {
+  if (window.history.length > 1) {
+    router.back()
+  } else {
+    router.push('/sales-orders')
+  }
+}
 const isHpoSyncing = ref(false) // State khusus untuk HPO sync
 const isHdoSyncing = ref(false) // State khusus untuk HDO sync
 const isAddingToCart = ref(null)
@@ -92,6 +100,7 @@ const hasHpb = (itemCode) => {
 }
 
 const needsOrdering = (item) => {
+  if (isDisplayedFullyShipped(item)) return false
   if (item.qty_to_order > 0) {
     const hpoEntries = getHpoEntries(item)
     const hasHpoInDb = item.logistics_hpo && item.logistics_hpo.trim().length > 0
@@ -273,7 +282,7 @@ const filteredItems = computed(() => {
       return item.logistics_status === 'Hold by Customer'
     }
     if (itemStatusFilter.value === 'NEED_ORDER') {
-      return statusText.includes('PERLU DIPESAN') || statusText.includes('KURANG DIPESAN')
+      return statusText.includes('PERLU DIPESAN') || statusText.includes('KURANG DIPESAN') || statusText.includes('HPB:') || statusText.includes('DI KERANJANG')
     }
     if (itemStatusFilter.value === 'ORDERED') {
       const isOrdered = statusText === 'SUDAH DIPESAN' || statusText === 'KELEBIHAN DIPESAN'
@@ -392,12 +401,14 @@ const formatDateSimple = (dateStr) => {
 }
 
 const getVisualStatus = (shipment) => {
-    if (!shipment) return 'Pending Process'
+    if (!shipment || Object.keys(shipment).length === 0) return 'Pending Process'
     if (shipment.current_status === 'Hold by Customer') return 'Hold by Customer'
     if (shipment.hokiindo_date) return 'Already in Hokiindo Raya'
     if (shipment.dunex_date) return 'Already in siemens Warehouse'
     if (shipment.eta_date) return 'ETA Port JKT'
-    return shipment.current_status || 'Follow up with our forwarder'
+    if (shipment.exwork_date || shipment.exwork_waiting) return 'Follow up with our forwarder'
+    if (shipment.current_status === 'Follow up with our forwarder') return 'Follow up with our forwarder'
+    return shipment.current_status || 'Pending Process'
 }
 
 const getVisualStatusDate = (shipment) => {
@@ -1939,7 +1950,11 @@ const getHpoBreakdown = (item) => {
 // Helper: Get specific shipment record for an HPO
 const getHpoShipment = (item, hpoNumber) => {
   if (!item.shipments_data) return {}
-  return item.shipments_data.find(s => s.hpo_number === hpoNumber) || {}
+  const target = String(hpoNumber || '').trim().replace(/HP0/gi, 'HPO').toLowerCase()
+  return item.shipments_data.find(s => {
+    const sPo = String(s.hpo_number || '').trim().replace(/HP0/gi, 'HPO').toLowerCase()
+    return sPo === target
+  }) || {}
 }
 
 // Helper: Calculate HPO discrepancy
@@ -1953,11 +1968,28 @@ const getHpoShortage = (item) => {
 
 // Helper: Check if item has a specific shipment status (Exwork, ETA, Dunex, Hokiindo)
 const hasAnyShipmentStatus = (item, targetStatus) => {
+  // If product is already fully shipped to customer, it no longer belongs to in-transit or warehouse arrival tracking filters
+  if (isDisplayedFullyShipped(item)) return false
+  
+  // If item is ready stock (SIAP DIKIRIM / qty_to_order === 0), it is not in-transit
+  if (item.qty_to_order === 0 || getRowStatus(item).text === 'SIAP DIKIRIM') return false
+  
   const hpos = getHpoEntries(item)
   if (hpos.length === 0) {
+    const hasTracking = !!(
+      item.exwork_date ||
+      item.exwork_waiting ||
+      item.eta_date ||
+      item.dunex_date ||
+      item.hokiindo_date ||
+      (item.logistics_status && item.logistics_status !== 'Pending Process')
+    )
+    if (!hasTracking) return false
+
     const status = getVisualStatus({
       current_status: item.logistics_status,
       exwork_date: item.exwork_date,
+      exwork_waiting: item.exwork_waiting,
       eta_date: item.eta_date,
       dunex_date: item.dunex_date,
       hokiindo_date: item.hokiindo_date
@@ -1966,6 +1998,7 @@ const hasAnyShipmentStatus = (item, targetStatus) => {
   }
   return hpos.some(hpo => {
     const shipment = getHpoShipment(item, hpo.poNumber)
+    if (!shipment || Object.keys(shipment).length === 0) return false
     return getVisualStatus(shipment) === targetStatus
   })
 }
@@ -2144,7 +2177,12 @@ const saveUpdate = async () => {
                 // Get logistics_id for THIS hpo
                 let shipmentId = null
                 if (item.shipments_data) {
-                    const existingShipment = item.shipments_data.find(s => s.hpo_number === refNumber || (refNumber === null && !s.hpo_number))
+                    const targetRef = String(refNumber || '').trim().replace(/HP0/gi, 'HPO').toLowerCase()
+                    const existingShipment = item.shipments_data.find(s => {
+                        if (refNumber === null && !s.hpo_number) return true
+                        const sPo = String(s.hpo_number || '').trim().replace(/HP0/gi, 'HPO').toLowerCase()
+                        return sPo === targetRef
+                    })
                     if (existingShipment) shipmentId = existingShipment.id
                 } else if (!refNumber) {
                     shipmentId = item.logistics_id
@@ -2517,7 +2555,7 @@ const sendReminderEmail = async () => {
           Detail Error: {{ errorMessage }}
         </p>
         <div class="flex gap-4">
-            <Button @click="router.push('/sales-orders')" variant="outline" class="font-bold text-xs uppercase tracking-wider rounded-xl">Kembali ke List</Button>
+            <Button @click="handleBack()" variant="outline" class="font-bold text-xs uppercase tracking-wider rounded-xl">Kembali ke List</Button>
             <Button @click="fetchDetail(false, true)" variant="default" class="bg-red-650 hover:bg-red-550 text-white font-bold text-xs uppercase tracking-wider rounded-xl bg-red-600 hover:bg-red-500">Coba Lagi</Button>
         </div>
       </div>
@@ -2544,7 +2582,7 @@ const sendReminderEmail = async () => {
             <!-- Breadcrumbs -->
             <div class="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400 shrink-0">
               <button 
-                @click="router.push('/sales-orders')" 
+                @click="handleBack()" 
                 class="flex items-center gap-1.5 hover:text-red-600 dark:hover:text-red-400 transition-colors bg-gray-50 hover:bg-gray-100 dark:bg-slate-900/60 dark:hover:bg-slate-900 px-2.5 py-1.5 rounded-md text-xs font-bold border border-gray-200/50 dark:border-slate-800 shadow-sm"
               >
                 <ArrowLeft class="w-3.5 h-3.5"/>
@@ -2552,7 +2590,7 @@ const sendReminderEmail = async () => {
               </button>
               <div class="h-4 w-[1px] bg-gray-200 dark:bg-slate-700"></div>
               <div class="flex items-center gap-1.5 text-xs font-semibold">
-                <span class="cursor-pointer hover:text-red-600 dark:hover:text-red-400 transition-colors" @click="router.push('/sales-orders')">Sales Orders</span>
+                <span class="cursor-pointer hover:text-red-600 dark:hover:text-red-400 transition-colors" @click="handleBack()">Sales Orders</span>
                 <span class="text-gray-300 dark:text-gray-600">/</span>
                 <span class="text-gray-900 dark:text-white font-extrabold">Detail</span>
               </div>
@@ -2702,7 +2740,7 @@ const sendReminderEmail = async () => {
                   >
                     <option value="ALL">Semua Status</option>
                     <option value="NEED_ORDER">Perlu / Kurang PO</option>
-                    <option value="ORDERED">Sudah / Kelebihan PO</option>
+                    <option value="ORDERED">Sudah PO</option>
                     <option value="READY">Menunggu Pengiriman</option>
                     <option value="PARTIAL">Dikirim Sebagian</option>
                     <option value="SHIPPED">Sudah Dikirim</option>
@@ -2826,9 +2864,7 @@ const sendReminderEmail = async () => {
                                     <span class="text-xs font-mono font-bold text-blue-600 dark:text-blue-400">{{ hdo.no }}</span>
                                     <span class="text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-800 px-1.5 py-0.5 rounded">{{ getSingleHdoQty(hdo, item) }} {{ item.unit }}</span>
                                 </div>
-                                <div v-if="hpoMapping[item.code] && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0)" class="mt-2 pt-2 border-t border-dashed border-blue-200 dark:border-blue-800 text-[10px] text-blue-600 dark:text-blue-400 font-medium text-center">
-                                    Ex PO: {{ hpoMapping[item.code] }}
-                                </div>
+
                             </div>
                         </div>
                         <!-- Case 2: HDO sedang di-sync (loading) — item sudah terkirim di Accurate tapi detail belum selesai dimuat -->
@@ -2851,9 +2887,10 @@ const sendReminderEmail = async () => {
                         </div>
                         
                         <!-- HPO Number + Logistics Status Combined (Support Multiple POs) -->
-                        <div v-if="!isDisplayedFullyShipped(item) && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && getHpoEntries(item).length > 0" class="mt-1.5 space-y-2">
+                        <!-- Only show HPO list if item has remaining qty to ship -->
+                        <div v-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && getHpoEntries(item).length > 0" class="mt-1.5 space-y-2">
                             <template v-for="(hpo, idx) in getHpoEntries(item)" :key="idx">
-                            <div v-show="!(getDisplayedQtyShipped(item) > 0 && getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya')" class="bg-white dark:bg-slate-800 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-3">
+                            <div class="bg-white dark:bg-slate-800 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-3">
                                 <!-- HPO Number -->
                                 <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-gray-200 dark:border-gray-700">
                                     <ShoppingCart class="w-4 h-4 text-green-600 dark:text-green-400" />
@@ -2893,39 +2930,12 @@ const sendReminderEmail = async () => {
                                 </template>
                             </div>
                             </template>
-                            <!-- HPO Breakdown Summary -->
-                            <div v-if="getHpoBreakdown(item) && (getHpoBreakdown(item).excess > 0 || (getHpoBreakdown(item).breakdown.OTHER_HSO > 0 || getHpoBreakdown(item).breakdown.HSQ > 0 || getHpoBreakdown(item).breakdown.STOCK > 0))" class="bg-amber-50/80 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/50 rounded-lg px-3 py-2 space-y-1">
-                                <div class="flex items-center justify-between gap-2">
-                                    <span class="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">Breakdown PO</span>
-                                    <span class="text-[10px] font-bold text-amber-600 dark:text-amber-400">
-                                        Total: {{ getHpoBreakdown(item).totalPo }} {{ item.unit }}
-                                        <span v-if="getHpoBreakdown(item).excess > 0" class="text-red-600 dark:text-red-400">
-                                            (Kelebihan {{ getHpoBreakdown(item).excess }} {{ item.unit }})
-                                        </span>
-                                    </span>
-                                </div>
-                                <div class="flex flex-wrap items-center gap-1.5">
-                                    <span v-if="getHpoBreakdown(item).breakdown.THIS_HSO > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400 border border-green-200 dark:border-green-800">
-                                        {{ getHpoBreakdown(item).breakdown.THIS_HSO }} {{ item.unit }} HSO
-                                    </span>
-                                    <span v-if="getHpoBreakdown(item).breakdown.OTHER_HSO > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
-                                        {{ getHpoBreakdown(item).breakdown.OTHER_HSO }} {{ item.unit }} HSO Lain
-                                    </span>
-                                    <span v-if="getHpoBreakdown(item).breakdown.HSQ > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 dark:bg-purple-950/30 dark:text-purple-400 border border-purple-200 dark:border-purple-800">
-                                        {{ getHpoBreakdown(item).breakdown.HSQ }} {{ item.unit }} HSQ
-                                    </span>
-                                    <span v-if="getHpoBreakdown(item).breakdown.STOCK > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                                        {{ getHpoBreakdown(item).breakdown.STOCK }} {{ item.unit }} Stock
-                                    </span>
-                                    <span v-if="getHpoBreakdown(item).breakdown.UNKNOWN > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
-                                        {{ getHpoBreakdown(item).breakdown.UNKNOWN }} {{ item.unit }} Lainnya
-                                    </span>
-                                </div>
-                            </div>
+
                         </div>
                         
                         <!-- Fallback HPO from DB (when not found in PO sync list, e.g. manual input/import) -->
-                        <div v-else-if="!isDisplayedFullyShipped(item) && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && item.logistics_hpo" class="mt-1.5 bg-white dark:bg-slate-800 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-3">
+                        <!-- Only show if item has remaining qty to ship -->
+                        <div v-else-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && item.logistics_hpo" class="mt-1.5 bg-white dark:bg-slate-800 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-3">
                             <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-gray-200 dark:border-gray-700">
                                 <ShoppingCart class="w-4 h-4 text-green-600 dark:text-green-400" />
                                 <span class="text-xs font-bold text-gray-600 dark:text-gray-400">HPO:</span>
@@ -3172,9 +3182,7 @@ const sendReminderEmail = async () => {
                         <span class="text-xs font-mono font-bold text-blue-700 dark:text-blue-300">{{ hdo.no }}</span>
                         <span class="text-xs font-bold text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-900/60 px-2 py-0.5 rounded-lg border border-blue-200/50 dark:border-blue-800">{{ getSingleHdoQty(hdo, item) }} {{ item.unit }}</span>
                       </div>
-                      <div v-if="hpoMapping[item.code] && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0)" class="mt-2 text-[10px] text-blue-500 dark:text-blue-400 font-medium">
-                        Ex PO: {{ hpoMapping[item.code] }}
-                      </div>
+
                     </div>
                   </div>
                   
@@ -3195,10 +3203,9 @@ const sendReminderEmail = async () => {
                   </div>
 
                   <!-- HPO List -->
-                  <div v-if="!isDisplayedFullyShipped(item) && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && getHpoEntries(item).length > 0" class="space-y-2">
-                    <div v-for="(hpo, idx) in getHpoEntries(item)" :key="idx" 
-                         v-show="!(getDisplayedQtyShipped(item) > 0 && getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya')"
-                         class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
+                  <!-- Only show HPO list if item has remaining qty to ship -->
+                  <div v-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && getHpoEntries(item).length > 0" class="space-y-2">
+                    <div v-for="(hpo, idx) in getHpoEntries(item)" :key="idx" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
                       <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-slate-100 dark:border-slate-700">
                         <ShoppingCart class="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
                         <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">PO Siemens</span>
@@ -3237,38 +3244,11 @@ const sendReminderEmail = async () => {
                     </div>
                   </div>
 
-                  <!-- HPO Breakdown Mobile -->
-                  <div v-if="getHpoBreakdown(item) && (getHpoBreakdown(item).excess > 0 || (getHpoBreakdown(item).breakdown.OTHER_HSO > 0 || getHpoBreakdown(item).breakdown.HSQ > 0 || getHpoBreakdown(item).breakdown.STOCK > 0))" class="bg-amber-50/80 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800/50 rounded-lg px-3 py-2 space-y-1">
-                    <div class="flex items-center justify-between gap-2">
-                      <span class="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider">Breakdown PO</span>
-                      <span class="text-[10px] font-bold text-amber-600 dark:text-amber-400">
-                        Total: {{ getHpoBreakdown(item).totalPo }} {{ item.unit }}
-                        <span v-if="getHpoBreakdown(item).excess > 0" class="text-red-600 dark:text-red-400">
-                          (Kelebihan {{ getHpoBreakdown(item).excess }} {{ item.unit }})
-                        </span>
-                      </span>
-                    </div>
-                    <div class="flex flex-wrap items-center gap-1.5">
-                      <span v-if="getHpoBreakdown(item).breakdown.THIS_HSO > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400 border border-green-200 dark:border-green-800">
-                        {{ getHpoBreakdown(item).breakdown.THIS_HSO }} {{ item.unit }} HSO
-                      </span>
-                      <span v-if="getHpoBreakdown(item).breakdown.OTHER_HSO > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-400 border border-blue-200 dark:border-blue-800">
-                        {{ getHpoBreakdown(item).breakdown.OTHER_HSO }} {{ item.unit }} HSO Lain
-                      </span>
-                      <span v-if="getHpoBreakdown(item).breakdown.HSQ > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 dark:bg-purple-950/30 dark:text-purple-400 border border-purple-200 dark:border-purple-800">
-                        {{ getHpoBreakdown(item).breakdown.HSQ }} {{ item.unit }} HSQ
-                      </span>
-                      <span v-if="getHpoBreakdown(item).breakdown.STOCK > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                        {{ getHpoBreakdown(item).breakdown.STOCK }} {{ item.unit }} Stock
-                      </span>
-                      <span v-if="getHpoBreakdown(item).breakdown.UNKNOWN > 0" class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-gray-50 text-gray-600 dark:bg-gray-800 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
-                        {{ getHpoBreakdown(item).breakdown.UNKNOWN }} {{ item.unit }} Lainnya
-                      </span>
-                    </div>
-                  </div>
+
 
                   <!-- Fallback HPO from DB (imported status/manual PO) -->
-                  <div v-else-if="!isDisplayedFullyShipped(item) && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && item.logistics_hpo" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
+                  <!-- Only show if item has remaining qty to ship -->
+                  <div v-else-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && item.logistics_hpo" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
                     <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-slate-100 dark:border-slate-700">
                       <ShoppingCart class="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
                       <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">PO Siemens</span>
@@ -3509,7 +3489,7 @@ const sendReminderEmail = async () => {
                                          <td class="px-4 py-2 text-gray-700 dark:text-gray-300">
                                              <div class="font-medium truncate max-w-[200px]">{{ i.name }}</div>
                                              <div class="text-[10px] text-gray-400 font-mono">{{ i.code }}</div>
-                                             <div v-if="hpoMapping[i.code]" class="text-[10px] text-gray-500 mt-0.5"><span class="bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">Ex PO: {{ hpoMapping[i.code] }}</span></div>
+
                                          </td>
                                          <td class="px-4 py-2 text-center font-bold text-gray-800 dark:text-white">
                                              {{ i.qty_shipped }} {{ i.unit }}

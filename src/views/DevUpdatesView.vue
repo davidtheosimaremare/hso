@@ -196,7 +196,7 @@ onMounted(() => {
           <span>Development & Update Logs</span>
         </h1>
         <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Riwayat pembaruan sistem, commit git lokal, dan catatan revisi kode aplikasi HSO Tracker.
+          Riwayat pembaruan sistem, commit git lokal, dan catatan revisi kode aplikasi HIR Workspace.
         </p>
       </div>
 
