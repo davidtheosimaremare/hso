@@ -658,6 +658,128 @@ const exportAllHpoExcel = () => {
     XLSX.writeFile(wb, `ALL_HPO_${safeSoNumber}.xlsx`);
 }
 
+// --- EXPORT FULL HSO EXCEL (SEMUA DATA) ---
+const exportFullHsoExcel = () => {
+    if (!soDetail.value) return;
+
+    const hsoNumber = soDetail.value.number || '-';
+    const customerName = soDetail.value.client || '-';
+    const safeSoNumber = hsoNumber.replace(/[\/\\]/g, '_');
+
+    // ======== SHEET 1: INFO HEADER HSO ========
+    const headerData = [
+        { "Field": "No HSO",           "Value": hsoNumber },
+        { "Field": "Nama Customer",    "Value": customerName },
+        { "Field": "No PO Customer",   "Value": soDetail.value.po_number || '-' },
+        { "Field": "Tanggal SO",       "Value": formatDateSimple(soDetail.value.date) || '-' },
+        { "Field": "Status",          "Value": soDetail.value.status_global || '-' },
+        { "Field": "Alamat Pengiriman","Value": soDetail.value.to_address || '-' },
+        { "Field": "Catatan SO",       "Value": soDetail.value.notes || '-' },
+        { "Field": "Sub Total",        "Value": soDetail.value.sub_total || 0 },
+        { "Field": "Pajak",           "Value": soDetail.value.tax_amount || 0 },
+        { "Field": "Total Amount",     "Value": soDetail.value.total_amount || 0 },
+        { "Field": "Total Item",       "Value": soDetail.value.items?.length || 0 },
+    ];
+
+    const wsHeader = XLSX.utils.json_to_sheet(headerData);
+    wsHeader['!cols'] = [{ wch: 22 }, { wch: 50 }];
+
+    // ======== SHEET 2: SEMUA ITEM + LOGISTIK ========
+    const itemsData = (soDetail.value.items || []).map((item, idx) => {
+        const hpoEntries = getHpoEntries(item);
+        const hpoNumbers = hpoEntries.map(h => h.poNumber).join(', ') || item.logistics_hpo || '-';
+        const hpoVendors = hpoEntries.map(h => h.vendorName || '-').join(', ') || '-';
+        const hpoQtys  = hpoEntries.map(h => h.quantity).join(', ') || '-';
+
+        const visualStatus = getVisualStatus({ 
+            current_status: item.logistics_status,
+            exwork_date: item.exwork_date,
+            exwork_waiting: item.exwork_waiting,
+            eta_date: item.eta_date,
+            dunex_date: item.dunex_date,
+            hokiindo_date: item.hokiindo_date
+        });
+
+        const statusLabel = visualStatus === 'Follow up with our forwarder' ? 'Ex-Works'
+            : visualStatus === 'ETA Port JKT' ? 'ETA Port JKT'
+            : visualStatus === 'Already in siemens Warehouse' ? 'Tiba Dunex'
+            : visualStatus === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo'
+            : visualStatus === 'Hold by Customer' ? 'Hold by Customer'
+            : visualStatus || 'Pending Process';
+
+        return {
+            "No": idx + 1,
+            "Kode Produk (MLFB)": item.code || '-',
+            "Nama Produk": item.name || '-',
+            "Satuan": item.unit || '-',
+            "Qty Order (SO)": item.qty_order || 0,
+            "Qty Sudah Dikirim (DO)": item.qty_shipped || 0,
+            "Qty Sisa": item.qty_remaining || 0,
+            "Stock Gudang": item.parsed_stock_qty || 0,
+            "Qty Perlu Dipesan": item.qty_to_order || 0,
+            "Status Logistik": statusLabel,
+            "No HPO (Purchase Order)": hpoNumbers,
+            "Vendor HPO": hpoVendors,
+            "Qty HPO": hpoQtys,
+            "Tgl Ex-Works": item.exwork_waiting ? 'Waiting for confirmation' : (formatDateSimple(item.exwork_date) || '-'),
+            "Tgl ETA Port JKT": formatDateSimple(item.eta_date) || '-',
+            "Tgl Tiba Dunex": formatDateSimple(item.dunex_date) || '-',
+            "Tgl Tiba Hokiindo": formatDateSimple(item.hokiindo_date) || '-',
+            "Catatan Admin": item.admin_note || '-',
+            "Catatan Logistik": item.logistics_note || '-',
+        };
+    });
+
+    const wsItems = XLSX.utils.json_to_sheet(itemsData);
+    wsItems['!cols'] = [
+        { wch: 5  }, // No
+        { wch: 22 }, // Kode Produk
+        { wch: 48 }, // Nama Produk
+        { wch: 8  }, // Satuan
+        { wch: 12 }, // Qty Order
+        { wch: 18 }, // Qty Sudah Dikirim
+        { wch: 10 }, // Qty Sisa
+        { wch: 12 }, // Stock
+        { wch: 16 }, // Qty Perlu Dipesan
+        { wch: 18 }, // Status Logistik
+        { wch: 25 }, // No HPO
+        { wch: 22 }, // Vendor HPO
+        { wch: 10 }, // Qty HPO
+        { wch: 20 }, // Tgl Ex-Works
+        { wch: 18 }, // Tgl ETA Port
+        { wch: 16 }, // Tgl Tiba Dunex
+        { wch: 18 }, // Tgl Tiba Hokiindo
+        { wch: 40 }, // Catatan Admin
+        { wch: 40 }, // Catatan Logistik
+    ];
+
+    // ======== SHEET 3: DOKUMEN (DO & INVOICE) ========
+    const doData = (soDetail.value.shipments || []).map(s => ({
+        "Tipe Dokumen": "Delivery Order (DO)",
+        "No Dokumen": s.no || '-',
+        "Tanggal": formatDateSimple(s.date) || '-',
+        "Status": s.status || '-',
+    }));
+    const invData = (soDetail.value.invoices || []).map(s => ({
+        "Tipe Dokumen": "Invoice (SI)",
+        "No Dokumen": s.no || '-',
+        "Tanggal": formatDateSimple(s.date) || '-',
+        "Status": s.status || '-',
+    }));
+    const wsDocs = XLSX.utils.json_to_sheet([...doData, ...invData]);
+    wsDocs['!cols'] = [{ wch: 22 }, { wch: 22 }, { wch: 14 }, { wch: 16 }];
+
+    // ======== BUILD WORKBOOK ========
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, wsHeader, "Info HSO");
+    XLSX.utils.book_append_sheet(wb, wsItems, "Semua Item & Logistik");
+    if (doData.length > 0 || invData.length > 0) {
+        XLSX.utils.book_append_sheet(wb, wsDocs, "Dokumen DO & Invoice");
+    }
+
+    XLSX.writeFile(wb, `HSO_DETAIL_${safeSoNumber}.xlsx`);
+};
+
 // --- BACKGROUND HPO FETCH ---
 const fetchHpoInBackground = async (soNumber) => {
   try {
@@ -2631,6 +2753,13 @@ const sendReminderEmail = async () => {
                     <div class="flex flex-col">
                       <span class="font-bold text-xs text-gray-800 dark:text-gray-200">Export Semua HPO</span>
                       <span class="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">Semua item dengan nomor HPO</span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem @click="exportFullHsoExcel" class="dark:hover:bg-slate-700 dark:text-slate-300 rounded-lg cursor-pointer py-2.5 px-3 flex items-start gap-2.5 focus:bg-blue-50 dark:focus:bg-blue-950/30 mt-1">
+                    <Download class="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+                    <div class="flex flex-col">
+                      <span class="font-bold text-xs text-gray-800 dark:text-gray-200">📋 Export Detail HSO (Lengkap)</span>
+                      <span class="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">Semua data: info HSO, item, logistik, DO/Invoice</span>
                     </div>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
