@@ -1,9 +1,12 @@
 <script setup>
-import { onMounted, ref, computed, watch } from 'vue'
+import { onMounted, ref, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
-import { Loader2, AlertCircle, Search, FileText, Calendar, Eye, RefreshCw, DollarSign, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { Loader2, AlertCircle, Search, FileText, Calendar, Eye, Pin, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 
 const router = useRouter()
 const isLoading = ref(true)
@@ -15,6 +18,7 @@ const fetchError = ref(null)
 const startDate = ref('')
 const endDate = ref('')
 const statusFilter = ref('all')
+const activeDateShortcut = ref('')
 
 // Status options dynamically generated from the fetched data
 const availableStatuses = computed(() => {
@@ -137,56 +141,76 @@ const goToDetail = (item) => {
   }
 }
 
+// Pinning (temporarily reorder)
+const pinned = ref(new Set())
+const pinQuote = (hsq) => {
+  if (pinned.value.has(hsq.id)) {
+    pinned.value.delete(hsq.id)
+  } else {
+    pinned.value.add(hsq.id)
+  }
+}
+
 onMounted(() => {
   fetchHsqList()
 })
 
-// --- FILTER & SEARCH ---
-const parseAccurateDate = (dateStr) => {
-  if (!dateStr) return new Date(0)
-  const parts = dateStr.split('/')
-  return new Date(parts[2], parts[1] - 1, parts[0])
-}
-
-const filteredHsqList = computed(() => {
-  let result = [...hsqList.value]
-
-  // 1. Search Query
-  if (searchQuery.value.trim()) {
-    const query = searchQuery.value.toLowerCase()
-    result = result.filter(hsq => {
-      const num = (hsq.number || '').toLowerCase()
-      const client = (hsq.customer?.name || '').toLowerCase()
-      const desc = (hsq.description || '').toLowerCase()
-      return num.includes(query) || client.includes(query) || desc.includes(query)
-    })
+  // --- FILTER & SEARCH ---
+  const parseAccurateDate = (dateStr) => {
+    if (!dateStr) return new Date(0)
+    const parts = dateStr.split('/')
+    return new Date(parts[2], parts[1] - 1, parts[0])
   }
 
-  // 2. Status Filter
-  if (statusFilter.value !== 'all') {
-    result = result.filter(hsq => hsq.statusName === statusFilter.value)
-  }
+  const filteredHsqList = computed(() => {
+    let result = [...hsqList.value]
+    // apply pin ordering: pinned items first
+    if (pinned.value.size) {
+      result.sort((a, b) => {
+        const aPinned = pinned.value.has(a.id)
+        const bPinned = pinned.value.has(b.id)
+        if (aPinned && !bPinned) return -1
+        if (!aPinned && bPinned) return 1
+        return 0
+      })
+    }
 
-  // 3. Date Filters
-  if (startDate.value || endDate.value) {
-    result = result.filter(hsq => {
-      const itemDate = parseAccurateDate(hsq.transDate)
-      let validStart = true
-      let validEnd = true
-      if (startDate.value) {
-        const start = new Date(startDate.value); start.setHours(0, 0, 0, 0)
-        if (itemDate < start) validStart = false
-      }
-      if (endDate.value) {
-        const end = new Date(endDate.value); end.setHours(23, 59, 59, 999)
-        if (itemDate > end) validEnd = false
-      }
-      return validStart && validEnd
-    })
-  }
+    // 1. Search Query
+    if (searchQuery.value.trim()) {
+      const query = searchQuery.value.toLowerCase()
+      result = result.filter(hsq => {
+        const num = (hsq.number || '').toLowerCase()
+        const client = (hsq.customer?.name || '').toLowerCase()
+        const desc = (hsq.description || '').toLowerCase()
+        return num.includes(query) || client.includes(query) || desc.includes(query)
+      })
+    }
 
-  return result
-})
+    // 2. Status Filter
+    if (statusFilter.value !== 'all') {
+      result = result.filter(hsq => hsq.statusName === statusFilter.value)
+    }
+
+    // 3. Date Filters
+    if (startDate.value || endDate.value) {
+      result = result.filter(hsq => {
+        const itemDate = parseAccurateDate(hsq.transDate)
+        let validStart = true
+        let validEnd = true
+        if (startDate.value) {
+          const start = new Date(startDate.value); start.setHours(0, 0, 0, 0)
+          if (itemDate < start) validStart = false
+        }
+        if (endDate.value) {
+          const end = new Date(endDate.value); end.setHours(23, 59, 59, 999)
+          if (itemDate > end) validEnd = false
+        }
+        return validStart && validEnd
+      })
+    }
+
+    return result
+  })
 
 // --- PAGINATION ---
 const currentPage = ref(1)
@@ -215,6 +239,17 @@ const nextPage = () => {
 }
 
 // --- DATE SHORTCUTS ---
+const dateFilterOption = ref('')
+const applyDateFilter = () => {
+  // reset dates first
+  startDate.value = ''
+  endDate.value = ''
+  if (dateFilterOption.value === 'month') setDateFilter('month')
+  else if (dateFilterOption.value === 'last_month') setDateFilter('last_month')
+  else if (dateFilterOption.value === 'year') setDateFilter('year')
+  else if (dateFilterOption.value === 'range') nextTick(() => document.querySelector('input[data-range-start]')?.focus())
+}
+
 const setDateFilter = (type) => {
   const now = new Date()
   const formatDate = (d) => {
@@ -224,20 +259,16 @@ const setDateFilter = (type) => {
     return `${year}-${month}-${day}`
   }
 
-  if (type === 'today') {
-    startDate.value = formatDate(now)
-    endDate.value = formatDate(now)
-  } else if (type === 'week') {
-    const day = now.getDay() || 7
-    const startOfWeek = new Date(now)
-    if (day !== 1) startOfWeek.setHours(-24 * (day - 1))
-    startDate.value = formatDate(startOfWeek)
-    const endOfWeek = new Date(startOfWeek)
-    endOfWeek.setDate(startOfWeek.getDate() + 6)
-    endDate.value = formatDate(endOfWeek)
-  } else if (type === 'month') {
+  if (type === 'month') {
     startDate.value = formatDate(new Date(now.getFullYear(), now.getMonth(), 1))
     endDate.value = formatDate(new Date(now.getFullYear(), now.getMonth() + 1, 0))
+  } else if (type === 'last_month') {
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    startDate.value = formatDate(lastMonth)
+    endDate.value = formatDate(new Date(now.getFullYear(), now.getMonth(), 0))
+  } else if (type === 'year') {
+    startDate.value = formatDate(new Date(now.getFullYear(), 0, 1))
+    endDate.value = formatDate(new Date(now.getFullYear(), 11, 31))
   }
 }
 
@@ -246,6 +277,8 @@ const resetFilter = () => {
   startDate.value = ''
   endDate.value = ''
   statusFilter.value = 'all'
+  dateFilterOption.value = ''
+  activeDateShortcut.value = ''
   currentPage.value = 1
 }
 
@@ -281,24 +314,21 @@ const formatCurrency = (val) => {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val || 0)
 }
 
-const getStatusClass = (status) => {
+const getStatusVariant = (status) => {
   const name = (status || '').toLowerCase()
-  if (name.includes('closed') || name.includes('selesai') || name.includes('ditutup') || name.includes('terproses')) {
-    if (name.includes('sebagian')) {
-      return 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/20 dark:text-blue-400 dark:border-blue-900/60'
-    }
-    return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/60'
-  }
-  if (name.includes('menunggu') || name.includes('diajukan') || name.includes('disetujui')) {
-    return 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/20 dark:text-indigo-400 dark:border-indigo-900/60'
-  }
-  if (name.includes('draft') || name.includes('draf')) {
-    return 'bg-gray-50 text-gray-700 border-gray-200 dark:bg-gray-800/40 dark:text-gray-400 dark:border-gray-700'
-  }
-  if (name.includes('tolak') || name.includes('batal') || name.includes('gagal')) {
-    return 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/60'
-  }
-  return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400 dark:border-amber-900/60'
+  if (name.includes('tolak') || name.includes('batal') || name.includes('gagal')) return 'destructive'
+  if (name.includes('terproses') || name.includes('selesai') || name.includes('ditutup')) return 'default'
+  if (name.includes('menunggu') || name.includes('diajukan')) return 'secondary'
+  if (name.includes('draft') || name.includes('draf')) return 'outline'
+  return 'outline'
+}
+
+const getStatusClasses = (status) => {
+  const variant = getStatusVariant(status)
+  if (variant === 'default') return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-900'
+  if (variant === 'secondary') return 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-300 dark:border-indigo-900'
+  if (variant === 'destructive') return 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/30 dark:text-red-300 dark:border-red-900'
+  return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-900'
 }
 
 const getStageBadgeClass = (stage) => {
@@ -309,205 +339,196 @@ const getStageBadgeClass = (stage) => {
   if (stage.includes('Lost')) return 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400'
   return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
 }
+
+const getProbabilityBarClass = (prob) => {
+  if (prob >= 70) return 'bg-emerald-500'
+  if (prob >= 40) return 'bg-amber-500'
+  return 'bg-red-500'
+}
 </script>
 
 <template>
-  <div class="space-y-6 font-mono text-slate-800 dark:text-slate-100 p-1 md:p-3">
+  <div class="space-y-6">
     <!-- Header -->
-    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-5">
+    <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
       <div>
-        <h1 class="text-2xl md:text-3xl font-black text-slate-900 dark:text-white flex items-center gap-3">
-          <FileText class="w-7 h-7 text-red-600" />
-          Sales Quotation (HSQ)
+        <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+          Penawaran (HSQ)
         </h1>
-        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-          Daftar dokumen Penawaran Penjualan (Sales Quotation) dengan pelacakan progress & probabilitas deal.
+        <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          Daftar dokumen Penawaran Penjualan dengan pelacakan progress & probabilitas deal.
         </p>
       </div>
-      <div class="flex items-center gap-3">
-        <span class="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-bold bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-          Total: {{ filteredHsqList.length }} / {{ hsqList.length }} Dokumen
+      <div class="flex items-center gap-2">
+        <span class="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300">
+          Total: <strong class="mx-1 text-slate-900 dark:text-white">{{ filteredHsqList.length }}</strong> dokumen
         </span>
-        <Button @click="fetchHsqList" variant="outline" class="h-9 px-4 border-slate-300 dark:border-slate-700 text-xs gap-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">
+        <Button @click="fetchHsqList" variant="outline" size="sm" class="gap-1.5">
           <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isLoading }" /> Refresh
         </Button>
       </div>
     </div>
 
-    <!-- Controls / Filters -->
-    <div class="bg-white dark:bg-[#1e293b] p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-      <div class="flex flex-col lg:flex-row gap-3">
-        <!-- Search Input -->
-        <div class="relative flex-1">
-          <Search class="absolute left-3 top-2.5 h-4.5 w-4.5 text-slate-400" />
-          <input 
-            v-model="searchQuery" 
-            type="text" 
-            placeholder="Cari Nomor HSQ, Customer, atau Keterangan..." 
-            class="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 pl-10 pr-4 py-2 rounded-lg text-sm outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all placeholder-slate-400 dark:placeholder-slate-500"
-          />
-        </div>
-
-        <!-- Status Filter -->
-        <div class="w-full lg:w-48">
-          <select 
-            v-model="statusFilter"
-            class="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 px-3 py-2 rounded-lg text-sm outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-          >
-            <option v-for="st in availableStatuses" :key="st.val" :value="st.val">
-              {{ st.label }}
-            </option>
+    <!-- Filters -->
+    <Card class="border-slate-200 dark:border-slate-800 shadow-sm">
+      <CardContent class="p-4 space-y-4">
+<div class="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
+          <div class="relative flex-1">
+            <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="Cari Nomor HSQ, Customer, atau Keterangan..."
+              class="w-full bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 pl-10 pr-4 py-2 rounded-lg text-sm outline-none focus:ring-2 focus:ring-red-500/60 focus:border-transparent transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500"
+            />
+          </div>
+          <select v-model="statusFilter" class="w-full lg:w-48 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-lg text-sm outline-none focus:ring-2 focus:ring-red-500/60 transition-all">
+            <option v-for="st in availableStatuses" :key="st.val" :value="st.val">{{ st.label }}</option>
           </select>
+          <div class="flex items-center gap-2 w-full lg:w-auto">
+            <select v-model="dateFilterOption" @change="applyDateFilter" class="w-full lg:w-44 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-lg text-sm outline-none focus:ring-2 focus:ring-red-500/60 transition-all">
+              <option value="">Semua Tanggal</option>
+              <option value="month">Bulan Ini</option>
+              <option value="last_month">Bulan Lalu</option>
+              <option value="year">Tahun Ini</option>
+              <option value="range">Range Tanggal</option>
+            </select>
+            <template v-if="dateFilterOption === 'range'">
+              <input v-model="startDate" type="date" data-range-start class="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 rounded-lg text-xs outline-none focus:ring-2 focus:ring-red-500/60" />
+              <span class="text-slate-300 dark:text-slate-600">—</span>
+              <input v-model="endDate" type="date" class="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 rounded-lg text-xs outline-none focus:ring-2 focus:ring-red-500/60" />
+            </template>
+            <button @click="resetFilter" class="px-3 py-2 rounded-lg text-xs font-medium bg-red-50 text-red-600 dark:bg-red-950/30 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-950/50 transition-colors shrink-0">Reset</button>
+          </div>
         </div>
-      </div>
-
-      <!-- Date Filters -->
-      <div class="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100 dark:border-slate-800/60">
-        <span class="text-xs text-slate-400 font-bold">Filter Tanggal:</span>
-        <div class="flex items-center gap-2">
-          <input 
-            v-model="startDate" 
-            type="date" 
-            class="bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 px-2 py-1 rounded text-xs outline-none"
-          />
-          <span class="text-xs text-slate-400">s/d</span>
-          <input 
-            v-model="endDate" 
-            type="date" 
-            class="bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 px-2 py-1 rounded text-xs outline-none"
-          />
-        </div>
-
-        <div class="flex items-center gap-1">
-          <button @click="setDateFilter('today')" class="px-2.5 py-1 rounded text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80">Hari Ini</button>
-          <button @click="setDateFilter('week')" class="px-2.5 py-1 rounded text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80">Minggu Ini</button>
-          <button @click="setDateFilter('month')" class="px-2.5 py-1 rounded text-[10px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80">Bulan Ini</button>
-          <button @click="resetFilter" class="px-2.5 py-1 rounded text-[10px] font-bold bg-red-50 text-red-600 dark:bg-red-950/20 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-950/40">Reset</button>
-        </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
 
     <!-- Loading State -->
     <div v-if="isLoading" class="flex flex-col items-center justify-center py-20 bg-white dark:bg-[#1e293b] rounded-xl border border-slate-200 dark:border-slate-800">
-      <Loader2 class="w-10 h-10 animate-spin text-red-600 mb-3" />
-      <p class="text-xs font-bold text-slate-500 dark:text-slate-400 animate-pulse tracking-widest uppercase">Memuat data Sales Quotation dari Accurate...</p>
+      <Loader2 class="w-8 h-8 animate-spin text-red-600 mb-3" />
+      <p class="text-xs font-medium text-slate-500 dark:text-slate-400">Memuat data Sales Quotation dari Accurate...</p>
     </div>
 
     <!-- Error State -->
     <div v-else-if="fetchError" class="p-6 text-center bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 rounded-xl border border-red-200 dark:border-red-900/30">
-      <AlertCircle class="w-10 h-10 mx-auto mb-3" />
-      <h3 class="text-sm font-bold">Gagal Mengambil Data</h3>
-      <p class="text-xs mt-1.5 font-sans">{{ fetchError }}</p>
-      <Button @click="fetchHsqList" variant="outline" class="mt-4 border-red-200 hover:bg-red-50 hover:text-red-700 text-xs">Coba Lagi</Button>
+      <AlertCircle class="w-8 h-8 mx-auto mb-3" />
+      <h3 class="text-sm font-semibold">Gagal Mengambil Data</h3>
+      <p class="text-xs mt-1.5">{{ fetchError }}</p>
+      <Button @click="fetchHsqList" variant="outline" size="sm" class="mt-4 border-red-200 hover:bg-red-50 hover:text-red-700 text-xs">Coba Lagi</Button>
     </div>
 
     <!-- Empty State -->
     <div v-else-if="filteredHsqList.length === 0" class="text-center py-16 bg-white dark:bg-[#1e293b] rounded-xl border border-slate-200 dark:border-slate-800">
-      <FileText class="w-12 h-12 text-slate-300 dark:text-slate-700 mx-auto mb-3" />
-      <p class="text-sm font-bold text-slate-400">Tidak ada dokumen Sales Quotation ditemukan</p>
-      <p class="text-xs text-slate-500 mt-1">Coba gunakan kata kunci atau filter pencarian yang lain.</p>
+      <FileText class="w-10 h-10 text-slate-300 dark:text-slate-700 mx-auto mb-3" />
+      <p class="text-sm font-medium text-slate-400">Tidak ada dokumen Sales Quotation ditemukan</p>
+      <p class="text-xs text-slate-500 mt-1">Coba ubah kata kunci atau filter pencarian.</p>
     </div>
 
-    <!-- Table List -->
+    <!-- Table -->
     <div v-else class="bg-white dark:bg-[#1e293b] rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse">
-          <thead>
-            <tr class="bg-slate-50 dark:bg-[#0f172a] text-slate-500 border-b border-slate-200 dark:border-slate-800">
-              <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider w-12 text-center">No</th>
-              <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider">No. Quotation</th>
-              <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider w-36">Tanggal</th>
-              <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider">Customer</th>
-              <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider">Proyek</th>
-              <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider">Nilai Total</th>
-              <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider w-40 text-center">Progress & Win %</th>
-              <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider w-28 text-center">Status</th>
-              <th class="py-3.5 px-4 text-xs font-bold uppercase tracking-wider w-24 text-center">Aksi</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100 dark:divide-slate-800/60">
-            <tr 
-              v-for="(hsq, idx) in paginatedHsqList" 
-              :key="hsq.id" 
-              class="hover:bg-slate-50/70 dark:hover:bg-[#0f172a]/30 transition-colors cursor-pointer group"
-              @click="goToDetail(hsq)"
-            >
-              <td class="py-3.5 px-4 text-center text-xs font-bold text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white">
-                {{ (currentPage - 1) * itemsPerPage + idx + 1 }}
-              </td>
-              <td class="py-3.5 px-4">
-                <div class="flex items-center gap-2">
-                  <span class="text-sm font-bold text-slate-900 dark:text-white group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors">
-                    {{ hsq.number }}
-                  </span>
-                  <!-- Pending task badge if any -->
-                  <span 
-                    v-if="getHsqPendingTasks(hsq)" 
-                    title="Ada tugas pending"
-                    class="px-1.5 py-0.5 rounded text-[9px] font-black bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300 border border-red-200 dark:border-red-900"
-                  >
-                    {{ getHsqPendingTasks(hsq) }} Task
-                  </span>
-                </div>
-              </td>
-              <td class="py-3.5 px-4 text-xs font-bold text-slate-600 dark:text-slate-400">
-                <div class="flex items-center gap-1.5">
-                  <Calendar class="w-3.5 h-3.5 text-slate-400" />
-                  {{ formatDate(hsq.transDate) }}
-                </div>
-              </td>
-              <td class="py-3.5 px-4">
-                <div class="text-xs font-bold text-slate-900 dark:text-white">{{ hsq.customer?.name || '-' }}</div>
-                <div class="text-[10px] text-slate-400">{{ hsq.customer?.customerNo || '' }}</div>
-              </td>
-              <td class="py-3.5 px-4">
-                <div class="text-[11px] font-semibold text-slate-700 dark:text-slate-300 line-clamp-2 leading-snug">
-                  {{ extractProjectName(hsq) || '-' }}
-                </div>
-              </td>
-              <td class="py-3.5 px-4 text-xs font-bold text-slate-700 dark:text-slate-300">
-                {{ formatCurrency(hsq.totalAmount) }}
-              </td>
-              <!-- Pipeline Progress & Prob -->
-              <td class="py-3.5 px-4 text-center">
-                <div v-if="getHsqProgress(hsq)" class="flex flex-col items-center gap-1">
-                  <span class="inline-flex px-2 py-0.5 rounded text-[10px] font-bold border" :class="getStageBadgeClass(getHsqProgress(hsq).stage)">
+      <Table>
+        <TableHeader>
+          <TableRow class="bg-slate-50 dark:bg-[#0f172a] hover:bg-slate-50 dark:hover:bg-[#0f172a]">
+            <TableHead class="text-xs font-medium uppercase tracking-wider text-slate-500 w-12 text-center">No</TableHead>
+            <TableHead class="text-xs font-medium uppercase tracking-wider text-slate-500">No. Quotation</TableHead>
+            <TableHead class="text-xs font-medium uppercase tracking-wider text-slate-500 w-32">Tanggal</TableHead>
+            <TableHead class="text-xs font-medium uppercase tracking-wider text-slate-500">Customer</TableHead>
+            <TableHead class="text-xs font-medium uppercase tracking-wider text-slate-500">Proyek</TableHead>
+            <TableHead class="text-xs font-medium uppercase tracking-wider text-slate-500 text-right">Nilai Total</TableHead>
+            <TableHead class="text-xs font-medium uppercase tracking-wider text-slate-500 w-44">Progress</TableHead>
+            <TableHead class="text-xs font-medium uppercase tracking-wider text-slate-500 w-28 text-center">Status</TableHead>
+            <TableHead class="text-xs font-medium uppercase tracking-wider text-slate-500 w-24 text-center">Aksi</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          <TableRow
+            v-for="(hsq, idx) in paginatedHsqList"
+            :key="hsq.id"
+            class="group cursor-pointer hover:bg-slate-50 dark:hover:bg-[#0f172a]/50"
+            @click="goToDetail(hsq)"
+          >
+            <TableCell class="text-center text-xs font-medium text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white">
+              {{ (currentPage - 1) * itemsPerPage + idx + 1 }}
+            </TableCell>
+            <TableCell>
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-semibold text-slate-900 dark:text-white group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors">
+                  {{ hsq.number }}
+                </span>
+                <Badge
+                  v-if="getHsqPendingTasks(hsq)"
+                  variant="destructive"
+                  class="text-[10px] h-5 px-1.5"
+                >
+                  {{ getHsqPendingTasks(hsq) }} Task
+                </Badge>
+              </div>
+            </TableCell>
+            <TableCell class="text-xs text-slate-600 dark:text-slate-400">
+              <div class="flex items-center gap-1.5">
+                <Calendar class="w-3.5 h-3.5 text-slate-400" />
+                {{ formatDate(hsq.transDate) }}
+              </div>
+            </TableCell>
+            <TableCell>
+              <div class="text-sm font-medium text-slate-900 dark:text-white">{{ hsq.customer?.name || '-' }}</div>
+              <div class="text-[10px] text-slate-400">{{ hsq.customer?.customerNo || '' }}</div>
+            </TableCell>
+<TableCell>
+              <div class="text-sm font-semibold text-slate-900 dark:text-white line-clamp-2 leading-snug">
+                {{ extractProjectName(hsq) || '-' }}
+              </div>
+            </TableCell>
+            <TableCell class="text-sm font-semibold text-slate-900 dark:text-white text-right tabular-nums">
+              {{ formatCurrency(hsq.totalAmount) }}
+            </TableCell>
+            <TableCell>
+              <div v-if="getHsqProgress(hsq)" class="flex flex-col gap-1.5">
+                <div class="flex items-center justify-center gap-1.5">
+                  <span class="inline-flex px-2 py-0.5 rounded text-[10px] font-medium" :class="getStageBadgeClass(getHsqProgress(hsq).stage)">
                     {{ getHsqProgress(hsq).stage }}
                   </span>
-                  <div v-if="getHsqProgress(hsq).probability !== undefined && getHsqProgress(hsq).probability !== null" class="flex items-center gap-1 text-[10px]">
-                    <span class="font-bold text-emerald-600 dark:text-emerald-400">
-                      {{ getHsqProgress(hsq).probability }}% Win
-                    </span>
-                  </div>
+                  <span v-if="getHsqProgress(hsq).probability !== undefined && getHsqProgress(hsq).probability !== null" class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                    {{ getHsqProgress(hsq).probability }}%
+                  </span>
                 </div>
-                <span v-else class="text-xs font-bold text-slate-400 dark:text-slate-600">-</span>
-              </td>
-              <td class="py-3.5 px-4 text-center">
-                <span class="inline-flex px-2 py-0.5 rounded text-[10px] font-bold border" :class="getStatusClass(hsq.statusName)">
-                  {{ hsq.statusName || 'Outstanding' }}
-                </span>
-              </td>
-              <td class="py-3.5 px-4 text-center">
-                <button 
-                  class="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/20 dark:hover:bg-blue-950/40 border border-blue-100 dark:border-blue-950 px-2 py-1 rounded transition-all"
-                  @click.stop="goToDetail(hsq)"
-                >
-                  <Eye class="w-3.5 h-3.5" /> Detail
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+                <div class="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div
+                    v-if="getHsqProgress(hsq).probability !== undefined && getHsqProgress(hsq).probability !== null"
+                    class="h-full rounded-full transition-all"
+                    :class="getProbabilityBarClass(getHsqProgress(hsq).probability)"
+                    :style="{ width: getHsqProgress(hsq).probability + '%' }"
+                  ></div>
+                </div>
+              </div>
+              <div v-else class="text-xs font-medium text-slate-400 dark:text-slate-600">-</div>
+            </TableCell>
+            <TableCell class="text-center">
+              <Badge variant="outline" :class="getStatusClasses(hsq.statusName)">
+                {{ hsq.statusName || 'Outstanding' }}
+              </Badge>
+            </TableCell>
+            <TableCell class="text-center">
+              <Button variant="ghost" size="sm" class="text-slate-500 hover:text-slate-900 dark:hover:text-white" @click.stop="goToDetail(hsq)">
+                <Eye class="w-4 h-4" />
+              </Button>
+              <Button variant="ghost" size="sm" :class="pinned.has(hsq.id) ? 'text-red-600' : 'text-slate-500'" class="hover:text-slate-900 dark:hover:text-white" @click.stop="pinQuote(hsq)">
+                <Pin class="w-4 h-4" :class="{ 'fill-current': pinned.has(hsq.id) }" />
+              </Button>
+            </TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
 
       <!-- Pagination Footer -->
-      <div class="flex flex-col sm:flex-row items-center justify-between px-6 py-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 gap-4 text-xs">
+      <div class="flex flex-col sm:flex-row items-center justify-between px-6 py-3 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 gap-4 text-xs">
         <div class="flex items-center gap-4">
           <div class="flex items-center gap-2">
             <span class="text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">Baris/halaman:</span>
-            <select 
-              v-model.number="itemsPerPage" 
-              class="bg-white dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg text-xs outline-none focus:ring-2 focus:ring-red-500 dark:text-slate-200 font-bold"
+            <select
+              v-model.number="itemsPerPage"
+              class="bg-white dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 px-2.5 py-1 rounded-lg text-xs outline-none focus:ring-2 focus:ring-red-500 dark:text-slate-200 font-medium"
             >
               <option :value="10">10</option>
               <option :value="20">20</option>
@@ -525,18 +546,18 @@ const getStageBadgeClass = (stage) => {
             Halaman <strong class="text-slate-800 dark:text-slate-200">{{ currentPage }}</strong> dari <strong class="text-slate-800 dark:text-slate-200">{{ totalPages }}</strong>
           </span>
           <div class="flex gap-1">
-            <button 
-              :disabled="currentPage === 1" 
+            <button
+              :disabled="currentPage === 1"
               @click="prevPage"
-              class="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-red-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              class="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
               title="Halaman Sebelumnya"
             >
               <ChevronLeft class="w-4 h-4"/>
             </button>
-            <button 
-              :disabled="currentPage >= totalPages" 
+            <button
+              :disabled="currentPage >= totalPages"
               @click="nextPage"
-              class="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-red-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              class="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-red-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
               title="Halaman Selanjutnya"
             >
               <ChevronRight class="w-4 h-4"/>

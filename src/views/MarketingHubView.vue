@@ -806,7 +806,7 @@ const deleteEvent = async (id) => {
           ref="composerRef"
           v-model="newIdea.title"
           rows="3"
-          placeholder="💡 Apa ide kontennya? Mis: Tutorial cara pasang konektor RJ45, Tips hemat kabel, Promo Ramadan..."
+          placeholder="💡 Apa ide kontennya? Mis: Tips pilih lampu downlight rumah, Cara hitung kapasitas MCB, Promo LED Highbay Pabrik..."
           class="w-full bg-transparent outline-none text-base text-slate-800 dark:text-slate-100 placeholder-slate-300 dark:placeholder-slate-600 resize-none leading-relaxed font-sans"
           @keydown.ctrl.enter="submitIdea"
         ></textarea>

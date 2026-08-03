@@ -209,7 +209,7 @@ const deleteUser = async (user) => {
 </script>
 
 <template>
-  <div class="space-y-6 pb-20 font-source-code text-slate-900 dark:text-slate-100">
+  <div class="space-y-6 pb-20 font-sans text-slate-900 dark:text-slate-100">
     
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm transition-colors">
       <div>
@@ -233,7 +233,7 @@ const deleteUser = async (user) => {
                   <UserPlus class="w-4 h-4"/> Tambah User
               </Button>
           </DialogTrigger>
-          <DialogContent class="sm:max-w-[400px] bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 font-source-code">
+          <DialogContent class="sm:max-w-[400px] bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 font-sans">
               <DialogHeader>
                   <DialogTitle class="text-slate-900 dark:text-white">Tambah Pengguna Baru</DialogTitle>
                   <DialogDescription class="text-slate-500 dark:text-slate-400">
@@ -414,7 +414,7 @@ const deleteUser = async (user) => {
  
      <!-- Edit Permissions Dialog -->
      <Dialog :open="isEditOpen" @update:open="isEditOpen = $event">
-       <DialogContent class="sm:max-w-[450px] bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 font-source-code">
+       <DialogContent class="sm:max-w-[450px] bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 font-sans">
            <DialogHeader>
                <DialogTitle class="text-slate-900 dark:text-white">Edit Hak Akses Pengguna</DialogTitle>
                <DialogDescription class="text-slate-500 dark:text-slate-400">

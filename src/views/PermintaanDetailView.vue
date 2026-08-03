@@ -296,28 +296,37 @@ const formatShortDate = (dateString) => {
         </div>
 
         <!-- Meta Info Cards -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div class="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center gap-4">
-            <div class="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
-              <User class="w-5 h-5" />
-            </div>
-            <div>
-              <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Assignee</p>
-              <p class="font-bold text-slate-900 dark:text-white truncate" :title="task.assignee">
-                {{ task.assignee || 'Belum ditugaskan' }}
-              </p>
-            </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <!-- Project -->
+          <div class="bg-card p-4 rounded-xl border border-border">
+            <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Proyek</p>
+            <p class="font-bold text-foreground text-sm truncate" :title="task.project_name">
+              {{ task.project_name || '-' }}
+            </p>
           </div>
-          <div class="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center gap-4">
-            <div class="w-10 h-10 rounded-full bg-orange-50 dark:bg-orange-900/30 flex items-center justify-center text-orange-600 dark:text-orange-400">
-              <Calendar class="w-5 h-5" />
-            </div>
-            <div>
-              <p class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Target Date</p>
-              <p class="font-bold text-slate-900 dark:text-white">
-                {{ formatShortDate(task.target_date) }}
-              </p>
-            </div>
+
+          <!-- Customer -->
+          <div class="bg-card p-4 rounded-xl border border-border">
+            <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Customer</p>
+            <p class="font-bold text-foreground text-sm truncate" :title="task.customer_name">
+              {{ task.customer_name || '-' }}
+            </p>
+          </div>
+
+          <!-- PIC -->
+          <div class="bg-card p-4 rounded-xl border border-border">
+            <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">PIC Customer</p>
+            <p class="font-bold text-foreground text-sm truncate" :title="task.pic_name">
+              {{ task.pic_name || '-' }}
+            </p>
+          </div>
+
+          <!-- Action By (Assignee) -->
+          <div class="bg-card p-4 rounded-xl border border-border">
+            <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Action By</p>
+            <p class="font-bold text-foreground text-sm truncate" :title="task.assignee">
+              {{ task.assignee ? task.assignee.split('@')[0] : 'Belum ditugaskan' }}
+            </p>
           </div>
         </div>
 

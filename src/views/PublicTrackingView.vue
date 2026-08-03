@@ -249,7 +249,7 @@ const exportToExcel = () => {
 </script>
 
 <template>
-    <div class="min-h-screen bg-slate-50 text-slate-800 pb-24" style="font-family: 'Source Code Pro', monospace;">
+    <div class="min-h-screen bg-slate-50 text-slate-800 pb-24" style="font-family: 'Plus Jakarta Sans', sans-serif;">
         
         <div v-if="isLoading" class="h-screen flex flex-col items-center justify-center bg-white">
             <Loader2 class="w-12 h-12 animate-spin text-red-600 mb-4"/>

@@ -1,5 +1,5 @@
 <script setup>
-import { AlertCircle } from 'lucide-vue-next'
+import { CheckSquare } from 'lucide-vue-next'
 import HSOPriorityCard from './HSOPriorityCard.vue'
 defineProps({
   sqList: { type: Array, required: true },
@@ -16,16 +16,11 @@ defineEmits(['refresh'])
 
 <template>
   <div class="space-y-4">
-    <!-- Header Standing Hari Ini -->
+    <!-- Header Task Prioritas Sales & Logistik -->
     <div class="flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <div class="p-1.5 bg-red-100 dark:bg-red-950/30 rounded-lg text-red-600 dark:text-red-400">
-          <AlertCircle class="w-4 h-4" />
-        </div>
-        <h2 class="text-lg font-black text-slate-900 dark:text-white tracking-tight">Standing Hari Ini</h2>
-      </div>
-      <span class="text-xs text-slate-400 font-semibold uppercase tracking-wider hidden sm:inline-block">
-        Pusat Prioritas Kerja Terkini
+      <h2 class="text-lg font-bold text-foreground tracking-tight">Task Prioritas Sales & Logistik</h2>
+      <span class="text-xs text-muted-foreground font-medium uppercase tracking-wider hidden sm:inline-block">
+        Daftar Tugas & Action Items
       </span>
     </div>
 

@@ -10,6 +10,8 @@ import {
 } from 'lucide-vue-next'
 import * as XLSX from 'xlsx'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent } from '@/components/ui/card'
 
 const route = useRoute()
 const router = useRouter()
@@ -601,141 +603,173 @@ const goBack = () => {
   router.push('/hsq')
 }
 
+// Combined feed: activities + tasks, sorted by date (newest first)
+const combinedActivityFeed = computed(() => {
+  const activities = (activityLogs.value || []).map(log => ({
+    key: 'act-' + log.id,
+    type: 'activity',
+    raw: log,
+    title: log.activity_type || 'Aktivitas',
+    notes: log.notes,
+    status: null,
+    created_by: log.created_by,
+    created_at: log.created_at,
+    due_date: null,
+    assigned_to: null
+  }))
+
+  const tasks = (taskList.value || []).map(task => ({
+    key: 'task-' + task.id,
+    type: 'task',
+    raw: task,
+    title: task.task_title,
+    notes: '',
+    status: task.status,
+    created_by: task.created_by,
+    created_at: task.created_at,
+    due_date: task.due_date,
+    assigned_to: task.assigned_to
+  }))
+
+  return [...activities, ...tasks]
+    .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+})
+
 onMounted(() => {
   fetchHsqDetail()
 })
 </script>
 
 <template>
-  <div class="space-y-6 font-mono text-slate-800 dark:text-slate-100 p-1 md:p-3">
-    <!-- Breadcrumb & Back -->
-    <div class="flex flex-col gap-3">
-      <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
-        <span>Sales Quotation</span>
-        <ChevronRight class="w-3 h-3 text-slate-400" />
-        <span class="cursor-pointer hover:text-red-600 dark:hover:text-red-400 transition-colors" @click="goBack">Quotation (HSQ)</span>
-        <ChevronRight class="w-3 h-3 text-slate-400" />
-        <span class="text-slate-800 dark:text-slate-200 font-black">Detail HSQ</span>
-      </div>
-      
-      <button 
-        @click="goBack"
-        class="inline-flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors bg-white dark:bg-[#1e293b] px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm w-fit"
-      >
-        <ArrowLeft class="w-4 h-4" /> Kembali ke Daftar
-      </button>
-    </div>
-
+  <div class="space-y-6 font-sans text-slate-900 dark:text-slate-100">
     <!-- Loading State -->
-    <div v-if="isLoading" class="flex flex-col items-center justify-center py-32 bg-white dark:bg-[#1e293b] rounded-xl border border-slate-200 dark:border-slate-800">
-      <Loader2 class="w-10 h-10 animate-spin text-red-600 mb-3" />
-      <p class="text-xs font-bold text-slate-500 dark:text-slate-400 animate-pulse tracking-widest uppercase">Mengambil detail HSQ dari Accurate...</p>
+    <div v-if="isLoading" class="flex flex-col items-center justify-center py-32 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs">
+      <Loader2 class="w-9 h-9 animate-spin text-red-600 mb-3" />
+      <p class="text-xs font-semibold text-slate-500 dark:text-slate-400 animate-pulse tracking-wide">Mengambil detail HSQ dari Accurate...</p>
     </div>
 
     <!-- Error State -->
-    <div v-else-if="fetchError" class="p-6 text-center bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 rounded-xl border border-red-200 dark:border-red-900/30">
-      <AlertCircle class="w-10 h-10 mx-auto mb-3" />
+    <div v-else-if="fetchError" class="p-6 text-center bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 rounded-2xl border border-rose-200/80 dark:border-rose-900/30">
+      <AlertCircle class="w-9 h-9 mx-auto mb-3 text-rose-500" />
       <h3 class="text-sm font-bold">Gagal Mengambil Detail</h3>
-      <p class="text-xs mt-1.5 font-sans">{{ fetchError }}</p>
-      <Button @click="fetchHsqDetail" variant="outline" class="mt-4 border-red-200 hover:bg-red-50 hover:text-red-700 text-xs">Coba Lagi</Button>
+      <p class="text-xs mt-1 font-sans">{{ fetchError }}</p>
+      <Button @click="fetchHsqDetail" variant="outline" class="mt-4 border-rose-200 hover:bg-rose-100 hover:text-rose-700 text-xs font-semibold rounded-xl">Coba Lagi</Button>
     </div>
 
     <template v-else-if="selectedHsq">
-      <!-- Title & Main Actions Card -->
-      <div class="relative bg-white dark:bg-[#1e293b] p-5 md:p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 overflow-hidden">
-        
-        <!-- STAMPEL GAGAL / LOST -->
-        <div v-if="hsqProgress && hsqProgress.stage === 'Lost'" class="absolute right-4 md:right-32 top-1/2 -translate-y-1/2 -rotate-12 opacity-30 pointer-events-none z-10">
-          <div class="border-[6px] border-red-600 text-red-600 px-6 py-3 rounded-2xl text-5xl font-black uppercase tracking-widest bg-transparent border-double drop-shadow-sm">
-            GAGAL
-          </div>
-        </div>
-
-        <!-- STAMPEL WON / DEAL -->
-        <div v-if="hsqProgress && hsqProgress.stage === 'Won'" class="absolute right-4 md:right-32 top-1/2 -translate-y-1/2 -rotate-12 opacity-30 pointer-events-none z-10">
-          <div class="border-[6px] border-emerald-600 text-emerald-600 px-6 py-3 rounded-2xl text-5xl font-black uppercase tracking-widest bg-transparent border-double drop-shadow-sm">
-            WON!
-          </div>
-        </div>
-        
-        <!-- STAMPEL NEGOSIASI -->
-        <div v-if="hsqProgress && hsqProgress.stage === 'Negosiasi'" class="absolute right-4 md:right-32 top-1/2 -translate-y-1/2 -rotate-12 opacity-30 pointer-events-none z-10">
-          <div class="border-[6px] border-blue-600 text-blue-600 px-6 py-3 rounded-2xl text-5xl font-black uppercase tracking-widest bg-transparent border-double drop-shadow-sm">
-            NEGOSIASI
-          </div>
-        </div>
-
-        <div class="flex items-center gap-3 relative z-20">
-          <div class="bg-red-50 dark:bg-red-950/20 p-2.5 rounded-xl border border-red-100 dark:border-red-950/60">
-            <FileText class="w-6 h-6 text-red-600" />
-          </div>
-          <div>
-            <h2 class="text-lg md:text-xl font-black text-slate-900 dark:text-white font-mono flex items-center gap-2">
-              {{ selectedHsq.number }}
-            </h2>
-            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Dibuat tanggal <span class="font-bold text-slate-800 dark:text-slate-300">{{ formatDate(selectedHsq.transDate) }}</span>
+      <!-- Header (No Box) -->
+      <div class="flex flex-col gap-4">
+        <!-- Title + Action Buttons -->
+        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+          <div class="space-y-1">
+            <div class="flex items-center gap-3 flex-wrap">
+              <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+                {{ selectedHsq.number }}
+              </h1>
+              <!-- Stage Stamp (Won / Lost / Negosiasi) -->
+              <span
+                v-if="hsqProgress?.stage === 'Won'"
+                class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-black uppercase tracking-wider border border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900"
+              >
+                Won
+              </span>
+              <span
+                v-else-if="hsqProgress?.stage === 'Lost'"
+                class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-black uppercase tracking-wider border border-red-300 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 dark:border-red-900"
+              >
+                Lost
+              </span>
+              <span
+                v-else-if="hsqProgress?.stage?.includes('Negosiasi')"
+                class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-black uppercase tracking-wider border border-blue-300 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900"
+              >
+                {{ hsqProgress.stage }}
+              </span>
+            </div>
+            <p v-if="extractProjectName(selectedHsq)" class="text-sm font-medium text-slate-700 dark:text-slate-300">
+              {{ extractProjectName(selectedHsq) }}
+            </p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">
+              Dibuat tanggal <span class="font-semibold text-slate-700 dark:text-slate-300">{{ formatDate(selectedHsq.transDate) }}</span>
             </p>
           </div>
+
+          <div class="flex items-center gap-2 flex-wrap">
+            <Badge variant="outline" :class="getStatusClass(selectedHsq.statusName)" class="text-xs">
+              {{ selectedHsq.statusName || 'Outstanding' }}
+            </Badge>
+
+            <Button @click="shareLink" variant="outline" size="sm" class="gap-2" :class="{ 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900': isCopied }">
+              <Check v-if="isCopied" class="w-4 h-4" />
+              <Share2 v-else class="w-4 h-4" />
+              {{ isCopied ? 'Link Disalin!' : 'Bagikan Link' }}
+            </Button>
+
+            <Button @click="exportToExcel" size="sm" class="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
+              <FileSpreadsheet class="w-4 h-4" /> Download Excel
+            </Button>
+
+            <Button @click="goBack" variant="outline" size="sm" class="gap-2">
+              <ArrowLeft class="w-4 h-4" /> Kembali ke Daftar
+            </Button>
+          </div>
         </div>
 
-        <div class="flex items-center gap-3 flex-wrap">
-          <span class="inline-flex px-3 py-1 rounded-full text-xs font-bold border" :class="getStatusClass(selectedHsq.statusName)">
-            {{ selectedHsq.statusName || 'Outstanding' }}
-          </span>
-          
-          <Button 
-            @click="shareLink"
-            variant="outline"
-            class="h-9.5 px-3.5 text-xs font-bold gap-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-lg shadow-sm"
-            :class="{ 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300': isCopied }"
-          >
-            <Check v-if="isCopied" class="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <Share2 v-else class="w-4 h-4 text-slate-500 dark:text-slate-400" />
-            <span>{{ isCopied ? 'Link Disalin!' : 'Bagikan Link' }}</span>
-          </Button>
-
-          <Button 
-            @click="exportToExcel"
-            class="h-9.5 px-4 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 shadow-sm rounded-lg"
-          >
-            <FileSpreadsheet class="w-4 h-4" /> Download Excel
-          </Button>
+        <!-- Data Strip -->
+        <div class="grid grid-cols-1 md:grid-cols-4 text-sm border-t border-slate-200 dark:border-slate-800 pt-4">
+          <div class="md:border-r border-slate-200 dark:border-slate-800 md:pr-6 py-3 space-y-0.5">
+            <div class="text-[10px] font-medium uppercase tracking-wider text-slate-400">Customer</div>
+            <div class="font-semibold text-slate-900 dark:text-white">{{ selectedHsq.customer?.name || '-' }}</div>
+          </div>
+          <div class="md:border-r border-slate-200 dark:border-slate-800 md:px-6 py-3 space-y-0.5">
+            <div class="text-[10px] font-medium uppercase tracking-wider text-slate-400">Total Nilai</div>
+            <div class="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{{ formatCurrency(selectedHsq.totalAmount) }}</div>
+          </div>
+          <div class="md:border-r border-slate-200 dark:border-slate-800 md:px-6 py-3 space-y-0.5">
+            <div class="text-[10px] font-medium uppercase tracking-wider text-slate-400">Syarat Pembayaran</div>
+            <div class="font-medium text-slate-900 dark:text-white">{{ selectedHsq.paymentTerm?.name || '-' }}</div>
+          </div>
+          <div class="md:px-6 py-3 space-y-0.5">
+            <div class="text-[10px] font-medium uppercase tracking-wider text-slate-400">Keterangan</div>
+            <div class="text-xs text-slate-700 dark:text-slate-300 line-clamp-2 leading-snug" :title="selectedHsq.description">
+              {{ selectedHsq.description || 'Tidak ada keterangan.' }}
+            </div>
+          </div>
         </div>
       </div>
 
       <!-- Sales Pipeline & Progress Card -->
-      <div class="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white p-5 md:p-6 rounded-2xl border border-slate-700/60 shadow-md space-y-4">
+      <div class="bg-slate-900 dark:bg-slate-950 text-white p-6 rounded-2xl border border-slate-800 shadow-sm space-y-4 font-sans">
         <!-- Filled State -->
         <template v-if="hsqProgress && hsqProgress.stage">
-          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-700/60 pb-4">
-            <div class="flex items-center gap-3">
-              <div class="p-2.5 rounded-xl bg-red-600/20 border border-red-500/30 text-red-400">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+            <div class="flex items-center gap-3.5">
+              <div class="p-3 rounded-2xl bg-red-600/20 border border-red-500/30 text-red-400">
                 <TrendingUp class="w-6 h-6" />
               </div>
               <div>
                 <div class="flex items-center gap-2 flex-wrap">
                   <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Tahap Penawaran (Pipeline)</span>
-                  <span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-red-600/30 text-red-300 border border-red-500/40">
+                  <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-600/30 text-red-300 border border-red-500/40">
                     {{ hsqProgress.stage }}
                   </span>
                 </div>
-                <h3 class="text-sm font-semibold text-slate-200 mt-1">
+                <h3 class="text-xs font-semibold text-slate-300 mt-1">
                   Estimasi Closing: <span class="font-bold text-white">{{ hsqProgress.expected_closing_date ? formatDate(hsqProgress.expected_closing_date) : 'Belum ditentukan' }}</span>
                 </h3>
               </div>
             </div>
 
             <div class="flex items-center gap-4">
-              <!-- Probability Badge & Bar -->
+              <!-- Probability Badge -->
               <div class="text-right">
-                <div class="text-xs text-slate-400 font-bold uppercase">Probabilitas Win</div>
-                <div class="text-2xl font-black text-emerald-400">{{ hsqProgress.probability !== undefined ? hsqProgress.probability : 0 }}%</div>
+                <div class="text-xs text-slate-400 font-bold uppercase tracking-wider">Probabilitas Win</div>
+                <div class="text-2xl font-black text-emerald-400 tracking-tight">{{ hsqProgress.probability !== undefined ? hsqProgress.probability : 0 }}%</div>
               </div>
               
               <Button 
                 @click="openUpdateProgressModal"
-                class="h-9 px-4 text-xs font-bold bg-red-600 hover:bg-red-700 text-white gap-2 shadow-sm rounded-xl"
+                class="h-9 px-4 text-xs font-bold bg-red-600 hover:bg-red-700 text-white gap-2 shadow-xs rounded-xl cursor-pointer"
               >
                 <Edit class="w-3.5 h-3.5" /> Update Progress
               </Button>
@@ -744,11 +778,11 @@ onMounted(() => {
 
           <!-- Progress Bar -->
           <div class="space-y-1.5">
-            <div class="flex justify-between text-[11px] text-slate-400 font-medium">
+            <div class="flex justify-between text-xs text-slate-400 font-medium">
               <span>Probabilitas Penutupan Proyek</span>
-              <span>{{ hsqProgress.probability !== undefined ? hsqProgress.probability : 0 }}% / 100%</span>
+              <span class="font-bold text-slate-200">{{ hsqProgress.probability !== undefined ? hsqProgress.probability : 0 }}% / 100%</span>
             </div>
-            <div class="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-700">
+            <div class="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-700/60">
               <div 
                 class="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-amber-500 via-blue-500 to-emerald-500" 
                 :style="`width: ${Math.min(100, Math.max(5, hsqProgress.probability || 0))}%`"
@@ -757,11 +791,11 @@ onMounted(() => {
           </div>
 
           <!-- Latest Notes -->
-          <div v-if="hsqProgress.notes" class="text-xs text-slate-300 bg-slate-800/60 p-3 rounded-xl border border-slate-700/40 flex items-start gap-2">
+          <div v-if="hsqProgress.notes" class="text-xs text-slate-300 bg-slate-800/60 p-3.5 rounded-xl border border-slate-700/50 flex items-start gap-2.5">
             <MessageSquare class="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <span class="font-bold text-slate-200">Catatan Progress:</span> {{ hsqProgress.notes }}
-              <span v-if="hsqProgress.updated_by" class="text-[10px] text-slate-400 block mt-0.5">Oleh: {{ hsqProgress.updated_by }}</span>
+              <span class="font-bold text-slate-100">Catatan Progress:</span> {{ hsqProgress.notes }}
+              <span v-if="hsqProgress.updated_by" class="text-[11px] text-slate-400 block mt-1">Oleh: {{ hsqProgress.updated_by }}</span>
             </div>
           </div>
         </template>
@@ -769,19 +803,19 @@ onMounted(() => {
         <!-- Unfilled State -->
         <template v-else>
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div class="flex items-center gap-3">
-              <div class="p-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-400">
+            <div class="flex items-center gap-3.5">
+              <div class="p-3 rounded-2xl bg-slate-800 border border-slate-700 text-slate-400">
                 <TrendingUp class="w-6 h-6" />
               </div>
               <div>
                 <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Tahap Penawaran (Pipeline)</span>
-                <h3 class="text-sm font-bold text-slate-300 mt-0.5">Progress & Probabilitas Win Belum Diisi</h3>
+                <h3 class="text-sm font-bold text-slate-200 mt-0.5">Progress & Probabilitas Win Belum Diisi</h3>
                 <p class="text-xs text-slate-400 mt-0.5">Klik tombol di kanan untuk meng-update progress penawaran ini.</p>
               </div>
             </div>
             <Button 
               @click="openUpdateProgressModal"
-              class="h-9 px-4 text-xs font-bold bg-red-600 hover:bg-red-700 text-white gap-2 shadow-sm rounded-xl shrink-0"
+              class="h-9 px-4 text-xs font-bold bg-red-600 hover:bg-red-700 text-white gap-2 shadow-xs rounded-xl shrink-0 cursor-pointer"
             >
               <Plus class="w-3.5 h-3.5" /> Isi Progress & Win %
             </Button>
@@ -789,223 +823,143 @@ onMounted(() => {
         </template>
       </div>
 
-      <!-- Sales Activity Logs & Client Tasking Grid -->
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        <!-- Left: Sales Activity Logs -->
-        <div class="bg-white dark:bg-[#1e293b] p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-          <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-            <div class="flex items-center gap-2">
-              <Activity class="w-5 h-5 text-red-600" />
-              <h3 class="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">Aktivitas Sales</h3>
-              <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold">
-                {{ activityLogs.length }}
-              </span>
-            </div>
-            <Button 
-              @click="isAddActivityOpen = true" 
-              variant="outline" 
-              class="h-8 px-3 text-xs gap-1.5 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold"
-            >
+<div class="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xs font-sans space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3.5">
+          <div class="flex items-center gap-2.5">
+            <Activity class="w-5 h-5 text-red-600" />
+            <h3 class="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">Aktivitas & Tugas Client</h3>
+            <span class="text-xs px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold border border-slate-200/60 dark:border-slate-700">
+              {{ activityLogs.length + taskList.length }}
+            </span>
+          </div>
+          <div class="flex items-center gap-2">
+            <Button @click="isAddActivityOpen = true" variant="outline" class="h-8 px-3 text-xs gap-1.5 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold rounded-xl cursor-pointer">
               <Plus class="w-3.5 h-3.5 text-red-600" /> Catat Aktivitas
             </Button>
-          </div>
-
-          <!-- Timeline List -->
-          <div v-if="activityLogs.length > 0" class="space-y-3 max-h-[380px] overflow-y-auto pr-1">
-            <div 
-              v-for="log in activityLogs" 
-              :key="log.id"
-              class="p-3.5 rounded-xl border border-slate-150 dark:border-slate-800 bg-slate-50/50 dark:bg-[#0f172a]/40 space-y-2 relative"
-            >
-              <div class="flex items-center justify-between gap-2">
-                <span class="px-2.5 py-0.5 rounded text-[10px] font-bold uppercase bg-red-50 text-red-600 dark:bg-red-950/30 dark:text-red-400 border border-red-100 dark:border-red-900/50">
-                  {{ log.activity_type }}
-                </span>
-                <span class="text-[10px] text-slate-400 flex items-center gap-1 font-sans">
-                  <Clock class="w-3 h-3 text-slate-400" />
-                  {{ formatDate(log.created_at) }}
-                </span>
-              </div>
-              <p class="text-xs text-slate-800 dark:text-slate-200 font-sans leading-relaxed">
-                {{ log.notes }}
-              </p>
-              <div v-if="log.created_by" class="text-[10px] text-slate-400 font-mono">
-                Oleh: {{ log.created_by }}
-              </div>
-            </div>
-          </div>
-
-          <div v-else class="py-12 text-center text-slate-400 space-y-2 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
-            <MessageSquare class="w-8 h-8 mx-auto text-slate-300 dark:text-slate-700" />
-            <p class="text-xs font-bold text-slate-500">Belum ada catatan aktivitas sales</p>
-            <p class="text-[10px] text-slate-400">Klik "Catat Aktivitas" untuk merekam hasil follow up.</p>
-          </div>
-        </div>
-
-        <!-- Right: Client Tasking Checklist -->
-        <div class="bg-white dark:bg-[#1e293b] p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-          <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-            <div class="flex items-center gap-2">
-              <ListTodo class="w-5 h-5 text-red-600" />
-              <h3 class="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">Tugas Client & Action Items</h3>
-              <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold">
-                {{ taskList.length }}
-              </span>
-            </div>
-            <Button 
-              @click="isAddTaskOpen = true" 
-              variant="outline" 
-              class="h-8 px-3 text-xs gap-1.5 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold"
-            >
+            <Button @click="isAddTaskOpen = true" variant="outline" class="h-8 px-3 text-xs gap-1.5 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold rounded-xl cursor-pointer">
               <Plus class="w-3.5 h-3.5 text-red-600" /> Tambah Task
             </Button>
           </div>
+        </div>
 
-          <!-- Tasks List -->
-          <div v-if="taskList.length > 0" class="space-y-3 max-h-[380px] overflow-y-auto pr-1">
-            <div 
-              v-for="task in taskList" 
-              :key="task.id"
-              class="p-3.5 rounded-xl border transition-all flex items-start gap-3"
-              :class="task.status === 'Completed' 
-                ? 'bg-emerald-50/40 dark:bg-emerald-950/10 border-emerald-200 dark:border-emerald-900/40 opacity-75' 
-                : 'bg-slate-50/50 dark:bg-[#0f172a]/40 border-slate-200 dark:border-slate-800'"
-            >
-              <!-- Checkbox -->
-              <input 
-                type="checkbox" 
-                :checked="task.status === 'Completed'" 
-                @change="toggleTaskStatus(task)"
-                class="mt-1 w-4 h-4 rounded border-slate-300 text-red-600 focus:ring-red-500 cursor-pointer"
+        <!-- Timeline List (Activities + Tasks combined) -->
+        <div v-if="combinedActivityFeed.length > 0" class="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+          <div
+            v-for="entry in combinedActivityFeed"
+            :key="entry.key"
+            class="p-4 rounded-xl border flex items-start gap-3"
+            :class="entry.type === 'task'
+              ? (entry.status === 'Completed'
+                  ? 'bg-emerald-50/40 dark:bg-emerald-950/10 border-emerald-200 dark:border-emerald-900/40 opacity-75'
+                  : 'bg-amber-50/40 dark:bg-amber-950/10 border-amber-200 dark:border-amber-900/40')
+              : 'bg-red-50/30 dark:bg-red-950/10 border-red-200 dark:border-red-900/40'"
+          >
+            <!-- For task: checkbox. For activity: dot -->
+            <div class="shrink-0 mt-0.5">
+              <input
+                v-if="entry.type === 'task'"
+                type="checkbox"
+                :checked="entry.status === 'Completed'"
+                @change="toggleTaskStatus(entry.raw)"
+                class="w-4 h-4 rounded accent-red-600 cursor-pointer"
               />
+              <span v-else class="block w-2.5 h-2.5 rounded-full bg-red-500 mt-2"></span>
+            </div>
 
-              <div class="flex-1 space-y-1">
-                <div class="flex items-center justify-between gap-2">
-                  <h4 
-                    class="text-xs font-bold leading-normal text-slate-900 dark:text-white font-sans"
-                    :class="{ 'line-through text-slate-400 dark:text-slate-500': task.status === 'Completed' }"
+            <div class="flex-1 min-w-0 space-y-1.5">
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span
+                    class="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase border"
+                    :class="entry.type === 'task'
+                      ? 'border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900'
+                      : 'border-red-200 bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300 dark:border-red-900'"
                   >
-                    {{ task.task_title }}
+                    {{ entry.type === 'task' ? 'Tugas' : (entry.activity_type || 'Aktivitas') }}
+                  </span>
+                  <h4
+                    class="text-xs font-bold leading-normal text-slate-900 dark:text-white"
+                    :class="{ 'line-through text-slate-400 dark:text-slate-500': entry.type === 'task' && entry.status === 'Completed' }"
+                  >
+                    {{ entry.title }}
                   </h4>
-                  <span 
-                    class="px-2 py-0.5 rounded text-[9px] font-black uppercase"
-                    :class="task.status === 'Completed' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'"
-                  >
-                    {{ task.status }}
-                  </span>
                 </div>
-
-                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-slate-500 dark:text-slate-400">
-                  <span v-if="task.due_date" class="flex items-center gap-1 font-bold text-red-600 dark:text-red-400">
-                    <Calendar class="w-3 h-3" /> Due: {{ formatDate(task.due_date) }}
-                  </span>
-                  <span v-if="task.assigned_to" class="flex items-center gap-1 font-mono">
-                    <User class="w-3 h-3" /> PIC: {{ task.assigned_to }}
-                  </span>
-                </div>
+                <span class="text-[11px] text-slate-400 flex items-center gap-1 shrink-0">
+                  <Clock class="w-3 h-3" />
+                  {{ formatDate(entry.created_at) }}
+                </span>
               </div>
-            </div>
-          </div>
 
-          <div v-else class="py-12 text-center text-slate-400 space-y-2 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
-            <CheckSquare class="w-8 h-8 mx-auto text-slate-300 dark:text-slate-700" />
-            <p class="text-xs font-bold text-slate-500">Belum ada tugas untuk client ini</p>
-            <p class="text-[10px] text-slate-400">Klik "Tambah Task" untuk membuat daftar pekerjaan.</p>
-          </div>
-        </div>
+              <!-- Task meta: due date & PIC -->
+              <div v-if="entry.type === 'task'" class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+                <span v-if="entry.due_date" class="flex items-center gap-1 font-bold text-red-600 dark:text-red-400">
+                  <Calendar class="w-3 h-3" /> Due: {{ formatDate(entry.due_date) }}
+                </span>
+                <span v-if="entry.assigned_to" class="flex items-center gap-1 font-medium">
+                  <User class="w-3 h-3 text-slate-400" /> PIC: {{ entry.assigned_to }}
+                </span>
+                <span
+                  v-if="entry.status"
+                  class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase"
+                  :class="entry.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'"
+                >
+                  {{ entry.status }}
+                </span>
+              </div>
 
-      </div>
-
-      <!-- Metadata Panel -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <!-- Customer Info -->
-        <div class="bg-white dark:bg-[#1e293b] p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
-          <div class="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
-            <User class="w-4 h-4" /> Customer
-          </div>
-          <div class="text-sm font-black text-slate-950 dark:text-white">
-            {{ selectedHsq.customer?.name || '-' }}
-          </div>
-          <div class="text-[10px] text-slate-400">
-            Kode: {{ selectedHsq.customer?.customerNo || '-' }}
-          </div>
-          <div v-if="extractProjectName(selectedHsq)" class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
-            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-              Nama Proyek
-            </div>
-            <div class="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              {{ extractProjectName(selectedHsq) }}
+              <!-- Activity note -->
+              <p v-if="entry.type === 'activity'" class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+                {{ entry.notes }}
+              </p>
+              <p v-if="entry.created_by" class="text-[11px] text-slate-400 font-medium">
+                Oleh: {{ entry.created_by }}
+              </p>
             </div>
           </div>
         </div>
 
-        <!-- Total Value -->
-        <div class="bg-white dark:bg-[#1e293b] p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
-          <div class="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
-            <DollarSign class="w-4 h-4" /> Total Amount
-          </div>
-          <div class="text-lg font-black text-emerald-600 dark:text-emerald-400">
-            {{ formatCurrency(selectedHsq.totalAmount) }}
-          </div>
-        </div>
-
-        <!-- Extra details/status -->
-        <div class="bg-white dark:bg-[#1e293b] p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-2">
-          <div class="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
-            <Tag class="w-4 h-4" /> Informasi Lain
-          </div>
-          <div class="text-xs text-slate-600 dark:text-slate-400">
-            Syarat Pembayaran: <span class="font-bold text-slate-900 dark:text-white">{{ selectedHsq.paymentTerm?.name || '-' }}</span>
-          </div>
-          <div class="text-xs text-slate-600 dark:text-slate-400">
-            Mata Uang: <span class="font-bold text-slate-900 dark:text-white">{{ selectedHsq.currency?.code || 'IDR' }}</span>
-          </div>
+        <div v-else class="py-12 text-center text-slate-400 space-y-2 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl bg-slate-50/30 dark:bg-slate-800/20">
+          <MessageSquare class="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600" />
+          <p class="text-xs font-bold text-slate-600 dark:text-slate-400">Belum ada aktivitas atau tugas</p>
+          <p class="text-[11px] text-slate-400">Klik "Catat Aktivitas" atau "Tambah Task" untuk memulai.</p>
         </div>
       </div>
 
-      <!-- Description / Notes -->
-      <div class="bg-white dark:bg-[#1e293b] p-5 md:p-6 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-        <h3 class="text-xs font-black uppercase text-slate-400 tracking-wider">Keterangan Dokumen</h3>
-        <p class="text-sm leading-relaxed text-slate-700 dark:text-slate-300 font-sans border-l-4 border-slate-300 dark:border-slate-700 pl-4 py-1.5 italic bg-slate-50 dark:bg-[#0f172a]/30 pr-4 rounded-r">
-          {{ selectedHsq.description || 'Tidak ada keterangan tambahan.' }}
-        </p>
-      </div>
-
-      <!-- Items Section -->
-      <div class="bg-white dark:bg-[#1e293b] rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-        <div class="px-5 py-4 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50 dark:bg-[#0f172a] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <!-- Items Table Section -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden shadow-xs font-sans">
+        <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div class="flex items-center gap-3">
-            <h3 class="text-xs font-black uppercase text-slate-500 tracking-wider">Daftar Barang Penawaran</h3>
-            <span class="text-xs font-bold text-slate-400 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-2.5 py-0.5 rounded-full">
+            <h3 class="text-xs font-bold uppercase text-slate-500 tracking-wider">Daftar Barang Penawaran</h3>
+            <span class="text-xs font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1 rounded-full shadow-2xs">
               {{ filteredItems.length }} dari {{ selectedHsq.detailItem?.length || 0 }} Items
             </span>
           </div>
+
           <!-- Search Input -->
-          <div class="relative w-full sm:w-56">
-            <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+          <div class="relative w-full sm:w-64">
+            <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
             <input
               v-model="itemSearchQuery"
               type="text"
               placeholder="Cari kode / nama barang..."
-              class="pl-8 pr-3 py-1.5 w-full text-xs border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-red-500"
+              class="pl-9 pr-3 py-2 w-full text-xs border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all font-sans"
             />
           </div>
         </div>
         
         <div class="overflow-x-auto">
-          <table class="w-full text-left border-collapse">
+          <table class="w-full text-left border-collapse font-sans">
             <thead>
-              <tr class="bg-slate-50/50 dark:bg-[#0f172a]/20 text-slate-500 border-b border-slate-200 dark:border-slate-800">
-                <th class="py-3 px-4 text-xs font-bold uppercase tracking-wider w-12 text-center">No</th>
-                <th class="py-3 px-4 text-xs font-bold uppercase tracking-wider w-44">Kode Barang</th>
-                <th class="py-3 px-4 text-xs font-bold uppercase tracking-wider">Nama Barang</th>
-                <th class="py-3 px-4 text-xs font-bold uppercase tracking-wider w-20 text-right">Quantity</th>
-                <th class="py-3 px-4 text-xs font-bold uppercase tracking-wider w-20 text-center">Satuan</th>
-                <th class="py-3 px-4 text-xs font-bold uppercase tracking-wider w-32 text-right">Harga Satuan</th>
-                <th class="py-3 px-4 text-xs font-bold uppercase tracking-wider w-24 text-center">Discount</th>
-                <th class="py-3 px-4 text-xs font-bold uppercase tracking-wider w-32 text-right">Total Harga</th>
-                <th class="py-3 px-4 text-xs font-bold uppercase tracking-wider w-40">Catatan Item</th>
+              <tr class="bg-slate-50/80 dark:bg-slate-800/50 text-slate-500 border-b border-slate-200/80 dark:border-slate-800">
+                <th class="py-3.5 px-4 text-[11px] font-bold uppercase tracking-wider w-12 text-center">No</th>
+                <th class="py-3.5 px-4 text-[11px] font-bold uppercase tracking-wider w-44">Kode Barang</th>
+                <th class="py-3.5 px-4 text-[11px] font-bold uppercase tracking-wider">Nama Barang</th>
+                <th class="py-3.5 px-4 text-[11px] font-bold uppercase tracking-wider w-20 text-right">Qty</th>
+                <th class="py-3.5 px-4 text-[11px] font-bold uppercase tracking-wider w-20 text-center">Satuan</th>
+                <th class="py-3.5 px-4 text-[11px] font-bold uppercase tracking-wider w-36 text-right">Harga Satuan</th>
+                <th class="py-3.5 px-4 text-[11px] font-bold uppercase tracking-wider w-24 text-center">Diskon</th>
+                <th class="py-3.5 px-4 text-[11px] font-bold uppercase tracking-wider w-36 text-right">Total Harga</th>
+                <th class="py-3.5 px-4 text-[11px] font-bold uppercase tracking-wider w-40">Catatan Item</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
@@ -1013,39 +967,65 @@ onMounted(() => {
                 v-for="(item, idx) in filteredItems"
                 :key="idx"
                 :id="`hsq-item-${item.item?.no}`"
-                class="hover:bg-slate-50/40 dark:hover:bg-[#0f172a]/20 transition-colors"
-                :class="{ 'bg-yellow-100 dark:bg-yellow-900/30': route.query.highlight === item.item?.no }"
+                class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                :class="{ 'bg-amber-50/60 dark:bg-amber-950/20': route.query.highlight === item.item?.no }"
               >
                 <td class="py-3.5 px-4 text-center text-slate-400 font-bold">{{ idx + 1 }}</td>
-                <td class="py-3.5 px-4 font-mono font-bold text-slate-700 dark:text-slate-300">{{ item.item?.no || '-' }}</td>
-                <td class="py-3.5 px-4 font-medium text-slate-900 dark:text-white leading-normal">{{ item.item?.name || item.detailName || '-' }}</td>
+                <td class="py-3.5 px-4 font-bold text-slate-800 dark:text-slate-200">{{ item.item?.no || '-' }}</td>
+                <td class="py-3.5 px-4 font-medium text-slate-900 dark:text-white leading-relaxed">{{ item.item?.name || item.detailName || '-' }}</td>
                 <td class="py-3.5 px-4 text-right font-black text-slate-900 dark:text-white text-sm">{{ item.quantity || 0 }}</td>
                 <td class="py-3.5 px-4 text-center font-bold text-slate-600 dark:text-slate-400">{{ item.itemUnit?.name || item.unit?.name || '-' }}</td>
                 <td class="py-3.5 px-4 text-right font-semibold text-slate-700 dark:text-slate-300">{{ formatCurrency(item.unitPrice) }}</td>
                 <td class="py-3.5 px-4 text-center font-bold text-slate-600 dark:text-slate-400">{{ getDiscountText(item) }}</td>
                 <td class="py-3.5 px-4 text-right font-black text-slate-900 dark:text-white">{{ formatCurrency(getLineTotal(item)) }}</td>
-                <td class="py-3.5 px-4 font-sans text-slate-500 dark:text-slate-400">{{ item.detailNotes || '-' }}</td>
+                <td class="py-3.5 px-4 text-slate-500 dark:text-slate-400">{{ item.detailNotes || '-' }}</td>
               </tr>
             </tbody>
           </table>
+
           <!-- Empty state when filtered -->
-          <div v-if="filteredItems.length === 0 && selectedHsq.detailItem?.length" class="text-center py-8 text-slate-400">
-            <p class="text-xs font-bold">Produk tidak ditemukan</p>
-            <p class="text-[10px] mt-1">Coba gunakan kata kunci pencarian lain.</p>
+          <div v-if="filteredItems.length === 0 && selectedHsq.detailItem?.length" class="text-center py-10 text-slate-400">
+            <p class="text-xs font-bold text-slate-600 dark:text-slate-400">Produk tidak ditemukan</p>
+            <p class="text-[11px] text-slate-400 mt-1">Coba gunakan kata kunci pencarian lain.</p>
+          </div>
+        </div>
+
+        <!-- Table Financial Summary Footer -->
+        <div class="px-6 py-4 bg-slate-50/80 dark:bg-slate-800/40 border-t border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row items-end sm:items-center justify-between gap-4 font-sans">
+          <div class="text-xs text-slate-500 font-medium">
+            Menampilkan <span class="font-bold text-slate-900 dark:text-white">{{ filteredItems.length }}</span> dari <span class="font-bold text-slate-900 dark:text-white">{{ selectedHsq.detailItem?.length || 0 }}</span> item barang
+          </div>
+          <div class="w-full sm:w-auto space-y-1 text-xs text-right min-w-[240px]">
+            <div v-if="selectedHsq.subTotal" class="flex justify-between gap-6 text-slate-600 dark:text-slate-400">
+              <span>Subtotal:</span>
+              <span class="font-semibold text-slate-900 dark:text-white">{{ formatCurrency(selectedHsq.subTotal) }}</span>
+            </div>
+            <div v-if="selectedHsq.totalDiscount" class="flex justify-between gap-6 text-rose-600 dark:text-rose-400 font-semibold">
+              <span>Total Diskon:</span>
+              <span>-{{ formatCurrency(selectedHsq.totalDiscount) }}</span>
+            </div>
+            <div v-if="selectedHsq.taxAmount" class="flex justify-between gap-6 text-slate-600 dark:text-slate-400">
+              <span>PPN / Pajak:</span>
+              <span class="font-semibold text-slate-900 dark:text-white">{{ formatCurrency(selectedHsq.taxAmount) }}</span>
+            </div>
+            <div class="flex justify-between gap-6 pt-2 border-t border-slate-200 dark:border-slate-700 text-sm font-black text-slate-900 dark:text-white">
+              <span>Grand Total:</span>
+              <span class="text-emerald-600 dark:text-emerald-400">{{ formatCurrency(selectedHsq.totalAmount) }}</span>
+            </div>
           </div>
         </div>
       </div>
     </template>
 
     <!-- MODAL 1: UPDATE PROGRESS & PROBABILITAS -->
-    <div v-if="isUpdateProgressOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div class="bg-white dark:bg-[#1e293b] rounded-2xl max-w-lg w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
-        <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-          <h3 class="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+    <div v-if="isUpdateProgressOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
+      <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 border border-slate-200/80 dark:border-slate-800 shadow-2xl space-y-5 font-sans">
+        <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3.5">
+          <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <TrendingUp class="w-5 h-5 text-red-600" />
             Update Progress & Probabilitas
           </h3>
-          <button @click="isUpdateProgressOpen = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+          <button @click="isUpdateProgressOpen = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
             <XCircle class="w-5 h-5" />
           </button>
         </div>
@@ -1057,7 +1037,7 @@ onMounted(() => {
             <select 
               v-model="progressForm.stage"
               @change="onStageChange"
-              class="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 px-3 py-2 rounded-xl outline-none focus:ring-2 focus:ring-red-500 font-bold"
+              class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3.5 py-2.5 rounded-xl outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 font-bold"
             >
               <option v-for="st in availableStages" :key="st.val" :value="st.val">
                 {{ st.label }}
@@ -1083,7 +1063,7 @@ onMounted(() => {
                   min="0"
                   max="100"
                   v-model.number="progressForm.probability"
-                  class="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 pl-3 pr-6 py-1.5 rounded-lg outline-none focus:ring-2 focus:ring-red-500 font-black text-emerald-600 dark:text-emerald-400 text-center"
+                  class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 pl-3 pr-6 py-2 rounded-xl outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 font-black text-emerald-600 dark:text-emerald-400 text-center"
                 />
                 <span class="absolute right-3 top-1/2 -translate-y-1/2 font-black text-emerald-600 dark:text-emerald-400">%</span>
               </div>
@@ -1096,7 +1076,7 @@ onMounted(() => {
             <input 
               type="date"
               v-model="progressForm.expected_closing_date"
-              class="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 px-3 py-2 rounded-xl outline-none focus:ring-2 focus:ring-red-500 font-mono"
+              class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3.5 py-2.5 rounded-xl outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 font-sans cursor-pointer"
             />
           </div>
 
@@ -1107,14 +1087,14 @@ onMounted(() => {
               v-model="progressForm.notes"
               rows="3"
               placeholder="Tuliskan perkembangan terbaru seputar penawaran ini..."
-              class="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 p-3 rounded-xl outline-none focus:ring-2 focus:ring-red-500 font-sans"
+              class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-xl outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 font-sans"
             ></textarea>
           </div>
         </div>
 
-        <div class="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-          <Button @click="isUpdateProgressOpen = false" variant="outline" class="text-xs h-9 px-4">Batal</Button>
-          <Button @click="saveHsqProgress" :disabled="isSavingProgress" class="text-xs h-9 px-4 bg-red-600 hover:bg-red-700 text-white font-bold gap-2">
+        <div class="flex justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+          <Button @click="isUpdateProgressOpen = false" variant="outline" class="text-xs h-9 px-4 rounded-xl font-semibold">Batal</Button>
+          <Button @click="saveHsqProgress" :disabled="isSavingProgress" class="text-xs h-9 px-4 bg-red-600 hover:bg-red-700 text-white font-bold gap-2 rounded-xl cursor-pointer">
             <Loader2 v-if="isSavingProgress" class="w-4 h-4 animate-spin" /> Simpan Progress
           </Button>
         </div>
@@ -1122,14 +1102,14 @@ onMounted(() => {
     </div>
 
     <!-- MODAL 2: CATAT AKTIVITAS SALES -->
-    <div v-if="isAddActivityOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div class="bg-white dark:bg-[#1e293b] rounded-2xl max-w-lg w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
-        <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-          <h3 class="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+    <div v-if="isAddActivityOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
+      <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 border border-slate-200/80 dark:border-slate-800 shadow-2xl space-y-5 font-sans">
+        <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3.5">
+          <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Activity class="w-5 h-5 text-red-600" />
             Catat Aktivitas Sales
           </h3>
-          <button @click="isAddActivityOpen = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+          <button @click="isAddActivityOpen = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
             <XCircle class="w-5 h-5" />
           </button>
         </div>
@@ -1140,7 +1120,7 @@ onMounted(() => {
             <label class="font-bold text-slate-700 dark:text-slate-300">Jenis Aktivitas</label>
             <select 
               v-model="activityForm.activity_type"
-              class="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 px-3 py-2 rounded-xl outline-none focus:ring-2 focus:ring-red-500 font-bold"
+              class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3.5 py-2.5 rounded-xl outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 font-bold"
             >
               <option v-for="act in activityTypes" :key="act.val" :value="act.val">
                 {{ act.label }}
@@ -1155,14 +1135,14 @@ onMounted(() => {
               v-model="activityForm.notes"
               rows="4"
               placeholder="Contoh: Menghubungi Pak Budi via WhatsApp, meminta pertimbangan diskon 5% tambahan..."
-              class="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 p-3 rounded-xl outline-none focus:ring-2 focus:ring-red-500 font-sans"
+              class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-3 rounded-xl outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 font-sans"
             ></textarea>
           </div>
         </div>
 
-        <div class="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-          <Button @click="isAddActivityOpen = false" variant="outline" class="text-xs h-9 px-4">Batal</Button>
-          <Button @click="saveActivityLog" :disabled="isSavingActivity" class="text-xs h-9 px-4 bg-red-600 hover:bg-red-700 text-white font-bold gap-2">
+        <div class="flex justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+          <Button @click="isAddActivityOpen = false" variant="outline" class="text-xs h-9 px-4 rounded-xl font-semibold">Batal</Button>
+          <Button @click="saveActivityLog" :disabled="isSavingActivity" class="text-xs h-9 px-4 bg-red-600 hover:bg-red-700 text-white font-bold gap-2 rounded-xl cursor-pointer">
             <Loader2 v-if="isSavingActivity" class="w-4 h-4 animate-spin" /> Simpan Aktivitas
           </Button>
         </div>
@@ -1170,14 +1150,14 @@ onMounted(() => {
     </div>
 
     <!-- MODAL 3: TAMBAH TUGAS CLIENT -->
-    <div v-if="isAddTaskOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div class="bg-white dark:bg-[#1e293b] rounded-2xl max-w-lg w-full p-6 border border-slate-200 dark:border-slate-800 shadow-2xl space-y-4">
-        <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-          <h3 class="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+    <div v-if="isAddTaskOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
+      <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 border border-slate-200/80 dark:border-slate-800 shadow-2xl space-y-5 font-sans">
+        <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3.5">
+          <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <ListTodo class="w-5 h-5 text-red-600" />
             Tambah Tugas / Action Item
           </h3>
-          <button @click="isAddTaskOpen = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+          <button @click="isAddTaskOpen = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
             <XCircle class="w-5 h-5" />
           </button>
         </div>
@@ -1190,7 +1170,7 @@ onMounted(() => {
               v-model="taskForm.task_title"
               type="text"
               placeholder="Contoh: Kirim penawaran harga revisi item Siemens S7-1200..."
-              class="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 px-3 py-2 rounded-xl outline-none focus:ring-2 focus:ring-red-500 font-sans"
+              class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3.5 py-2.5 rounded-xl outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 font-sans"
             />
           </div>
 
@@ -1201,14 +1181,14 @@ onMounted(() => {
               <input 
                 type="date"
                 v-model="taskForm.due_date"
-                class="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 px-3 py-2 rounded-xl outline-none focus:ring-2 focus:ring-red-500 font-mono"
+                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3.5 py-2.5 rounded-xl outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 font-sans cursor-pointer"
               />
             </div>
             <div class="space-y-1.5">
               <label class="font-bold text-slate-700 dark:text-slate-300">Penanggung Jawab (PIC HSO)</label>
               <select 
                 v-model="taskForm.assigned_to"
-                class="w-full bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 px-3 py-2 rounded-xl outline-none focus:ring-2 focus:ring-red-500 font-mono font-bold"
+                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3.5 py-2.5 rounded-xl outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 font-sans font-bold"
               >
                 <option v-for="user in userList" :key="user.email" :value="user.email">
                   {{ user.email }} {{ user.role ? `(${user.role})` : '' }}
@@ -1218,9 +1198,9 @@ onMounted(() => {
           </div>
         </div>
 
-        <div class="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-          <Button @click="isAddTaskOpen = false" variant="outline" class="text-xs h-9 px-4">Batal</Button>
-          <Button @click="saveTask" :disabled="isSavingTask" class="text-xs h-9 px-4 bg-red-600 hover:bg-red-700 text-white font-bold gap-2">
+        <div class="flex justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
+          <Button @click="isAddTaskOpen = false" variant="outline" class="text-xs h-9 px-4 rounded-xl font-semibold">Batal</Button>
+          <Button @click="saveTask" :disabled="isSavingTask" class="text-xs h-9 px-4 bg-red-600 hover:bg-red-700 text-white font-bold gap-2 rounded-xl cursor-pointer">
             <Loader2 v-if="isSavingTask" class="w-4 h-4 animate-spin" /> Simpan Tugas
           </Button>
         </div>

@@ -477,7 +477,7 @@ const openDetail = (soNumber, itemCode) => {
 </script>
 
 <template>
-  <div class="space-y-6 pb-20 font-source-code text-slate-900 dark:text-slate-100 min-h-screen bg-gray-50/50 dark:bg-[#0f172a] p-6">
+  <div class="space-y-6 pb-20 font-sans text-slate-900 dark:text-slate-100 min-h-screen bg-gray-50/50 dark:bg-[#0f172a] p-6">
     
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
       <div>

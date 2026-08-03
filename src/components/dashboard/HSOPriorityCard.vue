@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Package, Eye, AlertTriangle, Clock, ArrowUpCircle, ChevronDown, ChevronUp, Pin, X, RotateCcw, RefreshCw } from 'lucide-vue-next'
+import { Package, Eye, AlertTriangle, Clock, ArrowUpCircle, ChevronDown, ChevronUp, Pin, X, RotateCcw, RefreshCw, CheckSquare } from 'lucide-vue-next'
 import { supabase } from '@/lib/supabase'
 
 const props = defineProps({
@@ -165,7 +165,7 @@ const fetchDetailsForList = async (force = false) => {
     
     const s = (so.statusName || '').toLowerCase().trim()
     return s === 'menunggu diproses' || s === 'sebagian diproses'
-  })
+  }).slice(0, 8)
 
   const promises = visibleList.map(async (so) => {
     if (force || (!soDetailsMap.value[so.id] && !isFetchingDetails.value[so.id])) {
@@ -471,27 +471,38 @@ const priorityList = computed(() => {
     const isSiemens = linkedVendor && linkedVendor.toLowerCase().includes('siemens')
     const contactParty = isSiemens ? 'Siemens' : (linkedVendor || 'supplier')
 
-    // Determine Action Needed (Bahasa Manusia)
+    // Smart Multi-Condition Action Engine based on Product & Logistics Mix
     let actionNeeded = 'Monitor progres logistik secara berkala.'
-    let actionClass = 'bg-slate-50 text-slate-700 dark:bg-slate-800/40 dark:text-slate-300'
     
+    const hasOtherPending = countNoPo > 0 || countExwork > 0 || countEta > 0 || countDunex > 0
+
     if (isApproval) {
-      actionNeeded = 'Sales Order masih menunggu persetujuan (Approval).'
-      actionClass = 'bg-amber-50 text-amber-800 dark:bg-amber-950/20 dark:text-amber-300 border-l-4 border-amber-500 font-bold'
+      actionNeeded = 'SO masih menunggu persetujuan (Approval).'
     } else if (stuckPO) {
-      actionNeeded = `Segera hubungi ${contactParty}! Pengapalan/inden sudah tertunda lebih dari 14 minggu dari PO.`
-      actionClass = 'bg-orange-50 text-orange-800 dark:bg-orange-950/20 dark:text-orange-300 border-l-4 border-orange-500 font-bold'
+      actionNeeded = `Segera push ${contactParty}! Inden tertunda > 14 minggu.`
     } else if (stuckExWork) {
       actionNeeded = isSiemens
-        ? 'Status Ex-Work tertunda lebih dari 2 minggu (perlu push ke Siemens).'
-        : `Hubungi forwarder! Status Ex-Work tertunda lebih dari 2 minggu (perlu push ke ${contactParty}).`
-      actionClass = 'bg-amber-50 text-amber-800 dark:bg-amber-950/20 dark:text-amber-300 border-l-4 border-amber-500 font-bold'
-    } else if (hasNoPo) {
-      actionNeeded = 'Segera terbitkan PO.'
-      actionClass = 'bg-rose-50 text-rose-800 dark:bg-rose-950/20 dark:text-rose-300 border-l-4 border-rose-500 font-bold'
-    } else if (hasArrived) {
-      actionNeeded = 'Barang siap dikirim.'
-      actionClass = 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-300 border-l-4 border-emerald-500 font-bold'
+        ? 'Push Siemens! Ex-Work tertunda > 2 minggu.'
+        : `Hubungi forwarder/supplier (${contactParty})! Ex-Work tertunda > 2 minggu.`
+    } else if (countReady > 0 && hasOtherPending) {
+      // Combination: Partial Ready + Partial Pending/In-Transit
+      if (countNoPo > 0) {
+        actionNeeded = 'Sebagian barang siap kirim. Sebagian item belum terbit PO!'
+      } else if (countEta > 0 || countDunex > 0) {
+        actionNeeded = 'Sebagian barang siap kirim. Sisa item dalam perjalanan (ETA/Dunex).'
+      } else {
+        actionNeeded = 'Sebagian barang siap kirim. Sisa item proses pengadaan (Ex-Work).'
+      }
+    } else if (countReady > 0 && !hasOtherPending) {
+      actionNeeded = 'Seluruh barang siap dikirim ke kustomer.'
+    } else if (countNoPo > 0) {
+      actionNeeded = 'Segera terbitkan PO ke supplier (Belum ada PO).'
+    } else if (countDunex > 0) {
+      actionNeeded = 'Barang tiba di Gudang Dunex/Siemens. Menunggu penarikan.'
+    } else if (countEta > 0) {
+      actionNeeded = 'Barang dalam perjalanan/transit (ETA Port). Monitor kedatangan.'
+    } else if (countExwork > 0) {
+      actionNeeded = 'Barang diproses di supplier/forwarder (Ex-Work).'
     }
 
     return {
@@ -501,7 +512,6 @@ const priorityList = computed(() => {
       stuckExWork,
       stuckPO,
       actionNeeded,
-      actionClass,
       countNoPo,
       countExwork,
       countEta,
@@ -541,21 +551,18 @@ const hasCustomState = computed(() => {
 </script>
 
 <template>
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 flex flex-col h-full shadow-xs">
+  <div class="bg-card text-card-foreground border border-border rounded-xl p-5 flex flex-col h-full shadow-xs">
     <!-- Header -->
-    <div class="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
-      <div class="flex items-center gap-2.5">
-        <Package class="w-5 h-5 text-indigo-500" />
-        <div>
-          <h3 class="font-extrabold text-slate-800 dark:text-slate-200 text-sm">HSO Priority</h3>
-          <p class="text-[10px] text-slate-400 font-medium">Antrean prioritas penjualan & kendala logistik terlama</p>
-        </div>
+    <div class="flex items-center justify-between pb-4 border-b border-border">
+      <div>
+        <h3 class="font-semibold text-foreground text-sm">Task Status Order</h3>
+        <p class="text-xs text-muted-foreground">Tindak lanjut order & kendala logistik</p>
       </div>
       <div class="flex items-center gap-2">
         <button 
           v-if="hasCustomState" 
           @click="restoreAll"
-          class="inline-flex items-center gap-1 text-[10px] font-black text-slate-500 hover:text-indigo-600 bg-slate-50 dark:bg-slate-800 dark:text-slate-400 hover:bg-indigo-50 px-2 py-1 rounded border border-slate-200 dark:border-slate-700 transition-colors"
+          class="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground bg-muted/60 hover:bg-muted px-2 py-1 rounded-md border border-input transition-colors cursor-pointer"
         >
           <RotateCcw class="w-3 h-3" /> Atur Ulang
         </button>
@@ -564,13 +571,13 @@ const hasCustomState = computed(() => {
           @click="syncData"
           :disabled="isSyncing"
           title="Sinkronkan & Muat Ulang Detail HSO"
-          class="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 px-2.5 py-1 rounded-lg border border-indigo-200/60 dark:border-indigo-800/60 transition-all disabled:opacity-50 cursor-pointer"
+          class="inline-flex items-center gap-1.5 text-xs font-medium text-foreground bg-background hover:bg-accent px-2.5 py-1 rounded-md border border-input transition-all disabled:opacity-50 cursor-pointer shadow-xs"
         >
           <RefreshCw class="w-3.5 h-3.5" :class="{ 'animate-spin': isSyncing }" />
           <span>{{ isSyncing ? 'Syncing...' : 'Sync' }}</span>
         </button>
 
-        <span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-900/50">
+        <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-muted text-muted-foreground border border-border">
           SO ({{ priorityList.length }})
         </span>
       </div>
@@ -591,148 +598,125 @@ const hasCustomState = computed(() => {
         <p class="text-[10px] text-slate-500 mt-0.5">Tidak ada order outstanding untuk tahun berjalan</p>
       </div>
 
-      <!-- Priority List (Full Width Desktop Friendly layout) -->
-      <div v-else class="flex-1 divide-y divide-slate-100 dark:divide-slate-800">
+      <!-- Priority List (Full Width Desktop Friendly 4-Column Layout) -->
+      <div v-else class="flex-1 divide-y divide-border">
         <!-- Desktop Table Header -->
-        <div class="hidden md:grid gap-3 pb-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 items-center"
-             style="grid-template-columns: 13rem 1fr 5.5rem 5rem 4.5rem 4.5rem 5.5rem 8.5rem">
+        <div class="hidden md:grid gap-4 pb-2.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider px-3 items-center"
+             style="grid-template-columns: 14rem 1fr 14rem 7.5rem">
           <div>Order & Customer</div>
-          <div>Tindakan Sales</div>
-          <div></div>
-          <div></div>
-          <div></div>
-          <div></div>
-          <div></div>
+          <div>Action</div>
+          <div>Status Logistik</div>
           <div class="text-right">Aksi</div>
         </div>
 
         <div v-for="item in priorityList" :key="item.id" 
           @click="goToDetail(item)"
           :class="[
-            'flex flex-wrap md:grid gap-3 py-3.5 px-2 hover:bg-slate-50/80 dark:hover:bg-slate-800/40 items-center transition-all cursor-pointer group rounded-lg relative',
-            pinnedOrders.includes(item.number) ? 'bg-blue-50/20 dark:bg-blue-950/10 border-l-4 border-l-blue-500 rounded-l-none' : '',
-            lowPriorityOrders.includes(item.number) ? 'opacity-60 hover:opacity-90 bg-slate-50/30' : ''
+            'flex flex-wrap md:grid gap-4 py-3 px-3 hover:bg-muted/40 items-center transition-colors cursor-pointer group rounded-lg relative',
+            pinnedOrders.includes(item.number) ? 'bg-primary/5 border-l-2 border-l-primary rounded-l-none' : '',
+            lowPriorityOrders.includes(item.number) ? 'opacity-50 hover:opacity-80' : ''
           ]"
-          style="grid-template-columns: 13rem 1fr 5.5rem 5rem 4.5rem 4.5rem 5.5rem 8.5rem"
+          style="grid-template-columns: 14rem 1fr 14rem 7.5rem"
         >
-          <!-- Order & Customer -->
-          <div class="min-w-0 w-full">
+          <!-- 1. Order & Customer -->
+          <div class="min-w-0">
             <div class="flex items-center gap-1.5 mb-0.5 flex-wrap">
-              <!-- Pin icon indicator -->
-              <Pin v-if="pinnedOrders.includes(item.number)" class="w-3 h-3 text-blue-500 fill-blue-500 shrink-0" />
+              <Pin v-if="pinnedOrders.includes(item.number)" class="w-3 h-3 text-primary fill-primary shrink-0" />
               
-              <span class="text-xs font-black text-slate-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate">
+              <span class="text-xs font-bold text-foreground group-hover:text-primary transition-colors truncate">
                 {{ item.number }}
               </span>
-              <span class="text-[9px] font-black px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-slate-500 dark:text-slate-400 shrink-0">
+              <span class="text-[10px] font-medium px-1.5 py-0.2 rounded bg-muted text-muted-foreground border border-border shrink-0">
                 {{ getAgeDays(item.transDate) }} hari
               </span>
             </div>
-            <p class="text-[11px] font-extrabold text-slate-700 dark:text-slate-300 truncate" :title="item.customer">{{ item.customer }}</p>
-            <p v-if="item.salesmanName && item.salesmanName !== '-'" class="text-[10px] text-slate-400 mt-0.5">Sales: {{ item.salesmanName }}</p>
+            <p class="text-xs font-medium text-foreground truncate" :title="item.customer">{{ item.customer }}</p>
+            <p v-if="item.salesmanName && item.salesmanName !== '-'" class="text-[11px] text-muted-foreground mt-0.5">Sales: {{ item.salesmanName }}</p>
           </div>
 
-          <!-- Tindakan Sales (Bahasa Manusia) -->
-          <div class="min-w-0 w-full">
-            <div :class="['p-2 rounded-lg border border-transparent text-xs font-semibold flex items-start gap-2', item.actionClass]">
-              <span class="flex h-1.5 w-1.5 translate-y-1.5 rounded-full bg-current shrink-0"></span>
-              <p class="leading-relaxed">{{ item.actionNeeded }}</p>
-            </div>
+          <!-- 2. Action (Clean Text + Dot Indicator, No Heavy Blocks) -->
+          <div class="min-w-0">
+            <p :class="[
+              'text-xs flex items-center gap-2',
+              item.hasNoPo ? 'text-rose-600 dark:text-rose-400 font-semibold' :
+              item.hasArrived ? 'text-emerald-600 dark:text-emerald-400 font-semibold' :
+              item.stuckPO || item.stuckExWork ? 'text-amber-600 dark:text-amber-400 font-semibold' :
+              'text-muted-foreground'
+            ]">
+              <span class="w-1.5 h-1.5 rounded-full bg-current shrink-0"></span>
+              <span class="truncate">{{ item.actionNeeded }}</span>
+            </p>
           </div>
 
-          <!-- Pipeline Badges — 5 fixed chips -->
-          <!-- 1. Perlu PO -->
-          <div @click.stop class="w-full flex items-center justify-center">
+          <!-- 3. Status Logistik (Clean Active Badges Only, No Dashes) -->
+          <div @click.stop class="flex items-center gap-1.5 flex-wrap">
             <span v-if="item.countNoPo > 0" 
-              class="w-full inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-black bg-rose-50 text-rose-700 border border-rose-200/80 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/60 shadow-2xs"
+              class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-50 text-rose-700 border border-rose-200/80 dark:bg-rose-950/30 dark:text-rose-300 dark:border-rose-900/40"
               title="Ada item belum terbit PO (Perlu PO)">
-              <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0"></span>
-              <span>Perlu PO</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse"></span>
+              Perlu PO
             </span>
-            <span v-else class="text-slate-300 dark:text-slate-700 text-xs font-medium text-center">—</span>
-          </div>
-
-          <!-- 2. Ex-Work -->
-          <div @click.stop class="w-full flex items-center justify-center">
             <span v-if="item.countExwork > 0" 
-              class="w-full inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-200/80 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/60 shadow-2xs"
+              class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-700 border border-amber-200/80 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-900/40"
               title="Ada item berstatus Ex-Work di supplier">
-              <span class="w-2 h-2 rounded-full bg-amber-500 shrink-0"></span>
-              <span>Ex-Work</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+              Ex-Work
             </span>
-            <span v-else class="text-slate-300 dark:text-slate-700 text-xs font-medium text-center">—</span>
-          </div>
-
-          <!-- 3. ETA -->
-          <div @click.stop class="w-full flex items-center justify-center">
             <span v-if="item.countEta > 0" 
-              class="w-full inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-black bg-blue-50 text-blue-700 border border-blue-200/80 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900/60 shadow-2xs"
+              class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-sky-50 text-sky-700 border border-sky-200/80 dark:bg-sky-950/30 dark:text-sky-300 dark:border-sky-900/40"
               title="Ada item dalam perjalanan (ETA Port JKT)">
-              <span class="w-2 h-2 rounded-full bg-blue-500 shrink-0"></span>
-              <span>ETA</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-sky-500"></span>
+              ETA
             </span>
-            <span v-else class="text-slate-300 dark:text-slate-700 text-xs font-medium text-center">—</span>
-          </div>
-
-          <!-- 4. Dunex -->
-          <div @click.stop class="w-full flex items-center justify-center">
             <span v-if="item.countDunex > 0" 
-              class="w-full inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-black bg-purple-50 text-purple-700 border border-purple-200/80 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-900/60 shadow-2xs"
+              class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-violet-50 text-violet-700 border border-violet-200/80 dark:bg-violet-950/30 dark:text-violet-300 dark:border-violet-900/40"
               title="Ada item di Gudang Siemens / Dunex">
-              <span class="w-2 h-2 rounded-full bg-purple-500 shrink-0"></span>
-              <span>Dunex</span>
+              <span class="w-1.5 h-1.5 rounded-full bg-violet-500"></span>
+              Dunex
             </span>
-            <span v-else class="text-slate-300 dark:text-slate-700 text-xs font-medium text-center">—</span>
-          </div>
-
-          <!-- 5. Siap Kirim -->
-          <div @click.stop class="w-full flex items-center justify-center">
             <span v-if="item.countReady > 0" 
-              class="w-full inline-flex items-center justify-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/60 shadow-2xs"
-              title="Ada item siap dikirim (Tiba Hokiindo / Stok)">
-              <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0"></span>
-              <span>Siap Kirim</span>
+              class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/80 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-900/40"
+              title="Ada item siap dikirim">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              Siap Kirim
             </span>
-            <span v-else class="text-slate-300 dark:text-slate-700 text-xs font-medium text-center">—</span>
           </div>
 
-          <!-- Aksi (grouped at right) -->
-          <div class="w-full flex items-center justify-end gap-1.5 shrink-0" @click.stop>
-            <!-- Pin Button -->
+          <!-- 4. Aksi Buttons -->
+          <div class="flex items-center justify-end gap-1 shrink-0" @click.stop>
             <button 
               @click="togglePin(item.number)"
               :class="[
-                'inline-flex items-center justify-center p-1.5 rounded border transition-colors',
+                'inline-flex items-center justify-center p-1.5 rounded-md border transition-colors cursor-pointer',
                 pinnedOrders.includes(item.number) 
-                  ? 'text-blue-600 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-950/30 dark:border-blue-900/30' 
-                  : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:text-slate-500 dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:border-blue-200'
+                  ? 'text-primary bg-primary/10 border-primary/30' 
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted border-input'
               ]"
               :title="pinnedOrders.includes(item.number) ? 'Lepas Pin Prioritas' : 'Sematkan / Pin ke Atas'"
             >
-              <Pin class="w-3.5 h-3.5" :class="pinnedOrders.includes(item.number) ? 'fill-blue-500 dark:fill-blue-400' : ''" />
+              <Pin class="w-3.5 h-3.5" :class="pinnedOrders.includes(item.number) ? 'fill-primary' : ''" />
             </button>
 
             <button 
               @click="goToDetail(item)"
-              class="inline-flex items-center justify-center p-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 dark:text-indigo-400 dark:bg-indigo-950/30 rounded border border-indigo-100 dark:border-indigo-900/30 transition-colors"
+              class="inline-flex items-center justify-center p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md border border-input transition-colors cursor-pointer"
               title="Lihat Detail HSO"
             >
               <Eye class="w-3.5 h-3.5" />
             </button>
             
-            <!-- Toggle Low Priority Button (Down/Up) -->
             <button 
               @click="toggleLowPriority(item.number)"
-              class="inline-flex items-center justify-center p-1.5 text-slate-500 bg-slate-50 hover:bg-slate-100 dark:text-slate-400 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 transition-colors"
-              :title="lowPriorityOrders.includes(item.number) ? 'Naikkan Prioritas ke Normal' : 'Turunkan Prioritas ke Bawah'"
+              class="inline-flex items-center justify-center p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md border border-input transition-colors cursor-pointer"
+              :title="lowPriorityOrders.includes(item.number) ? 'Naikkan Prioritas' : 'Turunkan Prioritas'"
             >
               <component :is="lowPriorityOrders.includes(item.number) ? ChevronUp : ChevronDown" class="w-3.5 h-3.5" />
             </button>
 
             <button 
               @click="dismissOrder(item.number)"
-              class="inline-flex items-center justify-center p-1.5 text-slate-500 bg-slate-50 hover:bg-rose-50 hover:text-rose-600 dark:text-slate-400 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 hover:border-rose-150 dark:hover:border-rose-900/30 transition-colors"
-              title="Abaikan / Sembunyikan dari Standing"
+              class="inline-flex items-center justify-center p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-md border border-input transition-colors cursor-pointer"
+              title="Abaikan / Sembunyikan"
             >
               <X class="w-3.5 h-3.5" />
             </button>

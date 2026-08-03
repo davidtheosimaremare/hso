@@ -445,7 +445,7 @@ const hasActiveFilters = computed(() => {
 </script>
 
 <template>
-  <div class="space-y-6 pb-20 font-source-code text-slate-900 dark:text-slate-100">
+  <div class="space-y-6 pb-20 font-sans text-slate-900 dark:text-slate-100">
     
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm transition-colors duration-300">
       <div>

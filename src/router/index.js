@@ -25,6 +25,7 @@ import DevUpdatesView from '@/views/DevUpdatesView.vue'
 import PermintaanView from '@/views/PermintaanView.vue'
 import PermintaanDetailView from '@/views/PermintaanDetailView.vue'
 import MarketingHubView from '@/views/MarketingHubView.vue'
+import NotificationsView from '@/views/NotificationsView.vue'
 
 
 // Import Public
@@ -67,6 +68,7 @@ const router = createRouter({
         { path: '/permintaan', component: PermintaanView },
         { path: '/permintaan/:id', component: PermintaanDetailView },
         { path: '/marketing-hub', component: MarketingHubView },
+        { path: '/notifications', component: NotificationsView },
       ]
     },
     {

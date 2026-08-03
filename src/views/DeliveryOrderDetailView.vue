@@ -81,7 +81,7 @@ const getStatusColor = (status) => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50/50 dark:bg-[#0f172a] pb-20 font-source-code transition-colors duration-300">
+  <div class="min-h-screen bg-gray-50/50 dark:bg-[#0f172a] pb-20 font-sans transition-colors duration-300">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 pt-8 space-y-8">
 
       <!-- ERROR STATE -->

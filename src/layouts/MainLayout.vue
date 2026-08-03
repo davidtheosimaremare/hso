@@ -77,12 +77,65 @@ const toggleDarkMode = () => {
     localStorage.setItem('theme', 'light')
   }
 }
+// Single Device Session Verification
+const checkSingleDeviceSession = async (email) => {
+  const localSessionId = localStorage.getItem('hir_active_session_id')
+  if (!email || !localSessionId) return
+
+  try {
+    const { data } = await supabase
+      .from('user_access')
+      .select('active_session_id')
+      .eq('email', email)
+      .maybeSingle()
+
+    if (data?.active_session_id && data.active_session_id !== localSessionId) {
+      alert('⚠️ Sesi Login Berakhir!\nAkun Anda baru saja di-login dari perangkat atau browser lain. Sesi pada perangkat ini telah di-logout demi keamanan.')
+      localStorage.removeItem('hir_active_session_id')
+      await supabase.auth.signOut()
+      router.push('/')
+    }
+  } catch (err) {
+    console.warn('Session verification notice:', err)
+  }
+}
+
 // Init Theme & User & Permissions
 onMounted(async () => {
   // Check User
   const { data: { user } } = await supabase.auth.getUser()
   if (user) {
     userEmail.value = user.email
+
+    // Enforce Single Device Active Session
+    await checkSingleDeviceSession(user.email)
+    
+    // Realtime listener for session overrides from other devices
+    supabase
+      .channel(`single_device_${user.email}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'user_access',
+          filter: `email=eq.${user.email}`
+        },
+        (payload) => {
+          const localSessionId = localStorage.getItem('hir_active_session_id')
+          if (payload.new?.active_session_id && payload.new.active_session_id !== localSessionId) {
+            alert('⚠️ Sesi Login Berakhir!\nAkun Anda baru saja di-login dari perangkat atau browser lain. Sesi pada perangkat ini telah di-logout demi keamanan.')
+            localStorage.removeItem('hir_active_session_id')
+            supabase.auth.signOut()
+            router.push('/')
+          }
+        }
+      )
+      .subscribe()
+
+    // Periodic heartbeat check every 15s
+    setInterval(() => checkSingleDeviceSession(userEmail.value), 15000)
+
     try {
       const { data } = await supabase
         .from('user_access')
@@ -127,109 +180,115 @@ onMounted(async () => {
   // Background sync: trigger HRI silently after a short delay (let UI render first)
   const { triggerBackgroundSync } = useAccurateSync()
   setTimeout(() => triggerBackgroundSync(), 3000)
+
+  // Fetch initial notifications & listen for new Permintaan tasks in Realtime
+  fetchNotifications()
+  supabase
+    .channel('realtime_boq_notifications')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'boq_requests' },
+      () => {
+        fetchNotifications()
+      }
+    )
+    .subscribe()
 })
 
 const menuGroups = [
   {
-    type: 'item',
-    name: 'Dashboard',
-    path: '/dashboard',
-    icon: LayoutDashboard,
-    moduleKey: 'dashboard'
+    type: 'category',
+    name: 'Overview',
+    items: [
+      { type: 'item', name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, moduleKey: 'dashboard' }
+    ]
   },
   {
-    type: 'item',
-    name: 'Permintaan',
-    path: '/permintaan',
-    icon: ClipboardList,
-    moduleKey: 'permintaan'
+    type: 'category',
+    name: 'Sales',
+    items: [
+      { type: 'item', name: 'Permintaan', path: '/permintaan', icon: ClipboardList, moduleKey: 'permintaan' },
+      { type: 'item', name: 'Penawaran', path: '/hsq', icon: FileText, moduleKey: 'hsq' },
+      { type: 'item', name: 'Penjualan', path: '/sales-orders', icon: FileText, moduleKey: 'sales-orders' },
+      { type: 'item', name: 'Marketing Hub', path: '/marketing-hub', icon: Megaphone, moduleKey: 'marketing-hub' }
+    ]
   },
   {
-    type: 'item',
-    name: 'Penawaran',
-    path: '/hsq',
-    icon: FileText,
-    moduleKey: 'hsq'
-  },
-  {
-    type: 'item',
-    name: 'Penjualan',
-    path: '/sales-orders',
-    icon: FileText,
-    moduleKey: 'sales-orders'
-  },
-  {
-    type: 'group',
+    type: 'category',
     name: 'Pembelian',
-    icon: ShoppingCart,
-    isOpen: isPembelianOpen,
-    children: [
-      { name: 'Perencanaan Pembelian (Keranjang)', path: '/cart', moduleKey: 'cart' },
-      { name: 'HPB', path: '/hpb', moduleKey: 'cart' },
-      { name: 'Purchase Order', path: '/purchase-orders', moduleKey: 'purchase-orders' }
+    items: [
+      {
+        type: 'group',
+        name: 'Pembelian',
+        icon: ShoppingCart,
+        isOpen: isPembelianOpen,
+        children: [
+          { name: 'Perencanaan (Keranjang)', path: '/cart', moduleKey: 'cart' },
+          { name: 'HPB', path: '/hpb', moduleKey: 'cart' },
+          { name: 'Purchase Order', path: '/purchase-orders', moduleKey: 'purchase-orders' }
+        ]
+      }
     ]
   },
   {
-    type: 'group',
+    type: 'category',
     name: 'Logistik',
-    icon: Truck,
-    isOpen: isLogistikOpen,
-    children: [
-      { name: 'Status Logistik (Database Logistik)', path: '/logistics-db', moduleKey: 'logistics-db' },
-      { name: 'Pengiriman', path: '/delivery-orders', moduleKey: 'delivery-orders' },
-      { name: 'Penerimaan Barang', path: '/receive-items', moduleKey: 'receive-items' }
+    items: [
+      {
+        type: 'group',
+        name: 'Logistik',
+        icon: Truck,
+        isOpen: isLogistikOpen,
+        children: [
+          { name: 'Database Logistik', path: '/logistics-db', moduleKey: 'logistics-db' },
+          { name: 'Pengiriman', path: '/delivery-orders', moduleKey: 'delivery-orders' },
+          { name: 'Penerimaan Barang', path: '/receive-items', moduleKey: 'receive-items' }
+        ]
+      }
     ]
   },
   {
-    type: 'item',
-    name: 'Marketing Hub',
-    path: '/marketing-hub',
-    icon: Megaphone,
-    moduleKey: 'marketing-hub'
-  },
-  {
-    type: 'item',
-    name: 'SOP & Panduan',
-    path: '/sop-guide',
-    icon: BookOpen,
-    moduleKey: 'sop-guide'
-  },
-
-  {
-    type: 'group',
-    name: 'Setting',
-    icon: Settings,
-    isOpen: isSettingOpen,
-    children: [
-      { name: 'Manage Account', path: '/settings', moduleKey: 'settings' }
+    type: 'category',
+    name: 'Resources',
+    items: [
+      { type: 'item', name: 'SOP & Panduan', path: '/sop-guide', icon: BookOpen, moduleKey: 'sop-guide' }
     ]
   },
   {
-    type: 'item',
-    name: 'Development',
-    path: '/development',
-    icon: Code,
-    moduleKey: 'settings'
+    type: 'category',
+    name: 'System',
+    items: [
+      {
+        type: 'group',
+        name: 'Setting',
+        icon: Settings,
+        isOpen: isSettingOpen,
+        children: [
+          { name: 'Manage Account', path: '/settings', moduleKey: 'settings' }
+        ]
+      },
+      { type: 'item', name: 'Development', path: '/development', icon: Code, moduleKey: 'settings' }
+    ]
   }
 ]
 
 const filteredMenuGroups = computed(() => {
-  return menuGroups.map(group => {
-    if (group.type === 'item') {
-      const isAllowed = userRole.value === 'ADMIN' || allowedModules.value.includes(`${group.moduleKey}:read`)
-      return isAllowed ? group : null
-    } else {
-      const allowedChildren = group.children.filter(child => {
-        return userRole.value === 'ADMIN' || allowedModules.value.includes(`${child.moduleKey}:read`)
-      })
-      if (allowedChildren.length > 0) {
-        return {
-          ...group,
-          children: allowedChildren
+  return menuGroups.map(category => {
+    const items = category.items.map(item => {
+      if (item.type === 'item') {
+        const isAllowed = userRole.value === 'ADMIN' || allowedModules.value.includes(`${item.moduleKey}:read`)
+        return isAllowed ? item : null
+      } else {
+        const allowedChildren = item.children.filter(child => {
+          return userRole.value === 'ADMIN' || allowedModules.value.includes(`${child.moduleKey}:read`)
+        })
+        if (allowedChildren.length > 0) {
+          return { ...item, children: allowedChildren }
         }
+        return null
       }
-      return null
-    }
+    }).filter(Boolean)
+    return items.length > 0 ? { ...category, items } : null
   }).filter(Boolean)
 })
 
@@ -333,19 +392,71 @@ const unreadCount = computed(() => notifications.value.filter(n => !n.read).leng
 
 const fetchNotifications = async () => {
   try {
-    const { data } = await supabase
-      .from('permintaan')
-      .select('id, title, status, created_at, delegated_to')
-      .eq('status', 'TODO')
-      .eq('delegated_to', userEmail.value)
+    // Fetch BOQ requests
+    const { data: boqData, error: boqError } = await supabase
+      .from('boq_requests')
+      .select('id, title, status, created_at')
+      .order('created_at', { ascending: false })
+      .limit(10)
+
+    // Fetch marketing events
+    const { data: marketingData, error: marketingError } = await supabase
+      .from('marketing_events')
+      .select('id, title, status, created_at')
       .order('created_at', { ascending: false })
       .limit(5)
-    notifications.value = (data || []).map(n => ({ ...n, read: false }))
-  } catch {}
+
+    // Fetch HPB proposals (from purchase_cart as placeholder)
+    const { data: hpbData, error: hpbError } = await supabase
+      .from('purchase_cart')
+      .select('id, title, status, created_at')
+      .order('created_at', { ascending: false })
+      .limit(5)
+
+    // Fetch sales tasks (hsq_tasks) – map to related HSQ number for route
+    const { data: taskData, error: taskError } = await supabase
+      .from('hsq_tasks')
+      .select('id, task_title as title, status, created_at, hsq_number')
+      .order('created_at', { ascending: false })
+      .limit(5)
+
+    // Log any fetch errors (but continue with available data)
+    if (boqError) console.warn('Notif BOQ error:', boqError.message)
+    if (marketingError) console.warn('Notif marketing error:', marketingError.message)
+    if (hpbError) console.warn('Notif HPB error:', hpbError.message)
+    if (taskError) console.warn('Notif task error:', taskError.message)
+
+    // Normalize each source to common shape {id, title, status, created_at, path, read}
+    const normalize = (items, pathBase) =>
+      (items || []).map(i => ({
+        id: i.id,
+        title: i.title || 'Tanpa Judul',
+        status: i.status || '-',
+        created_at: i.created_at,
+        path: pathBase,
+        read: localStorage.getItem(`notif_read_${i.id}`) === 'true'
+      }))
+
+    const allNotifs = [
+      ...normalize(boqData, '/permintaan'),
+      ...normalize(marketingData, '/marketing-hub'),
+      ...normalize(hpbData, '/hpb'),
+      ...normalize(taskData, '/hsq')
+    ]
+
+    // Sort by newest first
+    notifications.value = allNotifs.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+  } catch (err) {
+    console.warn('Error fetching notifications:', err)
+    notifications.value = []
+  }
 }
 
 const markAllRead = () => {
-  notifications.value = notifications.value.map(n => ({ ...n, read: true }))
+  notifications.value.forEach(n => {
+    n.read = true
+    try { localStorage.setItem(`notif_read_${n.id}`, 'true') } catch {}
+  })
 }
 
 // --- Profile Dropdown ---
@@ -360,74 +471,88 @@ const userInitials = computed(() => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-[#0f172a] flex flex-col md:flex-row font-source-code transition-colors duration-300">
+  <div class="min-h-screen bg-gray-50 dark:bg-[#0f172a] flex flex-col md:flex-row font-sans transition-colors duration-300">
     
     <!-- Mobile Top Header Bar -->
-    <header class="md:hidden flex items-center justify-between px-6 py-4 bg-white dark:bg-[#1e293b] border-b border-gray-200 dark:border-slate-800 sticky top-0 z-40 shadow-sm transition-colors duration-300">
-      <div class="flex items-center gap-3">
-        <img src="https://shop.hokiindo.co.id/favicon.ico" alt="Hokiindo Logo" class="w-8 h-8 object-contain" />
-        <h1 class="text-lg font-bold text-slate-900 dark:text-white tracking-tight">HIR WORKSPACE</h1>
+    <header class="md:hidden flex items-center justify-between px-5 py-3.5 bg-white dark:bg-[#1e293b] border-b border-gray-200 dark:border-slate-800 sticky top-0 z-40 transition-colors duration-300">
+      <div class="flex items-center gap-2.5">
+        <img src="https://shop.hokiindo.co.id/favicon.ico" alt="Hokiindo Logo" class="w-7 h-7 object-contain" />
+        <h1 class="text-[15px] font-bold uppercase text-slate-900 dark:text-white tracking-tight">HIR Workspace</h1>
       </div>
-      <div class="w-8 h-8 rounded-full bg-red-100 dark:bg-red-950/40 text-red-600 dark:text-red-400 flex items-center justify-center font-bold text-xs">
-        H
+      <div class="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center text-[11px]">
+        {{ userInitials }}
       </div>
     </header>
 
     <!-- Desktop Sidebar -->
-    <aside class="hidden md:flex w-[280px] bg-white dark:bg-[#1e293b] border-r border-gray-200 dark:border-slate-800 flex-col sticky top-0 h-screen transition-colors duration-300">
+    <aside class="hidden md:flex w-[260px] shrink-0 bg-white dark:bg-[#1e293b] border-r border-gray-200 dark:border-slate-800 flex-col sticky top-0 h-screen transition-colors duration-300">
       
-      <div class="p-6 flex items-center gap-3">
-        <img src="https://shop.hokiindo.co.id/favicon.ico" alt="Hokiindo Logo" class="w-8 h-8 object-contain" />
-        <h1 class="text-xl font-bold text-black dark:text-white tracking-tight">HIR WORKSPACE</h1>
+      <div class="p-5 flex items-center gap-2.5">
+        <img src="https://shop.hokiindo.co.id/favicon.ico" alt="Hokiindo Logo" class="w-7 h-7 object-contain" />
+        <h1 class="text-[15px] font-bold uppercase tracking-tight text-slate-900 dark:text-white">HIR Workspace</h1>
       </div>
       
-      <nav class="flex-1 px-4 space-y-1 mt-2">
-        
-        <template v-for="group in filteredMenuGroups" :key="group.name">
-          <!-- Single Menu Item -->
-          <RouterLink 
-            v-if="group.type === 'item'"
-            :to="group.path"
-            class="flex items-center gap-4 px-4 py-3.5 text-sm font-medium transition-all border-l-4 relative"
-            :class="route.path.startsWith(group.path) 
-              ? 'border-[#e60000] text-black dark:text-white bg-gray-50 dark:bg-slate-800/50' 
-              : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30'"
-          >
-            <component :is="group.icon" class="w-4 h-4 text-gray-500 dark:text-gray-400" />
-            <span>{{ group.name }}</span>
-          </RouterLink>
-
-          <!-- Group Collapsible Menu -->
-          <div v-else class="space-y-0.5">
-            <button 
-              @click="group.isOpen.value = !group.isOpen.value"
-              class="flex items-center justify-between w-full px-4 py-3.5 text-sm font-medium transition-all rounded-md text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30"
+      <nav class="flex-1 px-3 py-2 overflow-y-auto">
+        <template v-for="category in filteredMenuGroups" :key="category.name">
+          <p class="px-2.5 pt-4 pb-1.5 text-xs font-medium text-slate-400 dark:text-slate-500 tracking-wide">{{ category.name }}</p>
+          
+          <template v-for="group in category.items" :key="group.name">
+            <!-- Single Menu Item -->
+            <RouterLink 
+              v-if="group.type === 'item'"
+              :to="group.path"
+              class="flex items-center gap-3 px-2.5 py-2 text-sm rounded-md transition-colors"
+              :class="route.path.startsWith(group.path) 
+                ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white' 
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'"
             >
-              <div class="flex items-center gap-4">
-                <component :is="group.icon" class="w-4 h-4" />
-                <span>{{ group.name }}</span>
-              </div>
-              <component :is="group.isOpen.value ? ChevronUp : ChevronDown" class="w-4 h-4 text-gray-400" />
-            </button>
-            
-            <!-- Collapsible Content -->
-            <div v-show="group.isOpen.value" class="pl-8 space-y-1 mt-1 transition-all">
-              <RouterLink 
-                v-for="child in group.children"
-                :key="child.name"
-                :to="child.path"
-                class="flex items-center gap-3 px-4 py-2.5 text-xs font-medium transition-all rounded-md border-l-2"
-                :class="route.path.startsWith(child.path) 
-                  ? 'border-[#e60000] text-black dark:text-white bg-gray-50 dark:bg-slate-800/50' 
-                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30'"
-              >
-                <span>{{ child.name }}</span>
-              </RouterLink>
-            </div>
-          </div>
-        </template>
+              <component :is="group.icon" class="w-4 h-4 shrink-0" />
+              <span class="truncate">{{ group.name }}</span>
+            </RouterLink>
 
+            <!-- Group Collapsible Menu -->
+            <div v-else class="space-y-0.5">
+              <button 
+                @click="group.isOpen.value = !group.isOpen.value"
+                class="flex items-center justify-between w-full px-2.5 py-2 text-sm rounded-md transition-colors text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50"
+              >
+                <div class="flex items-center gap-3">
+                  <component :is="group.icon" class="w-4 h-4 shrink-0" />
+                  <span class="truncate">{{ group.name }}</span>
+                </div>
+                <component :is="group.isOpen.value ? ChevronUp : ChevronDown" class="w-3.5 h-3.5 text-slate-400" />
+              </button>
+              
+              <!-- Collapsible Content -->
+              <div v-show="group.isOpen.value" class="pl-6 space-y-0.5 mt-0.5">
+                <RouterLink 
+                  v-for="child in group.children"
+                  :key="child.name"
+                  :to="child.path"
+                  class="flex items-center gap-3 px-2.5 py-2 text-sm rounded-md transition-colors"
+                  :class="route.path.startsWith(child.path) 
+                    ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white' 
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'"
+                >
+                  <span class="truncate">{{ child.name }}</span>
+                </RouterLink>
+              </div>
+            </div>
+          </template>
+        </template>
       </nav>
+
+      <div class="p-3 border-t border-gray-100 dark:border-slate-800">
+        <div class="flex items-center gap-2.5 px-2.5 py-2">
+          <div class="w-7 h-7 rounded-full bg-gradient-to-br from-red-500 to-red-700 text-white flex items-center justify-center text-[11px]">
+            {{ userInitials }}
+          </div>
+          <div class="min-w-0">
+            <p class="text-[12px] text-slate-900 dark:text-white truncate leading-tight">{{ userEmail.split('@')[0] }}</p>
+            <p class="text-[10px] text-slate-400 leading-tight">{{ userRole }}</p>
+          </div>
+        </div>
+      </div>
 
     </aside>
 
@@ -435,7 +560,7 @@ const userInitials = computed(() => {
     <main class="flex-1 overflow-y-auto bg-gray-50/50 dark:bg-[#0f172a] text-black dark:text-gray-200 transition-colors duration-300 flex flex-col">
 
       <!-- Desktop Top Bar -->
-      <header class="hidden md:flex sticky top-0 z-30 items-center justify-between px-6 py-3 bg-white/80 dark:bg-[#1e293b]/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-sm">
+      <header class="hidden md:flex sticky top-0 z-30 items-center justify-between px-6 py-3 bg-white/80 dark:bg-[#1e293b]/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
         
         <!-- Left: Global Search -->
         <div class="flex items-center gap-3 flex-1">
@@ -454,7 +579,7 @@ const userInitials = computed(() => {
                 @blur="setTimeout(() => isSearchFocused = false, 200)"
                 type="text"
                 placeholder="Cari nomor SO, SQ, penawaran, customer, permintaan..."
-                class="flex-1 bg-transparent outline-none text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500"
+                class="flex-1 bg-transparent outline-none text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-500"
               />
               <span v-if="isSearchLoading" class="w-3.5 h-3.5 border-2 border-red-400 border-t-transparent rounded-full animate-spin"></span>
               <button v-else-if="globalSearch" @click="globalSearch = ''; searchResults = { hsq: [], hso: [], permintaan: [] }" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
@@ -482,7 +607,7 @@ const userInitials = computed(() => {
 
               <!-- Results -->
               <div v-else class="max-h-[420px] overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
-                
+
                 <!-- HSQ Results -->
                 <div v-if="searchResults.hsq.length > 0">
                   <div class="px-4 pt-3 pb-1.5 flex items-center justify-between">
@@ -559,7 +684,7 @@ const userInitials = computed(() => {
 
         <!-- Right: Notifications + Profile -->
         <div class="flex items-center gap-2 ml-4">
-          
+
           <!-- Notifications Bell -->
           <div class="relative">
             <button
@@ -587,19 +712,20 @@ const userInitials = computed(() => {
                 <div
                   v-for="notif in notifications"
                   :key="notif.id"
-                  @click="router.push('/permintaan'); isNotifOpen = false"
+                  @click="router.push(notif.path); isNotifOpen = false"
                   class="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer border-b border-slate-50 dark:border-slate-800/50 last:border-0 transition-colors"
                   :class="{ 'bg-red-50/50 dark:bg-red-950/10': !notif.read }"
                 >
                   <div class="w-2 h-2 rounded-full mt-1.5 shrink-0" :class="notif.read ? 'bg-slate-300' : 'bg-red-500'"></div>
                   <div class="flex-1 min-w-0">
                     <p class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">{{ notif.title }}</p>
-                    <p class="text-[10px] text-slate-400 mt-0.5">Didelegasikan ke Anda · <span class="font-mono">{{ notif.status }}</span></p>
+                    <p v-if="notif.path === '/permintaan'" class="text-[10px] text-slate-400 mt-0.5">Didelegasikan ke Anda · <span class="font-mono">{{ notif.status }}</span></p>
+                    <p v-else class="text-[10px] text-slate-400 mt-0.5"><span class="font-mono">{{ notif.status }}</span></p>
                   </div>
                 </div>
               </div>
               <div class="px-4 py-2 border-t border-slate-100 dark:border-slate-800">
-                <button @click="router.push('/permintaan'); isNotifOpen = false" class="w-full text-center text-xs text-red-500 hover:text-red-600 font-bold py-1">Lihat Semua Permintaan →</button>
+                <button @click="router.push('/notifications'); isNotifOpen = false" class="w-full text-center text-xs text-red-500 hover:text-red-600 font-bold py-1">Lihat Semua Notifikasi →</button>
               </div>
             </div>
           </div>
@@ -659,7 +785,7 @@ const userInitials = computed(() => {
       </header>
 
       <!-- Page Content -->
-      <div class="flex-1 p-4 md:p-8 pb-24 md:pb-8">
+      <div class="flex-1 pt-4 md:pt-6 px-6 pb-24 md:pb-8">
         <RouterView />
       </div>
     </main>
@@ -667,13 +793,13 @@ const userInitials = computed(() => {
     <!-- Mobile Bottom Navigation Bar (Capped at 4 items) -->
     <nav class="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-[#1e293b] border-t border-gray-200 dark:border-slate-800 flex justify-around items-center p-2 z-50 pb-safe shadow-lg transition-colors duration-300">
       
-      <RouterLink 
+        <RouterLink 
         v-if="userRole === 'ADMIN' || allowedModules.includes('hsq:read')"
         to="/hsq"
         class="flex flex-col items-center justify-center p-2 rounded-lg w-full transition-colors"
-        :class="route.path.startsWith('/hsq') ? 'text-[#e60000] font-bold' : 'text-gray-400 dark:text-gray-400'"
+        :class="route.path.startsWith('/hsq') ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'"
       >
-        <FileText class="w-5 h-5 mb-1" />
+        <FileText class="w-4 h-4 mb-0.5" />
         <span class="text-[10px]">Penawaran</span>
       </RouterLink>
 
@@ -681,9 +807,9 @@ const userInitials = computed(() => {
         v-if="userRole === 'ADMIN' || allowedModules.includes('sales-orders:read')"
         to="/sales-orders"
         class="flex flex-col items-center justify-center p-2 rounded-lg w-full transition-colors"
-        :class="route.path.startsWith('/sales-orders') ? 'text-[#e60000] font-bold' : 'text-gray-400 dark:text-gray-400'"
+        :class="route.path.startsWith('/sales-orders') ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'"
       >
-        <FileText class="w-5 h-5 mb-1" />
+        <FileText class="w-4 h-4 mb-0.5" />
         <span class="text-[10px]">Penjualan</span>
       </RouterLink>
 
@@ -691,71 +817,76 @@ const userInitials = computed(() => {
         v-if="userRole === 'ADMIN' || allowedModules.includes('cart:read')"
         to="/cart"
         class="flex flex-col items-center justify-center p-2 rounded-lg w-full transition-colors"
-        :class="route.path.startsWith('/cart') ? 'text-[#e60000] font-bold' : 'text-gray-400 dark:text-gray-400'"
+        :class="route.path.startsWith('/cart') ? 'text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400'"
       >
-        <ShoppingCart class="w-5 h-5 mb-1" />
+        <ShoppingCart class="w-4 h-4 mb-0.5" />
         <span class="text-[10px]">Keranjang</span>
       </RouterLink>
 
       <!-- More Menu using Sheet Drawer -->
       <Sheet>
         <SheetTrigger as-child>
-          <button class="flex flex-col items-center justify-center p-2 rounded-lg w-full text-gray-400 dark:text-gray-400 transition-colors">
-            <Menu class="w-5 h-5 mb-1" />
+          <button class="flex flex-col items-center justify-center p-2 rounded-lg w-full text-slate-500 dark:text-slate-400 transition-colors">
+            <Menu class="w-4 h-4 mb-0.5" />
             <span class="text-[10px]">Menu</span>
           </button>
         </SheetTrigger>
         <SheetContent side="bottom" class="dark:bg-[#1e293b] dark:border-slate-800 rounded-t-2xl max-h-[85vh] p-6 focus:outline-none">
           <SheetHeader class="pb-4 border-b border-gray-100 dark:border-slate-800">
-            <div class="flex items-center gap-3">
-              <img src="https://shop.hokiindo.co.id/favicon.ico" alt="Hokiindo Logo" class="w-7 h-7 object-contain" />
-              <SheetTitle class="text-base font-bold text-slate-900 dark:text-white">HIR WORKSPACE</SheetTitle>
+            <div class="flex items-center gap-2.5">
+              <img src="https://shop.hokiindo.co.id/favicon.ico" alt="Hokiindo Logo" class="w-6 h-6 object-contain" />
+              <SheetTitle class="text-[14px] font-bold uppercase text-slate-900 dark:text-white">HIR Workspace</SheetTitle>
             </div>
-            <div class="text-[11px] text-slate-400 dark:text-slate-500 mt-1 font-mono break-all">{{ userEmail }}</div>
+            <div class="text-[11px] text-slate-400 dark:text-slate-500 mt-1 break-all">{{ userEmail }}</div>
           </SheetHeader>
           
-          <div class="py-4 space-y-1.5 overflow-y-auto max-h-[50vh]">
-            <template v-for="group in filteredMenuGroups" :key="'mob-' + group.name">
-              <!-- Render Single Item Mobile -->
-              <RouterLink 
-                v-if="group.type === 'item'"
-                :to="group.path"
-                class="flex items-center gap-4 px-4 py-3 text-sm font-medium transition-all rounded-xl border border-transparent"
-                :class="route.path.startsWith(group.path) 
-                  ? 'text-[#e60000] bg-red-50/50 dark:bg-red-950/20 border-red-100 dark:border-red-950' 
-                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30'"
-              >
-                <component :is="group.icon" class="w-5 h-5 text-slate-500 dark:text-slate-400" />
-                <span>{{ group.name }}</span>
-              </RouterLink>
-
-              <!-- Render Group Mobile -->
-              <div v-else class="space-y-0.5">
-                <button 
-                  @click="group.isOpen.value = !group.isOpen.value"
-                  class="flex items-center justify-between w-full px-4 py-3 text-sm font-medium transition-all rounded-xl text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30"
+          <div class="py-3 overflow-y-auto max-h-[50vh]">
+            <template v-for="category in filteredMenuGroups" :key="'mob-' + category.name">
+              <p class="px-2.5 pt-3 pb-1.5 text-xs font-medium text-slate-400 dark:text-slate-500 tracking-wide">{{ category.name }}</p>
+              <div class="space-y-0.5">
+              <template v-for="group in category.items" :key="group.name">
+                <!-- Render Single Item Mobile -->
+                <RouterLink 
+                  v-if="group.type === 'item'"
+                  :to="group.path"
+                  class="flex items-center gap-3 px-2.5 py-2 text-sm rounded-md transition-colors"
+                  :class="route.path.startsWith(group.path) 
+                    ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white' 
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'"
                 >
-                  <div class="flex items-center gap-4">
-                    <component :is="group.icon" class="w-5 h-5 text-slate-500 dark:text-slate-400" />
-                    <span>{{ group.name }}</span>
-                  </div>
-                  <component :is="group.isOpen.value ? ChevronUp : ChevronDown" class="w-4 h-4 text-slate-400" />
-                </button>
-                
-                <!-- Collapsible Content Mobile -->
-                <div v-show="group.isOpen.value" class="pl-9 space-y-1 mt-1 transition-all">
-                  <RouterLink 
-                    v-for="child in group.children"
-                    :key="'mob-' + child.name"
-                    :to="child.path"
-                    class="flex items-center gap-3 px-4 py-2.5 text-xs font-medium transition-all rounded-lg border-l-2"
-                    :class="route.path.startsWith(child.path) 
-                      ? 'border-[#e60000] text-black dark:text-white bg-gray-50 dark:bg-slate-800/50' 
-                      : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-black dark:hover:text-white hover:bg-gray-50 dark:hover:bg-slate-800/30'"
+                  <component :is="group.icon" class="w-4 h-4 shrink-0" />
+                  <span>{{ group.name }}</span>
+                </RouterLink>
+
+                <!-- Render Group Mobile -->
+                <div v-else class="space-y-0.5">
+                  <button 
+                    @click="group.isOpen.value = !group.isOpen.value"
+                    class="flex items-center justify-between w-full px-2.5 py-2 text-sm rounded-md transition-colors text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50"
                   >
-                    <span>{{ child.name }}</span>
-                  </RouterLink>
+                    <div class="flex items-center gap-3">
+                      <component :is="group.icon" class="w-4 h-4 shrink-0" />
+                      <span>{{ group.name }}</span>
+                    </div>
+                    <component :is="group.isOpen.value ? ChevronUp : ChevronDown" class="w-3.5 h-3.5 text-slate-400" />
+                  </button>
+                  
+                  <!-- Collapsible Content Mobile -->
+                  <div v-show="group.isOpen.value" class="pl-6 space-y-0.5 mt-0.5">
+                    <RouterLink 
+                      v-for="child in group.children"
+                      :key="'mob-' + child.name"
+                      :to="child.path"
+                      class="flex items-center gap-3 px-2.5 py-2 text-sm rounded-md transition-colors"
+                      :class="route.path.startsWith(child.path) 
+                        ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white' 
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'"
+                    >
+                      <span>{{ child.name }}</span>
+                    </RouterLink>
+                  </div>
                 </div>
+              </template>
               </div>
             </template>
             
@@ -763,17 +894,17 @@ const userInitials = computed(() => {
             
             <button 
               @click="toggleDarkMode"
-              class="flex items-center gap-4 px-4 py-3 w-full text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/30 transition-all rounded-xl"
+              class="flex items-center gap-3 px-2.5 py-2 w-full text-sm rounded-md transition-colors text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50"
             >
-              <component :is="isDarkMode ? Sun : Moon" class="w-5 h-5 text-slate-500 dark:text-slate-400" />
+              <component :is="isDarkMode ? Sun : Moon" class="w-4 h-4" />
               <span>{{ isDarkMode ? 'Light Mode' : 'Dark Mode' }}</span>
             </button>
             
             <button 
               @click="handleLogout"
-              class="flex items-center gap-4 px-4 py-3 w-full text-sm font-bold text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all rounded-xl border border-transparent hover:border-red-150 dark:hover:border-red-900/30"
+              class="flex items-center gap-3 px-2.5 py-2 w-full text-sm rounded-md transition-colors text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20"
             >
-              <LogOut class="w-5 h-5 text-slate-400 hover:text-red-500 transition-colors" />
+              <LogOut class="w-4 h-4" />
               <span>Logout</span>
             </button>
           </div>
@@ -791,14 +922,6 @@ const userInitials = computed(() => {
 </template>
 
 <style>
-/* Import Font */
-@import url('https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600;700&display=swap');
-/* ... */
-
-.font-source-code {
-  font-family: 'Source Code Pro', monospace;
-}
-
 /* Scrollbar Customization for Dark Mode */
 .dark ::-webkit-scrollbar {
   width: 8px;

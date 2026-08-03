@@ -1,5 +1,21 @@
 [
   {
+    "hash": "6afde0238feadc396586df705163dc798cc44d8b",
+    "shortHash": "6afde02",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 30 16:47:04 2026 +0700",
+    "message": "feat: add Export Detail HSO (Lengkap) to Excel with 3 sheets"
+  },
+  {
+    "hash": "b00837b8d0026ff6edcf9e00989f8bf5f4e6f6af",
+    "shortHash": "b00837b",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Jul 30 09:24:15 2026 +0700",
+    "message": "feat: add Permintaan kanban board, Marketing Hub, share link, & fix BOQ status trigger"
+  },
+  {
     "hash": "5f2d4a9a9f6e4963cdefceceac166fb2f64c0c7d",
     "shortHash": "5f2d4a9",
     "author": "davidtheosimaremare",
@@ -382,21 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Thu Jul 9 12:17:36 2026 +0700",
     "message": "fix: simplify Excel import matching - prioritize DB shipments with HPO, never overwrite dunex_date if already set"
-  },
-  {
-    "hash": "320145d8617e8a63ee096da99db94db4ec73c9b0",
-    "shortHash": "320145d",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 12:13:04 2026 +0700",
-    "message": "fix: detect items with no hpoMapping via DB shipments or Excel HPO column; improve isItemMatch fuzzy matching"
-  },
-  {
-    "hash": "7664de4b553ff9b5d86d004e84ae875c6cd02d66",
-    "shortHash": "7664de4",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 12:07:42 2026 +0700",
-    "message": "fix: don't overwrite existing dunex/hokiindo date with today when re-importing Excel"
   }
 ]

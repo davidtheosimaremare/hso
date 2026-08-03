@@ -978,6 +978,7 @@ const fetchHdoInBackground = async (doNumbers) => {
               return {
                 ...shipment,
                 items: doDetail.items,
+                date: shipment.date || doDetail.date,
                 source: 'ACCURATE' // Mark as from Accurate
               }
             }
@@ -1807,8 +1808,9 @@ const getHdosForItem = (item) => {
     if (!shipment.items) return false
     return shipment.items.some(i => {
       if (i.code !== item.code) return false
-      const doItemNoteType = getNoteType(i.note)
+      
       if (hasMultipleRows) {
+        const doItemNoteType = getNoteType(i.note)
         // Both notes must be known and equal (STOCK=STOCK or NO STOCK=NO STOCK)
         if (itemNoteType !== 'unknown' && doItemNoteType !== 'unknown') {
           return itemNoteType === doItemNoteType
@@ -1822,10 +1824,9 @@ const getHdosForItem = (item) => {
   if (strictMatches.length > 0) return strictMatches
   
   // Step 2: Fallback — Accurate says item was shipped but no strict note match found.
-  // Show any HDO containing this item. Safe because:
-  // - NO STOCK items always have qty_shipped=0 → fallback never triggers for them
-  // - Only STOCK/already-shipped items reach here
-  if ((item.qty_shipped || 0) > 0) {
+  // ONLY ALLOW FALLBACK IF IT'S A SINGLE ROW. 
+  // If hasMultipleRows, we strictly rely on the DO note (STOCK/NO STOCK) to avoid duplication.
+  if (!hasMultipleRows && (item.qty_shipped || 0) > 0) {
     return soDetail.value.shipments.filter(s =>
       s.items && s.items.some(i => i.code === item.code)
     )
@@ -1843,19 +1844,21 @@ const getSingleHdoQty = (hdo, item) => {
     : []
   const hasMultipleRows = sameCodeSoItems.length > 1
   
-  // Try strict note matching first
+  // Find the exact item in the DO matching the note
   let doItem = hdo.items.find(i => {
     if (i.code !== item.code) return false
-    if (!hasMultipleRows) return true
-    const doItemNoteType = getNoteType(i.note)
-    if (itemNoteType !== 'unknown' && doItemNoteType !== 'unknown') {
-      return itemNoteType === doItemNoteType
+    if (hasMultipleRows) {
+      const doItemNoteType = getNoteType(i.note)
+      if (itemNoteType !== 'unknown' && doItemNoteType !== 'unknown') {
+        return itemNoteType === doItemNoteType
+      }
+      return false
     }
-    return false
+    return true
   })
   
-  // Fallback: match by code alone (only reached when getHdosForItem used Step 2 fallback)
-  if (!doItem) {
+  // Fallback only if single row
+  if (!doItem && !hasMultipleRows) {
     doItem = hdo.items.find(i => i.code === item.code)
   }
   
@@ -1868,6 +1871,12 @@ const getDisplayedQtyShipped = (item) => {
   hdos.forEach(hdo => {
     totalHdoQty += getSingleHdoQty(hdo, item)
   })
+  
+  const sameCodeSoItems = soDetail.value?.items ? soDetail.value.items.filter(i => i.code === item.code) : []
+  if (sameCodeSoItems.length > 1) {
+    return item.qty_shipped || 0
+  }
+  
   // If no HDO found via note-matching, fall back to Accurate's shipQuantity
   if (hdos.length === 0) {
     return item.qty_shipped || 0
@@ -1882,6 +1891,44 @@ const getDisplayedQtyRemaining = (item) => {
 
 const isDisplayedFullyShipped = (item) => {
   return getDisplayedQtyRemaining(item) <= 0
+}
+
+const getHpoDisplayStatus = (item, hpoShipment) => {
+  const shippedQty = getDisplayedQtyShipped(item)
+  if (shippedQty > 0) {
+    const hdos = getHdosForItem(item)
+    const doNumbers = hdos.map(h => h.no).join(', ')
+    
+    let statusText = 'Sudah Dikirim'
+    if (shippedQty < (item.qty_order || 0)) {
+      statusText = 'Dikirim Sebagian'
+    }
+    
+    if (doNumbers) {
+      return `${statusText} (${doNumbers})`
+    }
+    return statusText
+  }
+  
+  const baseStatus = getVisualStatus(hpoShipment)
+  return baseStatus === 'Follow up with our forwarder' ? 'Ex-Works' : 
+         baseStatus === 'Already in siemens Warehouse' ? 'Tiba Dunex' : 
+         baseStatus === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : baseStatus
+}
+
+const getHpoDisplayDate = (item, hpoShipment) => {
+  const shippedQty = getDisplayedQtyShipped(item)
+  if (shippedQty > 0) {
+    const hdos = getHdosForItem(item)
+    if (hdos && hdos.length > 0) {
+      const dates = hdos.map(h => formatDateSimple(h.date)).filter(d => d && d !== '-')
+      if (dates.length > 0) {
+        return [...new Set(dates)].join(', ')
+      }
+    }
+    return '-'
+  }
+  return getVisualStatusDate(hpoShipment) || '-'
 }
 
 const getRowStatus = (item) => {
@@ -2434,7 +2481,7 @@ const copyTableToClipboard = async (tableType) => {
     if (siemensPushItems.value.length === 0) return
     
     htmlContent = `
-      <table style="width: 100%; border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #334155;">
+      <table style="width: 100%; border-collapse: collapse; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; color: #334155;">
         <thead>
           <tr style="background-color: #f8fafc; border-bottom: 2px solid #fee2e2;">
             <th style="text-align: left; padding: 10px; font-weight: 700; color: #475569;">Kode Produk</th>
@@ -2449,9 +2496,9 @@ const copyTableToClipboard = async (tableType) => {
     siemensPushItems.value.forEach(item => {
       htmlContent += `
         <tr style="border-bottom: 1px solid #fee2e2;">
-          <td style="padding: 10px; font-family: monospace; font-weight: bold; color: #0f172a;">${item.code}</td>
+          <td style="padding: 10px; font-family: 'Plus Jakarta Sans', sans-serif; font-weight: bold; color: #0f172a;">${item.code}</td>
           <td style="padding: 10px; color: #334155;">${item.name}</td>
-          <td style="padding: 10px; font-family: monospace; color: #475569;">${item.hpo}</td>
+          <td style="padding: 10px; font-family: 'Plus Jakarta Sans', sans-serif; color: #475569;">${item.hpo}</td>
           <td style="padding: 10px; text-align: center; font-weight: bold; color: #0f172a;">${item.qty}</td>
           <td style="padding: 10px; color: #dc2626; font-weight: bold;">${item.status} (${item.date || '-'})</td>
         </tr>
@@ -2465,7 +2512,7 @@ const copyTableToClipboard = async (tableType) => {
     if (undeliveredItems.value.length === 0) return
     
     htmlContent = `
-      <table style="width: 100%; border-collapse: collapse; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; color: #334155;">
+      <table style="width: 100%; border-collapse: collapse; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 13px; color: #334155;">
         <thead>
           <tr style="background-color: #f8fafc; border-bottom: 2px solid #fee2e2;">
             <th style="text-align: left; padding: 10px; font-weight: 700; color: #475569;">Kode Produk</th>
@@ -2480,7 +2527,7 @@ const copyTableToClipboard = async (tableType) => {
     undeliveredItems.value.forEach(item => {
       htmlContent += `
         <tr style="border-bottom: 1px solid #fee2e2;">
-          <td style="padding: 10px; font-family: monospace; font-weight: bold; color: #0f172a;">${item.code}</td>
+          <td style="padding: 10px; font-family: 'Plus Jakarta Sans', sans-serif; font-weight: bold; color: #0f172a;">${item.code}</td>
           <td style="padding: 10px; color: #334155;">${item.name}</td>
           <td style="padding: 10px; text-align: center; color: #334155;">${item.qty_order}</td>
           <td style="padding: 10px; text-align: center; color: #2563eb; font-weight: bold;">${item.qty_shipped}</td>
@@ -2522,7 +2569,7 @@ const generateEmailHtml = () => {
   <html>
   <head>
     <style>
-      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #334155; margin: 0; padding: 20px; background-color: #f8fafc; }
+      body { font-family: 'Plus Jakarta Sans', sans-serif; line-height: 1.6; color: #334155; margin: 0; padding: 20px; background-color: #f8fafc; }
       .container { max-width: 750px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03); border: 1px solid #e2e8f0; }
       .header { background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%); color: #ffffff; padding: 25px; text-align: center; }
       .header h1 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.5px; }
@@ -2572,9 +2619,9 @@ const generateEmailHtml = () => {
     siemensPushItems.value.forEach(item => {
       html += `
             <tr>
-              <td style="font-family: monospace; font-weight: bold;">${item.code}</td>
+              <td style="font-family: 'Plus Jakarta Sans', sans-serif; font-weight: bold;">${item.code}</td>
               <td>${item.name}</td>
-              <td style="font-family: monospace;">${item.hpo}</td>
+              <td style="font-family: 'Plus Jakarta Sans', sans-serif;">${item.hpo}</td>
               <td style="text-align: center; font-weight: bold;">${item.qty}</td>
               <td><span class="badge push">${item.status} (${item.date || '-'})</span></td>
             </tr>
@@ -2604,7 +2651,7 @@ const generateEmailHtml = () => {
     undeliveredItems.value.forEach(item => {
       html += `
             <tr>
-              <td style="font-family: monospace; font-weight: bold;">${item.code}</td>
+              <td style="font-family: 'Plus Jakarta Sans', sans-serif; font-weight: bold;">${item.code}</td>
               <td>${item.name}</td>
               <td style="text-align: center;">${item.qty_order}</td>
               <td style="text-align: center; color: #2563eb; font-weight: bold;">${item.qty_shipped}</td>
@@ -2661,7 +2708,7 @@ const sendReminderEmail = async () => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50/50 dark:bg-[#0f172a] pb-20 font-source-code transition-colors duration-300">
+  <div class="min-h-screen bg-gray-50/50 dark:bg-[#0f172a] pb-20 font-sans transition-colors duration-300">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 pt-8 space-y-8">
 
       <!-- ERROR STATE -->
@@ -3040,19 +3087,21 @@ const sendReminderEmail = async () => {
                                 <!-- Logistics Status Tree (if exists for this item) -->
                                 <template v-for="hpoShipment in [getHpoShipment(item, hpo.poNumber)]" :key="hpoShipment.id || hpo.poNumber">
                                 <div v-if="hpoShipment.current_status && hpoShipment.current_status !== 'Pending Process'" class="mt-2">
-                                    <div class="flex items-center justify-between gap-2 bg-blue-50 dark:bg-blue-900/20 px-2.5 py-1.5 rounded border border-blue-100 dark:border-blue-800">
-                                        <div class="flex items-center gap-1.5 flex-shrink-0">
-                                            <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
-                                            <span class="text-[11px] font-bold text-blue-700 dark:text-blue-300 whitespace-nowrap">
-                                                {{ getVisualStatus(hpoShipment) === 'Follow up with our forwarder' ? 'Ex-Works' : getVisualStatus(hpoShipment) === 'Already in siemens Warehouse' ? 'Tiba Dunex' : getVisualStatus(hpoShipment) === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : getVisualStatus(hpoShipment) }}
+                                    <div class="flex flex-col gap-1 bg-blue-50 dark:bg-blue-900/20 px-2.5 py-1.5 rounded border border-blue-100 dark:border-blue-800">
+                                        <div class="flex items-center justify-between">
+                                            <div class="flex items-center gap-1.5 min-w-0">
+                                                <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                                                <span class="text-[11px] font-bold text-blue-700 dark:text-blue-300 truncate">
+                                                    {{ getHpoDisplayStatus(item, hpoShipment) }}
+                                                </span>
+                                            </div>
+                                            <span v-if="hpoShipment.exwork_waiting && getVisualStatus(hpoShipment) === 'Follow up with our forwarder'"
+                                                  class="text-[10px] font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap ml-2">
+                                                ⏳ Waiting
                                             </span>
                                         </div>
-                                        <span v-if="hpoShipment.exwork_waiting && getVisualStatus(hpoShipment) === 'Follow up with our forwarder'"
-                                              class="text-[10px] font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap">
-                                            ⏳ Waiting
-                                        </span>
-                                        <span v-else class="text-[10px] font-mono font-bold text-blue-600 dark:text-blue-400 whitespace-nowrap">
-                                            {{ getVisualStatusDate(hpoShipment) || '-' }}
+                                        <span v-if="getHpoDisplayDate(item, hpoShipment) && getHpoDisplayDate(item, hpoShipment) !== '-'" class="text-[10px] font-mono font-bold text-blue-600 dark:text-blue-400 pl-5 truncate">
+                                            {{ getHpoDisplayDate(item, hpoShipment) }}
                                         </span>
                                     </div>
                                 </div>
@@ -3353,19 +3402,21 @@ const sendReminderEmail = async () => {
                       <!-- Logistics status tree inside HPO -->
                       <template v-for="hpoShipment in [getHpoShipment(item, hpo.poNumber)]" :key="hpoShipment.id || hpo.poNumber">
                         <div v-if="hpoShipment.current_status && hpoShipment.current_status !== 'Pending Process'" class="mt-2.5">
-                          <div class="flex items-center justify-between gap-2 bg-blue-50/50 dark:bg-blue-950/20 px-2.5 py-1.5 rounded-lg border border-blue-100 dark:border-blue-900">
-                            <div class="flex items-center gap-1.5 min-w-0">
-                              <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
-                              <span class="text-[11px] font-bold text-blue-700 dark:text-blue-300 truncate">
-                                {{ getVisualStatus(hpoShipment) === 'Follow up with our forwarder' ? 'Ex-Works' : getVisualStatus(hpoShipment) === 'Already in siemens Warehouse' ? 'Tiba Dunex' : getVisualStatus(hpoShipment) === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : getVisualStatus(hpoShipment) }}
+                          <div class="flex flex-col gap-1 bg-blue-50/50 dark:bg-blue-950/20 px-2.5 py-1.5 rounded-lg border border-blue-100 dark:border-blue-900">
+                            <div class="flex items-center justify-between">
+                              <div class="flex items-center gap-1.5 min-w-0">
+                                <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                                <span class="text-[11px] font-bold text-blue-700 dark:text-blue-300 truncate">
+                                  {{ getHpoDisplayStatus(item, hpoShipment) }}
+                                </span>
+                              </div>
+                              <span v-if="hpoShipment.exwork_waiting && getVisualStatus(hpoShipment) === 'Follow up with our forwarder'"
+                                    class="text-[10px] font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap ml-2">
+                                ⏳ Waiting
                               </span>
                             </div>
-                            <span v-if="hpoShipment.exwork_waiting && getVisualStatus(hpoShipment) === 'Follow up with our forwarder'"
-                                  class="text-[10px] font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap">
-                              ⏳ Waiting
-                            </span>
-                            <span v-else class="text-[10px] font-mono font-bold text-blue-600 dark:text-blue-400 whitespace-nowrap">
-                              {{ getVisualStatusDate(hpoShipment) || '-' }}
+                            <span v-if="getHpoDisplayDate(item, hpoShipment) && getHpoDisplayDate(item, hpoShipment) !== '-'" class="text-[10px] font-mono font-bold text-blue-600 dark:text-blue-400 pl-5 truncate">
+                              {{ getHpoDisplayDate(item, hpoShipment) }}
                             </span>
                           </div>
                         </div>
@@ -3894,7 +3945,7 @@ const sendReminderEmail = async () => {
         </SheetContent>
       <!-- Excel Import Confirmation Modal -->
       <div v-if="isExcelModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto animate-in fade-in duration-200">
-        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden font-source-code relative">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden font-sans relative">
           
           <!-- Loading overlay during save -->
           <div v-if="isExcelParsing" class="absolute inset-0 bg-slate-950/50 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center space-y-4">

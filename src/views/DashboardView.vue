@@ -6,16 +6,21 @@ import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
+  Card, CardContent, CardDescription, CardHeader, CardTitle
+} from '@/components/ui/card'
+import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
 } from '@/components/ui/table'
 import { 
-  BarChart3, Loader2, TrendingUp, Users, RefreshCw,
-  AlertCircle, Package, Trophy, Medal, Award, ShoppingCart, Calendar,
+  Loader2, TrendingUp, Users, RefreshCw,
+  AlertCircle, Package, Trophy, Medal, Award, ShoppingCart,
   ChevronLeft, ChevronRight, ArrowUpRight, Clock, Zap,
   UploadCloud, FileSpreadsheet, Trash2, CheckCircle2, AlertTriangle,
-  RefreshCcw, Database, PackageCheck, Truck, ShoppingBag, CheckCircle, XCircle, Info
+  RefreshCcw, Database, PackageCheck, Truck, ShoppingBag, CheckCircle, XCircle, Info,
+  Calendar, FileText, Filter, Receipt
 } from 'lucide-vue-next'
 import StandingSection from '@/components/dashboard/StandingSection.vue'
+import TargetTrajectoryChart from '@/components/dashboard/TargetTrajectoryChart.vue'
 
 
 const router = useRouter()
@@ -86,7 +91,8 @@ watch(targetYear, () => {
 const fetchData = async () => {
   isLoading.value = true
   try {
-    const [soRes, sqRes, siRes, poRes] = await Promise.allSettled([
+    // 1. Fetch SO, SQ, SI in parallel (Fast main KPI data)
+    const [soRes, sqRes, siRes] = await Promise.allSettled([
       supabase.functions.invoke('accurate-list-so', {
         body: { fields: 'id,number,transDate,customer,totalAmount,statusName,percentShipped,salesman' }
       }),
@@ -95,9 +101,6 @@ const fetchData = async () => {
       }),
       supabase.functions.invoke('accurate-list-si', {
         body: { fields: 'id,number,transDate,customer,totalAmount,statusName,dueDate,outstandingAmount,salesman' }
-      }),
-      supabase.functions.invoke('accurate-list-all-po', {
-        body: { fields: 'id,number,transDate,statusName,totalAmount,vendor', limit: 10000 }
       })
     ])
 
@@ -143,30 +146,35 @@ const fetchData = async () => {
       }))
     }
 
-    if (poRes.status === 'fulfilled' && !poRes.value.error) {
-      const data = poRes.value.data
-      poList.value = (data?.d || []).map(po => ({
-        id: po.id, number: po.number, transDate: po.transDate,
-        statusName: po.statusName || 'Open', totalAmount: Number(po.totalAmount) || 0,
-        vendorName: po.vendor?.name || 'Unknown'
-      }))
-    }
-
-    // Fetch logistics shipments from Supabase
-    const { data: shipData } = await supabase
-      .from('shipments')
-      .select('so_id, item_code, current_status, hpo_number, exwork_date, eta_date, dunex_date, hokiindo_date, exwork_waiting')
-    
-    if (shipData) {
-      shipmentsList.value = shipData
-    }
-  } catch (error) {
-    console.error('Error fetching dashboard data:', error)
-  } finally {
+    // Clear main UI loader immediately so KPI cards render instantly (~1s)
     isLoading.value = false
     nextTick(() => {
       scrollToMonthCard(selectedMonthIdx.value)
     })
+
+    // 2. Fetch PO list & Supabase Shipments asynchronously in background
+    Promise.allSettled([
+      supabase.functions.invoke('accurate-list-all-po', {
+        body: { fields: 'id,number,transDate,statusName,totalAmount,vendor', limit: 10000 }
+      }),
+      supabase.from('shipments').select('so_id, item_code, current_status, hpo_number, exwork_date, eta_date, dunex_date, hokiindo_date, exwork_waiting')
+    ]).then(([poRes, shipRes]) => {
+      if (poRes.status === 'fulfilled' && !poRes.value.error) {
+        const data = poRes.value.data
+        poList.value = (data?.d || []).map(po => ({
+          id: po.id, number: po.number, transDate: po.transDate,
+          statusName: po.statusName || 'Open', totalAmount: Number(po.totalAmount) || 0,
+          vendorName: po.vendor?.name || 'Unknown'
+        }))
+      }
+      if (shipRes.status === 'fulfilled' && shipRes.value.data) {
+        shipmentsList.value = shipRes.value.data
+      }
+    })
+
+  } catch (error) {
+    console.error('Error fetching dashboard data:', error)
+    isLoading.value = false
   }
 }
 
@@ -189,6 +197,9 @@ const getSummaryDateRange = () => {
   } else if (summaryDateFilter.value === 'month') {
     startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0)
     endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59)
+  } else if (summaryDateFilter.value === 'lastMonth') {
+    startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0)
+    endDate = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59)
   } else if (summaryDateFilter.value === 'year') {
     startDate = new Date(now.getFullYear(), 0, 1, 0, 0, 0)
     endDate = new Date(now.getFullYear(), 11, 31, 23, 59, 59)
@@ -230,18 +241,56 @@ const summaryData = computed(() => {
   const filteredSO = filterByDate(soList.value)
   const filteredSI = filterByDate(siList.value)
 
+  const sqNominal = filteredSQ.reduce((sum, item) => sum + (Number(item.totalAmount) || 0), 0)
+  const soNominal = filteredSO.reduce((sum, item) => sum + (Number(item.totalAmount) || 0), 0)
+  const siNominal = filteredSI.reduce((sum, item) => sum + (Number(item.totalAmount) || 0), 0)
+  const siOutstanding = filteredSI.reduce((sum, item) => sum + (Number(item.outstandingAmount) || 0), 0)
+  const siPaid = Math.max(0, siNominal - siOutstanding)
+
+  // Status-based Cohort Win Rate: Count SQs created in period that turned into SO (status Terproses/Disetujui/Ditutup/Sebagian)
+  const sqProcessed = filteredSQ.filter(sq => {
+    const s = (sq.statusName || '').toLowerCase()
+    return s.includes('terproses') || 
+           s.includes('disetujui') || 
+           s.includes('selesai') || 
+           s.includes('closed') || 
+           s.includes('ditutup') || 
+           s.includes('sebagian')
+  })
+  const winRatePercent = filteredSQ.length > 0 
+    ? Math.min(100, Math.round((sqProcessed.length / filteredSQ.length) * 100))
+    : (filteredSO.length > 0 ? 100 : 0)
+
+  // Average SO Value
+  const avgSoValue = filteredSO.length > 0 ? Math.round(soNominal / filteredSO.length) : 0
+
+  // Strict SO Invoicing & Fulfillment Alignment (Eliminates Carry-Over Invoicing)
+  const soShippedNominal = filteredSO.reduce((sum, item) => {
+    const pct = Math.min(100, Math.max(0, Number(item.percentShipped) || 0))
+    return sum + (Number(item.totalAmount) || 0) * (pct / 100)
+  }, 0)
+  const soUnshippedNominal = Math.max(0, soNominal - soShippedNominal)
+  const shippedPercent = soNominal > 0 ? Math.round((soShippedNominal / soNominal) * 100) : 0
+  const unshippedPercent = Math.max(0, 100 - shippedPercent)
+
   return {
-    hsq: {
-      qty: filteredSQ.length,
-      nominal: filteredSQ.reduce((sum, item) => sum + (Number(item.totalAmount) || 0), 0)
-    },
-    hso: {
+    sales: {
       qty: filteredSO.length,
-      nominal: filteredSO.reduce((sum, item) => sum + (Number(item.totalAmount) || 0), 0)
+      nominal: soNominal,
+      avgValue: avgSoValue
     },
-    hsi: {
-      qty: filteredSI.length,
-      nominal: filteredSI.reduce((sum, item) => sum + (Number(item.totalAmount) || 0), 0)
+    pipeline: {
+      sqQty: filteredSQ.length,
+      sqNominal: sqNominal,
+      sqProcessedQty: sqProcessed.length,
+      winRate: winRatePercent,
+      soQty: filteredSO.length
+    },
+    invoicing: {
+      shippedNominal: soShippedNominal,
+      unshippedNominal: soUnshippedNominal,
+      shippedPercent: shippedPercent,
+      unshippedPercent: unshippedPercent
     }
   }
 })
@@ -297,7 +346,14 @@ const targetSalesData = computed(() => {
 
     const now = new Date()
     const isCurrentYear = selectedYear === now.getFullYear()
+    const isCurrentMonth = isCurrentYear && idx === now.getMonth()
     const isFutureMonth = isCurrentYear && idx > now.getMonth()
+
+    // For current ongoing month, carry over position relative to last completed month
+    const prevTarget = runCumulativeTarget - targetMonthly
+    const effectiveVarianceYTD = isCurrentMonth 
+      ? (runCumulativeActual >= runCumulativeTarget ? varianceYTD : runCumulativeActual - prevTarget)
+      : varianceYTD
 
     let ytdStatus = 'Sesuai Target'
     let ytdStatusKey = 'ontrack'
@@ -305,10 +361,10 @@ const targetSalesData = computed(() => {
       ytdStatus = 'Belum Mulai'
       ytdStatusKey = 'upcoming'
     } else {
-      if (varianceYTD > 0) {
+      if (effectiveVarianceYTD >= 0) {
         ytdStatus = 'Diatas Target'
         ytdStatusKey = 'ahead'
-      } else if (varianceYTD < 0) {
+      } else {
         ytdStatus = 'Di Bawah Target'
         ytdStatusKey = 'behind'
       }
@@ -328,7 +384,7 @@ const targetSalesData = computed(() => {
       // SECTION B: Year-to-Date (YTD) Position (Secondary KPI)
       runCumulativeActual: isFutureMonth ? null : runCumulativeActual, // Actual YTD
       runCumulativeTarget, // Expected YTD
-      varianceYTD: isFutureMonth ? null : varianceYTD, // YTD Difference (+/-)
+      varianceYTD: isFutureMonth ? null : effectiveVarianceYTD, // YTD Difference (+/-)
       ytdAchievementPercent: isFutureMonth ? 0 : Math.min(Math.round(ytdAchievementPercent * 10) / 10, 999),
       ytdStatus,
       ytdStatusKey
@@ -506,190 +562,184 @@ onUnmounted(() => {
     <!-- Header -->
     <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
       <div>
-        <div class="flex items-center gap-3 mb-1">
-          <div class="p-2 bg-gradient-to-br from-red-500 to-rose-600 rounded-xl shadow-lg shadow-red-500/30">
-            <BarChart3 class="w-5 h-5 text-white"/>
-          </div>
-          <h1 class="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">Sales Analytics</h1>
-        </div>
-        <p class="text-slate-500 dark:text-slate-400 text-sm ml-12">Insights dan analisis pesanan dari Accurate</p>
+        <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Dashboard</h1>
+        <p class="text-slate-500 dark:text-slate-400 text-sm mt-0.5">Insights dan analisis pesanan</p>
       </div>
-      <button
+      <Button
         @click="fetchData"
         :disabled="isLoading"
-        class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-slate-900 hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 text-white transition-all shadow-md hover:shadow-lg disabled:opacity-60"
+        variant="outline"
+        size="sm"
+        class="gap-2"
       >
         <RefreshCw :class="['w-4 h-4', isLoading && 'animate-spin']"/>
         {{ isLoading ? 'Memuat...' : 'Refresh' }}
-      </button>
+      </Button>
     </div>
 
 
     <!-- Summary Section: Filter Toolbar + 3 Main Cards (HSQ, HSO, HSI) -->
     <div class="space-y-4">
-      <!-- Filter Toolbar -->
-      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+      <!-- Filter Toolbar (Shadcn Segmented Control / Tabs style) -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div class="flex items-center gap-2">
-          <div class="p-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg">
-            <Calendar class="w-4 h-4" />
-          </div>
-          <span class="text-sm font-bold text-slate-800 dark:text-slate-200">Filter Periode Ringkasan</span>
+          <span class="text-sm font-medium text-foreground">Filter Periode Ringkasan</span>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
-          <button v-for="f in [
-            { v: 'all', l: 'Semua Periode' },
-            { v: 'month', l: 'Bulan Ini' },
-            { v: 'year', l: 'Tahun Ini' },
-            { v: 'lastYear', l: 'Tahun Lalu' },
-            { v: 'custom', l: 'Range Tanggal' }
-          ]" :key="f.v"
-            @click="summaryDateFilter = f.v"
-            :class="[
-              'px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer',
-              summaryDateFilter === f.v 
-                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md' 
-                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-            ]"
-          >
-            {{ f.l }}
-          </button>
+          <div class="inline-flex items-center rounded-lg border border-border bg-muted p-1 text-muted-foreground">
+            <button v-for="f in [
+              { v: 'all', l: 'Semua Periode' },
+              { v: 'month', l: 'Bulan Ini' },
+              { v: 'lastMonth', l: 'Bulan Lalu' },
+              { v: 'year', l: 'Tahun Ini' },
+              { v: 'lastYear', l: 'Tahun Lalu' },
+              { v: 'custom', l: 'Range Tanggal' }
+            ]" :key="f.v"
+              @click="summaryDateFilter = f.v"
+              :class="[
+                'inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-xs font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer',
+                summaryDateFilter === f.v 
+                  ? 'bg-background text-foreground shadow-xs' 
+                  : 'hover:bg-background/50 hover:text-foreground'
+              ]"
+            >
+              {{ f.l }}
+            </button>
+          </div>
 
           <!-- Custom Date Inputs -->
-          <div v-if="summaryDateFilter === 'custom'" class="flex items-center gap-2 ml-1">
+          <div v-if="summaryDateFilter === 'custom'" class="flex items-center gap-2">
             <input type="date" v-model="summaryCustomStartDate"
-              class="px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-            <span class="text-xs text-slate-400 font-medium">s/d</span>
+              class="h-8 px-2.5 rounded-md border border-input bg-background text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+            <span class="text-xs text-muted-foreground">s/d</span>
             <input type="date" v-model="summaryCustomEndDate"
-              class="px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-xl text-xs bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              class="h-8 px-2.5 rounded-md border border-input bg-background text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring" />
           </div>
         </div>
       </div>
 
-      <!-- 3 Summary Cards -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+      <!-- 3 Executive KPI Cards (Shadcn UI Standard) -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         
-        <!-- 1. TOTAL HSQ -->
-        <div class="relative overflow-hidden bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
-          <div class="absolute -right-6 -top-6 w-28 h-28 bg-blue-50 dark:bg-blue-900/10 rounded-full blur-2xl pointer-events-none"></div>
-
-          <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-              <span class="px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs font-black tracking-wider uppercase border border-blue-200 dark:border-blue-800/50">
-                TOTAL HSQ
-              </span>
-              <span class="text-[11px] text-slate-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-900/50 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">Sales Quotation</span>
-            </div>
-
-            <div v-if="isLoading" class="space-y-3 py-2">
-              <div class="h-8 w-24 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
-              <div class="h-6 w-36 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
-            </div>
-
-            <div v-else class="grid grid-cols-2 gap-3 my-1">
-              <!-- QTY -->
-              <div class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700/50">
-                <p class="text-[11px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider mb-1">QTY</p>
-                <p class="text-3xl font-black tracking-tight text-slate-800 dark:text-white">{{ summaryData.hsq.qty }}</p>
-                <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Penawaran</p>
+        <!-- 1. OMBET PENJUALAN (SALES ORDER) -->
+        <Card class="shadow-xs transition-shadow hover:shadow-sm">
+          <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <CardTitle class="text-sm font-semibold">Omzet Penjualan</CardTitle>
+                <Badge variant="outline" class="text-[11px] font-normal text-muted-foreground">Realisasi SO</Badge>
               </div>
-
-              <!-- Nominal -->
-              <div class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700/50 overflow-hidden">
-                <p class="text-[11px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider mb-1">Nominal</p>
-                <p class="text-xl font-black text-slate-800 dark:text-white truncate" :title="formatCurrency(summaryData.hsq.nominal)">
-                  {{ formatCurrencyShort(summaryData.hsq.nominal) }}
+              <CardDescription class="text-xs">Total pesanan penjualan terbit periode terpilih</CardDescription>
+            </div>
+            <ShoppingCart class="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent class="pt-4">
+            <div v-if="isLoading" class="space-y-2">
+              <div class="h-8 w-24 bg-muted rounded animate-pulse"></div>
+              <div class="h-4 w-32 bg-muted rounded animate-pulse"></div>
+            </div>
+            <div v-else class="grid grid-cols-2 gap-4">
+              <div class="space-y-1">
+                <p class="text-xs font-medium text-muted-foreground">Total Omzet</p>
+                <p class="text-2xl font-bold tracking-tight text-foreground truncate" :title="formatCurrency(summaryData.sales.nominal)">
+                  {{ formatCurrencyShort(summaryData.sales.nominal) }}
                 </p>
-                <p class="text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5" :title="formatCurrency(summaryData.hsq.nominal)">
-                  {{ formatCurrency(summaryData.hsq.nominal) }}
+                <p class="text-xs text-muted-foreground truncate" :title="formatCurrency(summaryData.sales.nominal)">
+                  {{ formatCurrency(summaryData.sales.nominal) }}
                 </p>
               </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 2. TOTAL HSO -->
-        <div class="relative overflow-hidden bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
-          <div class="absolute -right-6 -top-6 w-28 h-28 bg-emerald-50 dark:bg-emerald-900/10 rounded-full blur-2xl pointer-events-none"></div>
-
-          <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-              <span class="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-black tracking-wider uppercase border border-emerald-200 dark:border-emerald-800/50">
-                TOTAL HSO
-              </span>
-              <span class="text-[11px] text-slate-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-900/50 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">Sales Order</span>
-            </div>
-
-            <div v-if="isLoading" class="space-y-3 py-2">
-              <div class="h-8 w-24 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
-              <div class="h-6 w-36 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
-            </div>
-
-            <div v-else class="grid grid-cols-2 gap-3 my-1">
-              <!-- QTY -->
-              <div class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700/50">
-                <p class="text-[11px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider mb-1">QTY</p>
-                <p class="text-3xl font-black tracking-tight text-slate-800 dark:text-white">{{ summaryData.hso.qty }}</p>
-                <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Pesanan (SO)</p>
-              </div>
-
-              <!-- Nominal -->
-              <div class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700/50 overflow-hidden">
-                <p class="text-[11px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider mb-1">Nominal</p>
-                <p class="text-xl font-black text-slate-800 dark:text-white truncate" :title="formatCurrency(summaryData.hso.nominal)">
-                  {{ formatCurrencyShort(summaryData.hso.nominal) }}
-                </p>
-                <p class="text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5" :title="formatCurrency(summaryData.hso.nominal)">
-                  {{ formatCurrency(summaryData.hso.nominal) }}
+              <div class="space-y-1">
+                <p class="text-xs font-medium text-muted-foreground">Volume & Rata-rata</p>
+                <p class="text-xl font-bold tracking-tight text-foreground">{{ summaryData.sales.qty }} <span class="text-xs font-normal text-muted-foreground">SO</span></p>
+                <p class="text-xs text-muted-foreground truncate" :title="`Rata-rata: ${formatCurrency(summaryData.sales.avgValue)} / SO`">
+                  Avg: {{ formatCurrencyShort(summaryData.sales.avgValue) }} / SO
                 </p>
               </div>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
-        <!-- 3. TOTAL INVOICE (HSI) -->
-        <div class="relative overflow-hidden bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-700 flex flex-col justify-between">
-          <div class="absolute -right-6 -top-6 w-28 h-28 bg-violet-50 dark:bg-violet-900/10 rounded-full blur-2xl pointer-events-none"></div>
-
-          <div class="relative z-10">
-            <div class="flex items-center justify-between mb-4">
-              <span class="px-2.5 py-1 rounded-lg bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 text-xs font-black tracking-wider uppercase border border-violet-200 dark:border-violet-800/50">
-                TOTAL INVOICE
-              </span>
-              <span class="text-[11px] text-slate-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-900/50 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">Faktur Penjualan (HSI)</span>
-            </div>
-
-            <div v-if="isLoading" class="space-y-3 py-2">
-              <div class="h-8 w-24 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
-              <div class="h-6 w-36 bg-slate-200 dark:bg-slate-700 rounded animate-pulse"></div>
-            </div>
-
-            <div v-else class="grid grid-cols-2 gap-3 my-1">
-              <!-- QTY -->
-              <div class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700/50">
-                <p class="text-[11px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider mb-1">QTY</p>
-                <p class="text-3xl font-black tracking-tight text-slate-800 dark:text-white">{{ summaryData.hsi.qty }}</p>
-                <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Faktur (HSI)</p>
+        <!-- 2. EFEKTIVITAS PENAWARAN (WIN RATE) -->
+        <Card class="shadow-xs transition-shadow hover:shadow-sm">
+          <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <CardTitle class="text-sm font-semibold">Efektivitas Penawaran</CardTitle>
+                <Badge variant="outline" class="text-[11px] font-normal text-muted-foreground">Win Rate %</Badge>
               </div>
-
-              <!-- Nominal -->
-              <div class="bg-slate-50 dark:bg-slate-900/50 p-3.5 rounded-xl border border-slate-100 dark:border-slate-700/50 overflow-hidden">
-                <p class="text-[11px] text-slate-500 dark:text-slate-400 font-semibold uppercase tracking-wider mb-1">Nominal</p>
-                <p class="text-xl font-black text-slate-800 dark:text-white truncate" :title="formatCurrency(summaryData.hsi.nominal)">
-                  {{ formatCurrencyShort(summaryData.hsi.nominal) }}
+              <CardDescription class="text-xs">Rasio konversi dari penawaran ke SO</CardDescription>
+            </div>
+            <TrendingUp class="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent class="pt-4">
+            <div v-if="isLoading" class="space-y-2">
+              <div class="h-8 w-24 bg-muted rounded animate-pulse"></div>
+              <div class="h-4 w-32 bg-muted rounded animate-pulse"></div>
+            </div>
+            <div v-else class="grid grid-cols-2 gap-4">
+              <div class="space-y-1">
+                <p class="text-xs font-medium text-muted-foreground">Win Rate Konversi</p>
+                <p class="text-2xl font-bold tracking-tight text-foreground">{{ summaryData.pipeline.winRate }}%</p>
+                <p class="text-xs text-muted-foreground">{{ summaryData.pipeline.sqProcessedQty }} Deal / {{ summaryData.pipeline.sqQty }} SQ</p>
+              </div>
+              <div class="space-y-1">
+                <p class="text-xs font-medium text-muted-foreground">Total Penawaran</p>
+                <p class="text-xl font-bold tracking-tight text-foreground truncate" :title="formatCurrency(summaryData.pipeline.sqNominal)">
+                  {{ formatCurrencyShort(summaryData.pipeline.sqNominal) }}
                 </p>
-                <p class="text-[10px] text-slate-400 dark:text-slate-500 truncate mt-0.5" :title="formatCurrency(summaryData.hsi.nominal)">
-                  {{ formatCurrency(summaryData.hsi.nominal) }}
+                <p class="text-xs text-muted-foreground truncate" :title="formatCurrency(summaryData.pipeline.sqNominal)">
+                  {{ summaryData.pipeline.sqQty }} Penawaran Masuk
                 </p>
               </div>
             </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
+
+        <!-- 3. REALISASI FAKTUR & PENAGIHAN SO (EXCLUDING CARRY-OVER) -->
+        <Card class="shadow-xs transition-shadow hover:shadow-sm">
+          <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <CardTitle class="text-sm font-semibold">Realisasi Pengiriman</CardTitle>
+                <Badge variant="outline" class="text-[11px] font-normal text-muted-foreground">Progres SO</Badge>
+              </div>
+              <CardDescription class="text-xs">Status pengiriman & penagihan SO</CardDescription>
+            </div>
+            <Receipt class="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent class="pt-4">
+            <div v-if="isLoading" class="space-y-2">
+              <div class="h-8 w-24 bg-muted rounded animate-pulse"></div>
+              <div class="h-4 w-32 bg-muted rounded animate-pulse"></div>
+            </div>
+            <div v-else class="grid grid-cols-2 gap-4">
+              <div class="space-y-1">
+                <p class="text-xs font-medium text-muted-foreground">Sudah Kirim & Tagih</p>
+                <p class="text-2xl font-bold tracking-tight text-foreground truncate" :title="formatCurrency(summaryData.invoicing.shippedNominal)">
+                  {{ formatCurrencyShort(summaryData.invoicing.shippedNominal) }}
+                </p>
+                <p class="text-xs text-muted-foreground truncate" :title="`Realisasi: ${summaryData.invoicing.shippedPercent}% dari Total Omzet SO (${formatCurrency(summaryData.sales.nominal)})`">
+                  {{ summaryData.invoicing.shippedPercent }}% Selesai
+                </p>
+              </div>
+              <div class="space-y-1">
+                <p class="text-xs font-medium text-muted-foreground">Belum Kirim & Tagih</p>
+                <p class="text-xl font-bold tracking-tight text-amber-600 dark:text-amber-400 truncate" :title="formatCurrency(summaryData.invoicing.unshippedNominal)">
+                  {{ formatCurrencyShort(summaryData.invoicing.unshippedNominal) }}
+                </p>
+                <p class="text-xs text-muted-foreground truncate" :title="`Sisa Belum Difakturkan: ${formatCurrency(summaryData.invoicing.unshippedNominal)}`">
+                  {{ summaryData.invoicing.unshippedPercent }}% Dalam Proses
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
       </div>
     </div>
 
-    <!-- Standing Hari Ini Section (Priority Work Center) -->
+    <!-- Task Prioritas Sales & Logistik Section (Priority Work Center) -->
     <StandingSection 
       :sqList="sqList" 
       :soList="soList" 
@@ -703,186 +753,172 @@ onUnmounted(() => {
     />
 
     <!-- Target Penjualan Section (Compact Horizontal Carousel Slider) -->
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden space-y-0">
+    <Card>
       <!-- Section Header -->
-      <div class="p-6 border-b border-slate-100 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div class="flex items-center gap-3">
-          <div class="p-2.5 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl text-white shadow-md shadow-amber-500/20">
-            <Trophy class="w-5 h-5" />
-          </div>
+      <CardHeader>
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div class="flex items-center gap-2">
-              <h2 class="text-xl font-extrabold text-slate-900 dark:text-white">Target Penjualan {{ targetSalesData.year }}</h2>
-              <span class="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 text-xs font-bold border border-amber-200 dark:border-amber-800">
-                {{ formatCurrencyShort(targetSalesData.yearlyTarget) }} / Tahun
-              </span>
+              <CardTitle class="text-lg font-semibold text-slate-900 dark:text-white">Target Penjualan {{ targetSalesData.year }}</CardTitle>
+              <Badge variant="outline" class="text-xs font-medium">{{ formatCurrencyShort(targetSalesData.yearlyTarget) }} / Tahun</Badge>
             </div>
-            <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Pemisahan Evaluasi Bulanan (KPI Sales: {{ formatCurrencyShort(targetSalesData.monthlyTargetBase) }}/bulan) & Posisi YTD (Progress Terhadap Target Tahunan)</p>
+            <CardDescription class="text-xs mt-1">Evaluasi bulanan (Target Sales: {{ formatCurrencyShort(targetSalesData.monthlyTargetBase) }}/bulan) & posisi YTD terhadap target tahunan</CardDescription>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <!-- Year Selector -->
+            <div class="flex items-center gap-1.5">
+              <span class="text-sm text-muted-foreground">Tahun:</span>
+              <select v-model="targetYear" class="h-8 rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer">
+                <option :value="2024">2024</option>
+                <option :value="2025">2025</option>
+                <option :value="2026">2026</option>
+              </select>
+            </div>
+
+            <!-- Carousel Prev / Next Controls -->
+            <div class="flex items-center gap-1 p-1 rounded-md border border-border bg-muted">
+              <button @click="prevMonth" :disabled="selectedMonthIdx === 0"
+                class="p-1.5 rounded text-slate-600 dark:text-slate-300 hover:bg-background disabled:opacity-30 transition-colors cursor-pointer">
+                <ChevronLeft class="w-4 h-4" />
+              </button>
+              <span class="text-sm font-medium text-foreground px-1 min-w-[80px] text-center">
+                {{ monthShortNames[selectedMonthIdx] }} {{ targetSalesData.year }}
+              </span>
+              <button @click="nextMonth" :disabled="selectedMonthIdx === 11"
+                class="p-1.5 rounded text-slate-600 dark:text-slate-300 hover:bg-background disabled:opacity-30 transition-colors cursor-pointer">
+                <ChevronRight class="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
+      </CardHeader>
 
-        <div class="flex items-center gap-3">
-          <!-- Year Selector -->
-          <div class="flex items-center gap-1.5">
-            <span class="text-xs font-semibold text-slate-500">Tahun:</span>
-            <select v-model="targetYear" class="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 focus:outline-none cursor-pointer">
-              <option :value="2024">2024</option>
-              <option :value="2025">2025</option>
-              <option :value="2026">2026</option>
-            </select>
-          </div>
-
-          <!-- Carousel Prev / Next Controls -->
-          <div class="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
-            <button @click="prevMonth" :disabled="selectedMonthIdx === 0"
-              class="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
-              title="Bulan Sebelumnya">
-              <ChevronLeft class="w-4 h-4" />
-            </button>
-            <span class="text-xs font-extrabold text-slate-700 dark:text-slate-300 px-1 min-w-[70px] text-center">
-              {{ monthShortNames[selectedMonthIdx] }} {{ targetSalesData.year }}
-            </span>
-            <button @click="nextMonth" :disabled="selectedMonthIdx === 11"
-              class="p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-transparent transition-all cursor-pointer"
-              title="Bulan Berikutnya">
-              <ChevronRight class="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Executive Overview Banner -->
-      <div class="p-6 bg-slate-50/60 dark:bg-slate-800/30 border-b border-slate-100 dark:border-slate-800">
+      <CardContent class="space-y-6">
+        <!-- Executive Overview -->
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <!-- Target Annual -->
-          <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
-            <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Target Total {{ targetYear }}</p>
-            <p class="text-2xl font-black text-slate-900 dark:text-white">{{ formatCurrencyShort(targetSalesData.yearlyTarget) }}</p>
-            <p class="text-[11px] text-slate-500 mt-0.5">{{ formatCurrency(targetSalesData.monthlyTargetBase) }} / Bulan</p>
+          <div class="rounded-xl border border-border bg-card p-4 space-y-1 shadow-2xs">
+            <p class="text-xs font-medium text-muted-foreground">Target {{ targetYear }}</p>
+            <p class="text-2xl font-bold tracking-tight text-foreground">{{ formatCurrencyShort(targetSalesData.yearlyTarget) }}</p>
+            <p class="text-xs text-muted-foreground truncate" :title="`${formatCurrency(targetSalesData.monthlyTargetBase)} / Bulan`">
+              {{ formatCurrencyShort(targetSalesData.monthlyTargetBase) }} / Bulan
+            </p>
           </div>
 
           <!-- Actual HSO -->
-          <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
-            <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Realisasi Sales {{ targetYear }}</p>
-            <p class="text-2xl font-black text-emerald-600 dark:text-emerald-400">{{ formatCurrencyShort(targetSalesData.totalActualYear) }}</p>
-            <p class="text-[11px] text-slate-500 mt-0.5 truncate" :title="formatCurrency(targetSalesData.totalActualYear)">
+          <div class="rounded-xl border border-border bg-card p-4 space-y-1 shadow-2xs">
+            <p class="text-xs font-medium text-muted-foreground">Realisasi Sales {{ targetYear }}</p>
+            <p class="text-2xl font-bold tracking-tight text-foreground">{{ formatCurrencyShort(targetSalesData.totalActualYear) }}</p>
+            <p class="text-xs text-muted-foreground truncate" :title="formatCurrency(targetSalesData.totalActualYear)">
               {{ formatCurrency(targetSalesData.totalActualYear) }}
             </p>
           </div>
 
-          <!-- YTD Position Summary -->
-          <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
-            <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Deviasi YTD {{ targetYear }}</p>
-            <p :class="['text-2xl font-black', targetSalesData.totalVarianceYear >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400']">
-              {{ targetSalesData.totalVarianceYear >= 0 ? '+' : '' }}{{ formatCurrencyShort(targetSalesData.totalVarianceYear) }}
+          <!-- Annual Gap (No Negative Sign) -->
+          <div class="rounded-xl border border-border bg-card p-4 space-y-1 shadow-2xs">
+            <p class="text-xs font-medium text-muted-foreground">Annual Gap</p>
+            <p class="text-2xl font-bold tracking-tight text-foreground">
+              {{ formatCurrencyShort(Math.abs(targetSalesData.totalVarianceYear)) }}
             </p>
-            <p class="text-[11px] text-slate-500 mt-0.5 truncate" :title="formatCurrency(targetSalesData.totalVarianceYear)">
-              {{ targetSalesData.totalVarianceYear >= 0 ? 'Diatas Target' : 'Di Bawah Target' }}
+            <p class="text-xs font-medium truncate" :class="targetSalesData.totalVarianceYear >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'">
+              {{ targetSalesData.totalVarianceYear >= 0 ? 'Diatas Target' : 'Sisa Target Tahunan' }}
             </p>
           </div>
 
           <!-- Total Achievement -->
-          <div class="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
-            <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Pencapaian Tahunan</p>
-            <div class="flex items-baseline gap-2">
-              <p class="text-2xl font-black text-indigo-600 dark:text-indigo-400">{{ targetSalesData.totalAchievementYearPercent }}%</p>
-            </div>
-            <div class="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden mt-1.5">
-              <div class="h-full bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-full transition-all duration-500"
+          <div class="rounded-xl border border-border bg-card p-4 space-y-1 shadow-2xs">
+            <p class="text-xs font-medium text-muted-foreground">Pencapaian Tahunan</p>
+            <p class="text-2xl font-bold tracking-tight text-foreground">{{ targetSalesData.totalAchievementYearPercent }}%</p>
+            <div class="h-1.5 bg-muted rounded-full overflow-hidden mt-2">
+              <div class="h-full bg-primary rounded-full transition-all duration-500"
                 :style="`width: ${Math.min(targetSalesData.totalAchievementYearPercent, 100)}%`"></div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Quick Month Navigation Pills Bar -->
-      <div class="px-6 pt-4 pb-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
-        <div class="flex items-center gap-1.5">
-          <button v-for="(mName, idx) in monthShortNames" :key="idx"
-            @click="selectMonth(idx)"
-            :class="[
-              'px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5',
-              selectedMonthIdx === idx 
-                ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md' 
-                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200/80 dark:border-slate-700/80 hover:bg-slate-100 dark:hover:bg-slate-700'
-            ]">
-            <span v-if="idx === new Date().getMonth() && targetYear === new Date().getFullYear()" class="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-            {{ mName }}
-          </button>
+        <!-- Quick Month Navigation Pills Bar -->
+        <div class="flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
+          <div class="flex items-center gap-1.5">
+            <button v-for="(mName, idx) in monthShortNames" :key="idx"
+              @click="selectMonth(idx)"
+              :class="[
+                'inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors cursor-pointer',
+                selectedMonthIdx === idx 
+                  ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' 
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              ]">
+              <span v-if="idx === new Date().getMonth() && targetYear === new Date().getFullYear()" class="w-1 h-1 rounded-full bg-current"></span>
+              {{ mName }}
+            </button>
+          </div>
+
+          <span class="text-xs text-muted-foreground whitespace-nowrap hidden sm:inline-block">
+            Geser / klik bulan untuk fokus
+          </span>
         </div>
 
-        <span class="text-[11px] font-semibold text-slate-400 whitespace-nowrap hidden sm:inline-block">
-          Geser / klik bulan untuk fokus
-        </span>
-      </div>
-
-      <!-- Main Body: Horizontal Month Carousel Slider Container -->
-      <div class="p-6">
-        <div ref="monthCarouselRef" class="flex gap-5 overflow-x-auto snap-x snap-mandatory py-2 px-1 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-800">
+        <!-- Main Body: Horizontal Month Carousel Slider Container (With Padding to prevent border clipping) -->
+        <div ref="monthCarouselRef" class="flex gap-4 overflow-x-auto snap-x snap-mandatory py-2.5 px-2 -mx-2 sidebar-thin no-scrollbar">
           
           <div v-for="m in targetSalesData.monthlyBreakdown" :key="m.monthIdx"
             :data-month-idx="m.monthIdx"
             @click="selectMonth(m.monthIdx)"
             :class="[
-              'min-w-[320px] sm:min-w-[350px] max-w-[370px] shrink-0 snap-center rounded-2xl border transition-all duration-300 flex flex-col justify-between p-5 cursor-pointer',
+              'min-w-[320px] sm:min-w-[340px] max-w-[360px] shrink-0 snap-center rounded-xl border transition-all duration-300 flex flex-col justify-between p-5 cursor-pointer',
               selectedMonthIdx === m.monthIdx
-                ? 'ring-2 ring-blue-500/80 dark:ring-blue-400/80 border-blue-400 dark:border-blue-600 bg-white dark:bg-slate-900 shadow-xl transform scale-[1.01]'
-                : 'bg-slate-50/80 dark:bg-slate-800/40 border-slate-200/80 dark:border-slate-700/80 opacity-85 hover:opacity-100 hover:border-slate-300 dark:hover:border-slate-600'
+                ? 'ring-2 ring-primary border-primary/50 bg-card shadow-sm'
+                : 'bg-card/60 border-border hover:border-muted-foreground/30'
             ]">
             
             <!-- Top Section -->
             <div>
               <!-- Card Header -->
-              <div class="flex items-center justify-between mb-3.5">
+              <div class="flex items-center justify-between mb-4">
                 <div class="flex items-center gap-2">
-                  <h4 class="font-black text-slate-900 dark:text-white text-base">{{ m.monthName }} {{ targetSalesData.year }}</h4>
+                  <h4 class="font-bold text-foreground text-base">{{ m.monthName }} {{ targetSalesData.year }}</h4>
                 </div>
-                <span class="text-xs font-bold px-2 py-0.5 rounded-md bg-slate-200/80 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-300/50 dark:border-slate-600/50">
-                  {{ m.qtyMonthly }} SO
-                </span>
+                <Badge variant="secondary" class="text-xs font-semibold">{{ m.qtyMonthly }} SO</Badge>
               </div>
 
               <!-- SECTION A: Monthly Performance (Primary KPI) -->
-              <div class="bg-white dark:bg-slate-800 p-3.5 rounded-xl border border-slate-200/70 dark:border-slate-700/70 space-y-2.5 mb-3.5 shadow-2xs">
-                <div class="flex justify-between items-center text-xs">
-                  <span class="text-slate-400 font-bold uppercase text-[10px] tracking-wider">Kinerja Bulan Ini</span>
-                  <span :class="[
-                    'text-xs font-black px-2.5 py-0.5 rounded-md border',
-                    m.monthlyAchievementPercent >= 100 
-                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' 
-                      : m.monthlyAchievementPercent >= 80 
-                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300 border-amber-200 dark:border-amber-800' 
-                        : 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+              <div class="rounded-lg border border-border bg-muted/20 p-4 space-y-3 mb-4">
+                <div class="flex justify-between items-center">
+                  <span class="text-xs font-semibold text-muted-foreground">Kinerja Bulan Ini</span>
+                  <span class="text-xs font-bold" :class="[
+                    m.monthlyAchievementPercent >= 100 ? 'text-emerald-600 dark:text-emerald-400'
+                      : m.monthlyAchievementPercent >= 80 ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-muted-foreground'
                   ]">
                     {{ m.monthlyAchievementPercent }}%
                   </span>
                 </div>
 
-                <div class="space-y-1.5 text-xs pt-0.5">
-                  <div class="flex justify-between items-center text-slate-500 dark:text-slate-400">
-                    <span>Target Bulan:</span>
-                    <span class="font-semibold text-slate-700 dark:text-slate-300">{{ formatCurrencyShort(m.targetMonthly) }}</span>
+                <div class="space-y-2 text-xs">
+                  <div class="flex justify-between items-center text-muted-foreground">
+                    <span>Target Bulan</span>
+                    <span class="font-semibold text-foreground">{{ formatCurrencyShort(m.targetMonthly) }}</span>
                   </div>
-                  <div class="flex justify-between items-center text-slate-500 dark:text-slate-400">
-                    <span>Penjualan Aktual:</span>
-                    <span class="font-bold text-slate-900 dark:text-white" :title="formatCurrency(m.actualMonthly)">
+                  <div class="flex justify-between items-center text-muted-foreground">
+                    <span>Penjualan Aktual</span>
+                    <span class="font-semibold text-foreground" :title="formatCurrency(m.actualMonthly)">
                       {{ formatCurrencyShort(m.actualMonthly) }}
                     </span>
                   </div>
-                  <div class="flex justify-between items-center pt-1.5 border-t border-slate-100 dark:border-slate-700/80">
-                    <span class="text-slate-500 dark:text-slate-400">Selisih Bulan:</span>
-                    <span :class="['font-extrabold', m.varianceMonthly >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400']" :title="formatCurrency(m.varianceMonthly)">
-                      {{ m.varianceMonthly >= 0 ? '+' : '' }}{{ formatCurrencyShort(m.varianceMonthly) }}
+                  <div class="flex justify-between items-center pt-2 border-t border-border text-muted-foreground">
+                    <span>Selisih Bulan</span>
+                    <span :class="['font-semibold', m.varianceMonthly >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400']" :title="formatCurrency(m.varianceMonthly)">
+                      {{ m.varianceMonthly >= 0 ? '+' : '' }}{{ formatCurrencyShort(Math.abs(m.varianceMonthly)) }}
                     </span>
                   </div>
                 </div>
 
                 <!-- Monthly Only Progress Bar -->
-                <div class="pt-0.5">
-                  <div class="h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                <div>
+                  <div class="h-1.5 bg-muted rounded-full overflow-hidden">
                     <div :class="[
                       'h-full rounded-full transition-all duration-300',
-                      m.monthlyAchievementPercent >= 100 ? 'bg-emerald-500' : m.monthlyAchievementPercent >= 80 ? 'bg-amber-500' : 'bg-rose-500'
+                      m.monthlyAchievementPercent >= 100 ? 'bg-emerald-500' : m.monthlyAchievementPercent >= 80 ? 'bg-amber-500' : 'bg-primary/60'
                     ]" :style="`width: ${Math.min(m.monthlyAchievementPercent, 100)}%`"></div>
                   </div>
                 </div>
@@ -890,44 +926,35 @@ onUnmounted(() => {
             </div>
 
             <!-- SECTION B: YTD Position (Secondary KPI - Compact ERP Info Panel) -->
-            <div class="bg-slate-100/90 dark:bg-slate-900/60 p-3.5 rounded-xl border border-slate-200/70 dark:border-slate-700/60">
-              <div class="flex items-center justify-between text-xs mb-2">
-                <span class="font-bold text-slate-800 dark:text-slate-200">Posisi YTD</span>
-                <span :class="[
-                  'text-xs font-black px-2 py-0.5 rounded-md flex items-center gap-1.5 border',
-                  m.ytdStatusKey === 'ahead' 
-                    ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' 
-                    : m.ytdStatusKey === 'ontrack' 
-                      ? 'bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800' 
-                      : m.ytdStatusKey === 'upcoming'
-                        ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                        : 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
-                ]">
+            <div class="rounded-lg border border-border bg-muted/40 p-4">
+              <div class="flex items-center justify-between text-xs mb-3">
+                <span class="font-semibold text-foreground">Posisi YTD</span>
+                <Badge variant="outline" class="text-[11px] font-normal">
                   <span :class="[
-                    'w-1.5 h-1.5 rounded-full',
-                    m.ytdStatusKey === 'ahead' ? 'bg-emerald-500' : m.ytdStatusKey === 'ontrack' ? 'bg-blue-500' : m.ytdStatusKey === 'upcoming' ? 'bg-slate-400' : 'bg-rose-500'
+                    'w-1.5 h-1.5 rounded-full mr-1.5',
+                    m.ytdStatusKey === 'ahead' ? 'bg-emerald-500' : m.ytdStatusKey === 'ontrack' ? 'bg-sky-500' : m.ytdStatusKey === 'upcoming' ? 'bg-muted-foreground/40' : 'bg-amber-500'
                   ]"></span>
                   {{ m.ytdStatus }}
-                </span>
+                </Badge>
               </div>
 
-              <div class="grid grid-cols-3 gap-1.5 text-xs text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-200/60 dark:border-slate-700/50">
+              <div class="grid grid-cols-3 gap-2 text-xs text-muted-foreground pt-2.5 border-t border-border">
                 <div>
-                  <p class="text-[10px] font-semibold uppercase text-slate-400">TARGET YTD</p>
-                  <p class="font-bold text-slate-800 dark:text-slate-200 truncate" :title="formatCurrency(m.runCumulativeTarget)">
+                  <p class="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Target YTD</p>
+                  <p class="font-semibold text-foreground truncate" :title="formatCurrency(m.runCumulativeTarget)">
                     {{ formatCurrencyShort(m.runCumulativeTarget) }}
                   </p>
                 </div>
                 <div>
-                  <p class="text-[10px] font-semibold uppercase text-slate-400">AKTUAL YTD</p>
-                  <p class="font-black text-slate-900 dark:text-white truncate" :title="formatCurrency(m.runCumulativeActual)">
+                  <p class="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Aktual YTD</p>
+                  <p class="font-semibold text-foreground truncate" :title="formatCurrency(m.runCumulativeActual)">
                     {{ formatCurrencyShort(m.runCumulativeActual) }}
                   </p>
                 </div>
                 <div class="text-right">
-                  <p class="text-[10px] font-semibold uppercase text-slate-400">DEVIASI</p>
-                  <p :class="['font-black truncate text-xs', m.varianceYTD === null ? 'text-slate-400' : m.varianceYTD >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400']" :title="formatCurrency(m.varianceYTD)">
-                    {{ m.varianceYTD === null ? '-' : (m.varianceYTD >= 0 ? '+' : '') + formatCurrencyShort(m.varianceYTD) }}
+                  <p class="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Deviasi</p>
+                  <p :class="['font-semibold truncate', m.varianceYTD === null ? 'text-muted-foreground' : m.varianceYTD >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400']" :title="formatCurrency(m.varianceYTD)">
+                    {{ m.varianceYTD === null ? '-' : (m.varianceYTD >= 0 ? '+' : '-') + formatCurrencyShort(Math.abs(m.varianceYTD)) }}
                   </p>
                 </div>
               </div>
@@ -936,8 +963,11 @@ onUnmounted(() => {
           </div>
 
         </div>
-      </div>
-    </div>
+
+        <!-- Target Journey Trajectory Chart Component -->
+        <TargetTrajectoryChart :targetSalesData="targetSalesData" :isLoading="isLoading" class="mt-6" />
+      </CardContent>
+    </Card>
 
   </div>
 </template>
