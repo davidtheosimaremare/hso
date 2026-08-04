@@ -1,10 +1,11 @@
 <script setup>
-import { ref, computed, onMounted, nextTick, inject, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, inject, watch } from 'vue'
 import { supabase } from '@/lib/supabase'
 import {
   Lightbulb, Send, Heart, MessageCircle, Loader2, X, Image,
   RefreshCw, Sparkles, AlertCircle, ChevronDown, Globe,
-  MoreHorizontal, Bookmark, Share2, ThumbsUp, Calendar, ChevronLeft, ChevronRight, List, ExternalLink, Pin
+  MoreHorizontal, Bookmark, Share2, ThumbsUp, Calendar, ChevronLeft, ChevronRight, List, ExternalLink, Pin,
+  Upload, FileText
 } from 'lucide-vue-next'
 
 // --- State ---
@@ -27,12 +28,173 @@ const commentFileInput = ref(null)
 const replyToId = ref(null)
 const replyToName = ref('')
 
-watch(commentTarget, () => {
+// --- Realtime comments & typing state ---
+const typingUsers = ref({}) // { ideaId: [{email, name}] }
+let realtimeChannel = null
+let likesChannel = null
+let ideasChannel = null
+let typingChannel = null
+const PRESENCE_KEY = 'marketing_typing'
+
+function setupRealtime() {
+  // Comments realtime
+  realtimeChannel = supabase.channel('marketing_comments')
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'marketing_idea_comments'
+    }, payload => {
+      const newRow = payload.new
+      const oldRow = payload.old
+      if (payload.eventType === 'INSERT') {
+        // Find idea in ideas array and push comment (dedupe by id to avoid double)
+        const idea = ideas.value.find(i => i.id === newRow.idea_id)
+        if (idea) {
+          if (!idea.comments) idea.comments = []
+          if (!idea.comments.some(c => c.id === newRow.id)) {
+            idea.comments.push({
+              id: newRow.id,
+              comment: newRow.comment,
+              created_by: newRow.created_by,
+              created_at: newRow.created_at
+            })
+          }
+        }
+      } else if (payload.eventType === 'DELETE') {
+        const idea = ideas.value.find(i => i.id === oldRow.idea_id)
+        if (idea && idea.comments) {
+          idea.comments = idea.comments.filter(c => c.id !== oldRow.id)
+        }
+      }
+    })
+    .subscribe()
+
+  // New ideas/posts realtime
+  ideasChannel = supabase.channel('marketing_ideas_channel')
+    .on('postgres_changes', {
+      event: 'INSERT',
+      schema: 'public',
+      table: 'marketing_ideas'
+    }, payload => {
+      const newRow = payload.new
+      // Skip event-tagged rows (they are events, shown in event tab)
+      const isEvent = newRow.tags?.includes('EVENT') || newRow.platform === 'event' || (Array.isArray(newRow.platforms) && newRow.platforms.includes('event'))
+      if (!isEvent) {
+        const exists = ideas.value.some(i => i.id === newRow.id)
+        if (!exists) {
+          ideas.value.unshift({
+            ...newRow,
+            comments: [],
+            likes: []
+          })
+        }
+      }
+    })
+    .on('postgres_changes', {
+      event: 'DELETE',
+      schema: 'public',
+      table: 'marketing_ideas'
+    }, payload => {
+      ideas.value = ideas.value.filter(i => i.id !== payload.old.id)
+    })
+    .on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'marketing_ideas'
+    }, payload => {
+      // Status & pin (tags) changes sync in realtime
+      const idea = ideas.value.find(i => i.id === payload.new.id)
+      if (idea) {
+        const n = payload.new
+        idea.status = n.status
+        idea.tags = n.tags
+        idea.target_date = n.target_date
+        idea.updated_by = n.updated_by
+      }
+    })
+    .subscribe()
+
+  // Likes realtime
+  likesChannel = supabase.channel('marketing_likes')
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'marketing_idea_likes'
+    }, payload => {
+      const newRow = payload.new
+      const oldRow = payload.old
+      const idea = ideas.value.find(i => i.id === (newRow ? newRow.idea_id : oldRow.idea_id))
+      if (!idea) return
+      if (payload.eventType === 'INSERT') {
+        if (!idea.likes) idea.likes = []
+        if (!idea.likes.some(l => l.id === newRow.id)) {
+          idea.likes.push({ id: newRow.id, user_email: newRow.user_email })
+        }
+      } else if (payload.eventType === 'DELETE') {
+        if (idea.likes) idea.likes = idea.likes.filter(l => l.id !== oldRow.id)
+      }
+    })
+    .subscribe()
+}
+
+function setupTypingPresence() {
+  // Presence channel for typing indicator per idea
+  typingChannel = supabase.channel('marketing_typing', {
+    config: {
+      presence: { key: PRESENCE_KEY }
+    }
+  })
+  // Listen presence state updates
+  typingChannel.on('presence', { event: 'sync' }, () => {
+    const state = typingChannel.presenceState()
+    // state: { <userId>: [{metas...}] }
+    const map = {}
+    for (const [userId, metas] of Object.entries(state)) {
+      metas.forEach(meta => {
+        const ideaId = meta.ideaId
+        if (!ideaId) return
+        if (!map[ideaId]) map[ideaId] = []
+        map[ideaId].push({ email: meta.email, name: meta.name })
+      })
+    }
+    typingUsers.value = map
+  })
+  typingChannel.subscribe(async (status) => {
+    if (status === 'SUBSCRIBED') {
+      // Send initial presence (none)
+      await typingChannel.track({ email: currentUser.value, name: currentUserName.value, ideaId: null })
+    }
+  })
+}
+
+let typingDebounceTimer = null
+
+function sendTyping(ideaId) {
+  if (!typingChannel) return
+  typingChannel.track({ email: currentUser.value, name: currentUserName.value, ideaId })
+  // Auto-stop after 3s of inactivity
+  if (typingDebounceTimer) clearTimeout(typingDebounceTimer)
+  typingDebounceTimer = setTimeout(() => {
+    stopTyping(ideaId)
+  }, 3000)
+}
+
+function stopTyping(ideaId) {
+  if (!typingChannel) return
+  if (typingDebounceTimer) clearTimeout(typingDebounceTimer)
+  // Reset to null ideaId
+  typingChannel.track({ email: currentUser.value, name: currentUserName.value, ideaId: null })
+}
+
+
+watch(commentTarget, (nv, ov) => {
   commentAttachment.value = null
   commentAttachmentPreview.value = ''
   newComment.value = ''
   replyToId.value = null
   replyToName.value = ''
+  // Stop typing presence when switching target
+  if (ov) stopTyping(ov)
 })
 
 const onCommentFileChange = (e) => {
@@ -179,6 +341,25 @@ const handleFileChange = (e) => {
   }
 }
 
+// --- Currency formatter (IDR thousands separator) ---
+const formatIdr = (val) => {
+  if (val === null || val === undefined || val === '') return ''
+  const num = Number(String(val).replace(/[^\d]/g, ''))
+  if (isNaN(num)) return ''
+  return num.toLocaleString('id-ID')
+}
+
+const parseIdrNumber = (val) => {
+  if (val === null || val === undefined || val === '') return null
+  const num = Number(String(val).replace(/[^\d]/g, ''))
+  return isNaN(num) ? null : num
+}
+
+const onIdrInput = (target) => {
+  const formatted = formatIdr(target.value)
+  target.value = formatted
+}
+
 const buildCommentTree = (comments) => {
   if (!comments || !Array.isArray(comments)) return []
   const map = {}
@@ -317,12 +498,61 @@ const fetchIdeas = async () => {
   }
 }
 
+const DEFAULT_EVENT_CHECKLIST = []
+
 const fetchEvents = async () => {
   try {
     const { data, error } = await supabase.from('marketing_events').select('*').order('date_start', { ascending: false })
     if (error) throw error
-    events.value = data || []
-  } catch (err) { console.error('Gagal memuat event:', err.message) }
+    events.value = (data || []).map(evt => ({
+      ...evt,
+      checklist: evt.checklist || [],
+      media_files: evt.media_files || [],
+      expenses: evt.expenses || [],
+      cost_amount: evt.cost_amount || 0
+    }))
+  } catch (err) {
+    console.warn('marketing_events table missing or error, loading from marketing_ideas fallback:', err.message)
+    try {
+      const { data: ideaEvents, error: ideaErr } = await supabase
+        .from('marketing_ideas')
+        .select('*')
+        .or('platform.eq.event,tags.cs.{"EVENT"}')
+        .order('created_at', { ascending: false })
+      
+      if (!ideaErr && ideaEvents) {
+        events.value = ideaEvents.map(item => {
+          let meta = {}
+          let cleanDesc = item.description || ''
+          const metaMatch = cleanDesc.match(/\[EVENT_META:(.*?)\]/)
+          if (metaMatch) {
+            try {
+              meta = JSON.parse(metaMatch[1])
+              cleanDesc = cleanDesc.replace(/\[EVENT_META:.*?\]/, '').trim()
+            } catch (e) {}
+          }
+          return {
+            id: item.id,
+            name: item.title,
+            description: cleanDesc,
+            drive_link: meta.drive_link || '',
+            date_start: meta.date_start || (item.target_date || item.created_at?.split('T')[0]),
+            date_end: meta.date_end || (item.target_date || item.created_at?.split('T')[0]),
+            status: meta.event_status || 'upcoming',
+            kpis: meta.kpis || [],
+            checklist: meta.checklist || [],
+            media_files: meta.media_files || [],
+            expenses: meta.expenses || [],
+            cost_amount: meta.cost_amount || 0,
+            created_by: item.submitted_by,
+            _isIdeaFallback: true
+          }
+        })
+      }
+    } catch (fallbackErr) {
+      console.error('Failed to load events from fallback:', fallbackErr)
+    }
+  }
 }
 
 onMounted(async () => {
@@ -331,6 +561,10 @@ onMounted(async () => {
     currentUser.value = user.email
     const parts = user.email.split('@')[0].split('.')
     currentUserName.value = parts.map(p => p.charAt(0).toUpperCase() + p.slice(1)).join(' ')
+    // Setup realtime subscription for comments and likes
+    setupRealtime()
+    // Setup typing presence channel
+    setupTypingPresence()
   }
   await fetchIdeas()
   await fetchEvents()
@@ -342,6 +576,16 @@ onMounted(async () => {
       }
     }, { rootMargin: '250px' })
   }
+})
+
+onUnmounted(() => {
+  if (typingChannel) {
+    typingChannel.untrack()
+    supabase.removeChannel(typingChannel)
+  }
+  if (realtimeChannel) supabase.removeChannel(realtimeChannel)
+  if (likesChannel) supabase.removeChannel(likesChannel)
+  if (ideasChannel) supabase.removeChannel(ideasChannel)
 })
 
 // --- Digital View Mode & Infinite Scroll ---
@@ -504,7 +748,8 @@ const updateStatus = async (ideaId, newSt, targetDate = null) => {
     const updateData = { status: newSt, updated_by: currentUser.value }
     if (targetDate) updateData.target_date = targetDate
 
-    await supabase.from('marketing_ideas').update(updateData).eq('id', ideaId)
+    const { error } = await supabase.from('marketing_ideas').update(updateData).eq('id', ideaId)
+    if (error) throw error
     const idea = ideas.value.find(i => i.id === ideaId)
     if (idea) {
       idea.status = newSt
@@ -604,12 +849,18 @@ const submitComment = async (ideaId) => {
     if (error) throw error
     
     const idea = ideas.value.find(i => i.id === ideaId)
-    if (idea) idea.comments = [...(idea.comments||[]), data[0]]
+    if (idea) {
+      if (!idea.comments) idea.comments = []
+      if (!idea.comments.some(c => c.id === data[0].id)) {
+        idea.comments = [...(idea.comments||[]), data[0]]
+      }
+    }
     newComment.value = ''
     replyToId.value = null
     replyToName.value = ''
     commentTarget.value = null
     removeCommentAttachment()
+    stopTyping(ideaId)
   } catch (err) { alert('Gagal mengirim komentar: ' + err.message) }
   finally {
     isSubmittingComment.value = false
@@ -645,7 +896,7 @@ const openEventModal = (evt = null) => {
     }
   } else {
     editingEvent.value = null
-    newEvent.value = { name: '', description: '', drive_link: '', date_start: '', date_end: '', status: 'upcoming', kpis: [{ name: '', target: null, actual: null }] }
+    newEvent.value = { name: '', description: '', drive_link: '', date_start: '', date_end: '', status: 'upcoming', kpis: [{ name: '', target: null, actual: null }], expenses: [], cost_amount: 0 }
   }
   showEventModal.value = true
 }
@@ -654,48 +905,408 @@ const addKpiField = () => newEvent.value.kpis.push({ name: '', target: null, act
 const removeKpiField = (idx) => newEvent.value.kpis.splice(idx, 1)
 
 const saveEvent = async () => {
+  if (!newEvent.value.name || !newEvent.value.name.trim()) {
+    alert('Mohon isi Nama Event / Kampanye')
+    return
+  }
+  isSubmitting.value = true
   try {
     const payload = {
-      name: newEvent.value.name,
-      description: newEvent.value.description,
-      drive_link: newEvent.value.drive_link,
-      date_start: newEvent.value.date_start,
-      date_end: newEvent.value.date_end,
-      status: newEvent.value.status,
-      kpis: newEvent.value.kpis.filter(k => k.name.trim() !== ''),
+      name: newEvent.value.name.trim(),
+      description: (newEvent.value.description || '').trim(),
+      drive_link: (newEvent.value.drive_link || '').trim(),
+      date_start: newEvent.value.date_start || null,
+      date_end: newEvent.value.date_end || null,
+      status: newEvent.value.status || 'upcoming',
+      kpis: (newEvent.value.kpis || []).filter(k => k.name && k.name.trim() !== ''),
+      expenses: (newEvent.value.expenses || []),
+      cost_amount: Number(newEvent.value.cost_amount) || ((newEvent.value.expenses || []).reduce((sum, e) => sum + (Number(e.amount) || 0), 0)),
       created_by: currentUser.value
     }
     
-    if (editingEvent.value) {
-      await supabase.from('marketing_events').update(payload).eq('id', editingEvent.value.id)
-    } else {
-      await supabase.from('marketing_events').insert([payload])
+    let savedSuccessfully = false
+    try {
+      if (editingEvent.value && !editingEvent.value._isIdeaFallback) {
+        const { error } = await supabase.from('marketing_events').update(payload).eq('id', editingEvent.value.id)
+        if (!error) savedSuccessfully = true
+      } else if (!editingEvent.value) {
+        const { error } = await supabase.from('marketing_events').insert([payload])
+        if (!error) savedSuccessfully = true
+      }
+    } catch (e) {
+      console.warn('marketing_events table write failed, using fallback:', e)
     }
+
+    if (!savedSuccessfully) {
+      const eventMeta = {
+        date_start: payload.date_start,
+        date_end: payload.date_end,
+        drive_link: payload.drive_link,
+        kpis: payload.kpis,
+        event_status: payload.status
+      }
+      const fullDesc = payload.description 
+        ? `${payload.description}\n\n[EVENT_META:${JSON.stringify(eventMeta)}]`
+        : `[EVENT_META:${JSON.stringify(eventMeta)}]`
+
+      const ideaPayload = {
+        title: payload.name,
+        description: fullDesc,
+        platform: 'event',
+        platforms: ['event'],
+        tags: ['EVENT', payload.status],
+        submitted_by: currentUser.value,
+        status: payload.status === 'completed' ? 'published' : 'planning',
+        target_date: payload.date_start || payload.date_end || null
+      }
+
+      if (editingEvent.value && editingEvent.value._isIdeaFallback) {
+        const { error } = await supabase.from('marketing_ideas').update(ideaPayload).eq('id', editingEvent.value.id)
+        if (error) throw error
+      } else {
+        const { error } = await supabase.from('marketing_ideas').insert([ideaPayload])
+        if (error) throw error
+      }
+    }
+
     await fetchEvents()
     showEventModal.value = false
-  } catch (err) { alert('Gagal menyimpan event: ' + err.message) }
+  } catch (err) {
+    console.error('Save event error:', err)
+    alert('Gagal menyimpan event: ' + err.message)
+  } finally {
+    isSubmitting.value = false
+  }
 }
 
-const deleteEvent = async (id) => {
-  if(!confirm('Apakah Anda yakin ingin menghapus event ini?')) return
+const deleteEvent = async (evt) => {
+  if (!confirm('Apakah Anda yakin ingin menghapus event ini?')) return
+  const id = typeof evt === 'object' ? evt.id : evt
+  const isFallback = typeof evt === 'object' ? evt._isIdeaFallback : false
   try {
-    await supabase.from('marketing_events').delete().eq('id', id)
+    if (isFallback) {
+      await supabase.from('marketing_ideas').delete().eq('id', id)
+    } else {
+      const { error } = await supabase.from('marketing_events').delete().eq('id', id)
+      if (error) {
+        await supabase.from('marketing_ideas').delete().eq('id', id)
+      }
+    }
     events.value = events.value.filter(e => e.id !== id)
-  } catch(err) { alert('Gagal hapus event: '+err.message) }
+  } catch(err) { alert('Gagal hapus event: ' + err.message) }
 }
+
+// --- Event Detail & Progress View State & Handlers ---
+const selectedEventDetail = ref(null)
+const newChecklistItemText = ref('')
+const isSavingDetail = ref(false)
+const isUploadingEventMedia = ref(false)
+const eventMediaInputRef = ref(null)
+
+const EXPENSE_CATEGORIES = [
+  'Venue & Tempat',
+  'Branding & Dekorasi',
+  'Konsumsi & Catering',
+  'AV & Sound System',
+  'Merchandise & Gifts',
+  'Dokumentasi & Media',
+  'Transportasi & Logistik',
+  'Lainnya'
+]
+
+const newExpenseItem = ref({
+  item_name: '',
+  category: 'Venue & Tempat',
+  amount: null,
+  notes: ''
+})
+
+const openEventDetailModal = (evt) => {
+  const cloned = JSON.parse(JSON.stringify(evt))
+  if (!cloned.checklist) cloned.checklist = []
+  if (!cloned.media_files) cloned.media_files = []
+  if (!cloned.expenses) cloned.expenses = []
+  selectedEventDetail.value = cloned
+}
+
+const addChecklistItemToDetail = () => {
+  if (!newChecklistItemText.value.trim() || !selectedEventDetail.value) return
+  if (!selectedEventDetail.value.checklist) selectedEventDetail.value.checklist = []
+  selectedEventDetail.value.checklist.push({
+    id: String(Date.now()),
+    task: newChecklistItemText.value.trim(),
+    completed: false
+  })
+  newChecklistItemText.value = ''
+}
+
+const removeChecklistItemDetail = (idx) => {
+  if (!selectedEventDetail.value || !selectedEventDetail.value.checklist) return
+  selectedEventDetail.value.checklist.splice(idx, 1)
+}
+
+const addExpenseToDetail = () => {
+  if (!newExpenseItem.value.item_name.trim() || !selectedEventDetail.value) return
+  if (!selectedEventDetail.value.expenses) selectedEventDetail.value.expenses = []
+  
+  const amountVal = Number(newExpenseItem.value.amount) || 0
+  selectedEventDetail.value.expenses.push({
+    id: String(Date.now()),
+    item_name: newExpenseItem.value.item_name.trim(),
+    category: newExpenseItem.value.category || 'Lainnya',
+    amount: amountVal,
+    notes: (newExpenseItem.value.notes || '').trim()
+  })
+
+  // Auto calculate total cost
+  selectedEventDetail.value.cost_amount = selectedEventDetail.value.expenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
+
+  // Reset form
+  newExpenseItem.value = {
+    item_name: '',
+    category: 'Venue & Tempat',
+    amount: null,
+    notes: ''
+  }
+}
+
+const removeExpenseFromDetail = (idx) => {
+  if (!selectedEventDetail.value || !selectedEventDetail.value.expenses) return
+  selectedEventDetail.value.expenses.splice(idx, 1)
+  selectedEventDetail.value.cost_amount = selectedEventDetail.value.expenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
+}
+
+const totalEventExpenses = computed(() => {
+  if (!selectedEventDetail.value || !selectedEventDetail.value.expenses) return 0
+  return selectedEventDetail.value.expenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
+})
+
+const handleEventFileUpload = async (e) => {
+  const file = e.target.files?.[0]
+  if (!file || !selectedEventDetail.value) return
+  
+  isUploadingEventMedia.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    
+    const { data, error: uploadError } = await supabase.functions.invoke('upload-to-drive', {
+      body: formData,
+    })
+    
+    if (uploadError) throw uploadError
+    
+    const mediaUrl = data?.webViewLink || ''
+    if (!selectedEventDetail.value.media_files) selectedEventDetail.value.media_files = []
+    
+    selectedEventDetail.value.media_files.push({
+      id: String(Date.now()),
+      name: file.name,
+      url: mediaUrl,
+      type: file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'document',
+      uploaded_at: new Date().toISOString()
+    })
+    
+  } catch (err) {
+    console.error('File upload error:', err)
+    alert('Gagal mengupload file media: ' + (err.message || 'Error koneksi Drive'))
+  } finally {
+    isUploadingEventMedia.value = false
+    if (e.target) e.target.value = ''
+  }
+}
+
+const removeEventMedia = (idx) => {
+  if (!selectedEventDetail.value || !selectedEventDetail.value.media_files) return
+  selectedEventDetail.value.media_files.splice(idx, 1)
+}
+
+const addKpiToDetail = () => {
+  if (!selectedEventDetail.value) return
+  if (!selectedEventDetail.value.kpis) selectedEventDetail.value.kpis = []
+  selectedEventDetail.value.kpis.push({
+    id: String(Date.now()),
+    name: '',
+    type: 'boolean',
+    target: null,
+    actual: null,
+    completed: false
+  })
+}
+
+const removeKpiFromDetail = (idx) => {
+  if (!selectedEventDetail.value || !selectedEventDetail.value.kpis) return
+  selectedEventDetail.value.kpis.splice(idx, 1)
+}
+
+const calculateEventSuccessRate = (evt) => {
+  if (!evt || !evt.kpis || !evt.kpis.length) return null
+  let totalScore = 0
+  let count = 0
+  evt.kpis.forEach(kpi => {
+    if (!kpi.name || !kpi.name.trim()) return
+    count++
+    if (kpi.type === 'numeric' && kpi.target && kpi.target > 0) {
+      const score = Math.min(100, Math.max(0, ((kpi.actual || 0) / kpi.target) * 100))
+      totalScore += score
+    } else {
+      totalScore += kpi.completed ? 100 : 0
+    }
+  })
+  if (count === 0) return null
+  return Math.round(totalScore / count)
+}
+
+const saveEventDetailProgress = async () => {
+  if (!selectedEventDetail.value) return
+  const evt = selectedEventDetail.value
+
+  // Ensure cost_amount matches total expenses if expenses exist
+  if (evt.expenses && evt.expenses.length) {
+    evt.cost_amount = evt.expenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
+  }
+
+  const payload = {
+    name: evt.name,
+    description: evt.description || '',
+    drive_link: evt.drive_link || '',
+    date_start: evt.date_start || null,
+    date_end: evt.date_end || null,
+    status: evt.status || 'upcoming',
+    kpis: (evt.kpis || []).filter(k => k.name && k.name.trim() !== ''),
+    checklist: evt.checklist || [],
+    media_files: evt.media_files || [],
+    expenses: evt.expenses || [],
+    cost_amount: evt.cost_amount || 0
+  }
+
+  const ok = await persistEventDetail(payload, { silent: false })
+  if (ok) {
+    await fetchEvents()
+    selectedEventDetail.value = null
+  }
+}
+
+// --- AUTO-SAVE: persist event detail (checklist/expenses/media) silently to DB ---
+const isAutoSavingDetail = ref(false)
+let autoSaveTimer = null
+let lastPersistedPayload = ''
+
+const buildEventDetailPayload = (evt) => {
+  if (!evt) return null
+  if (evt.expenses && evt.expenses.length) {
+    evt.cost_amount = evt.expenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
+  }
+  return {
+    name: evt.name,
+    description: evt.description || '',
+    drive_link: evt.drive_link || '',
+    date_start: evt.date_start || null,
+    date_end: evt.date_end || null,
+    status: evt.status || 'upcoming',
+    kpis: (evt.kpis || []).filter(k => k.name && k.name.trim() !== ''),
+    checklist: evt.checklist || [],
+    media_files: evt.media_files || [],
+    expenses: evt.expenses || [],
+    cost_amount: evt.cost_amount || 0
+  }
+}
+
+const persistEventDetail = async (payload, options = { silent: true }) => {
+  const evt = selectedEventDetail.value
+  if (!evt) return false
+  isSavingDetail.value = true
+  try {
+    const signature = JSON.stringify(payload)
+    if (signature === lastPersistedPayload) return true
+
+    let savedSuccessfully = false
+    try {
+      if (!evt._isIdeaFallback) {
+        const { error } = await supabase.from('marketing_events').update(payload).eq('id', evt.id)
+        if (!error) savedSuccessfully = true
+      }
+    } catch (e) {
+      console.warn('marketing_events update failed, trying fallback:', e)
+    }
+
+    if (!savedSuccessfully) {
+      const eventMeta = {
+        date_start: payload.date_start,
+        date_end: payload.date_end,
+        drive_link: payload.drive_link,
+        kpis: payload.kpis,
+        checklist: payload.checklist,
+        media_files: payload.media_files,
+        expenses: payload.expenses,
+        cost_amount: payload.cost_amount,
+        event_status: payload.status
+      }
+      const fullDesc = payload.description 
+        ? `${payload.description}\n\n[EVENT_META:${JSON.stringify(eventMeta)}]`
+        : `[EVENT_META:${JSON.stringify(eventMeta)}]`
+
+      const ideaPayload = {
+        title: payload.name,
+        description: fullDesc,
+        status: payload.status === 'completed' ? 'published' : 'planning',
+        tags: ['EVENT', payload.status]
+      }
+
+      const { error } = await supabase.from('marketing_ideas').update(ideaPayload).eq('id', evt.id)
+      if (error) throw error
+    }
+
+    lastPersistedPayload = signature
+    if (!options.silent) alert('Detail & Progress Event berhasil disimpan!')
+    return true
+  } catch (err) {
+    console.error('Error saving event detail:', err)
+    if (!options.silent) alert('Gagal menyimpan detail event: ' + err.message)
+    return false
+  } finally {
+    isSavingDetail.value = false
+  }
+}
+
+const scheduleAutoSave = () => {
+  if (!selectedEventDetail.value) return
+  if (autoSaveTimer) clearTimeout(autoSaveTimer)
+  autoSaveTimer = setTimeout(async () => {
+    isAutoSavingDetail.value = true
+    const payload = buildEventDetailPayload(selectedEventDetail.value)
+    await persistEventDetail(payload, { silent: true })
+    isAutoSavingDetail.value = false
+  }, 1200)
+}
+
+watch(selectedEventDetail, (newVal, oldVal) => {
+  if (!newVal) return
+  // New modal opened → reset signature cache
+  if (newVal !== oldVal) {
+    lastPersistedPayload = ''
+  }
+}, { deep: false })
+
+// Deep watch: any edit inside the detail modal (checklist/expenses/media/KPI/status)
+// triggers a debounced auto-save to the database.
+watch(selectedEventDetail, () => {
+  scheduleAutoSave()
+}, { deep: true })
 </script>
 
 <template>
-  <div class="max-w-4xl mx-auto space-y-4 font-mono pb-12">
+  <div class="w-full px-4 sm:px-6 py-6 space-y-6 font-sans">
+
 
     <!-- Page Header -->
     <div class="flex items-center justify-between mb-4">
       <div>
-        <div class="flex items-center gap-2 text-xs text-slate-400 uppercase tracking-widest font-bold mb-1">
+        <div class="flex items-center gap-2 text-xs text-slate-400 uppercase tracking-widest font-medium mb-1">
           <Sparkles class="w-3.5 h-3.5 text-red-500" />
           Marketing Hub
         </div>
-        <h1 class="text-xl font-black text-slate-900 dark:text-white">Kolaborasi Tim</h1>
+        <h1 class="text-xl font-semibold tracking-tight text-slate-900 dark:text-white">Kolaborasi Tim</h1>
       </div>
       <button @click="activeTab === 'digital' ? fetchIdeas() : fetchEvents()" class="p-2 rounded-xl bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors shadow-sm">
         <RefreshCw class="w-4 h-4" />
@@ -707,12 +1318,12 @@ const deleteEvent = async (id) => {
       <!-- Main Tabs -->
       <div class="flex gap-2 p-1 bg-slate-100 dark:bg-slate-800/50 rounded-xl flex-1">
         <button @click="activeTab = 'digital'"
-          class="flex-1 py-2 text-sm font-bold rounded-lg transition-all"
+          class="flex-1 py-2 text-sm font-semibold rounded-lg transition-all"
           :class="activeTab === 'digital' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'">
           Digital Marketing
         </button>
         <button @click="activeTab = 'event'"
-          class="flex-1 py-2 text-sm font-bold rounded-lg transition-all"
+          class="flex-1 py-2 text-sm font-semibold rounded-lg transition-all"
           :class="activeTab === 'event' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'">
           Event & Activation
         </button>
@@ -1115,6 +1726,24 @@ const deleteEvent = async (id) => {
               {{ getInitials(currentUser) }}
             </div>
             <div class="flex-1 flex flex-col gap-2 bg-white dark:bg-[#1e293b] rounded-2xl p-2 border border-slate-200 dark:border-slate-700 focus-within:border-red-400 dark:focus-within:border-red-600 transition-colors">
+              <!-- Typing indicator for other users -->
+              <div v-if="typingUsers[idea.id]?.filter(u => u.email !== currentUser).length" class="px-3 pt-1 flex items-center gap-1.5">
+                <div class="flex -space-x-1">
+                  <div v-for="(u, i) in typingUsers[idea.id].filter(u => u.email !== currentUser).slice(0,3)" :key="u.email + i"
+                    class="w-4 h-4 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-[7px] font-black ring-2 ring-white dark:ring-[#1e293b]"
+                    :class="getAvatarColor(u.email)">
+                    {{ getInitials(u.email) }}
+                  </div>
+                </div>
+                <p class="text-[10px] text-slate-400">
+                  {{ typingUsers[idea.id].filter(u => u.email !== currentUser).map(u => u.name).join(', ') }}
+                  <span class="inline-flex gap-0.5 ml-1 align-middle">
+                    <span class="w-1 h-1 bg-slate-400 rounded-full animate-bounce" style="animation-delay:0ms"></span>
+                    <span class="w-1 h-1 bg-slate-400 rounded-full animate-bounce" style="animation-delay:150ms"></span>
+                    <span class="w-1 h-1 bg-slate-400 rounded-full animate-bounce" style="animation-delay:300ms"></span>
+                  </span>
+                </p>
+              </div>
               <div v-if="replyToId" class="px-3 pt-1.5 pb-2 flex items-center justify-between bg-slate-50 dark:bg-slate-900/50 rounded-xl mb-1">
                 <p class="text-[10px] text-slate-500 font-bold flex items-center gap-1.5">
                   <MessageCircle class="w-3 h-3" /> Membalas {{ replyToName }}...
@@ -1130,7 +1759,7 @@ const deleteEvent = async (id) => {
                 </button>
               </div>
               <div class="flex items-center gap-2">
-                <input v-model="newComment" @keyup.enter="submitComment(idea.id)" type="text"
+                <input v-model="newComment" @keyup.enter="submitComment(idea.id)" @input="sendTyping(idea.id)" @blur="stopTyping(idea.id)" type="text"
                   placeholder="Tulis komentar..."
                   class="flex-1 bg-transparent outline-none text-xs px-2 text-slate-700 dark:text-slate-300 placeholder-slate-400 font-sans" />
                 
@@ -1246,8 +1875,402 @@ const deleteEvent = async (id) => {
     <!-- TAB: EVENT & ACTIVATION -->
     <div v-if="activeTab === 'event'" class="space-y-4">
       
+      <!-- EVENT INLINE FULL DETAIL PAGE VIEW -->
+      <template v-if="selectedEventDetail">
+        <div class="space-y-6 animate-in fade-in duration-200">
+          
+          <!-- TOP BAR & ACTIONS -->
+          <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-[#1e293b] p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs">
+            <div class="flex items-center gap-3">
+              <button @click="selectedEventDetail = null" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-semibold transition-colors cursor-pointer">
+                <ArrowLeft class="w-3.5 h-3.5" />
+                <span>Kembali ke Daftar Event</span>
+              </button>
+                <div>
+                  <span class="inline-block px-2.5 py-0.5 rounded-lg text-[11px] font-semibold border"
+                    :class="eventStatuses.find(s => s.key === selectedEventDetail.status)?.color || 'bg-slate-100 text-slate-600 border-slate-200'">
+                    {{ eventStatuses.find(s => s.key === selectedEventDetail.status)?.label || selectedEventDetail.status }}
+                  </span>
+                  <span v-if="isAutoSavingDetail" class="ml-2 text-xs text-amber-600">Auto‑save...</span>
+                  <h1 class="text-xl font-semibold tracking-tight text-slate-900 dark:text-white mt-1">{{ selectedEventDetail.name }}</h1>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3 w-full sm:w-auto justify-end">
+              <select v-model="selectedEventDetail.status" class="px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none">
+                <option v-for="st in eventStatuses" :key="st.key" :value="st.key">{{ st.label }}</option>
+              </select>
+              <button @click="saveEventDetailProgress" :disabled="isSavingDetail"
+                class="px-5 py-2 rounded-xl text-xs font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors disabled:opacity-50 inline-flex items-center gap-2 shadow-xs cursor-pointer">
+                <Loader2 v-if="isSavingDetail" class="w-4 h-4 animate-spin" />
+                <span>{{ isSavingDetail ? 'Menyimpan...' : 'Simpan Progress & Detail' }}</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- MAIN 2-COLUMN GRID -->
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- LEFT COLUMN (2 COLS) -->
+            <div class="lg:col-span-2 space-y-6">
+
+              <!-- CARD: INFORMASI & KONSEP EVENT -->
+              <div class="bg-white dark:bg-[#1e293b] p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+                <h3 class="text-sm font-semibold text-slate-900 dark:text-white uppercase tracking-wider">Deskripsi & Konsep Event</h3>
+                <textarea v-model="selectedEventDetail.description" rows="4" placeholder="Tuliskan deskripsi, konsep acara, rundown, atau catatan operasional..."
+                  class="w-full p-3.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:border-red-500 resize-none font-sans leading-relaxed"></textarea>
+                
+                <div>
+                  <label class="block text-xs font-medium text-slate-500 mb-1">Link Google Drive Asset Acara</label>
+                  <div class="flex gap-2">
+                    <input type="url" v-model="selectedEventDetail.drive_link" placeholder="https://drive.google.com/..."
+                      class="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:border-red-500" />
+                    <a v-if="selectedEventDetail.drive_link" :href="selectedEventDetail.drive_link" target="_blank"
+                      class="px-3 py-2 rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400 text-xs font-semibold hover:bg-blue-100 transition-colors inline-flex items-center gap-1">
+                      <ExternalLink class="w-3.5 h-3.5" />
+                      <span>Buka Drive</span>
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              <!-- CARD: UPLOAD FILE MEDIA KEPERLUAN ACARA -->
+              <div class="bg-white dark:bg-[#1e293b] p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+                <div class="flex justify-between items-center">
+                  <div>
+                    <h3 class="text-sm font-semibold text-slate-900 dark:text-white uppercase tracking-wider">File & Media Keperluan Acara</h3>
+                    <p class="text-xs text-slate-400 mt-0.5">Upload brosur, banner, foto venue, rundown PDF, atau media acara</p>
+                  </div>
+
+                  <input type="file" ref="eventMediaInputRef" class="hidden" @change="handleEventFileUpload" accept="image/*,video/*,application/pdf,.doc,.docx,.ppt,.pptx" />
+                  <button @click="$refs.eventMediaInputRef.click()" :disabled="isUploadingEventMedia"
+                    class="px-3.5 py-2 bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400 rounded-xl text-xs font-semibold hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
+                    <Loader2 v-if="isUploadingEventMedia" class="w-4 h-4 animate-spin" />
+                    <Upload class="w-4 h-4" v-else />
+                    <span>Upload File</span>
+                  </button>
+                </div>
+
+                <!-- Empty Media State -->
+                <div v-if="!selectedEventDetail.media_files || !selectedEventDetail.media_files.length"
+                  class="text-center py-8 px-4 bg-slate-50/50 dark:bg-slate-900/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+                  <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">Belum ada file media yang diupload.</p>
+                  <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Klik tombol <strong>Upload File</strong> di atas untuk menambahkan media keperluan acara.</p>
+                </div>
+
+                <!-- Media Files Grid -->
+                <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div v-for="(media, idx) in selectedEventDetail.media_files" :key="media.id || idx"
+                    class="p-3 bg-slate-50/80 dark:bg-slate-900/60 rounded-xl border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3 group">
+                    <div class="flex items-center gap-2.5 min-w-0">
+                      <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                        <FileText class="w-4 h-4" />
+                      </div>
+                      <div class="min-w-0">
+                        <p class="text-xs font-medium text-slate-800 dark:text-slate-200 truncate">{{ media.name }}</p>
+                        <p class="text-[10px] text-slate-400">Media Acara</p>
+                      </div>
+                    </div>
+
+                    <div class="flex items-center gap-1 shrink-0">
+                      <a v-if="media.url" :href="media.url" target="_blank"
+                        class="p-1 text-slate-400 hover:text-blue-500 transition-colors" title="Buka File">
+                        <ExternalLink class="w-3.5 h-3.5" />
+                      </a>
+                      <button @click="removeEventMedia(idx)" class="p-1 text-slate-400 hover:text-red-500 transition-colors" title="Hapus File">
+                        <X class="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- CARD: CHECKLIST KEBUTUHAN ACARA -->
+              <div class="bg-white dark:bg-[#1e293b] p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+                <div class="flex justify-between items-center">
+                  <div>
+                    <h3 class="text-sm font-semibold text-slate-900 dark:text-white uppercase tracking-wider">Checklist Kebutuhan Acara</h3>
+                    <p class="text-xs text-slate-400 mt-0.5">Tandai progress barang & sarana yang sudah siap</p>
+                  </div>
+                  <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
+                    {{ (selectedEventDetail.checklist || []).filter(c => c.completed).length }}/{{ (selectedEventDetail.checklist || []).length }} Terpenuhi
+                  </span>
+                </div>
+
+                <!-- Progress Bar -->
+                <div v-if="selectedEventDetail.checklist && selectedEventDetail.checklist.length" class="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div class="h-full bg-blue-500 rounded-full transition-all duration-300"
+                    :style="`width: ${((selectedEventDetail.checklist.filter(c => c.completed).length / selectedEventDetail.checklist.length) * 100)}%`"></div>
+                </div>
+
+                <!-- Empty Checklist Hint -->
+                <div v-if="!selectedEventDetail.checklist || !selectedEventDetail.checklist.length" class="text-center py-6 px-4 bg-slate-50/50 dark:bg-slate-900/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+                  <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">Belum ada daftar kebutuhan acara.</p>
+                  <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Ketik kebutuhan acara pada kolom di bawah lalu klik <strong class="font-semibold text-slate-700 dark:text-slate-300">Tambah</strong>.</p>
+                </div>
+
+                <!-- Checklist Items -->
+                <div v-else class="space-y-2 max-h-72 overflow-y-auto pr-1">
+                  <div v-for="(item, idx) in selectedEventDetail.checklist" :key="item.id || idx"
+                    class="flex items-center justify-between p-3 rounded-xl border transition-colors"
+                    :class="item.completed ? 'bg-emerald-50/50 border-emerald-200/60 dark:bg-emerald-950/20 dark:border-emerald-800/40' : 'bg-slate-50/70 border-slate-200/60 dark:bg-slate-900/60 dark:border-slate-800'">
+                    <label class="flex items-center gap-2.5 cursor-pointer flex-1 min-w-0">
+                      <input type="checkbox" v-model="item.completed"
+                        class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer" />
+                      <span class="text-xs font-medium truncate" :class="item.completed ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-200'">
+                        {{ item.task }}
+                      </span>
+                    </label>
+                    <button @click="removeChecklistItemDetail(idx)" class="text-slate-300 hover:text-red-500 transition-colors p-1" title="Hapus item">
+                      <X class="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Add Checklist Item Input -->
+                <div class="flex gap-2 pt-2">
+                  <input type="text" v-model="newChecklistItemText" @keyup.enter="addChecklistItemToDetail"
+                    placeholder="+ Tambah kebutuhan baru (misal: Sewa LED Display 3x4m)..."
+                    class="flex-1 px-3.5 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:border-red-500" />
+                  <button @click="addChecklistItemToDetail" :disabled="!newChecklistItemText.trim()"
+                    class="px-4 py-2.5 bg-slate-900 text-white dark:bg-white dark:text-slate-900 rounded-xl text-xs font-semibold hover:bg-slate-800 dark:hover:bg-slate-200 transition-colors disabled:opacity-40 cursor-pointer">
+                    Tambah
+                  </button>
+                </div>
+              </div>
+
+              <!-- CARD: RINCIAN PENGELUARAN ACARA (EXPENSE TRACKER) -->
+              <div class="bg-white dark:bg-[#1e293b] p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+                <div class="flex justify-between items-center">
+                  <div>
+                    <h3 class="text-sm font-semibold text-slate-900 dark:text-white uppercase tracking-wider">Rincian List Pengeluaran Acara</h3>
+                    <p class="text-xs text-slate-400 mt-0.5">Catat biaya tempat, catering, branding, & logistik acara</p>
+                  </div>
+                  <div class="text-right">
+                    <span class="text-[10px] text-slate-400 block">Total Pengeluaran</span>
+                    <span class="text-sm font-bold text-slate-900 dark:text-white font-mono">
+                      Rp {{ Number(totalEventExpenses).toLocaleString('id-ID') }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Expense Form Input Row -->
+                <div class="p-4 bg-slate-50/80 dark:bg-slate-900/60 rounded-2xl border border-slate-200/80 dark:border-slate-800 space-y-3">
+                  <span class="text-xs font-semibold text-slate-700 dark:text-slate-300 block">+ Tambah Item Pengeluaran</span>
+                  
+                  <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <input type="text" v-model="newExpenseItem.item_name" placeholder="Nama item (misal: Sewa Padel 2 Hari)..."
+                      class="sm:col-span-2 px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:border-red-500" />
+
+                    <select v-model="newExpenseItem.category"
+                      class="px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none">
+                      <option v-for="cat in EXPENSE_CATEGORIES" :key="cat" :value="cat">{{ cat }}</option>
+                    </select>
+                  </div>
+
+                  <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div class="relative sm:col-span-1">
+                      <span class="absolute left-3 top-2.5 text-xs text-slate-400 font-medium">Rp</span>
+                      <input type="text" inputmode="numeric" :value="formatIdr(newExpenseItem.amount)" @input="(e) => { onIdrInput(e.target); newExpenseItem.amount = parseIdrNumber(e.target.value) }" placeholder="Jumlah biaya..."
+                        class="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:border-red-500 font-mono" />
+                    </div>
+
+                    <input type="text" v-model="newExpenseItem.notes" placeholder="Catatan/Keterangan (opsional)..."
+                      class="sm:col-span-2 px-3 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:border-red-500" />
+                  </div>
+
+                  <div class="flex justify-end pt-1">
+                    <button @click="addExpenseToDetail" :disabled="!newExpenseItem.item_name.trim() || !newExpenseItem.amount"
+                      class="px-4 py-2 bg-slate-900 text-white dark:bg-white dark:text-slate-900 rounded-xl text-xs font-semibold hover:bg-slate-800 dark:hover:bg-slate-200 transition-colors disabled:opacity-40 cursor-pointer">
+                      + Tambah Pengeluaran
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Expense Items Table -->
+                <div v-if="!selectedEventDetail.expenses || !selectedEventDetail.expenses.length"
+                  class="text-center py-6 px-4 bg-slate-50/50 dark:bg-slate-900/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+                  <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">Belum ada rincian pengeluaran dicatat.</p>
+                  <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Gunakan formulir di atas untuk mencatat daftar pengeluaran acara.</p>
+                </div>
+
+                <div v-else class="overflow-x-auto rounded-xl border border-slate-200/80 dark:border-slate-800">
+                  <table class="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr class="bg-slate-50 dark:bg-slate-900/80 border-b border-slate-200/80 dark:border-slate-800 text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                        <th class="py-2.5 px-3">Item Pengeluaran</th>
+                        <th class="py-2.5 px-3">Kategori</th>
+                        <th class="py-2.5 px-3">Catatan</th>
+                        <th class="py-2.5 px-3 text-right">Biaya (Rp)</th>
+                        <th class="py-2.5 px-3 text-center">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 dark:divide-slate-800/60 text-slate-700 dark:text-slate-300">
+                      <tr v-for="(exp, idx) in selectedEventDetail.expenses" :key="exp.id || idx" class="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors">
+                        <td class="py-2.5 px-3 font-semibold text-slate-900 dark:text-white">{{ exp.item_name }}</td>
+                        <td class="py-2.5 px-3">
+                          <span class="inline-block px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                            {{ exp.category }}
+                          </span>
+                        </td>
+                        <td class="py-2.5 px-3 text-slate-400 truncate max-w-[150px]">{{ exp.notes || '-' }}</td>
+                        <td class="py-2.5 px-3 text-right font-mono font-medium text-slate-900 dark:text-white">
+                          Rp {{ Number(exp.amount || 0).toLocaleString('id-ID') }}
+                        </td>
+                        <td class="py-2.5 px-3 text-center">
+                          <button @click="removeExpenseFromDetail(idx)" class="p-1 text-slate-300 hover:text-red-500 transition-colors" title="Hapus pengeluaran">
+                            <X class="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    </tbody>
+                    <tfoot>
+                      <tr class="bg-slate-50/90 dark:bg-slate-900/90 font-bold border-t border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white">
+                        <td colspan="3" class="py-2.5 px-3 text-right">Total Realisasi Pengeluaran:</td>
+                        <td class="py-2.5 px-3 text-right font-mono text-emerald-600 dark:text-emerald-400">
+                          Rp {{ Number(totalEventExpenses).toLocaleString('id-ID') }}
+                        </td>
+                        <td></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+              </div>
+
+            </div>
+
+            <!-- RIGHT COLUMN (1 COL) -->
+            <div class="space-y-6">
+
+              <!-- CARD: RINGKASAN WAKTU & BIAYA EVENT -->
+              <div class="bg-white dark:bg-[#1e293b] p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+                <h3 class="text-sm font-semibold text-slate-900 dark:text-white uppercase tracking-wider">Tanggal & Biaya Event</h3>
+                <div class="space-y-3">
+                  <div>
+                    <label class="block text-[11px] font-medium text-slate-400 mb-1">Tanggal Mulai</label>
+                    <input type="date" v-model="selectedEventDetail.date_start"
+                      class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:border-red-500" />
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-medium text-slate-400 mb-1">Tanggal Selesai</label>
+                    <input type="date" v-model="selectedEventDetail.date_end"
+                      class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:border-red-500" />
+                  </div>
+
+                  <div>
+                    <label class="block text-[11px] font-medium text-slate-400 mb-1">Biaya / Anggaran Acara (Rp)</label>
+                    <div class="relative">
+                      <span class="absolute left-3 top-2.5 text-xs text-slate-400 font-medium">Rp</span>
+                      <input type="text" inputmode="numeric" :value="formatIdr(selectedEventDetail.cost_amount)" @input="(e) => { onIdrInput(e.target); selectedEventDetail.cost_amount = parseIdrNumber(e.target.value) }" placeholder="0"
+                        class="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:border-red-500 font-mono font-medium" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- CARD: TARGET & CAPAIAN KPI EVENT -->
+              <div class="bg-white dark:bg-[#1e293b] p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+                <div class="flex justify-between items-center">
+                  <div>
+                    <h3 class="text-sm font-semibold text-slate-900 dark:text-white uppercase tracking-wider">Capaian KPI Event</h3>
+                    <p class="text-[11px] text-slate-400 mt-0.5">Ukur pencapaian target kuantitatif maupun indikator kualitatif</p>
+                  </div>
+                  <button @click="addKpiToDetail"
+                    class="px-3 py-1.5 bg-slate-900 text-white dark:bg-white dark:text-slate-900 rounded-xl text-xs font-semibold hover:bg-slate-800 dark:hover:bg-slate-200 transition-colors inline-flex items-center gap-1 cursor-pointer shrink-0">
+                    <span>+ Tambah KPI</span>
+                  </button>
+                </div>
+
+                <!-- Event Success Gauge -->
+                <div v-if="calculateEventSuccessRate(selectedEventDetail) !== null"
+                  class="p-3.5 rounded-2xl border flex items-center justify-between"
+                  :class="calculateEventSuccessRate(selectedEventDetail) >= 80 ? 'bg-emerald-50/70 border-emerald-200/80 dark:bg-emerald-950/30 dark:border-emerald-800/40 text-emerald-900 dark:text-emerald-300' :
+                          calculateEventSuccessRate(selectedEventDetail) >= 50 ? 'bg-amber-50/70 border-amber-200/80 dark:bg-amber-950/30 dark:border-amber-800/40 text-amber-900 dark:text-amber-300' :
+                          'bg-slate-50 border-slate-200 dark:bg-slate-900 dark:border-slate-800 text-slate-800 dark:text-slate-200'">
+                  <div>
+                    <span class="text-[10px] font-bold uppercase tracking-wider opacity-75">Tingkat Keberhasilan</span>
+                    <p class="text-xs font-bold mt-0.5">
+                      {{ calculateEventSuccessRate(selectedEventDetail) >= 80 ? '🎯 Sangat Berhasil' : calculateEventSuccessRate(selectedEventDetail) >= 50 ? '⚡ Cukup Berhasil' : '📌 Perlu Evaluasi' }}
+                    </p>
+                  </div>
+                  <div class="text-right">
+                    <span class="text-xl font-black">{{ calculateEventSuccessRate(selectedEventDetail) }}%</span>
+                  </div>
+                </div>
+
+                <!-- Empty KPI Hint -->
+                <div v-if="!selectedEventDetail.kpis || !selectedEventDetail.kpis.length"
+                  class="text-center py-6 px-4 bg-slate-50/50 dark:bg-slate-900/40 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+                  <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">Belum ada KPI ditambahkan.</p>
+                  <p class="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">Klik <strong class="font-semibold text-slate-700 dark:text-slate-300">+ Tambah KPI</strong> di atas untuk mengukur keberhasilan acara.</p>
+                </div>
+                
+                <!-- KPI List -->
+                <div v-else class="space-y-3 max-h-80 overflow-y-auto pr-1">
+                  <div v-for="(kpi, i) in selectedEventDetail.kpis" :key="kpi.id || i"
+                    class="p-3.5 bg-slate-50/80 dark:bg-slate-900/60 rounded-xl border border-slate-200/80 dark:border-slate-800 space-y-2.5">
+                    
+                    <div class="flex items-center gap-2">
+                      <input type="text" v-model="kpi.name" placeholder="Nama KPI (misal: Brand Awareness / Leads)..."
+                        class="flex-1 px-2.5 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-red-500" />
+                      
+                      <select v-model="kpi.type"
+                        class="px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-semibold text-slate-700 dark:text-slate-300 focus:outline-none shrink-0">
+                        <option value="boolean">Checklist (Kualitatif)</option>
+                        <option value="numeric">Angka (Kuantitatif)</option>
+                      </select>
+
+                      <button @click="removeKpiFromDetail(i)" class="p-1 text-slate-300 hover:text-red-500 transition-colors" title="Hapus KPI">
+                        <X class="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <!-- Mode 1: Checklist Kualitatif (misal Brand Awareness) -->
+                    <div v-if="kpi.type === 'boolean'" class="flex items-center justify-between pt-0.5">
+                      <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" v-model="kpi.completed"
+                          class="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer" />
+                        <span class="text-xs font-semibold" :class="kpi.completed ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'">
+                          {{ kpi.completed ? '✓ KPI Tercapai' : '✕ Belum / Tidak Tercapai' }}
+                        </span>
+                      </label>
+                    </div>
+
+                    <!-- Mode 2: Angka Kuantitatif (Target vs Aktual) -->
+                    <div v-else class="space-y-1.5 pt-0.5">
+                      <div class="grid grid-cols-2 gap-2">
+                        <div>
+                          <label class="block text-[10px] text-slate-400 mb-0.5">Target</label>
+                          <input type="number" v-model.number="kpi.target" placeholder="0"
+                            class="w-full px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-900 dark:text-white focus:outline-none" />
+                        </div>
+                        <div>
+                          <label class="block text-[10px] text-slate-400 mb-0.5">Capaian Aktual</label>
+                          <input type="number" v-model.number="kpi.actual" placeholder="0"
+                            class="w-full px-2 py-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-900 dark:text-white focus:outline-none" />
+                        </div>
+                      </div>
+
+                      <div class="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div class="h-full bg-emerald-500 rounded-full transition-all duration-300"
+                          :style="`width: ${Math.min(100, Math.max(0, (((kpi.actual || 0) / (kpi.target || 1)) * 100)))}%`"></div>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+
+        </div>
+      </template>
+
       <!-- EVENT LIST VIEW -->
-      <template v-if="!showEventModal">
+      <template v-else-if="!showEventModal">
         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
           <h2 class="text-lg font-bold text-slate-800 dark:text-slate-200">Daftar Event</h2>
           <div class="flex items-center gap-2">
@@ -1269,46 +2292,110 @@ const deleteEvent = async (id) => {
           </div>
         </div>
 
-        <div v-if="eventViewMode === 'list'" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div v-for="evt in events" :key="evt.id" @click="openEventModal(evt)"
-          class="bg-white dark:bg-[#1e293b] rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow cursor-pointer relative group">
-          
-          <div class="flex justify-between items-start mb-3">
-            <div>
-              <span class="inline-block px-2 py-0.5 rounded-md text-[10px] font-bold mb-2"
-                :class="eventStatuses.find(s => s.key === evt.status)?.color || 'bg-slate-100 text-slate-600'">
-                {{ eventStatuses.find(s => s.key === evt.status)?.label || evt.status }}
-              </span>
-              <h3 class="text-base font-black text-slate-900 dark:text-white">{{ evt.name }}</h3>
-              <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                {{ evt.date_start ? new Date(evt.date_start).toLocaleDateString('id-ID') : 'TBD' }} - 
-                {{ evt.date_end ? new Date(evt.date_end).toLocaleDateString('id-ID') : 'TBD' }}
-              </p>
-            </div>
-            <button @click.stop="deleteEvent(evt.id)" class="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-              <X class="w-4 h-4" />
-            </button>
-          </div>
+        <!-- TABLE VIEW -->
+        <div v-if="eventViewMode === 'list' && events.length" class="bg-white dark:bg-[#1e293b] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-xs overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-slate-50/80 dark:bg-slate-900/50 border-b border-slate-200/80 dark:border-slate-800 text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  <th class="py-3 px-4">Nama Event</th>
+                  <th class="py-3 px-4">Tanggal</th>
+                  <th class="py-3 px-4">Status</th>
+                  <th class="py-3 px-4">Biaya (Rp)</th>
+                  <th class="py-3 px-4 max-w-xs">Deskripsi & Konsep</th>
+                  <th class="py-3 px-4">Kebutuhan Acara</th>
+                  <th class="py-3 px-4">Capaian & KPI</th>
+                  <th class="py-3 px-4 text-right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs text-slate-700 dark:text-slate-300">
+                <tr v-for="evt in events" :key="evt.id" class="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors group">
+                  
+                  <!-- Nama Event -->
+                  <td class="py-3.5 px-4 font-semibold text-slate-900 dark:text-white">
+                    <div class="flex items-center gap-2">
+                      <span>{{ evt.name }}</span>
+                      <a v-if="evt.drive_link" :href="evt.drive_link" target="_blank" class="text-blue-500 hover:text-blue-600 inline-flex items-center" title="Link Asset Drive">
+                        <ExternalLink class="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  </td>
 
-          <!-- KPIs -->
-          <div v-if="evt.kpis && evt.kpis.length" class="mt-4 space-y-3">
-            <div v-for="(kpi, i) in evt.kpis" :key="i">
-              <div class="flex justify-between text-[11px] font-bold mb-1">
-                <span class="text-slate-600 dark:text-slate-400">{{ kpi.name }}</span>
-                <span class="text-slate-900 dark:text-white">{{ kpi.actual || 0 }} / {{ kpi.target || 0 }}</span>
-              </div>
-              <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                <div class="h-full bg-emerald-500 rounded-full" 
-                  :style="`width: ${Math.min(100, ((kpi.actual || 0) / (kpi.target || 1)) * 100)}%`"></div>
-              </div>
-            </div>
+                  <!-- Tanggal -->
+                  <td class="py-3.5 px-4 whitespace-nowrap text-slate-600 dark:text-slate-400 font-medium">
+                    {{ evt.date_start ? new Date(evt.date_start).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'TBD' }}
+                    <span v-if="evt.date_end && evt.date_end !== evt.date_start" class="text-slate-400 font-normal">
+                      - {{ new Date(evt.date_end).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) }}
+                    </span>
+                  </td>
+
+                  <!-- Status -->
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <span class="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-medium border"
+                      :class="eventStatuses.find(s => s.key === evt.status)?.color || 'bg-slate-100 text-slate-600 border-slate-200'">
+                      {{ eventStatuses.find(s => s.key === evt.status)?.label || evt.status }}
+                    </span>
+                  </td>
+
+                  <!-- Biaya (Rp) -->
+                  <td class="py-3.5 px-4 whitespace-nowrap font-mono font-medium text-slate-800 dark:text-slate-200">
+                    {{ evt.cost_amount ? `Rp ${Number(evt.cost_amount).toLocaleString('id-ID')}` : '-' }}
+                  </td>
+
+                  <!-- Deskripsi -->
+                  <td class="py-3.5 px-4 max-w-xs text-slate-500 dark:text-slate-400 truncate">
+                    {{ evt.description || '-' }}
+                  </td>
+
+                  <!-- Kebutuhan Acara Progress -->
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <div v-if="evt.checklist && evt.checklist.length" class="w-32">
+                      <div class="flex justify-between text-[10px] font-medium text-slate-500 mb-1">
+                        <span>Checklist</span>
+                        <span>{{ evt.checklist.filter(c => c.completed).length }}/{{ evt.checklist.length }}</span>
+                      </div>
+                      <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div class="h-full bg-blue-500 rounded-full transition-all"
+                          :style="`width: ${(evt.checklist.filter(c => c.completed).length / evt.checklist.length) * 100}%`"></div>
+                      </div>
+                    </div>
+                    <span v-else class="text-slate-400 text-[11px]">Belum diatur</span>
+                  </td>
+
+                  <!-- KPI & Keberhasilan -->
+                  <td class="py-3.5 px-4 whitespace-nowrap">
+                    <div v-if="calculateEventSuccessRate(evt) !== null">
+                      <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border"
+                        :class="calculateEventSuccessRate(evt) >= 80 ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:border-emerald-800 dark:text-emerald-300' :
+                                calculateEventSuccessRate(evt) >= 50 ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-500/10 dark:border-amber-800 dark:text-amber-300' :
+                                'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400'">
+                        <span>🎯 {{ calculateEventSuccessRate(evt) }}% Keberhasilan</span>
+                      </span>
+                    </div>
+                    <span v-else class="text-slate-400 text-[11px]">Tanpa KPI</span>
+                  </td>
+
+                  <!-- Aksi -->
+                  <td class="py-3.5 px-4 text-right whitespace-nowrap">
+                    <div class="flex items-center justify-end gap-1.5">
+                      <button @click="openEventDetailModal(evt)"
+                        class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors cursor-pointer"
+                        title="Buka Progress & Detail">
+                        Progress & Detail
+                      </button>
+                      <button @click="openEventModal(evt)" class="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors" title="Edit Event">
+                        <FileText class="w-3.5 h-3.5" />
+                      </button>
+                      <button @click="deleteEvent(evt)" class="p-1 text-slate-400 hover:text-red-500 transition-colors" title="Hapus Event">
+                        <X class="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </td>
+
+                </tr>
+              </tbody>
+            </table>
           </div>
-        </div>
-      </div>
-        <!-- End Grid View -->
-        
-        <div v-if="eventViewMode === 'list' && !events.length && !isLoading" class="text-center py-12 text-slate-500 dark:text-slate-400 text-sm">
-          Belum ada event. Buat event pertama Anda!
         </div>
 
         <!-- CALENDAR VIEW -->
@@ -1369,7 +2456,7 @@ const deleteEvent = async (id) => {
         <div class="bg-white dark:bg-[#1e293b] rounded-3xl w-full overflow-hidden border border-slate-200 dark:border-slate-800 p-6 sm:p-8 mt-2 shadow-sm">
           <div class="flex justify-between items-center mb-8 border-b border-slate-100 dark:border-slate-800 pb-4">
             <div>
-              <h3 class="text-xl font-black text-slate-900 dark:text-white">{{ editingEvent ? 'Edit Event' : 'Event Baru' }}</h3>
+              <h3 class="text-xl font-semibold tracking-tight text-slate-900 dark:text-white">{{ editingEvent ? 'Edit Event' : 'Event Baru' }}</h3>
               <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Masukkan detail event dan target pencapaian (KPI) Anda.</p>
             </div>
             <button @click="showEventModal = false" class="p-2 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white rounded-full transition-colors">
@@ -1379,24 +2466,24 @@ const deleteEvent = async (id) => {
       
       <div class="space-y-4">
         <div>
-          <label class="block text-xs font-bold text-slate-500 mb-1">Nama Event / Kampanye</label>
+          <label class="block text-xs font-medium text-slate-500 mb-1">Nama Event / Kampanye</label>
           <input type="text" v-model="newEvent.name" placeholder="Contoh: Pameran Siemens"
             class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:border-red-500" />
         </div>
         <div class="flex gap-4">
           <div class="flex-1">
-            <label class="block text-xs font-bold text-slate-500 mb-1">Tanggal Mulai</label>
+            <label class="block text-xs font-medium text-slate-500 mb-1">Tanggal Mulai</label>
             <input type="date" v-model="newEvent.date_start"
               class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:border-red-500" />
           </div>
           <div class="flex-1">
-            <label class="block text-xs font-bold text-slate-500 mb-1">Tanggal Selesai</label>
+            <label class="block text-xs font-medium text-slate-500 mb-1">Tanggal Selesai</label>
             <input type="date" v-model="newEvent.date_end"
               class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:border-red-500" />
           </div>
         </div>
         <div>
-          <label class="block text-xs font-bold text-slate-500 mb-1">Status</label>
+          <label class="block text-xs font-medium text-slate-500 mb-1">Status</label>
           <select v-model="newEvent.status"
             class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:border-red-500">
             <option v-for="st in eventStatuses" :key="st.key" :value="st.key">{{ st.label }}</option>
@@ -1404,7 +2491,17 @@ const deleteEvent = async (id) => {
         </div>
 
         <div>
-          <label class="block text-xs font-bold text-slate-500 mb-1">Detail Event</label>
+          <label class="block text-xs font-medium text-slate-500 mb-1">Biaya / Anggaran Acara (Rp)</label>
+          <div class="relative">
+            <span class="absolute left-3 top-2.5 text-xs text-slate-400 font-medium">Rp</span>
+            <input type="text" inputmode="numeric" :value="formatIdr(newEvent.cost_amount)" @input="(e) => { onIdrInput(e.target); newEvent.cost_amount = parseIdrNumber(e.target.value) }" placeholder="0"
+              class="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:border-red-500 font-mono font-medium" />
+          </div>
+          <p class="text-[10px] text-slate-400 mt-1">Bisa diedit/dirinci lebih detail nanti di halaman Detail &amp; Progress.</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-500 mb-1">Detail Event</label>
           <textarea v-model="newEvent.description" rows="3" placeholder="Deskripsi event, konsep, atau catatan penting..."
             class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:border-red-500 resize-none"></textarea>
         </div>
@@ -1413,8 +2510,8 @@ const deleteEvent = async (id) => {
 
         <div>
           <div class="flex justify-between items-center mb-2">
-            <label class="block text-xs font-bold text-slate-500">Target KPI Event</label>
-            <button @click="addKpiField" class="text-[10px] font-bold text-red-500 hover:text-red-600">+ Tambah KPI</button>
+            <label class="block text-xs font-medium text-slate-500">Target KPI Event</label>
+            <button @click="addKpiField" class="text-[10px] font-semibold text-red-500 hover:text-red-600">+ Tambah KPI</button>
           </div>
           
           <div v-for="(kpi, i) in newEvent.kpis" :key="i" class="flex gap-2 items-start mb-2">
@@ -1429,18 +2526,19 @@ const deleteEvent = async (id) => {
         </div>
 
         <div>
-          <label class="block text-xs font-bold text-slate-500 mb-1">Keperluan Asset (Link Google Drive)</label>
+          <label class="block text-xs font-medium text-slate-500 mb-1">Keperluan Asset (Link Google Drive)</label>
           <input type="url" v-model="newEvent.drive_link" placeholder="https://drive.google.com/..."
             class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:border-red-500" />
         </div>
       </div>
       
         <div class="mt-8 flex gap-3">
-          <button @click="showEventModal = false" class="flex-1 py-3 text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 rounded-xl transition-colors">
+          <button @click="showEventModal = false" class="flex-1 py-3 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 rounded-xl transition-colors">
             Kembali
           </button>
-          <button @click="saveEvent" :disabled="!newEvent.name" class="flex-1 py-3 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-xl transition-colors disabled:opacity-50 shadow-sm">
-            Simpan Event
+          <button @click="saveEvent" :disabled="!newEvent.name || isSubmitting" class="flex-1 py-3 text-sm font-semibold text-white bg-red-500 hover:bg-red-600 rounded-xl transition-colors disabled:opacity-50 shadow-sm inline-flex items-center justify-center gap-2">
+            <Loader2 v-if="isSubmitting" class="w-4 h-4 animate-spin" />
+            <span>{{ isSubmitting ? 'Menyimpan...' : 'Simpan Event' }}</span>
           </button>
         </div>
         </div>
@@ -1555,4 +2653,5 @@ const deleteEvent = async (id) => {
 
     </div>
   </div>
+
 </template>

@@ -14,6 +14,7 @@ export default {
   		},
       fontFamily: {
         sans: ['Geist', 'sans-serif'],
+        mono: ['Geist Mono', 'sans-serif'],
       },
   		colors: {
   			background: 'hsl(var(--background))',

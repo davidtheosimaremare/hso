@@ -22,6 +22,7 @@ import {
   Package,
   Menu,
   Database,
+  RefreshCcw,
   ChevronDown,
   ChevronUp,
   BookOpen,
@@ -53,6 +54,23 @@ provide('allowedModules', allowedModules)
 const isPembelianOpen = ref(route.path.startsWith('/cart') || route.path.startsWith('/hpb') || route.path.startsWith('/purchase-orders'))
 const isLogistikOpen = ref(route.path.startsWith('/logistics-db') || route.path.startsWith('/delivery-orders') || route.path.startsWith('/receive-items'))
 const isSettingOpen = ref(route.path.startsWith('/settings'))
+const isSyncWidgetOpen = ref(false)
+const { isSyncing } = useAccurateSync()
+
+// Purchase cart item count badge (sidebar)
+const cartItemCount = ref(0)
+const fetchCartItemCount = async () => {
+  try {
+    const { count, error } = await supabase
+      .from('purchase_cart')
+      .select('id', { count: 'exact', head: true })
+    if (error) throw error
+    cartItemCount.value = count || 0
+  } catch (err) {
+    console.warn('Failed to fetch cart count:', err.message)
+    cartItemCount.value = 0
+  }
+}
 
 watch(() => route.path, (newPath) => {
   if (newPath.startsWith('/cart') || newPath.startsWith('/hpb') || newPath.startsWith('/purchase-orders')) {
@@ -181,6 +199,19 @@ onMounted(async () => {
   const { triggerBackgroundSync } = useAccurateSync()
   setTimeout(() => triggerBackgroundSync(), 3000)
 
+  // Fetch cart count badge & keep it in sync (items added from SO Detail)
+  fetchCartItemCount()
+  supabase
+    .channel('realtime_cart_count')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'purchase_cart' },
+      () => {
+        fetchCartItemCount()
+      }
+    )
+    .subscribe()
+
   // Fetch initial notifications & listen for new Permintaan tasks in Realtime
   fetchNotifications()
   supabase
@@ -188,6 +219,25 @@ onMounted(async () => {
     .on(
       'postgres_changes',
       { event: '*', schema: 'public', table: 'boq_requests' },
+      () => {
+        fetchNotifications()
+      }
+    )
+    .subscribe()
+
+  // Realtime refresh for marketing ideas & events
+  supabase
+    .channel('realtime_marketing_notifications')
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'marketing_ideas' },
+      () => {
+        fetchNotifications()
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'marketing_events' },
       () => {
         fetchNotifications()
       }
@@ -402,9 +452,16 @@ const fetchNotifications = async () => {
     // Fetch marketing events
     const { data: marketingData, error: marketingError } = await supabase
       .from('marketing_events')
-      .select('id, title, status, created_at')
+      .select('id, name as title, status, created_at')
       .order('created_at', { ascending: false })
       .limit(5)
+
+    // Fetch marketing ideas (digital posts/ideas)
+    const { data: marketingIdeasData, error: marketingIdeasError } = await supabase
+      .from('marketing_ideas')
+      .select('id, title, status, created_at')
+      .order('created_at', { ascending: false })
+      .limit(10)
 
     // Fetch HPB proposals (from purchase_cart as placeholder)
     const { data: hpbData, error: hpbError } = await supabase
@@ -423,8 +480,16 @@ const fetchNotifications = async () => {
     // Log any fetch errors (but continue with available data)
     if (boqError) console.warn('Notif BOQ error:', boqError.message)
     if (marketingError) console.warn('Notif marketing error:', marketingError.message)
+    if (marketingIdeasError) console.warn('Notif marketing ideas error:', marketingIdeasError.message)
     if (hpbError) console.warn('Notif HPB error:', hpbError.message)
     if (taskError) console.warn('Notif task error:', taskError.message)
+
+    // Filter out event-tagged ideas from marketing_ideas (they belong to event tab)
+    const nonEventIdeas = (marketingIdeasData || []).filter(i =>
+      !(i.tags && i.tags.includes && i.tags.includes('EVENT')) &&
+      i.platform !== 'event' &&
+      !(Array.isArray(i.platforms) && i.platforms.includes('event'))
+    )
 
     // Normalize each source to common shape {id, title, status, created_at, path, read}
     const normalize = (items, pathBase) =>
@@ -440,6 +505,7 @@ const fetchNotifications = async () => {
     const allNotifs = [
       ...normalize(boqData, '/permintaan'),
       ...normalize(marketingData, '/marketing-hub'),
+      ...normalize(nonEventIdeas, '/marketing-hub'),
       ...normalize(hpbData, '/hpb'),
       ...normalize(taskData, '/hsq')
     ]
@@ -535,6 +601,12 @@ const userInitials = computed(() => {
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'"
                 >
                   <span class="truncate">{{ child.name }}</span>
+                  <span
+                    v-if="child.path === '/cart' && cartItemCount > 0"
+                    class="ml-auto shrink-0 min-w-[18px] h-[18px] px-1.5 inline-flex items-center justify-center rounded-full text-[10px] font-bold bg-amber-500 text-white shadow-sm"
+                  >
+                    {{ cartItemCount }}
+                  </span>
                 </RouterLink>
               </div>
             </div>
@@ -543,15 +615,15 @@ const userInitials = computed(() => {
       </nav>
 
       <div class="p-3 border-t border-gray-100 dark:border-slate-800">
-        <div class="flex items-center gap-2.5 px-2.5 py-2">
-          <div class="w-7 h-7 rounded-full bg-gradient-to-br from-red-500 to-red-700 text-white flex items-center justify-center text-[11px]">
-            {{ userInitials }}
-          </div>
-          <div class="min-w-0">
-            <p class="text-[12px] text-slate-900 dark:text-white truncate leading-tight">{{ userEmail.split('@')[0] }}</p>
-            <p class="text-[10px] text-slate-400 leading-tight">{{ userRole }}</p>
-          </div>
-        </div>
+        <button
+          @click="isSyncWidgetOpen = !isSyncWidgetOpen"
+          class="flex items-center gap-3 w-full px-2.5 py-2 text-sm rounded-md transition-colors text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50"
+          :class="{ 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white': isSyncWidgetOpen }"
+        >
+          <Database class="w-4 h-4 shrink-0" :class="{ 'text-violet-500': isSyncing }" />
+          <span class="truncate">{{ isSyncing ? 'Menyinkronkan...' : 'Sinkronisasi Database' }}</span>
+          <RefreshCcw v-if="isSyncing" class="w-3.5 h-3.5 ml-auto animate-spin text-violet-400" />
+        </button>
       </div>
 
     </aside>
@@ -883,6 +955,12 @@ const userInitials = computed(() => {
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'"
                     >
                       <span>{{ child.name }}</span>
+                      <span
+                        v-if="child.path === '/cart' && cartItemCount > 0"
+                        class="ml-auto shrink-0 min-w-[18px] h-[18px] px-1.5 inline-flex items-center justify-center rounded-full text-[10px] font-bold bg-amber-500 text-white shadow-sm"
+                      >
+                        {{ cartItemCount }}
+                      </span>
                     </RouterLink>
                   </div>
                 </div>
@@ -916,7 +994,7 @@ const userInitials = computed(() => {
     <!-- Sync Log Modal -->
 
     <!-- Floating Sync Widget -->
-    <AccurateSyncWidget />
+    <AccurateSyncWidget v-model:open="isSyncWidgetOpen" />
 
   </div>
 </template>

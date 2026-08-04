@@ -27,12 +27,12 @@ import {
   Edit, CheckCircle2, Clock, Anchor, Factory, FileText, 
   PackageCheck, Share2, Info, ExternalLink, Package, Hourglass, 
   Layers, AlertCircle, ShoppingCart, Download, AlertTriangle,
-  ChevronDown, ChevronUp, Plane, Box, Copy, Search, UploadCloud, FileSpreadsheet, Mail, Bell
+  ChevronDown, ChevronUp, Plane, Box, Copy, Search, UploadCloud, FileSpreadsheet, Mail, Bell, RefreshCw
 } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
-const routeId = route.params.id
+const routeId = route.params.soNumber
 const resolvedSoId = ref(null)
 
 // --- 1. STATE MANAGEMENT ---
@@ -356,6 +356,17 @@ const itemsToPurchase = computed(() => {
 // --- COMPUTED: RIWAYAT DOKUMEN ---
 // groupedShipments logic has been moved down below getHpoEntries
 // --- HELPER UNTUK PARSING NOTE ---
+const extractProjectFromText = (text) => {
+  if (!text) return null
+  const str = String(text)
+  const regex = /pro(?:ject|yek)\s*[:\-]?\s*(.*?)(?=\s*(?:>|status|\n|$))/i
+  const match = str.match(regex)
+  if (match && match[1] && match[1].trim()) {
+    return match[1].replace(/[\s\-]+$/, '').trim()
+  }
+  return null
+}
+
 const parseStockFromNote = (note) => {
     if (!note) return { qty: 0, isReady: false, hasInfo: false };
     const lower = note.toLowerCase();
@@ -1599,6 +1610,7 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
       number: d.number,
       client: d.customer?.name || '-',
       po_number: d.poNumber || '-',
+      project: extractProjectFromText(d.description) || '-',
       date: d.transDateView || d.transDate,
       total_amount: d.totalAmount,
       sub_total: d.subTotal,
@@ -2709,7 +2721,7 @@ const sendReminderEmail = async () => {
 
 <template>
   <div class="min-h-screen bg-gray-50/50 dark:bg-[#0f172a] pb-20 font-sans transition-colors duration-300">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 pt-8 space-y-8">
+    <div class="w-full mx-auto px-6 pt-6 space-y-5">
 
       <!-- ERROR STATE -->
       <div v-if="errorMessage" class="flex flex-col items-center justify-center p-12 text-center bg-white dark:bg-slate-800 rounded-xl border border-amber-100 dark:border-amber-900 shadow-sm animate-in zoom-in-95 duration-300">
@@ -2741,178 +2753,136 @@ const sendReminderEmail = async () => {
         </div>
       </div>
 
-      <div v-else-if="soDetail" class="animate-in fade-in slide-in-from-bottom-4 duration-500 space-y-8">
+      <div v-else-if="soDetail" class="animate-in fade-in slide-in-from-bottom-3 duration-300 space-y-5 font-sans">
 
-        <!-- PAGE HEADER CARD -->
-        <div class="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm p-6 space-y-5 transition-all duration-300">
-          
-          <!-- TOP ROW: BREADCRUMBS & BUTTONS -->
-          <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-4 pb-3 border-b border-gray-100 dark:border-slate-700/60">
-            <!-- Breadcrumbs -->
-            <div class="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400 shrink-0">
-              <button 
-                @click="handleBack()" 
-                class="flex items-center gap-1.5 hover:text-red-600 dark:hover:text-red-400 transition-colors bg-gray-50 hover:bg-gray-100 dark:bg-slate-900/60 dark:hover:bg-slate-900 px-2.5 py-1.5 rounded-md text-xs font-bold border border-gray-200/50 dark:border-slate-800 shadow-sm"
-              >
-                <ArrowLeft class="w-3.5 h-3.5"/>
-                <span>Kembali</span>
-              </button>
-              <div class="h-4 w-[1px] bg-gray-200 dark:bg-slate-700"></div>
-              <div class="flex items-center gap-1.5 text-xs font-semibold">
-                <span class="cursor-pointer hover:text-red-600 dark:hover:text-red-400 transition-colors" @click="handleBack()">Sales Orders</span>
-                <span class="text-gray-300 dark:text-gray-600">/</span>
-                <span class="text-gray-900 dark:text-white font-extrabold">Detail</span>
-              </div>
-            </div>
-            
-            <!-- Actions (Top Right) -->
-            <div class="flex flex-wrap items-center gap-2.5 w-full xl:w-auto xl:justify-end mt-1 xl:mt-0">
-              <!-- BULK EDIT BUTTON -->
-              <Button v-if="selectedItemCodes.length > 0 && canWrite" size="sm" class="w-full sm:w-auto shadow-sm bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 transition-all animate-in zoom-in-95 duration-200 flex items-center justify-center gap-1.5 font-bold" @click="openBulkEditModal">
-                <Layers class="w-4 h-4"/> Update ({{ selectedItemCodes.length }}) Item
-              </Button>
-
-              <!-- SYNC LOGISTICS BUTTON -->
-              <Button v-if="canWrite" size="sm" variant="outline" class="w-full sm:w-auto shadow-sm border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-all duration-200 hover:shadow-xs active:scale-95 flex items-center justify-center gap-1.5 font-bold" @click="syncFromLogisticsDb" :disabled="isExcelParsing || isLoading">
-                <RefreshCw class="w-4 h-4 shrink-0" :class="isExcelParsing ? 'animate-spin' : ''"/>
-                <span>{{ isExcelParsing ? 'Mensinkronkan...' : 'Sync Logistik (Database)' }}</span>
-              </Button>
-
-              <!-- EXPORT EXCEL DROPDOWN -->
-              <DropdownMenu>
-                <DropdownMenuTrigger as-child>
-                  <Button size="sm" variant="outline" class="w-full sm:w-auto shadow-sm border-emerald-200 dark:border-emerald-800/80 text-emerald-700 dark:text-emerald-400 bg-emerald-50/20 hover:bg-emerald-100/40 dark:bg-emerald-950/5 dark:hover:bg-emerald-950/20 transition-all duration-200 hover:shadow-xs active:scale-95 flex items-center justify-center gap-1.5 font-bold" :disabled="isLoading">
-                    <FileSpreadsheet class="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400"/>
-                    <span>Export Excel</span>
-                    <ChevronDown class="w-3.5 h-3.5 opacity-70 shrink-0" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" class="dark:bg-slate-800 dark:border-slate-700 rounded-xl w-64 p-1.5 shadow-lg border border-gray-150">
-                  <DropdownMenuItem @click="exportReminderExcel" class="dark:hover:bg-slate-700 dark:text-slate-300 rounded-lg cursor-pointer py-2.5 px-3 flex items-start gap-2.5 focus:bg-emerald-50 dark:focus:bg-emerald-950/30">
-                    <Bell class="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-                    <div class="flex flex-col">
-                      <span class="font-bold text-xs text-gray-800 dark:text-gray-200">Export Reminder PO</span>
-                      <span class="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">Filter PO Siemens & Status Aktif</span>
-                    </div>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem @click="exportAllHpoExcel" class="dark:hover:bg-slate-700 dark:text-slate-300 rounded-lg cursor-pointer py-2.5 px-3 flex items-start gap-2.5 focus:bg-teal-50 dark:focus:bg-teal-950/30 mt-1">
-                    <FileSpreadsheet class="w-5 h-5 text-teal-600 dark:text-teal-400 shrink-0 mt-0.5" />
-                    <div class="flex flex-col">
-                      <span class="font-bold text-xs text-gray-800 dark:text-gray-200">Export Semua HPO</span>
-                      <span class="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">Semua item dengan nomor HPO</span>
-                    </div>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem @click="exportFullHsoExcel" class="dark:hover:bg-slate-700 dark:text-slate-300 rounded-lg cursor-pointer py-2.5 px-3 flex items-start gap-2.5 focus:bg-blue-50 dark:focus:bg-blue-950/30 mt-1">
-                    <Download class="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
-                    <div class="flex flex-col">
-                      <span class="font-bold text-xs text-gray-800 dark:text-gray-200">📋 Export Detail HSO (Lengkap)</span>
-                      <span class="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">Semua data: info HSO, item, logistik, DO/Invoice</span>
-                    </div>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-
-              <!-- SEND REMINDER EMAIL BUTTON -->
-              <Button v-if="canWrite" size="sm" variant="outline" class="w-full sm:w-auto shadow-sm border-blue-600 text-blue-600 dark:border-blue-500 dark:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-blue-950/20 transition-all duration-200 hover:shadow-xs active:scale-95 flex items-center justify-center gap-1.5 font-bold" @click="openEmailModal" :disabled="isLoading">
-                <Mail class="w-4 h-4 shrink-0"/>
-                <span>Kirim Email Reminder</span>
-              </Button>
-
-              <!-- SHARE TRACKING LINK BUTTON -->
-              <Button v-if="canWrite" size="sm" class="w-full sm:w-auto shadow-sm transition-all duration-300 active:scale-95 flex items-center justify-center gap-1.5 text-white font-bold" :class="isLinkCopied ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 shadow-emerald-500/10' : 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 shadow-red-500/10'" @click="shareToClient" :disabled="isLinkCopied || isLoading">
-                <component :is="isLinkCopied ? CheckCircle2 : Share2" class="w-4 h-4 shrink-0"/>
-                <span>{{ isLinkCopied ? 'Link Disalin!' : 'Share Tracking Link' }}</span>
-              </Button>
-            </div>
+        <!-- TOP BAR: BREADCRUMB & COMPACT ACTIONS -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div class="flex items-center gap-2 text-xs">
+            <button 
+              @click="handleBack()" 
+              class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors shadow-2xs cursor-pointer"
+            >
+              <ArrowLeft class="w-3.5 h-3.5"/>
+              <span>Kembali</span>
+            </button>
+            <span class="text-slate-300 dark:text-slate-700">/</span>
+            <span class="font-medium text-slate-500 dark:text-slate-400 cursor-pointer hover:underline" @click="handleBack()">Sales Orders</span>
+            <span class="text-slate-300 dark:text-slate-700">/</span>
+            <span class="font-bold text-slate-900 dark:text-slate-100 font-sans">{{ soDetail.number }}</span>
           </div>
 
-          <!-- CLIENT SECTION (FULL WIDTH) -->
-          <div class="space-y-2 pt-2">
-            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300 border border-slate-200/40 dark:border-slate-600/40">
-              Client / Customer
-            </span>
-            <div class="flex items-center gap-3">
-              <div class="p-3 bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 rounded-xl shrink-0 border border-red-100/30 dark:border-red-900/30 shadow-sm">
-                <Building2 class="w-6 h-6"/>
-              </div>
-              <h1 class="text-2xl sm:text-3xl font-extrabold text-gray-900 dark:text-white tracking-tight leading-tight">
-                {{ soDetail.client }}
+          <!-- ACTION BUTTONS -->
+          <div class="flex flex-wrap items-center gap-2">
+            <Button v-if="selectedItemCodes.length > 0 && canWrite" size="sm" class="h-8 px-3 text-xs bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 transition-all font-semibold cursor-pointer" @click="openBulkEditModal">
+              <Layers class="w-3.5 h-3.5 mr-1.5"/> Update ({{ selectedItemCodes.length }})
+            </Button>
+
+            <Button v-if="canWrite" size="sm" variant="outline" class="h-8 px-3 text-xs font-semibold border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" @click="syncFromLogisticsDb" :disabled="isExcelParsing || isLoading">
+              <RefreshCw class="w-4 h-4 mr-1.5 text-indigo-600 dark:text-indigo-400 shrink-0" :class="isExcelParsing ? 'animate-spin' : ''"/>
+              <span>{{ isExcelParsing ? 'Syncing...' : 'Sync Logistik' }}</span>
+            </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child>
+                <Button size="sm" variant="outline" class="h-8 px-3 text-xs font-semibold border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" :disabled="isLoading">
+                  <FileSpreadsheet class="w-3.5 h-3.5 mr-1.5 text-emerald-600 dark:text-emerald-400"/>
+                  <span>Export Excel</span>
+                  <ChevronDown class="w-3 h-3 ml-1 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" class="dark:bg-slate-900 dark:border-slate-800 rounded-xl w-60 p-1 shadow-lg border border-slate-200 font-sans">
+                <DropdownMenuItem @click="exportReminderExcel" class="dark:hover:bg-slate-800 rounded-lg cursor-pointer py-2 px-2.5 flex items-center gap-2">
+                  <Bell class="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span class="font-medium text-xs text-slate-800 dark:text-slate-200">Export Reminder PO</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem @click="exportAllHpoExcel" class="dark:hover:bg-slate-800 rounded-lg cursor-pointer py-2 px-2.5 flex items-center gap-2">
+                  <FileSpreadsheet class="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+                  <span class="font-medium text-xs text-slate-800 dark:text-slate-200">Export Semua HPO</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem @click="exportFullHsoExcel" class="dark:hover:bg-slate-800 rounded-lg cursor-pointer py-2 px-2.5 flex items-center gap-2">
+                  <Download class="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <span class="font-medium text-xs text-slate-800 dark:text-slate-200">Export Detail HSO (Lengkap)</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <Button v-if="canWrite" size="sm" variant="outline" class="h-8 px-3 text-xs font-semibold border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" @click="openEmailModal" :disabled="isLoading">
+              <Mail class="w-3.5 h-3.5 mr-1.5 text-blue-600 dark:text-blue-400"/>
+              <span>Email Reminder</span>
+            </Button>
+
+            <Button v-if="canWrite" size="sm" class="h-8 px-3 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500 transition-all cursor-pointer" @click="shareToClient" :disabled="isLinkCopied || isLoading">
+              <component :is="isLinkCopied ? CheckCircle2 : Share2" class="w-3.5 h-3.5 mr-1.5"/>
+              <span>{{ isLinkCopied ? 'Link Disalin!' : 'Share Link' }}</span>
+            </Button>
+          </div>
+        </div>
+
+        <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-2xs font-sans divide-y divide-slate-200/80 dark:divide-slate-800 overflow-hidden">
+          <!-- HEADER DATA SECTION -->
+          <div class="p-5">
+            <div class="flex flex-col">
+              <h1 class="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight font-sans">
+                {{ soDetail.number }}
               </h1>
+              <p class="text-sm font-medium text-slate-500 dark:text-slate-400 mt-1 font-sans">
+                {{ soDetail.client }}
+              </p>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5 font-sans" v-if="soDetail.project && soDetail.project !== '-'">
+                <span class="text-slate-400 font-normal">Proyek:</span>
+                <span class="font-medium ml-1">{{ soDetail.project }}</span>
+              </p>
+              <p class="text-xs text-slate-400 dark:text-slate-500 mt-2 font-sans inline-flex items-center gap-1.5">
+                <Calendar class="w-3.5 h-3.5"/>
+                <span>{{ soDetail.date }}</span>
+              </p>
             </div>
           </div>
 
-          <!-- META INFO BADGES -->
-          <div class="flex flex-wrap items-center gap-3 pt-3 text-xs border-t border-gray-100 dark:border-slate-700/60">
-            <!-- Date Info -->
-            <div class="inline-flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 text-gray-600 dark:text-gray-400 px-3 py-1.5 rounded-lg border border-gray-150 dark:border-slate-800 font-medium">
-              <Calendar class="w-3.5 h-3.5 text-gray-400 dark:text-gray-500"/>
-              <span>Tanggal SO:</span>
-              <span class="font-semibold text-gray-800 dark:text-gray-200">{{ soDetail.date }}</span>
+          <!-- COMPACT STATS SUMMARY -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 sm:divide-x divide-slate-200/80 dark:divide-slate-800">
+            <div class="p-4 sm:pr-4">
+              <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Nilai</p>
+              <p class="text-xl font-bold text-slate-900 dark:text-white mt-0.5">{{ formatCurrency(soDetail.total_amount) }}</p>
             </div>
-
-            <!-- HSO Code Info -->
-            <div class="inline-flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 text-gray-600 dark:text-gray-400 px-3 py-1.5 rounded-lg border border-gray-150 dark:border-slate-800 font-medium">
-              <span class="text-slate-400 dark:text-slate-500 font-bold tracking-wider text-[10px] uppercase font-sans">SO Code</span>
-              <span class="font-bold font-mono text-gray-800 dark:text-gray-200">{{ soDetail.number }}</span>
-              <button @click="copySoNumber" class="ml-1 p-1 rounded hover:bg-gray-200 dark:hover:bg-slate-800 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors flex items-center justify-center" title="Copy HSO Number">
-                <component :is="isSoNumberCopied ? CheckCircle2 : Copy" class="w-3.5 h-3.5" :class="isSoNumberCopied ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-gray-500'"/>
-              </button>
+            <div class="p-4 sm:px-4 border-t sm:border-t-0 border-slate-200/80 dark:border-slate-800">
+              <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Item</p>
+              <p class="text-xl font-bold text-slate-900 dark:text-white mt-0.5">{{ soDetail.items.length }} <span class="text-xs font-normal text-slate-500">Produk</span></p>
             </div>
-
-            <!-- PO Number -->
-            <div class="inline-flex items-center gap-1.5 bg-rose-50/70 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 px-3 py-1.5 rounded-lg border border-rose-100/80 dark:border-rose-900/30 font-medium">
-              <span class="text-rose-400 dark:text-rose-500/60 font-bold tracking-wider text-[10px] uppercase font-sans">PO Customer</span>
-              <span class="font-bold font-mono text-rose-800 dark:text-rose-300">{{ soDetail.po_number }}</span>
+            <div class="p-4 sm:pl-4 space-y-1.5 border-t sm:border-t-0 border-slate-200/80 dark:border-slate-800">
+              <div class="flex items-center justify-between">
+                <p class="text-xs font-medium text-slate-400 uppercase tracking-wider">Progress Pengiriman</p>
+                <span class="text-xs font-bold text-red-600 dark:text-red-400">{{ fulfillmentPercentage(soDetail.items) }}%</span>
+              </div>
+              <Progress :model-value="fulfillmentPercentage(soDetail.items)" class="h-2 bg-slate-100 dark:bg-slate-800" indicator-class="bg-red-600 dark:bg-red-500" />
             </div>
           </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Card class="border shadow-sm rounded-lg overflow-hidden bg-white dark:bg-slate-800 dark:border-slate-700">
-            <CardContent class="p-6 flex items-center justify-between">
-              <div><p class="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total Nilai</p><p class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ formatCurrency(soDetail.total_amount) }}</p></div>
-              <div class="bg-red-50 dark:bg-red-900/20 p-3 rounded-full text-red-600 dark:text-red-400"><FileText class="w-6 h-6" /></div>
-            </CardContent>
-          </Card>
-          <Card class="border shadow-sm rounded-lg overflow-hidden bg-white dark:bg-slate-800 dark:border-slate-700">
-            <CardContent class="p-6 flex items-center justify-between">
-              <div><p class="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Total Item</p><p class="text-2xl font-bold text-gray-900 dark:text-white mt-1">{{ soDetail.items.length }} <span class="text-sm font-normal text-gray-500 dark:text-gray-400">Produk</span></p></div>
-              <div class="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-full text-blue-600 dark:text-blue-400"><Package class="w-6 h-6" /></div>
-            </CardContent>
-          </Card>
-          <Card class="border shadow-sm rounded-lg overflow-hidden bg-white dark:bg-slate-800 dark:border-slate-700">
-            <CardContent class="p-6">
-              <div class="flex justify-between items-center mb-2"><p class="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Progress Pengiriman</p><span class="text-lg font-bold text-red-600 dark:text-red-400">{{ fulfillmentPercentage(soDetail.items) }}%</span></div>
-              <Progress :model-value="fulfillmentPercentage(soDetail.items)" class="h-2 bg-gray-100 dark:bg-slate-700" indicator-class="bg-red-600 dark:bg-red-500" />
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card class="border shadow-sm rounded-lg overflow-hidden bg-white dark:bg-slate-800 dark:border-slate-700 flex flex-col max-h-[75vh]">
-          <CardHeader class="border-b border-gray-100 dark:border-slate-700 px-6 py-4 bg-white dark:bg-slate-800 shrink-0">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <CardTitle class="text-base font-bold text-gray-800 dark:text-white flex items-center gap-2 flex-wrap">
-                <span>Detail Produk & Logistik</span>
-                <span class="text-xs font-normal text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-900 px-2.5 py-0.5 rounded-full border border-slate-200/60 dark:border-slate-800/80">
-                  Menampilkan {{ filteredItems.length }} dari {{ soDetail?.items?.length || 0 }} produk
+        <!-- TABLE CARD CONTAINER (Clean Shadcn UI Table) -->
+        <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-2xs overflow-hidden flex flex-col font-sans">
+          <div class="border-b border-slate-200/80 dark:border-slate-800 px-4 py-3 bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-bold text-slate-900 dark:text-white">Detail Produk &amp; Logistik</span>
+                <span class="text-xs font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200/60 dark:border-slate-700/60">
+                  {{ filteredItems.length }} / {{ soDetail?.items?.length || 0 }} Produk
                 </span>
-              </CardTitle>
-              <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-                <!-- Search Input -->
-                <div class="relative w-full sm:w-64">
-                  <Search class="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+              </div>
+              <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
+                <div class="relative w-full sm:w-60">
+                  <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
                   <input 
                     v-model="itemSearchQuery" 
                     type="text" 
-                    placeholder="Cari SKU / nama / note..." 
-                    class="pl-9 pr-3 py-1.5 w-full text-xs border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-red-500" 
+                    placeholder="Cari SKU / nama..." 
+                    class="pl-8 pr-3 py-1.5 h-8 w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500 font-sans" 
                   />
                 </div>
-                <!-- Status Filter Select -->
-                <div class="w-full sm:w-48">
+                <div class="w-full sm:w-44">
                   <select 
                     v-model="itemStatusFilter"
-                    class="px-3 py-1.5 w-full text-xs border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-1 focus:ring-red-500"
+                    class="px-2.5 py-1.5 h-8 w-full text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-red-500 font-sans cursor-pointer"
                   >
                     <option value="ALL">Semua Status</option>
                     <option value="NEED_ORDER">Perlu / Kurang PO</option>
@@ -2934,26 +2904,26 @@ const sendReminderEmail = async () => {
               <input type="checkbox" id="mobile-select-all" class="w-4.5 h-4.5 rounded border-slate-300 text-red-600 focus:ring-red-500 cursor-pointer" :checked="isAllSelected" @change="toggleSelectAll"/>
               <label for="mobile-select-all" class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider cursor-pointer">Pilih Semua Produk</label>
             </div>
-          </CardHeader>
+          </div>
           <!-- Desktop/Tablet View (Table Layout) -->
-          <div class="hidden md:block overflow-auto flex-1">
-            <div class="[&>div]:overflow-visible min-w-[800px] w-full">
-              <Table class="relative">
-                <TableHeader class="bg-gray-50 dark:bg-slate-900 sticky top-0 z-20 shadow-sm border-b">
-                  <TableRow>
-                  <TableHead class="w-[50px] text-center">
-                     <div class="flex items-center justify-center gap-1">
-                        <input type="checkbox" class="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer" :checked="isAllSelected" @change="toggleSelectAll"/>
+          <div class="hidden md:block w-full overflow-hidden flex-1">
+            <div class="w-full">
+              <Table class="w-full text-xs">
+                <TableHeader class="bg-slate-50/80 dark:bg-slate-900/80 sticky top-0 z-20 shadow-2xs border-b border-slate-200/80 dark:border-slate-800">
+                  <TableRow class="hover:bg-transparent border-none">
+                  <TableHead class="w-10 text-center py-2.5 px-1.5">
+                     <div class="flex items-center justify-center">
+                        <input type="checkbox" class="w-4 h-4 rounded accent-red-600 cursor-pointer" :checked="isAllSelected" @change="toggleSelectAll"/>
                      </div>
                   </TableHead>
-                  <TableHead class="min-w-[250px] text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Nama Produk</TableHead>
-                  <TableHead class="text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[8%]">Qty Order</TableHead>
-                  <TableHead class="text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[8%]">Stok</TableHead>
-                  <TableHead class="text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[8%]">Terkirim</TableHead>
-                  <TableHead class="text-center text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider w-[10%] bg-red-50/30 dark:bg-red-900/10">Sisa (Kirim)</TableHead>
+                  <TableHead class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-2.5 px-2.5">Nama Produk</TableHead>
+                  <TableHead class="text-center text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-16 py-2.5 px-1">Order</TableHead>
+                  <TableHead class="text-center text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-16 py-2.5 px-1">Stok</TableHead>
+                  <TableHead class="text-center text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-16 py-2.5 px-1">Terkirim</TableHead>
+                  <TableHead class="text-center text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider w-16 py-2.5 px-1">Sisa</TableHead>
                   
-                  <TableHead class="pl-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[15%]">Status</TableHead>
-                  <TableHead class="text-right pr-6 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[8%]">Aksi</TableHead>
+                  <TableHead class="pl-2 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-56 lg:w-64 py-2.5 px-2">Status</TableHead>
+                  <TableHead class="text-right pr-3 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-20 py-2.5 px-2">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -2961,43 +2931,38 @@ const sendReminderEmail = async () => {
                     v-for="(item, idx) in filteredItems" 
                     v-show="!isPurchaseExpanded || item.qty_to_order > 0"
                     :key="idx" 
-                    class="group hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors border-b border-gray-100 dark:border-slate-700 last:border-0"
-                    :class="{ 'bg-yellow-100 dark:bg-yellow-900/30 hover:bg-yellow-200 dark:hover:bg-yellow-900/50': route.query.highlight === item.code }"
+                    class="group hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors border-b border-slate-100 dark:border-slate-800/80 last:border-0"
+                    :class="{ 'bg-amber-50/80 dark:bg-amber-950/20': route.query.highlight === item.code }"
                     :id="`item-${item.code}`"
                 >
-                  <TableCell class="text-center align-top pt-4">
-                    <input v-if="!isDisplayedFullyShipped(item)" type="checkbox" class="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer" :checked="selectedItemCodes.includes(item.code)" @change="toggleSelection(item.code)"/>
+                  <TableCell class="text-center align-top py-2.5 px-1.5">
+                    <input v-if="!isDisplayedFullyShipped(item)" type="checkbox" class="w-4 h-4 rounded accent-red-600 cursor-pointer" :checked="selectedItemCodes.includes(item.code)" @change="toggleSelection(item.code)"/>
                   </TableCell>
-                  <TableCell class="pl-2 py-4 align-top">
-                    <!-- SKU is now prominent -->
-                    <div class="flex items-center gap-2">
-                        <div class="font-bold text-gray-900 dark:text-slate-200 text-sm font-mono">
+                  <TableCell class="py-2.5 px-2.5 align-top">
+                    <div class="flex items-center gap-1.5">
+                        <span class="font-bold text-slate-900 dark:text-slate-100 text-base font-mono tracking-tight">
                             {{ item.code }}
-                        </div>
-                        <button @click="copySku(item.code)" class="p-1 rounded hover:bg-gray-100 dark:hover:bg-slate-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors" title="Copy SKU">
-                            <component :is="copiedSku === item.code ? CheckCircle2 : Copy" class="w-3.5 h-3.5" :class="copiedSku === item.code ? 'text-green-600 dark:text-green-400' : ''"/>
+                        </span>
+                        <button @click="copySku(item.code)" class="p-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors" title="Copy SKU">
+                            <component :is="copiedSku === item.code ? CheckCircle2 : Copy" class="w-3.5 h-3.5" :class="copiedSku === item.code ? 'text-emerald-600 dark:text-emerald-400' : ''"/>
                         </button>
                     </div>
-                    <!-- Description below SKU -->
-                    <div class="text-xs text-gray-600 dark:text-gray-400 mt-1 font-medium leading-relaxed">{{ item.name }}</div>
-                    
-                    <div v-if="item.admin_note" class="text-[10px] text-gray-400 italic mt-1.5 border-t border-dashed border-gray-200 dark:border-gray-700 pt-1.5 max-w-[250px]">Note: {{ item.admin_note }}</div>
+                    <div class="text-xs text-slate-600 dark:text-slate-400 mt-0.5 font-medium leading-normal">{{ item.name }}</div>
+                    <div v-if="item.admin_note" class="text-[10px] text-slate-400 italic mt-0.5 font-sans">Note: {{ item.admin_note }}</div>
                   </TableCell>
                   
-                  <TableCell class="text-center align-top pt-4 text-gray-900 dark:text-slate-300 font-medium">{{ item.qty_order }}</TableCell>
-                  
-                  <TableCell class="text-center align-top pt-4 text-gray-600 dark:text-gray-400">
-                      <span class="font-bold text-gray-900 dark:text-white">{{ item.parsed_stock_qty }}</span>
+                  <TableCell class="text-center align-top py-2.5 px-1 text-slate-900 dark:text-slate-100 font-semibold text-xs md:text-sm font-sans">{{ item.qty_order }}</TableCell>
+
+                  <TableCell class="text-center align-top py-2.5 px-1 text-slate-700 dark:text-slate-300 font-semibold text-xs md:text-sm font-sans">
+                      {{ item.parsed_stock_qty }}
+                  </TableCell>
+
+                  <TableCell class="text-center align-top py-2.5 px-1 text-blue-600 dark:text-blue-400 font-semibold text-xs md:text-sm font-sans">
+                      {{ getDisplayedQtyShipped(item) }}
                   </TableCell>
                   
-                  <TableCell class="text-center align-top pt-4 bg-blue-50/30 dark:bg-blue-900/10">
-                      <div class="flex flex-col items-center gap-1">
-                          <span class="font-bold text-blue-600 dark:text-blue-400">{{ getDisplayedQtyShipped(item) }}</span>
-                      </div>
-                  </TableCell>
-                  
-                  <TableCell class="text-center align-top pt-4 bg-red-50/30 dark:bg-red-900/10">
-                      <span class="font-bold" :class="getDisplayedQtyRemaining(item) > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'">{{ getDisplayedQtyRemaining(item) }}</span>
+                  <TableCell class="text-center align-top py-2.5 px-1 font-semibold text-xs md:text-sm font-sans" :class="getDisplayedQtyRemaining(item) > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'">
+                      {{ getDisplayedQtyRemaining(item) }}
                   </TableCell>
 
                   <TableCell class="pl-4 align-top pt-3">
@@ -3017,129 +2982,97 @@ const sendReminderEmail = async () => {
                         <!-- General Status Badge -->
                         <div v-if="getRowStatus(item).hpbId"
                              @click="router.push('/hpb/' + getRowStatus(item).hpbId)"
-                             class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md border text-xs font-bold shadow-sm cursor-pointer hover:opacity-80 hover:scale-105 active:scale-95 transition-all" 
+                             class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-semibold shadow-sm cursor-pointer hover:opacity-80 hover:scale-105 active:scale-95 transition-all"
                              :class="getRowStatus(item).class"
                         >
                             <component :is="getRowStatus(item).icon" class="w-3.5 h-3.5" />
                             {{ getRowStatus(item).text }}
                         </div>
-                        <div v-else class="inline-flex items-center gap-2 px-2.5 py-1 rounded-md border text-xs font-bold shadow-sm" :class="getRowStatus(item).class">
+                        <div v-else class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-semibold shadow-sm" :class="getRowStatus(item).class">
                             <component :is="getRowStatus(item).icon" class="w-3.5 h-3.5" />
                             {{ getRowStatus(item).text }}
                         </div>
                         
                         <!-- HDO (Resi Pengiriman) Info -->
-                        <!-- Case 1: HDO sudah di-sync dan ditemukan (strict atau fallback) -->
-                        <div v-if="getHdosForItem(item).length > 0" class="mt-2 space-y-2">
-                            <div v-for="hdo in getHdosForItem(item)" :key="hdo.no" class="bg-blue-50 dark:bg-blue-900/20 border-2 border-dashed border-blue-300 dark:border-blue-700 rounded-lg p-3">
-                                <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-blue-200 dark:border-blue-800">
-                                    <Truck class="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                                    <span class="text-xs font-bold text-blue-700 dark:text-blue-300">Pengiriman (HDO)</span>
+                        <!-- Case 1: HDO sudah di-sync dan ditemukan -->
+                        <div v-if="getHdosForItem(item).length > 0" class="mt-1 space-y-1">
+                            <div v-for="hdo in getHdosForItem(item)" :key="hdo.no" class="bg-blue-50/60 dark:bg-blue-950/40 border border-dashed border-blue-300/80 dark:border-blue-800/80 rounded-md p-1.5 px-2 flex items-center justify-between text-xs font-sans">
+                                <div class="flex items-center gap-1.5 min-w-0">
+                                    <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                                    <span class="font-bold text-blue-700 dark:text-blue-300 truncate">{{ hdo.no }}</span>
                                 </div>
-                                <div class="flex items-center justify-between">
-                                    <span class="text-xs font-mono font-bold text-blue-600 dark:text-blue-400">{{ hdo.no }}</span>
-                                    <span class="text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-800 px-1.5 py-0.5 rounded">{{ getSingleHdoQty(hdo, item) }} {{ item.unit }}</span>
-                                </div>
-
+                                <span class="font-bold text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-900/80 px-1.5 py-0.5 rounded text-[11px] shrink-0">
+                                    {{ getSingleHdoQty(hdo, item) }} {{ item.unit }}
+                                </span>
                             </div>
                         </div>
-                        <!-- Case 2: HDO sedang di-sync (loading) — item sudah terkirim di Accurate tapi detail belum selesai dimuat -->
-                        <div v-else-if="isHdoSyncing && getDisplayedQtyShipped(item) > 0" class="mt-2 bg-blue-50 dark:bg-blue-900/20 border-2 border-dashed border-blue-300 dark:border-blue-700 rounded-lg p-3 flex items-center gap-2">
-                            <Loader2 class="w-4 h-4 text-blue-400 animate-spin" />
-                            <span class="text-xs text-blue-500 font-medium">Memuat data HDO...</span>
+                        <!-- Case 2: HDO sedang di-sync (loading) -->
+                        <div v-else-if="isHdoSyncing && getDisplayedQtyShipped(item) > 0" class="mt-1 bg-blue-50/50 dark:bg-blue-950/30 border border-dashed border-blue-300/60 dark:border-blue-800/60 rounded-md p-1.5 px-2 flex items-center gap-1.5 text-xs text-blue-600 font-medium">
+                            <Loader2 class="w-3.5 h-3.5 text-blue-500 animate-spin shrink-0" />
+                            <span>Memuat HDO...</span>
                         </div>
-                        <!-- Case 3: Fallback dari DB (hdo tersimpan di logistics_hdo tapi tidak ada di Accurate sync) -->
-                        <div v-else-if="getDisplayedQtyShipped(item) > 0 && item.logistics_hdo" class="mt-2">
-                            <div class="bg-blue-50 dark:bg-blue-900/20 border-2 border-dashed border-blue-300 dark:border-blue-700 rounded-lg p-3">
-                                <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-blue-200 dark:border-blue-800">
-                                    <Truck class="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                                    <span class="text-xs font-bold text-blue-700 dark:text-blue-300">Pengiriman (HDO)</span>
-                                </div>
-                                <div class="flex items-center justify-between">
-                                    <span class="text-xs font-mono font-bold text-blue-600 dark:text-blue-400">{{ item.logistics_hdo }}</span>
-                                    <span class="text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-800 px-1.5 py-0.5 rounded">{{ item.qty_shipped }} {{ item.unit }}</span>
-                                </div>
+                        <!-- Case 3: Fallback dari DB -->
+                        <div v-else-if="getDisplayedQtyShipped(item) > 0 && item.logistics_hdo" class="mt-1 bg-blue-50/60 dark:bg-blue-950/40 border border-dashed border-blue-300/80 dark:border-blue-800/80 rounded-md p-1.5 px-2 flex items-center justify-between text-xs font-sans">
+                            <div class="flex items-center gap-1.5 min-w-0">
+                                <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                                <span class="font-bold text-blue-700 dark:text-blue-300 truncate">{{ item.logistics_hdo }}</span>
                             </div>
+                            <span class="font-bold text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-900/80 px-1.5 py-0.5 rounded text-[11px] shrink-0">
+                                {{ item.qty_shipped }} {{ item.unit }}
+                            </span>
                         </div>
                         
-                        <!-- HPO Number + Logistics Status Combined (Support Multiple POs) -->
-                        <!-- Only show HPO list if item has remaining qty to ship -->
-                        <div v-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && getHpoEntries(item).length > 0" class="mt-1.5 space-y-2">
+                        <!-- HPO Number + Logistics Status Combined -->
+                        <div v-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && getHpoEntries(item).length > 0" class="mt-1 space-y-1">
                             <template v-for="(hpo, idx) in getHpoEntries(item)" :key="idx">
-                            <div class="bg-white dark:bg-slate-800 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-3">
-                                <!-- HPO Number -->
-                                <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-gray-200 dark:border-gray-700">
-                                    <ShoppingCart class="w-4 h-4 text-green-600 dark:text-green-400" />
-                                    <span class="text-xs font-bold text-gray-600 dark:text-gray-400">HPO:</span>
-                                    <span class="text-sm font-mono font-bold text-green-700 dark:text-green-300">{{ hpo.poNumber }}</span>
-                                    <span class="ml-auto text-xs font-bold text-red-600 dark:text-red-400 whitespace-nowrap">
+                            <div class="bg-white dark:bg-slate-800/80 border border-dashed border-slate-300 dark:border-slate-700 rounded-md p-1.5 px-2 space-y-1 font-sans">
+                                <!-- HPO Line: Number & Qty -->
+                                <div class="flex items-center justify-between gap-1 text-xs">
+                                    <div class="flex items-center gap-1 min-w-0">
+                                        <ShoppingCart class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                        <span class="font-bold text-emerald-700 dark:text-emerald-300 truncate">{{ hpo.poNumber }}</span>
+                                    </div>
+                                    <span class="font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-1.5 py-0.5 rounded text-[11px] shrink-0">
                                         {{ hpo.quantity }} {{ item.unit }}
                                     </span>
                                 </div>
 
-                                <!-- Supplier Badge -->
-                                <div v-if="hpo.vendorName" class="mb-2">
-                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600">
+                                <!-- Vendor & Logistics Status Row -->
+                                <div class="flex flex-wrap items-center gap-1 text-[11px]">
+                                    <span v-if="hpo.vendorName" class="font-medium text-slate-500 dark:text-slate-400 truncate max-w-[140px]">
                                         🏢 {{ hpo.vendorName }}
                                     </span>
-                                </div>
-                                
-                                <!-- Logistics Status Tree (if exists for this item) -->
-                                <template v-for="hpoShipment in [getHpoShipment(item, hpo.poNumber)]" :key="hpoShipment.id || hpo.poNumber">
-                                <div v-if="hpoShipment.current_status && hpoShipment.current_status !== 'Pending Process'" class="mt-2">
-                                    <div class="flex flex-col gap-1 bg-blue-50 dark:bg-blue-900/20 px-2.5 py-1.5 rounded border border-blue-100 dark:border-blue-800">
-                                        <div class="flex items-center justify-between">
-                                            <div class="flex items-center gap-1.5 min-w-0">
-                                                <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
-                                                <span class="text-[11px] font-bold text-blue-700 dark:text-blue-300 truncate">
-                                                    {{ getHpoDisplayStatus(item, hpoShipment) }}
-                                                </span>
-                                            </div>
-                                            <span v-if="hpoShipment.exwork_waiting && getVisualStatus(hpoShipment) === 'Follow up with our forwarder'"
-                                                  class="text-[10px] font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap ml-2">
-                                                ⏳ Waiting
+                                    <template v-for="hpoShipment in [getHpoShipment(item, hpo.poNumber)]" :key="hpoShipment.id || hpo.poNumber">
+                                        <span v-if="hpoShipment.current_status && hpoShipment.current_status !== 'Pending Process'" class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-950/30 text-blue-800 dark:text-blue-300 font-semibold border border-blue-200 dark:border-blue-900 text-xs">
+                                            <Truck class="w-3 h-3 text-blue-600 dark:text-blue-400 shrink-0" />
+                                            <span>{{ getHpoDisplayStatus(item, hpoShipment) }}</span>
+                                            <span v-if="getHpoDisplayDate(item, hpoShipment) && getHpoDisplayDate(item, hpoShipment) !== '-'" class="opacity-80 font-medium text-[11px]">
+                                                ({{ getHpoDisplayDate(item, hpoShipment) }})
                                             </span>
-                                        </div>
-                                        <span v-if="getHpoDisplayDate(item, hpoShipment) && getHpoDisplayDate(item, hpoShipment) !== '-'" class="text-[10px] font-mono font-bold text-blue-600 dark:text-blue-400 pl-5 truncate">
-                                            {{ getHpoDisplayDate(item, hpoShipment) }}
                                         </span>
-                                    </div>
+                                    </template>
                                 </div>
-                                </template>
                             </div>
                             </template>
-
                         </div>
                         
-                        <!-- Fallback HPO from DB (when not found in PO sync list, e.g. manual input/import) -->
-                        <!-- Only show if item has remaining qty to ship -->
-                        <div v-else-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && item.logistics_hpo" class="mt-1.5 bg-white dark:bg-slate-800 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-3">
-                            <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-gray-200 dark:border-gray-700">
-                                <ShoppingCart class="w-4 h-4 text-green-600 dark:text-green-400" />
-                                <span class="text-xs font-bold text-gray-600 dark:text-gray-400">HPO:</span>
-                                <span class="text-sm font-mono font-bold text-green-700 dark:text-green-300">{{ item.logistics_hpo }}</span>
-                                <span class="ml-auto text-xs font-bold text-red-600 dark:text-red-400 whitespace-nowrap">
+                        <!-- Fallback HPO from DB -->
+                        <div v-else-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && item.logistics_hpo" class="mt-1 bg-white dark:bg-slate-800/80 border border-dashed border-slate-300 dark:border-slate-700 rounded-md p-1.5 px-2 space-y-1 font-sans">
+                            <div class="flex items-center justify-between gap-1 text-xs">
+                                <div class="flex items-center gap-1 min-w-0">
+                                    <ShoppingCart class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                    <span class="font-bold text-emerald-700 dark:text-emerald-300 truncate">{{ item.logistics_hpo }}</span>
+                                </div>
+                                <span class="font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-1.5 py-0.5 rounded text-[11px] shrink-0">
                                     {{ item.qty_order }} {{ item.unit }}
                                 </span>
                             </div>
-                            
-                            <!-- Logistics Status if any -->
-                            <div v-if="item.logistics_status && item.logistics_status !== 'Pending Process'" class="mt-2">
-                                <div class="flex items-center justify-between gap-2 bg-blue-50 dark:bg-blue-900/20 px-2.5 py-1.5 rounded border border-blue-100 dark:border-blue-800">
-                                    <div class="flex items-center gap-1.5 flex-shrink-0">
-                                        <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
-                                        <span class="text-[11px] font-bold text-blue-700 dark:text-blue-300 whitespace-nowrap">
-                                            {{ item.logistics_status === 'Follow up with our forwarder' ? 'Ex-Works' : item.logistics_status === 'ETA Port JKT' ? 'ETA JKT' : item.logistics_status === 'Already in siemens Warehouse' ? 'Tiba Dunex' : item.logistics_status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : item.logistics_status }}
-                                        </span>
-                                    </div>
-                                    <span v-if="item.exwork_waiting && item.logistics_status === 'Follow up with our forwarder'"
-                                          class="text-[10px] font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap">
-                                        ⏳ Waiting
-                                    </span>
-                                    <span v-else class="text-[10px] font-mono font-bold text-blue-600 dark:text-blue-400 whitespace-nowrap">
-                                        {{ formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date) || '-' }}
-                                    </span>
-                                </div>
+                            <div v-if="item.logistics_status && item.logistics_status !== 'Pending Process'" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50/90 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 font-semibold border border-blue-100 dark:border-blue-900/60 text-[10px]">
+                                <Truck class="w-3 h-3 text-blue-600 shrink-0" />
+                                <span>{{ item.logistics_status === 'Follow up with our forwarder' ? 'Ex-Works' : item.logistics_status === 'ETA Port JKT' ? 'ETA JKT' : item.logistics_status === 'Already in siemens Warehouse' ? 'Tiba Dunex' : item.logistics_status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : item.logistics_status }}</span>
+                                <span v-if="formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date)" class="opacity-75 font-normal">
+                                    ({{ formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date) }})
+                                </span>
                             </div>
                         </div>
                         
@@ -3186,7 +3119,9 @@ const sendReminderEmail = async () => {
                         v-if="!isSyncing && needsOrdering(item) && !hasHpb(item.code) && isInCart(item.code)" 
                         size="sm" 
                         variant="outline" 
-                        class="h-8 px-2.5 rounded border-green-300 dark:border-green-800 text-green-600 dark:text-green-400 bg-green-50/30 dark:bg-green-950/10 cursor-default pointer-events-none transition-all flex items-center gap-1 shadow-sm"
+                        class="h-8 px-2.5 rounded border-green-300 dark:border-green-800 text-green-600 dark:text-green-400 bg-green-50/30 dark:bg-green-950/10 hover:bg-green-100 dark:hover:bg-green-900/20 transition-all flex items-center gap-1 shadow-sm cursor-pointer"
+                        title="Lihat di Rencana Pembelian"
+                        @click="router.push('/cart')"
                       >
                         <CheckCircle2 class="w-3.5 h-3.5" />
                         <span class="text-xs font-bold">Di Keranjang</span>
@@ -3259,8 +3194,9 @@ const sendReminderEmail = async () => {
                     v-if="!isSyncing && needsOrdering(item) && !hasHpb(item.code) && isInCart(item.code)" 
                     size="sm" 
                     variant="outline" 
-                    class="h-8 w-8 p-0 rounded-lg border-green-300 dark:border-green-800 text-green-600 dark:text-green-400 bg-green-50/30 dark:bg-green-950/10 cursor-default pointer-events-none flex items-center justify-center shadow-sm"
-                    title="Sudah di keranjang"
+                    class="h-8 w-8 p-0 rounded-lg border-green-300 dark:border-green-800 text-green-600 dark:text-green-400 bg-green-50/30 dark:bg-green-950/10 hover:bg-green-100 dark:hover:bg-green-900/20 flex items-center justify-center shadow-sm cursor-pointer"
+                    title="Lihat di Rencana Pembelian"
+                    @click="router.push('/cart')"
                   >
                     <CheckCircle2 class="w-3.5 h-3.5" />
                   </Button>
@@ -3494,7 +3430,7 @@ const sendReminderEmail = async () => {
               </div>
             </div>
           </div>
-        </Card>
+        </div>
 
         <!-- Loading State untuk Barang Perlu di Order -->
         <Card v-if="isHpoSyncing" class="border shadow-sm rounded-lg bg-white dark:bg-slate-800 border-l-4 border-l-amber-500 animate-pulse">
@@ -4231,9 +4167,9 @@ const sendReminderEmail = async () => {
           </div>
         </div>
       </div>
-</div>
     </div>
   </div>
+</div>
 </template>
 
 <style>

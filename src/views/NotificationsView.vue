@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent } from '@/components/ui/card'
@@ -26,9 +26,10 @@ const moduleMeta = {
 const fetchAll = async () => {
   isLoading.value = true
   try {
-    const [boq, mkt, hpb, task] = await Promise.all([
+    const [boq, mkt, mktIdeas, hpb, task] = await Promise.all([
       supabase.from('boq_requests').select('id, title, status, created_at').order('created_at', { ascending: false }).limit(50),
-      supabase.from('marketing_events').select('id, title, status, created_at').order('created_at', { ascending: false }).limit(50),
+      supabase.from('marketing_events').select('id, name as title, status, created_at').order('created_at', { ascending: false }).limit(50),
+      supabase.from('marketing_ideas').select('id, title, status, created_at').order('created_at', { ascending: false }).limit(50),
       supabase.from('purchase_cart').select('id, title, status, created_at').order('created_at', { ascending: false }).limit(50),
       supabase.from('hsq_tasks').select('id, task_title as title, status, created_at').order('created_at', { ascending: false }).limit(50)
     ])
@@ -42,9 +43,17 @@ const fetchAll = async () => {
       read: localStorage.getItem(readKey(i.id)) === 'true'
     }))
 
+    // Filter out event-tagged ideas (they belong to event tab)
+    const nonEventIdeas = (mktIdeas.data || []).filter(i =>
+      !(i.tags && i.tags.includes && i.tags.includes('EVENT')) &&
+      i.platform !== 'event' &&
+      !(Array.isArray(i.platforms) && i.platforms.includes('event'))
+    )
+
     notifications.value = [
       ...normalize(boq.data, '/permintaan'),
       ...normalize(mkt.data, '/marketing-hub'),
+      ...normalize(nonEventIdeas, '/marketing-hub'),
       ...normalize(hpb.data, '/hpb'),
       ...normalize(task.data, '/hsq')
     ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
@@ -112,7 +121,24 @@ const formatTime = (iso) => {
   return d.toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 }
 
-onMounted(fetchAll)
+let notifChannel = null
+
+onMounted(() => {
+  fetchAll()
+  // Realtime: refresh notification list when any source table changes
+  notifChannel = supabase
+    .channel('realtime_notifications_page')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'boq_requests' }, () => fetchAll())
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'marketing_ideas' }, () => fetchAll())
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'marketing_events' }, () => fetchAll())
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'purchase_cart' }, () => fetchAll())
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'hsq_tasks' }, () => fetchAll())
+    .subscribe()
+})
+
+onUnmounted(() => {
+  if (notifChannel) supabase.removeChannel(notifChannel)
+})
 </script>
 
 <template>

@@ -49,7 +49,7 @@ const router = createRouter({
       children: [
         { path: '/dashboard', component: DashboardView },
         { path: '/sales-orders', component: SalesOrderView },
-        { path: '/sales-orders/:id', component: SalesOrderDetailView },
+        { path: '/sales-orders/:soNumber', component: SalesOrderDetailView },
         { path: '/purchase-orders', component: PurchaseOrderListView },
         { path: '/purchase-orders/:id', component: PurchaseOrderDetailView },
         { path: '/delivery-orders', component: DeliveryOrderListView },

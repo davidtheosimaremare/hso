@@ -100,7 +100,7 @@ const fetchData = async () => {
         body: { fields: 'id,number,transDate,customer,totalAmount,statusName,description,salesman' }
       }),
       supabase.functions.invoke('accurate-list-si', {
-        body: { fields: 'id,number,transDate,customer,totalAmount,statusName,dueDate,outstandingAmount,salesman' }
+        body: { fields: 'id,number,transDate,customer,totalAmount,statusName,dueDate,description,salesman', limit: 10000 }
       })
     ])
 
@@ -133,17 +133,30 @@ const fetchData = async () => {
 
     if (siRes.status === 'fulfilled' && !siRes.value.error) {
       const data = siRes.value.data
-      siList.value = (data?.d || []).map(si => ({
-        id: si.id,
-        number: si.number,
-        customer: si.customer?.name || 'Unknown',
-        transDate: si.transDate,
-        totalAmount: Number(si.totalAmount) || 0,
-        statusName: si.statusName || '',
-        dueDate: si.dueDate,
-        outstandingAmount: Number(si.outstandingAmount) || Number(si.totalAmount) || 0,
-        salesmanName: si.salesman?.name || '-'
-      }))
+      siList.value = (data?.d || []).map(si => {
+        const s = (si.statusName || '').toLowerCase().trim()
+        const isUnpaid = s.includes('belum') || (s !== 'lunas' && s !== 'paid')
+        
+        let outstandingVal = 0
+        if (si.outstandingAmount !== undefined && si.outstandingAmount !== null) {
+          outstandingVal = Number(si.outstandingAmount) || 0
+        } else {
+          outstandingVal = isUnpaid ? (Number(si.totalAmount) || 0) : 0
+        }
+
+        return {
+          id: si.id,
+          number: si.number,
+          customer: si.customer?.name || 'Unknown',
+          transDate: si.transDate,
+          totalAmount: Number(si.totalAmount) || 0,
+          statusName: si.statusName || '',
+          dueDate: si.dueDate,
+          description: si.description || '',
+          outstandingAmount: outstandingVal,
+          salesmanName: si.salesman?.name || '-'
+        }
+      })
     }
 
     // Clear main UI loader immediately so KPI cards render instantly (~1s)
@@ -264,9 +277,11 @@ const summaryData = computed(() => {
   // Average SO Value
   const avgSoValue = filteredSO.length > 0 ? Math.round(soNominal / filteredSO.length) : 0
 
-  // Strict SO Invoicing & Fulfillment Alignment (Eliminates Carry-Over Invoicing)
+  // Strict SO Invoicing & Fulfillment Alignment (Eliminates Carry-Over Invoicing & Closed SO inflation)
   const soShippedNominal = filteredSO.reduce((sum, item) => {
-    const pct = Math.min(100, Math.max(0, Number(item.percentShipped) || 0))
+    const s = (item.statusName || '').toLowerCase().trim()
+    const isClosed = s.includes('ditutup') || s.includes('closed') || s.includes('selesai')
+    const pct = isClosed ? 100 : Math.min(100, Math.max(0, Number(item.percentShipped) || 0))
     return sum + (Number(item.totalAmount) || 0) * (pct / 100)
   }, 0)
   const soUnshippedNominal = Math.max(0, soNominal - soShippedNominal)
@@ -622,7 +637,43 @@ onUnmounted(() => {
       <!-- 3 Executive KPI Cards (Shadcn UI Standard) -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         
-        <!-- 1. OMBET PENJUALAN (SALES ORDER) -->
+        <!-- 1. EFEKTIVITAS PENAWARAN (WIN RATE) -->
+        <Card class="shadow-xs transition-shadow hover:shadow-sm">
+          <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2">
+                <CardTitle class="text-sm font-semibold">Efektivitas Penawaran</CardTitle>
+                <Badge variant="outline" class="text-[11px] font-normal text-muted-foreground">Win Rate %</Badge>
+              </div>
+              <CardDescription class="text-xs">Rasio konversi dari penawaran ke SO</CardDescription>
+            </div>
+            <TrendingUp class="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent class="pt-4">
+            <div v-if="isLoading" class="space-y-2">
+              <div class="h-8 w-24 bg-muted rounded animate-pulse"></div>
+              <div class="h-4 w-32 bg-muted rounded animate-pulse"></div>
+            </div>
+            <div v-else class="grid grid-cols-2 gap-4">
+              <div class="space-y-1">
+                <p class="text-xs font-medium text-muted-foreground">Win Rate Konversi</p>
+                <p class="text-2xl font-bold tracking-tight text-foreground">{{ summaryData.pipeline.winRate }}%</p>
+                <p class="text-xs text-muted-foreground">{{ summaryData.pipeline.sqProcessedQty }} Deal / {{ summaryData.pipeline.sqQty }} SQ</p>
+              </div>
+              <div class="space-y-1">
+                <p class="text-xs font-medium text-muted-foreground">Total Penawaran</p>
+                <p class="text-xl font-bold tracking-tight text-foreground truncate" :title="formatCurrency(summaryData.pipeline.sqNominal)">
+                  {{ formatCurrencyShort(summaryData.pipeline.sqNominal) }}
+                </p>
+                <p class="text-xs text-muted-foreground truncate" :title="formatCurrency(summaryData.pipeline.sqNominal)">
+                  {{ summaryData.pipeline.sqQty }} Penawaran Masuk
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <!-- 2. OMBET PENJUALAN (SALES ORDER) -->
         <Card class="shadow-xs transition-shadow hover:shadow-sm">
           <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
             <div class="space-y-1">
@@ -654,42 +705,6 @@ onUnmounted(() => {
                 <p class="text-xl font-bold tracking-tight text-foreground">{{ summaryData.sales.qty }} <span class="text-xs font-normal text-muted-foreground">SO</span></p>
                 <p class="text-xs text-muted-foreground truncate" :title="`Rata-rata: ${formatCurrency(summaryData.sales.avgValue)} / SO`">
                   Avg: {{ formatCurrencyShort(summaryData.sales.avgValue) }} / SO
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <!-- 2. EFEKTIVITAS PENAWARAN (WIN RATE) -->
-        <Card class="shadow-xs transition-shadow hover:shadow-sm">
-          <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
-            <div class="space-y-1">
-              <div class="flex items-center gap-2">
-                <CardTitle class="text-sm font-semibold">Efektivitas Penawaran</CardTitle>
-                <Badge variant="outline" class="text-[11px] font-normal text-muted-foreground">Win Rate %</Badge>
-              </div>
-              <CardDescription class="text-xs">Rasio konversi dari penawaran ke SO</CardDescription>
-            </div>
-            <TrendingUp class="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent class="pt-4">
-            <div v-if="isLoading" class="space-y-2">
-              <div class="h-8 w-24 bg-muted rounded animate-pulse"></div>
-              <div class="h-4 w-32 bg-muted rounded animate-pulse"></div>
-            </div>
-            <div v-else class="grid grid-cols-2 gap-4">
-              <div class="space-y-1">
-                <p class="text-xs font-medium text-muted-foreground">Win Rate Konversi</p>
-                <p class="text-2xl font-bold tracking-tight text-foreground">{{ summaryData.pipeline.winRate }}%</p>
-                <p class="text-xs text-muted-foreground">{{ summaryData.pipeline.sqProcessedQty }} Deal / {{ summaryData.pipeline.sqQty }} SQ</p>
-              </div>
-              <div class="space-y-1">
-                <p class="text-xs font-medium text-muted-foreground">Total Penawaran</p>
-                <p class="text-xl font-bold tracking-tight text-foreground truncate" :title="formatCurrency(summaryData.pipeline.sqNominal)">
-                  {{ formatCurrencyShort(summaryData.pipeline.sqNominal) }}
-                </p>
-                <p class="text-xs text-muted-foreground truncate" :title="formatCurrency(summaryData.pipeline.sqNominal)">
-                  {{ summaryData.pipeline.sqQty }} Penawaran Masuk
                 </p>
               </div>
             </div>

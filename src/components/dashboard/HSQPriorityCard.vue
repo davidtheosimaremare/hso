@@ -1,7 +1,7 @@
 <script setup>
-import { computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { FileText, Eye, AlertCircle } from 'lucide-vue-next'
+import { FileText, Eye, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 
 const props = defineProps({
   sqList: { type: Array, required: true },
@@ -10,6 +10,12 @@ const props = defineProps({
 })
 
 const router = useRouter()
+const currentPage = ref(1)
+const pageSize = ref(5)
+
+watch(() => props.targetYear, () => {
+  currentPage.value = 1
+})
 
 const formatCurrency = (val) => {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val || 0)
@@ -54,14 +60,11 @@ const getAgeBadgeClass = (days) => {
 
 // Filtered and sorted priority list
 const priorityList = computed(() => {
-  const now = new Date()
-  
   const filtered = props.sqList.filter(sq => {
     const d = parseAccurateDate(sq.transDate)
     if (d.getFullYear() !== props.targetYear) return false
     
     const status = (sq.statusName || '').toLowerCase()
-    // Belum diproses, tidak termasuk closed, lost, cancel, selesai, terproses, disetujui
     const isExcluded = status.includes('closed') || 
                        status.includes('lost') || 
                        status.includes('cancel') || 
@@ -74,11 +77,25 @@ const priorityList = computed(() => {
     return !isExcluded
   })
   
-  // Sort by date ASC (oldest first)
   return filtered.sort((a, b) => parseAccurateDate(a.transDate) - parseAccurateDate(b.transDate))
 })
 
-const displayedList = computed(() => priorityList.value.slice(0, 5))
+const totalPages = computed(() => {
+  return Math.ceil(priorityList.value.length / pageSize.value) || 1
+})
+
+const paginatedList = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return priorityList.value.slice(start, start + pageSize.value)
+})
+
+const prevPage = () => {
+  if (currentPage.value > 1) currentPage.value--
+}
+
+const nextPage = () => {
+  if (currentPage.value < totalPages.value) currentPage.value++
+}
 
 const goToDetail = (item) => {
   const targetId = item.id || item.number
@@ -102,7 +119,7 @@ const goToDetail = (item) => {
     </div>
 
     <!-- Body -->
-    <div class="flex-1 flex flex-col mt-4 min-h-[280px]">
+    <div class="flex-1 flex flex-col mt-4 min-h-[280px] justify-between">
       <!-- Loading state -->
       <div v-if="isLoading" class="flex-1 flex flex-col justify-center items-center py-10 space-y-2">
         <div class="w-6 h-6 border-2 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
@@ -116,36 +133,61 @@ const goToDetail = (item) => {
         <p class="text-[10px] text-slate-500 mt-0.5">Tidak ada quotation pending di {{ targetYear }}</p>
       </div>
 
-      <!-- Priority List -->
-      <div v-else class="flex-1 space-y-3">
-        <div v-for="item in displayedList" :key="item.id" 
-          @click="goToDetail(item)"
-          class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800/80 border border-slate-100 dark:border-slate-800 hover:border-amber-200 dark:hover:border-amber-900 rounded-xl transition-all cursor-pointer group shadow-2xs">
-          
-          <div class="min-w-0 flex-1 pr-3">
-            <div class="flex items-center gap-1.5 mb-1 flex-wrap">
-              <span class="text-xs font-black text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors truncate">
-                {{ item.number }}
-              </span>
-              <span :class="['text-[9px] font-black px-1.5 py-0.5 rounded border', getAgeBadgeClass(getAgeDays(item.transDate))]">
-                {{ getAgeDays(item.transDate) }} hari
-              </span>
+      <!-- Priority List dengan Pagination -->
+      <div v-else class="flex-1 flex flex-col justify-between space-y-3">
+        <div class="space-y-2.5">
+          <div v-for="item in paginatedList" :key="item.id" 
+            @click="goToDetail(item)"
+            class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800/80 border border-slate-100 dark:border-slate-800 hover:border-amber-200 dark:hover:border-amber-900 rounded-xl transition-all cursor-pointer group shadow-2xs">
+            
+            <div class="min-w-0 flex-1 pr-3">
+              <div class="flex items-center gap-1.5 mb-1 flex-wrap">
+                <span class="text-xs font-black text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors truncate">
+                  {{ item.number }}
+                </span>
+                <span :class="['text-[9px] font-black px-1.5 py-0.5 rounded border', getAgeBadgeClass(getAgeDays(item.transDate))]">
+                  {{ getAgeDays(item.transDate) }} hari
+                </span>
+              </div>
+              <p class="text-[11px] font-bold text-slate-600 dark:text-slate-400 truncate">{{ item.customer }}</p>
+              <div class="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
+                <span>{{ formatDateId(item.transDate) }}</span>
+                <span>•</span>
+                <span class="font-semibold text-slate-500 dark:text-slate-400">Sales: {{ item.salesmanName }}</span>
+              </div>
             </div>
-            <p class="text-[11px] font-bold text-slate-600 dark:text-slate-400 truncate">{{ item.customer }}</p>
-            <div class="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
-              <span>{{ formatDateId(item.transDate) }}</span>
-              <span>•</span>
-              <span class="font-semibold text-slate-500 dark:text-slate-400">Sales: {{ item.salesmanName }}</span>
+
+            <div class="flex flex-col items-end shrink-0">
+              <span class="text-xs font-black text-slate-900 dark:text-white">{{ formatCurrencyShort(item.totalAmount) }}</span>
+              <button class="mt-1.5 inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-700 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/20 px-2 py-0.5 rounded border border-amber-200/50 dark:border-amber-900/50 hover:bg-amber-100 transition-colors">
+                <Eye class="w-3 h-3" /> Buka
+              </button>
             </div>
           </div>
+        </div>
 
-          <div class="flex flex-col items-end shrink-0">
-            <span class="text-xs font-black text-slate-900 dark:text-white">{{ formatCurrencyShort(item.totalAmount) }}</span>
-            <button class="mt-1.5 inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-700 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/20 px-2 py-0.5 rounded border border-amber-200/50 dark:border-amber-900/50 hover:bg-amber-100 transition-colors">
-              <Eye class="w-3 h-3" /> Buka
+        <!-- Controls Pagination -->
+        <div v-if="priorityList.length > pageSize" class="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
+          <span class="text-slate-500 font-medium">
+            {{ currentPage }} / {{ totalPages }}
+          </span>
+          <div class="flex items-center gap-1">
+            <button 
+              @click="prevPage" 
+              :disabled="currentPage === 1"
+              class="p-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
+            >
+              <ChevronLeft class="w-4 h-4" />
+            </button>
+
+            <button 
+              @click="nextPage" 
+              :disabled="currentPage >= totalPages"
+              class="p-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
+            >
+              <ChevronRight class="w-4 h-4" />
             </button>
           </div>
-
         </div>
       </div>
     </div>

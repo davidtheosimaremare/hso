@@ -162,18 +162,32 @@ onMounted(() => {
     return new Date(parts[2], parts[1] - 1, parts[0])
   }
 
+  const getStatusPriorityRank = (hsq) => {
+    const progress = getHsqProgress(hsq.number || hsq.id)
+    const stage = (progress?.stage || '').toLowerCase()
+    const status = (hsq.statusName || '').toLowerCase()
+
+    // 4. Lost / Gagal / Batal -> Paling bawah (Rank 4)
+    if (stage === 'lost' || status.includes('gagal') || status.includes('batal') || status.includes('lost')) {
+      return 4
+    }
+
+    // 3. Terproses / Selesai / Disetujui -> Paling bawah (Rank 3)
+    if (status.includes('terproses') || status.includes('selesai') || status.includes('disetujui')) {
+      return 3
+    }
+
+    // 2. Sebagian diproses -> Di tengah (Rank 2)
+    if (status.includes('sebagian')) {
+      return 2
+    }
+
+    // 1. Menunggu diproses / Outstanding / Default -> Paling Atas (Rank 1)
+    return 1
+  }
+
   const filteredHsqList = computed(() => {
     let result = [...hsqList.value]
-    // apply pin ordering: pinned items first
-    if (pinned.value.size) {
-      result.sort((a, b) => {
-        const aPinned = pinned.value.has(a.id)
-        const bPinned = pinned.value.has(b.id)
-        if (aPinned && !bPinned) return -1
-        if (!aPinned && bPinned) return 1
-        return 0
-      })
-    }
 
     // 1. Search Query
     if (searchQuery.value.trim()) {
@@ -208,6 +222,28 @@ onMounted(() => {
         return validStart && validEnd
       })
     }
+
+    // 4. Sorting: Pinned -> Status Priority Rank -> Date (Latest First) -> Number
+    result.sort((a, b) => {
+      // 4a. Pinned items first
+      const aPinned = pinned.value.has(a.id)
+      const bPinned = pinned.value.has(b.id)
+      if (aPinned && !bPinned) return -1
+      if (!aPinned && bPinned) return 1
+
+      // 4b. Status Priority Rank (1: Menunggu diproses, 2: Sebagian diproses, 3: Terproses, 4: Lost)
+      const rankA = getStatusPriorityRank(a)
+      const rankB = getStatusPriorityRank(b)
+      if (rankA !== rankB) return rankA - rankB
+
+      // 4c. Date descending (newest date first)
+      const dateA = parseAccurateDate(a.transDate).getTime()
+      const dateB = parseAccurateDate(b.transDate).getTime()
+      if (dateA !== dateB) return dateB - dateA
+
+      // 4d. Fallback to Number descending
+      return (b.number || '').localeCompare(a.number || '')
+    })
 
     return result
   })

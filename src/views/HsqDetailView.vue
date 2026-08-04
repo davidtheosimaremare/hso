@@ -6,7 +6,7 @@ import {
   Loader2, AlertCircle, FileText, ArrowLeft, Calendar, 
   FileSpreadsheet, Download, ChevronRight, User, DollarSign, Tag, Search,
   TrendingUp, Plus, Clock, CheckSquare, ListTodo, MessageSquare, PhoneCall,
-  Users, Edit, CheckCircle2, XCircle, Send, Activity, Share2, Check
+  Users, Edit, CheckCircle2, XCircle, Send, Activity, Share2, Check, Pencil, Trash2
 } from 'lucide-vue-next'
 import * as XLSX from 'xlsx'
 import { Button } from '@/components/ui/button'
@@ -121,11 +121,92 @@ const activityForm = ref({
   activity_type: 'Follow Up',
   notes: ''
 })
+const selectedPics = ref([])
+
+const formatUserName = (email) => {
+  if (!email) return '-'
+  const namePart = email.split('@')[0] || ''
+  if (namePart.toLowerCase() === 'davidtheo') return 'David Theo'
+  if (namePart.toLowerCase() === 'bobdovi') return 'Bob Dovi'
+  if (namePart.toLowerCase() === 'dolly') return 'Dolly'
+  if (namePart.toLowerCase() === 'admin') return 'Admin HSO'
+  return namePart.replace(/[._-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
+const getUserInitials = (email) => {
+  const name = formatUserName(email)
+  const parts = name.split(' ')
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
+  return name.substring(0, 2).toUpperCase()
+}
+
+const formatUserNameList = (assignedToString) => {
+  if (!assignedToString) return '-'
+  return assignedToString
+    .split(',')
+    .map(e => formatUserName(e.trim()))
+    .join(', ')
+}
+
 const taskForm = ref({
   task_title: '',
   due_date: '',
-  assigned_to: ''
+  assigned_to: '',
+  send_email_notif: true
 })
+
+const editingActivityId = ref(null)
+const editingTaskId = ref(null)
+
+const openAddActivityModal = () => {
+  editingActivityId.value = null
+  activityForm.value = { activity_type: 'Follow Up', notes: '' }
+  isAddActivityOpen.value = true
+}
+
+const openEditActivityModal = (log) => {
+  editingActivityId.value = log.id
+  activityForm.value = {
+    activity_type: log.activity_type || 'Follow Up',
+    notes: log.notes || ''
+  }
+  isAddActivityOpen.value = true
+}
+
+const openAddTaskModal = () => {
+  editingTaskId.value = null
+  taskForm.value = { task_title: '', due_date: '', assigned_to: '', send_email_notif: true }
+  if (selectedPics.value.length === 0 && userList.value.length > 0) {
+    const defaultUser = userList.value.find(u => u.email === 'davidtheo@hokiindo.co.id') || userList.value[0]
+    if (defaultUser) selectedPics.value = [defaultUser.email]
+  }
+  isAddTaskOpen.value = true
+}
+
+const openEditTaskModal = (task) => {
+  editingTaskId.value = task.id
+  taskForm.value = {
+    task_title: task.task_title || '',
+    due_date: task.due_date || '',
+    assigned_to: task.assigned_to || '',
+    send_email_notif: false
+  }
+  if (task.assigned_to) {
+    selectedPics.value = task.assigned_to.split(',').map(s => s.trim()).filter(Boolean)
+  } else {
+    selectedPics.value = []
+  }
+  isAddTaskOpen.value = true
+}
+
+const togglePicSelection = (email) => {
+  const idx = selectedPics.value.indexOf(email)
+  if (idx > -1) {
+    selectedPics.value.splice(idx, 1)
+  } else {
+    selectedPics.value.push(email)
+  }
+}
 
 const availableStages = [
   { val: 'Negosiasi', label: 'Negosiasi', defaultProb: 50 },
@@ -154,8 +235,8 @@ const fetchHsoUsers = async () => {
 
     if (data && data.length > 0) {
       userList.value = data
-      if (!taskForm.value.assigned_to && data[0]?.email) {
-        taskForm.value.assigned_to = data[0].email
+      if (selectedPics.value.length === 0 && data[0]?.email) {
+        selectedPics.value = [data[0].email]
       }
     }
   } catch (err) {
@@ -364,32 +445,53 @@ const saveActivityLog = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     const userEmail = user?.email || 'Sales User'
 
-    const payload = {
-      id: Date.now(),
-      hsq_number: String(num),
-      activity_type: activityForm.value.activity_type,
-      notes: activityForm.value.notes.trim(),
-      created_by: userEmail,
-      created_at: new Date().toISOString()
-    }
+    if (editingActivityId.value) {
+      try {
+        await supabase.from('hsq_activity_logs').update({
+          activity_type: activityForm.value.activity_type,
+          notes: activityForm.value.notes.trim()
+        }).eq('id', editingActivityId.value)
+      } catch (dbErr) {
+        console.warn('Supabase DB error:', dbErr)
+      }
 
-    try {
-      await supabase.from('hsq_activity_logs').insert({
+      const currLogs = getLocalData(`hsq_activity_logs_${num}`) || activityLogs.value || []
+      const idx = currLogs.findIndex(l => l.id === editingActivityId.value)
+      if (idx !== -1) {
+        currLogs[idx].activity_type = activityForm.value.activity_type
+        currLogs[idx].notes = activityForm.value.notes.trim()
+        setLocalData(`hsq_activity_logs_${num}`, currLogs)
+      }
+      activityLogs.value = currLogs
+    } else {
+      const payload = {
+        id: Date.now(),
         hsq_number: String(num),
         activity_type: activityForm.value.activity_type,
         notes: activityForm.value.notes.trim(),
-        created_by: userEmail
-      })
-    } catch (dbErr) {
-      console.warn('Supabase DB error, using local fallback:', dbErr)
+        created_by: userEmail,
+        created_at: new Date().toISOString()
+      }
+
+      try {
+        await supabase.from('hsq_activity_logs').insert({
+          hsq_number: String(num),
+          activity_type: activityForm.value.activity_type,
+          notes: activityForm.value.notes.trim(),
+          created_by: userEmail
+        })
+      } catch (dbErr) {
+        console.warn('Supabase DB error, using local fallback:', dbErr)
+      }
+
+      const currLogs = getLocalData(`hsq_activity_logs_${num}`) || activityLogs.value || []
+      currLogs.unshift(payload)
+      setLocalData(`hsq_activity_logs_${num}`, currLogs)
+      activityLogs.value = currLogs
     }
 
-    const currLogs = getLocalData(`hsq_activity_logs_${num}`) || activityLogs.value || []
-    currLogs.unshift(payload)
-    setLocalData(`hsq_activity_logs_${num}`, currLogs)
-    activityLogs.value = currLogs
-
     activityForm.value = { activity_type: 'Follow Up', notes: '' }
+    editingActivityId.value = null
     isAddActivityOpen.value = false
   } catch (err) {
     console.error('Error saving activity:', err)
@@ -402,7 +504,7 @@ const saveActivityLog = async () => {
 const saveTask = async () => {
   const num = selectedHsq.value?.number || hsqId
   if (!num || !taskForm.value.task_title.trim()) {
-    alert('Judul tugas tidak boleh kosong!')
+    alert('Deskripsi task tidak boleh kosong!')
     return
   }
 
@@ -410,45 +512,127 @@ const saveTask = async () => {
   try {
     const { data: { user } } = await supabase.auth.getUser()
     const userEmail = user?.email || 'Sales User'
-    const pic = taskForm.value.assigned_to || userList.value[0]?.email || userEmail
+    
+    const picList = selectedPics.value.length > 0 ? selectedPics.value : [userList.value[0]?.email || userEmail]
+    const picString = picList.join(', ')
 
-    const payload = {
-      id: Date.now(),
-      hsq_number: String(num),
-      client_name: selectedHsq.value?.customer?.name || null,
-      task_title: taskForm.value.task_title.trim(),
-      due_date: taskForm.value.due_date || null,
-      assigned_to: pic,
-      status: 'Pending',
-      created_by: userEmail,
-      created_at: new Date().toISOString()
-    }
+    if (editingTaskId.value) {
+      try {
+        await supabase.from('hsq_tasks').update({
+          task_title: taskForm.value.task_title.trim(),
+          due_date: taskForm.value.due_date || null,
+          assigned_to: picString
+        }).eq('id', editingTaskId.value)
+      } catch (dbErr) {
+        console.warn('Supabase DB error:', dbErr)
+      }
 
-    try {
-      await supabase.from('hsq_tasks').insert({
+      const currTasks = getLocalData(`hsq_tasks_${num}`) || taskList.value || []
+      const idx = currTasks.findIndex(t => t.id === editingTaskId.value)
+      if (idx !== -1) {
+        currTasks[idx].task_title = taskForm.value.task_title.trim()
+        currTasks[idx].due_date = taskForm.value.due_date || null
+        currTasks[idx].assigned_to = picString
+        setLocalData(`hsq_tasks_${num}`, currTasks)
+      }
+      taskList.value = currTasks
+    } else {
+      const payload = {
+        id: Date.now(),
         hsq_number: String(num),
         client_name: selectedHsq.value?.customer?.name || null,
         task_title: taskForm.value.task_title.trim(),
         due_date: taskForm.value.due_date || null,
-        assigned_to: pic,
+        assigned_to: picString,
         status: 'Pending',
-        created_by: userEmail
-      })
-    } catch (dbErr) {
-      console.warn('Supabase DB error, using local fallback:', dbErr)
+        created_by: userEmail,
+        created_at: new Date().toISOString()
+      }
+
+      try {
+        await supabase.from('hsq_tasks').insert({
+          hsq_number: String(num),
+          client_name: selectedHsq.value?.customer?.name || null,
+          task_title: taskForm.value.task_title.trim(),
+          due_date: taskForm.value.due_date || null,
+          assigned_to: picString,
+          status: 'Pending',
+          created_by: userEmail
+        })
+
+        if (taskForm.value.send_email_notif && picList.length > 0) {
+          for (const picEmail of picList) {
+            await supabase.from('notifications').insert({
+              title: `Task Baru: HSQ ${num}`,
+              message: `Task: ${taskForm.value.task_title.trim()} (Customer: ${selectedHsq.value?.customer?.name || '-'}). Jatuh Tempo: ${taskForm.value.due_date ? formatDate(taskForm.value.due_date) : 'Segera'}.`,
+              user_email: picEmail,
+              created_at: new Date().toISOString()
+            })
+          }
+        }
+      } catch (dbErr) {
+        console.warn('Supabase DB error, using local fallback:', dbErr)
+      }
+
+      const currTasks = getLocalData(`hsq_tasks_${num}`) || taskList.value || []
+      currTasks.push(payload)
+      setLocalData(`hsq_tasks_${num}`, currTasks)
+      taskList.value = currTasks
     }
 
-    const currTasks = getLocalData(`hsq_tasks_${num}`) || taskList.value || []
-    currTasks.push(payload)
-    setLocalData(`hsq_tasks_${num}`, currTasks)
-    taskList.value = currTasks
-
-    taskForm.value = { task_title: '', due_date: '', assigned_to: userList.value[0]?.email || '' }
+    taskForm.value = { task_title: '', due_date: '', assigned_to: '', send_email_notif: true }
+    editingTaskId.value = null
     isAddTaskOpen.value = false
   } catch (err) {
     console.error('Error saving task:', err)
   } finally {
     isSavingTask.value = false
+  }
+}
+
+// Delete Activity Log
+const deleteActivityLog = async (logId) => {
+  if (!confirm('Apakah Anda yakin ingin menghapus catatan aktivitas ini?')) return
+  const num = selectedHsq.value?.number || hsqId
+
+  // 1. Immediately update reactive state so UI reflects deletion right away
+  activityLogs.value = (activityLogs.value || []).filter(l => String(l.id) !== String(logId))
+
+  // 2. Update local storage if present
+  const localLogs = getLocalData(`hsq_activity_logs_${num}`)
+  if (localLogs && Array.isArray(localLogs)) {
+    const updatedLocal = localLogs.filter(l => String(l.id) !== String(logId))
+    setLocalData(`hsq_activity_logs_${num}`, updatedLocal)
+  }
+
+  // 3. Delete from Supabase database
+  try {
+    await supabase.from('hsq_activity_logs').delete().eq('id', logId)
+  } catch (err) {
+    console.warn('Supabase DB delete error:', err)
+  }
+}
+
+// Delete Task
+const deleteTask = async (taskId) => {
+  if (!confirm('Apakah Anda yakin ingin menghapus task ini?')) return
+  const num = selectedHsq.value?.number || hsqId
+
+  // 1. Immediately update reactive state so UI reflects deletion right away
+  taskList.value = (taskList.value || []).filter(t => String(t.id) !== String(taskId))
+
+  // 2. Update local storage if present
+  const localTasks = getLocalData(`hsq_tasks_${num}`)
+  if (localTasks && Array.isArray(localTasks)) {
+    const updatedLocal = localTasks.filter(t => String(t.id) !== String(taskId))
+    setLocalData(`hsq_tasks_${num}`, updatedLocal)
+  }
+
+  // 3. Delete from Supabase database
+  try {
+    await supabase.from('hsq_tasks').delete().eq('id', taskId)
+  } catch (err) {
+    console.warn('Supabase DB delete error:', err)
   }
 }
 
@@ -560,16 +744,31 @@ const exportToExcel = () => {
 // --- UTILS ---
 const parseAccurateDate = (dateStr) => {
   if (!dateStr) return new Date(0)
-  const parts = dateStr.split('/')
-  return new Date(parts[2], parts[1] - 1, parts[0])
+  if (typeof dateStr === 'string' && dateStr.includes('/')) {
+    const parts = dateStr.split('/')
+    return new Date(parts[2], parts[1] - 1, parts[0])
+  }
+  const d = new Date(dateStr)
+  return isNaN(d.getTime()) ? new Date(0) : d
 }
 
 const formatDate = (dateStr) => {
   if (!dateStr) return '-'
   try {
     const d = parseAccurateDate(dateStr)
-    if (isNaN(d.getTime())) return dateStr
+    if (isNaN(d.getTime()) || d.getTime() === 0) return dateStr
     return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })
+  } catch {
+    return dateStr
+  }
+}
+
+const formatDateTime = (dateStr) => {
+  if (!dateStr) return '-'
+  try {
+    const d = parseAccurateDate(dateStr)
+    if (isNaN(d.getTime()) || d.getTime() === 0) return dateStr
+    return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
   } catch {
     return dateStr
   }
@@ -827,34 +1026,30 @@ onMounted(() => {
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3.5">
           <div class="flex items-center gap-2.5">
             <Activity class="w-5 h-5 text-red-600" />
-            <h3 class="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">Aktivitas & Tugas Client</h3>
+            <h3 class="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">Aktivitas & Task Client</h3>
             <span class="text-xs px-2.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold border border-slate-200/60 dark:border-slate-700">
               {{ activityLogs.length + taskList.length }}
             </span>
           </div>
           <div class="flex items-center gap-2">
-            <Button @click="isAddActivityOpen = true" variant="outline" class="h-8 px-3 text-xs gap-1.5 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold rounded-xl cursor-pointer">
+            <Button @click="openAddActivityModal" variant="outline" class="h-8 px-3 text-xs gap-1.5 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold rounded-xl cursor-pointer">
               <Plus class="w-3.5 h-3.5 text-red-600" /> Catat Aktivitas
             </Button>
-            <Button @click="isAddTaskOpen = true" variant="outline" class="h-8 px-3 text-xs gap-1.5 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold rounded-xl cursor-pointer">
+            <Button @click="openAddTaskModal" variant="outline" class="h-8 px-3 text-xs gap-1.5 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 font-bold rounded-xl cursor-pointer">
               <Plus class="w-3.5 h-3.5 text-red-600" /> Tambah Task
             </Button>
           </div>
         </div>
 
-        <!-- Timeline List (Activities + Tasks combined) -->
-        <div v-if="combinedActivityFeed.length > 0" class="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+        <!-- Timeline List (Activities + Tasks combined - Shadcn UI Clean Style) -->
+        <div v-if="combinedActivityFeed.length > 0" class="space-y-2.5 max-h-[440px] overflow-y-auto pr-1">
           <div
             v-for="entry in combinedActivityFeed"
             :key="entry.key"
-            class="p-4 rounded-xl border flex items-start gap-3"
-            :class="entry.type === 'task'
-              ? (entry.status === 'Completed'
-                  ? 'bg-emerald-50/40 dark:bg-emerald-950/10 border-emerald-200 dark:border-emerald-900/40 opacity-75'
-                  : 'bg-amber-50/40 dark:bg-amber-950/10 border-amber-200 dark:border-amber-900/40')
-              : 'bg-red-50/30 dark:bg-red-950/10 border-red-200 dark:border-red-900/40'"
+            class="group p-3.5 rounded-xl border border-slate-200/70 dark:border-slate-800 bg-white dark:bg-slate-900/90 hover:border-slate-300 dark:hover:border-slate-700 transition-all shadow-2xs flex items-start gap-3"
+            :class="{ 'opacity-65': entry.type === 'task' && entry.status === 'Completed' }"
           >
-            <!-- For task: checkbox. For activity: dot -->
+            <!-- Checkbox for Task / Accent Indicator for Activity -->
             <div class="shrink-0 mt-0.5">
               <input
                 v-if="entry.type === 'task'"
@@ -863,56 +1058,83 @@ onMounted(() => {
                 @change="toggleTaskStatus(entry.raw)"
                 class="w-4 h-4 rounded accent-red-600 cursor-pointer"
               />
-              <span v-else class="block w-2.5 h-2.5 rounded-full bg-red-500 mt-2"></span>
+              <span v-else class="block w-2 h-2 rounded-full bg-slate-400 dark:bg-slate-500 mt-1.5 ml-1"></span>
             </div>
 
-            <div class="flex-1 min-w-0 space-y-1.5">
+            <div class="flex-1 min-w-0 space-y-1">
+              <!-- Top Row: Badge, Title & Created Time + Actions -->
               <div class="flex items-center justify-between gap-2 flex-wrap">
                 <div class="flex items-center gap-2 flex-wrap">
                   <span
-                    class="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase border"
+                    class="px-2 py-0.5 rounded text-[10px] font-semibold border uppercase tracking-wider"
                     :class="entry.type === 'task'
-                      ? 'border-amber-300 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900'
-                      : 'border-red-200 bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300 dark:border-red-900'"
+                      ? 'border-amber-200/80 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/60'
+                      : 'border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'"
                   >
-                    {{ entry.type === 'task' ? 'Tugas' : (entry.activity_type || 'Aktivitas') }}
+                    {{ entry.type === 'task' ? 'Task' : (entry.activity_type || 'Aktivitas') }}
                   </span>
                   <h4
-                    class="text-xs font-bold leading-normal text-slate-900 dark:text-white"
+                    class="text-xs font-semibold leading-normal text-slate-900 dark:text-white"
                     :class="{ 'line-through text-slate-400 dark:text-slate-500': entry.type === 'task' && entry.status === 'Completed' }"
                   >
                     {{ entry.title }}
                   </h4>
                 </div>
-                <span class="text-[11px] text-slate-400 flex items-center gap-1 shrink-0">
-                  <Clock class="w-3 h-3" />
-                  {{ formatDate(entry.created_at) }}
-                </span>
+
+                <div class="flex items-center gap-3 shrink-0">
+                  <!-- Edit & Delete Buttons -->
+                  <div class="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                    <button 
+                      @click="entry.type === 'task' ? openEditTaskModal(entry.raw) : openEditActivityModal(entry.raw)"
+                      title="Edit"
+                      class="p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                    >
+                      <Pencil class="w-3.5 h-3.5" />
+                    </button>
+                    <button 
+                      @click="entry.type === 'task' ? deleteTask(entry.raw.id) : deleteActivityLog(entry.raw.id)"
+                      title="Hapus"
+                      class="p-1 rounded-md text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                    >
+                      <Trash2 class="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <!-- Clean Formatted Timestamp -->
+                  <span class="text-[11px] text-slate-400 font-normal flex items-center gap-1">
+                    <Clock class="w-3 h-3 text-slate-400" />
+                    {{ formatDateTime(entry.created_at) }}
+                  </span>
+                </div>
               </div>
 
-              <!-- Task meta: due date & PIC -->
-              <div v-if="entry.type === 'task'" class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
-                <span v-if="entry.due_date" class="flex items-center gap-1 font-bold text-red-600 dark:text-red-400">
-                  <Calendar class="w-3 h-3" /> Due: {{ formatDate(entry.due_date) }}
+              <!-- Task Metadata (Due Date, Penanggung Jawab, Status) -->
+              <div v-if="entry.type === 'task'" class="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400 pt-0.5">
+                <span v-if="entry.due_date" class="flex items-center gap-1 font-medium text-slate-700 dark:text-slate-300">
+                  <Calendar class="w-3 h-3 text-slate-400" /> Jatuh Tempo: <span class="font-semibold text-slate-900 dark:text-white">{{ formatDate(entry.due_date) }}</span>
                 </span>
                 <span v-if="entry.assigned_to" class="flex items-center gap-1 font-medium">
-                  <User class="w-3 h-3 text-slate-400" /> PIC: {{ entry.assigned_to }}
+                  <User class="w-3 h-3 text-slate-400" /> Penanggung Jawab: <span class="font-semibold text-slate-800 dark:text-slate-200">{{ formatUserNameList(entry.assigned_to) }}</span>
                 </span>
                 <span
                   v-if="entry.status"
-                  class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase"
-                  :class="entry.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'"
+                  class="px-2 py-0.5 rounded-full text-[10px] font-semibold border uppercase"
+                  :class="entry.status === 'Completed'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/60'
+                    : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/60'"
                 >
-                  {{ entry.status }}
+                  {{ entry.status === 'Completed' ? 'Selesai' : 'Pending' }}
                 </span>
               </div>
 
               <!-- Activity note -->
-              <p v-if="entry.type === 'activity'" class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+              <p v-if="entry.type === 'activity'" class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed font-normal">
                 {{ entry.notes }}
               </p>
-              <p v-if="entry.created_by" class="text-[11px] text-slate-400 font-medium">
-                Oleh: {{ entry.created_by }}
+
+              <!-- Author -->
+              <p v-if="entry.created_by" class="text-[11px] text-slate-400 font-normal pt-0.5">
+                Oleh: <span class="font-medium text-slate-600 dark:text-slate-400">{{ formatUserName(entry.created_by) }}</span>
               </p>
             </div>
           </div>
@@ -920,46 +1142,48 @@ onMounted(() => {
 
         <div v-else class="py-12 text-center text-slate-400 space-y-2 border border-dashed border-slate-200 dark:border-slate-800 rounded-2xl bg-slate-50/30 dark:bg-slate-800/20">
           <MessageSquare class="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600" />
-          <p class="text-xs font-bold text-slate-600 dark:text-slate-400">Belum ada aktivitas atau tugas</p>
+          <p class="text-xs font-bold text-slate-600 dark:text-slate-400">Belum ada aktivitas atau task</p>
           <p class="text-[11px] text-slate-400">Klik "Catat Aktivitas" atau "Tambah Task" untuk memulai.</p>
         </div>
       </div>
 
-      <!-- Items Table Section -->
-      <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 overflow-hidden shadow-xs font-sans">
-        <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div class="flex items-center gap-3">
-            <h3 class="text-xs font-bold uppercase text-slate-500 tracking-wider">Daftar Barang Penawaran</h3>
-            <span class="text-xs font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1 rounded-full shadow-2xs">
-              {{ filteredItems.length }} dari {{ selectedHsq.detailItem?.length || 0 }} Items
+      <!-- Items Table Section (Shadcn UI Minimalist Style) -->
+      <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200/80 dark:border-slate-800 overflow-hidden shadow-2xs font-sans">
+        <!-- Card Header & Search -->
+        <div class="px-5 py-3 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="flex items-center gap-2.5">
+            <h3 class="text-xs font-semibold text-slate-900 dark:text-white">Daftar Barang Penawaran</h3>
+            <span class="text-[11px] font-medium text-slate-500 bg-slate-100 dark:bg-slate-800 border border-slate-200/60 dark:border-slate-700/60 px-2 py-0.5 rounded-full">
+              {{ filteredItems.length }} / {{ selectedHsq.detailItem?.length || 0 }} Items
             </span>
           </div>
 
           <!-- Search Input -->
-          <div class="relative w-full sm:w-64">
-            <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+          <div class="relative w-full sm:w-60">
+            <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
             <input
               v-model="itemSearchQuery"
               type="text"
               placeholder="Cari kode / nama barang..."
-              class="pl-9 pr-3 py-2 w-full text-xs border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all font-sans"
+              class="pl-8 pr-3 py-1.5 w-full text-xs border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400 dark:focus:ring-slate-700 transition-all font-sans"
             />
           </div>
         </div>
         
+        <!-- Table -->
         <div class="overflow-x-auto">
           <table class="w-full text-left border-collapse font-sans">
             <thead>
-              <tr class="bg-slate-50/80 dark:bg-slate-800/50 text-slate-500 border-b border-slate-200/80 dark:border-slate-800">
-                <th class="py-3.5 px-4 text-[11px] font-bold uppercase tracking-wider w-12 text-center">No</th>
-                <th class="py-3.5 px-4 text-[11px] font-bold uppercase tracking-wider w-44">Kode Barang</th>
-                <th class="py-3.5 px-4 text-[11px] font-bold uppercase tracking-wider">Nama Barang</th>
-                <th class="py-3.5 px-4 text-[11px] font-bold uppercase tracking-wider w-20 text-right">Qty</th>
-                <th class="py-3.5 px-4 text-[11px] font-bold uppercase tracking-wider w-20 text-center">Satuan</th>
-                <th class="py-3.5 px-4 text-[11px] font-bold uppercase tracking-wider w-36 text-right">Harga Satuan</th>
-                <th class="py-3.5 px-4 text-[11px] font-bold uppercase tracking-wider w-24 text-center">Diskon</th>
-                <th class="py-3.5 px-4 text-[11px] font-bold uppercase tracking-wider w-36 text-right">Total Harga</th>
-                <th class="py-3.5 px-4 text-[11px] font-bold uppercase tracking-wider w-40">Catatan Item</th>
+              <tr class="bg-slate-50/60 dark:bg-slate-900/60 text-slate-500 border-b border-slate-200/80 dark:border-slate-800">
+                <th class="py-2.5 px-4 text-[11px] font-semibold uppercase tracking-wider w-12 text-center">No</th>
+                <th class="py-2.5 px-4 text-[11px] font-semibold uppercase tracking-wider w-40">Kode Barang</th>
+                <th class="py-2.5 px-4 text-[11px] font-semibold uppercase tracking-wider">Nama Barang</th>
+                <th class="py-2.5 px-4 text-[11px] font-semibold uppercase tracking-wider w-20 text-right">Qty</th>
+                <th class="py-2.5 px-4 text-[11px] font-semibold uppercase tracking-wider w-16 text-center">Satuan</th>
+                <th class="py-2.5 px-4 text-[11px] font-semibold uppercase tracking-wider w-32 text-right">Harga Satuan</th>
+                <th class="py-2.5 px-4 text-[11px] font-semibold uppercase tracking-wider w-24 text-center">Diskon</th>
+                <th class="py-2.5 px-4 text-[11px] font-semibold uppercase tracking-wider w-36 text-right">Total Harga</th>
+                <th class="py-2.5 px-4 text-[11px] font-semibold uppercase tracking-wider w-36">Status / Catatan</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 dark:divide-slate-800/60 text-xs">
@@ -967,50 +1191,99 @@ onMounted(() => {
                 v-for="(item, idx) in filteredItems"
                 :key="idx"
                 :id="`hsq-item-${item.item?.no}`"
-                class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
+                class="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors"
                 :class="{ 'bg-amber-50/60 dark:bg-amber-950/20': route.query.highlight === item.item?.no }"
               >
-                <td class="py-3.5 px-4 text-center text-slate-400 font-bold">{{ idx + 1 }}</td>
-                <td class="py-3.5 px-4 font-bold text-slate-800 dark:text-slate-200">{{ item.item?.no || '-' }}</td>
-                <td class="py-3.5 px-4 font-medium text-slate-900 dark:text-white leading-relaxed">{{ item.item?.name || item.detailName || '-' }}</td>
-                <td class="py-3.5 px-4 text-right font-black text-slate-900 dark:text-white text-sm">{{ item.quantity || 0 }}</td>
-                <td class="py-3.5 px-4 text-center font-bold text-slate-600 dark:text-slate-400">{{ item.itemUnit?.name || item.unit?.name || '-' }}</td>
-                <td class="py-3.5 px-4 text-right font-semibold text-slate-700 dark:text-slate-300">{{ formatCurrency(item.unitPrice) }}</td>
-                <td class="py-3.5 px-4 text-center font-bold text-slate-600 dark:text-slate-400">{{ getDiscountText(item) }}</td>
-                <td class="py-3.5 px-4 text-right font-black text-slate-900 dark:text-white">{{ formatCurrency(getLineTotal(item)) }}</td>
-                <td class="py-3.5 px-4 text-slate-500 dark:text-slate-400">{{ item.detailNotes || '-' }}</td>
+                <!-- No -->
+                <td class="py-3 px-4 text-center text-slate-400 font-normal">{{ idx + 1 }}</td>
+                
+                <!-- Kode Barang Badge -->
+                <td class="py-3 px-4">
+                  <span class="inline-block whitespace-nowrap font-mono text-[11px] font-medium text-slate-700 dark:text-slate-300 bg-slate-100/80 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200/50 dark:border-slate-700/50">
+                    {{ item.item?.no || '-' }}
+                  </span>
+                </td>
+                
+                <!-- Nama Barang -->
+                <td class="py-3 px-4 font-medium text-slate-900 dark:text-slate-100 leading-normal max-w-xs md:max-w-md">
+                  {{ item.item?.name || item.detailName || '-' }}
+                </td>
+
+                <!-- Qty -->
+                <td class="py-3 px-4 text-right font-semibold text-slate-900 dark:text-white tabular-nums">
+                  {{ item.quantity || 0 }}
+                </td>
+
+                <!-- Satuan -->
+                <td class="py-3 px-4 text-center text-slate-500 dark:text-slate-400">
+                  {{ item.itemUnit?.name || item.unit?.name || '-' }}
+                </td>
+
+                <!-- Harga Satuan -->
+                <td class="py-3 px-4 text-right text-slate-600 dark:text-slate-400 tabular-nums">
+                  {{ formatCurrency(item.unitPrice) }}
+                </td>
+
+                <!-- Diskon -->
+                <td class="py-3 px-4 text-center text-slate-500 dark:text-slate-400 font-medium">
+                  {{ getDiscountText(item) }}
+                </td>
+
+                <!-- Total Harga -->
+                <td class="py-3 px-4 text-right font-semibold text-slate-900 dark:text-white tabular-nums">
+                  {{ formatCurrency(getLineTotal(item)) }}
+                </td>
+
+                <!-- Catatan Item / Stock Micro Badge -->
+                <td class="py-3 px-4">
+                  <template v-if="(item.detailNotes || '').trim().toUpperCase() === 'STOCK'">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/60 dark:border-emerald-900/40">
+                      STOCK
+                    </span>
+                  </template>
+                  <template v-else-if="(item.detailNotes || '').trim().toUpperCase() === 'NO STOCK'">
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200/60 dark:border-slate-700/60">
+                      NO STOCK
+                    </span>
+                  </template>
+                  <template v-else>
+                    <span class="text-slate-500 dark:text-slate-400 text-xs">
+                      {{ item.detailNotes || '-' }}
+                    </span>
+                  </template>
+                </td>
               </tr>
             </tbody>
           </table>
 
           <!-- Empty state when filtered -->
           <div v-if="filteredItems.length === 0 && selectedHsq.detailItem?.length" class="text-center py-10 text-slate-400">
-            <p class="text-xs font-bold text-slate-600 dark:text-slate-400">Produk tidak ditemukan</p>
+            <p class="text-xs font-semibold text-slate-600 dark:text-slate-400">Produk tidak ditemukan</p>
             <p class="text-[11px] text-slate-400 mt-1">Coba gunakan kata kunci pencarian lain.</p>
           </div>
         </div>
 
         <!-- Table Financial Summary Footer -->
-        <div class="px-6 py-4 bg-slate-50/80 dark:bg-slate-800/40 border-t border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row items-end sm:items-center justify-between gap-4 font-sans">
-          <div class="text-xs text-slate-500 font-medium">
-            Menampilkan <span class="font-bold text-slate-900 dark:text-white">{{ filteredItems.length }}</span> dari <span class="font-bold text-slate-900 dark:text-white">{{ selectedHsq.detailItem?.length || 0 }}</span> item barang
+        <div class="px-5 py-3.5 bg-slate-50/50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-end sm:items-center justify-between gap-4 font-sans text-xs">
+          <div class="text-slate-500 font-normal">
+            Menampilkan <span class="font-semibold text-slate-900 dark:text-white">{{ filteredItems.length }}</span> dari <span class="font-semibold text-slate-900 dark:text-white">{{ selectedHsq.detailItem?.length || 0 }}</span> item barang
           </div>
-          <div class="w-full sm:w-auto space-y-1 text-xs text-right min-w-[240px]">
-            <div v-if="selectedHsq.subTotal" class="flex justify-between gap-6 text-slate-600 dark:text-slate-400">
+          <div class="w-full sm:w-auto space-y-1 text-right min-w-[240px]">
+            <div v-if="selectedHsq.subTotal" class="flex justify-between gap-6 text-slate-500 dark:text-slate-400">
               <span>Subtotal:</span>
-              <span class="font-semibold text-slate-900 dark:text-white">{{ formatCurrency(selectedHsq.subTotal) }}</span>
+              <span class="font-medium text-slate-900 dark:text-white tabular-nums">{{ formatCurrency(selectedHsq.subTotal) }}</span>
             </div>
-            <div v-if="selectedHsq.totalDiscount" class="flex justify-between gap-6 text-rose-600 dark:text-rose-400 font-semibold">
+            <div v-if="selectedHsq.totalDiscount" class="flex justify-between gap-6 text-rose-600 dark:text-rose-400 font-medium">
               <span>Total Diskon:</span>
-              <span>-{{ formatCurrency(selectedHsq.totalDiscount) }}</span>
+              <span class="tabular-nums">-{{ formatCurrency(selectedHsq.totalDiscount) }}</span>
             </div>
-            <div v-if="selectedHsq.taxAmount" class="flex justify-between gap-6 text-slate-600 dark:text-slate-400">
+            <div v-if="selectedHsq.taxAmount" class="flex justify-between gap-6 text-slate-500 dark:text-slate-400">
               <span>PPN / Pajak:</span>
-              <span class="font-semibold text-slate-900 dark:text-white">{{ formatCurrency(selectedHsq.taxAmount) }}</span>
+              <span class="font-medium text-slate-900 dark:text-white tabular-nums">{{ formatCurrency(selectedHsq.taxAmount) }}</span>
             </div>
-            <div class="flex justify-between gap-6 pt-2 border-t border-slate-200 dark:border-slate-700 text-sm font-black text-slate-900 dark:text-white">
+            <div class="flex justify-between gap-6 pt-1.5 border-t border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-900 dark:text-white">
               <span>Grand Total:</span>
-              <span class="text-emerald-600 dark:text-emerald-400">{{ formatCurrency(selectedHsq.totalAmount) }}</span>
+              <span class="text-slate-900 dark:text-white font-bold tabular-nums">{{ formatCurrency(selectedHsq.totalAmount) }}</span>
             </div>
           </div>
         </div>
@@ -1101,13 +1374,13 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- MODAL 2: CATAT AKTIVITAS SALES -->
+    <!-- MODAL 2: CATAT / EDIT AKTIVITAS SALES -->
     <div v-if="isAddActivityOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
       <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 border border-slate-200/80 dark:border-slate-800 shadow-2xl space-y-5 font-sans">
         <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3.5">
           <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Activity class="w-5 h-5 text-red-600" />
-            Catat Aktivitas Sales
+            {{ editingActivityId ? 'Edit Aktivitas Sales' : 'Catat Aktivitas Sales' }}
           </h3>
           <button @click="isAddActivityOpen = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
             <XCircle class="w-5 h-5" />
@@ -1143,19 +1416,19 @@ onMounted(() => {
         <div class="flex justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
           <Button @click="isAddActivityOpen = false" variant="outline" class="text-xs h-9 px-4 rounded-xl font-semibold">Batal</Button>
           <Button @click="saveActivityLog" :disabled="isSavingActivity" class="text-xs h-9 px-4 bg-red-600 hover:bg-red-700 text-white font-bold gap-2 rounded-xl cursor-pointer">
-            <Loader2 v-if="isSavingActivity" class="w-4 h-4 animate-spin" /> Simpan Aktivitas
+            <Loader2 v-if="isSavingActivity" class="w-4 h-4 animate-spin" /> {{ editingActivityId ? 'Simpan Perubahan' : 'Simpan Aktivitas' }}
           </Button>
         </div>
       </div>
     </div>
 
-    <!-- MODAL 3: TAMBAH TUGAS CLIENT -->
+    <!-- MODAL 3: TAMBAH / EDIT TASK CLIENT -->
     <div v-if="isAddTaskOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
       <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 border border-slate-200/80 dark:border-slate-800 shadow-2xl space-y-5 font-sans">
         <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3.5">
           <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <ListTodo class="w-5 h-5 text-red-600" />
-            Tambah Tugas / Action Item
+            {{ editingTaskId ? 'Edit Task / Action Item' : 'Tambah Task / Action Item' }}
           </h3>
           <button @click="isAddTaskOpen = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer">
             <XCircle class="w-5 h-5" />
@@ -1165,7 +1438,7 @@ onMounted(() => {
         <div class="space-y-4 text-xs">
           <!-- Task Title -->
           <div class="space-y-1.5">
-            <label class="font-bold text-slate-700 dark:text-slate-300">Deskripsi Tugas</label>
+            <label class="font-bold text-slate-700 dark:text-slate-300">Deskripsi Task</label>
             <input 
               v-model="taskForm.task_title"
               type="text"
@@ -1174,34 +1447,93 @@ onMounted(() => {
             />
           </div>
 
-          <!-- Due Date & Assigned To -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <!-- Due Date & Penanggung Jawab Multi-select -->
+          <div class="space-y-4">
+            <!-- Due Date -->
             <div class="space-y-1.5">
-              <label class="font-bold text-slate-700 dark:text-slate-300">Jatuh Tempo (Due Date)</label>
+              <label class="font-bold text-slate-700 dark:text-slate-300">Jatuh Tempo (Target Selesai)</label>
               <input 
                 type="date"
                 v-model="taskForm.due_date"
                 class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3.5 py-2.5 rounded-xl outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 font-sans cursor-pointer"
               />
             </div>
+
+            <!-- Penanggung Jawab User Grid Cards -->
             <div class="space-y-1.5">
-              <label class="font-bold text-slate-700 dark:text-slate-300">Penanggung Jawab (PIC HSO)</label>
-              <select 
-                v-model="taskForm.assigned_to"
-                class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3.5 py-2.5 rounded-xl outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 font-sans font-bold"
-              >
-                <option v-for="user in userList" :key="user.email" :value="user.email">
-                  {{ user.email }} {{ user.role ? `(${user.role})` : '' }}
-                </option>
-              </select>
+              <div class="flex items-center justify-between">
+                <label class="font-bold text-slate-700 dark:text-slate-300">Penanggung Jawab Tim HSO</label>
+                <span class="text-[11px] font-medium text-slate-400">Klik untuk memilih (bisa 1+)</span>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                <div
+                  v-for="user in userList"
+                  :key="user.email"
+                  @click="togglePicSelection(user.email)"
+                  class="p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-2 font-sans select-none"
+                  :class="selectedPics.includes(user.email)
+                    ? 'bg-red-50/70 dark:bg-red-950/30 border-red-300 dark:border-red-800 shadow-2xs'
+                    : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200/80 dark:border-slate-700/60 hover:bg-white dark:hover:bg-slate-800'"
+                >
+                  <div class="flex items-center gap-2.5 min-w-0">
+                    <div 
+                      class="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-bold shrink-0 transition-colors"
+                      :class="selectedPics.includes(user.email)
+                        ? 'bg-red-600 text-white'
+                        : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'"
+                    >
+                      {{ getUserInitials(user.email) }}
+                    </div>
+
+                    <div class="min-w-0">
+                      <p class="text-xs font-bold text-slate-900 dark:text-white truncate leading-snug">
+                        {{ formatUserName(user.email) }}
+                      </p>
+                      <p class="text-[10px] text-slate-400 truncate leading-none mt-0.5">
+                        {{ user.email }}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div 
+                    class="w-4 h-4 rounded-md flex items-center justify-center shrink-0 transition-colors"
+                    :class="selectedPics.includes(user.email) ? 'bg-red-600 text-white' : 'border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900'"
+                  >
+                    <Check v-if="selectedPics.includes(user.email)" class="w-3 h-3 stroke-[3]" />
+                  </div>
+                </div>
+              </div>
             </div>
+          </div>
+
+          <!-- Selected PIC Chips -->
+          <div v-if="selectedPics.length > 0" class="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 flex-wrap pt-1">
+            <span class="font-bold text-slate-700 dark:text-slate-300">Penanggung Jawab Terpilih:</span>
+            <span v-for="pic in selectedPics" :key="pic" class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-900 text-[11px] font-bold">
+              {{ formatUserName(pic) }}
+              <button @click.stop="togglePicSelection(pic)" type="button" class="hover:text-red-900 dark:hover:text-white font-bold ml-0.5 cursor-pointer">×</button>
+            </span>
+          </div>
+
+          <!-- Email Notif Checkbox -->
+          <div class="flex items-center gap-2.5 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200/60 dark:border-slate-700/60">
+            <input 
+              id="sendEmailCheck"
+              type="checkbox"
+              v-model="taskForm.send_email_notif"
+              class="w-4 h-4 rounded accent-red-600 cursor-pointer shrink-0"
+            />
+            <label for="sendEmailCheck" class="text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
+              Kirim Notifikasi Email ke Penanggung Jawab ({{ selectedPics.length }} orang)
+            </label>
           </div>
         </div>
 
         <div class="flex justify-end gap-2.5 pt-3 border-t border-slate-100 dark:border-slate-800">
           <Button @click="isAddTaskOpen = false" variant="outline" class="text-xs h-9 px-4 rounded-xl font-semibold">Batal</Button>
           <Button @click="saveTask" :disabled="isSavingTask" class="text-xs h-9 px-4 bg-red-600 hover:bg-red-700 text-white font-bold gap-2 rounded-xl cursor-pointer">
-            <Loader2 v-if="isSavingTask" class="w-4 h-4 animate-spin" /> Simpan Tugas
+            <Loader2 v-if="isSavingTask" class="w-4 h-4 animate-spin" /> {{ editingTaskId ? 'Simpan Perubahan' : 'Simpan Task' }}
           </Button>
         </div>
       </div>

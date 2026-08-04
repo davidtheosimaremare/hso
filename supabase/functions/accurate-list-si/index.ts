@@ -27,9 +27,9 @@ serve(async (req) => {
 
     if (!accessToken) throw new Error('Token Accurate belum disetting!')
 
-    const { fields, limit, sort, filterNumber } = await req.json().catch(() => ({}))
+    const { fields, limit, sort, filterNumber, filterOutstanding, filterOverdue } = await req.json().catch(() => ({}))
 
-    const fieldsParam = fields || 'id,number,transDate,customer,totalAmount,statusName'
+    const fieldsParam = fields || 'id,number,transDate,customer,totalAmount,statusName,dueDate,salesman'
     const limitParam = limit || 10000
     const sortParam = sort || 'transDate|desc'
 
@@ -45,13 +45,19 @@ serve(async (req) => {
       signatureHeader = { 'X-Api-Timestamp': timestamp, 'X-Api-Signature': signature }
     }
 
-    console.log(`Fetching Data SI. Fields: ${fieldsParam.substring(0, 50)}... FilterNumber: ${filterNumber || 'none'}`)
+    console.log(`Fetching Data SI. Fields: ${fieldsParam.substring(0, 50)}... FilterNumber: ${filterNumber || 'none'} FilterOutstanding: ${filterOutstanding}`)
 
     while (hasMoreData) {
       let url = `${LIST_SI_ENDPOINT}?fields=${fieldsParam}&sp.page=${page}&sp.pageSize=${pageSize}&sp.sort=${sortParam}`
       
       if (filterNumber) {
         url += `&filter.number.op=EQUAL&filter.number.val=${encodeURIComponent(filterNumber)}`
+      }
+      if (filterOutstanding !== undefined && filterOutstanding !== null) {
+        url += `&filter.outstanding.op=EQUAL&filter.outstanding.val=${filterOutstanding}`
+      }
+      if (filterOverdue !== undefined && filterOverdue !== null) {
+        url += `&filter.overdue.op=EQUAL&filter.overdue.val=${filterOverdue}`
       }
 
       const response = await fetch(url, {

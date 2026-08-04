@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Package, Eye, AlertTriangle, Clock, ArrowUpCircle, ChevronDown, ChevronUp, Pin, X, RotateCcw, RefreshCw, CheckSquare } from 'lucide-vue-next'
+import { Package, Eye, AlertTriangle, Clock, ArrowUpCircle, ChevronDown, ChevronUp, Pin, X, RotateCcw, RefreshCw, CheckSquare, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { supabase } from '@/lib/supabase'
 
 const props = defineProps({
@@ -548,6 +548,31 @@ const goToDetail = (item) => {
 const hasCustomState = computed(() => {
   return dismissedOrders.value.length > 0 || lowPriorityOrders.value.length > 0 || pinnedOrders.value.length > 0
 })
+
+// Pagination
+const currentPage = ref(1)
+const pageSize = ref(6)
+
+watch(() => props.targetYear, () => {
+  currentPage.value = 1
+})
+
+const totalPages = computed(() => {
+  return Math.ceil(priorityList.value.length / pageSize.value) || 1
+})
+
+const paginatedList = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value
+  return priorityList.value.slice(start, start + pageSize.value)
+})
+
+const prevPage = () => {
+  if (currentPage.value > 1) currentPage.value--
+}
+
+const nextPage = () => {
+  if (currentPage.value < totalPages.value) currentPage.value++
+}
 </script>
 
 <template>
@@ -609,7 +634,7 @@ const hasCustomState = computed(() => {
           <div class="text-right">Aksi</div>
         </div>
 
-        <div v-for="item in priorityList" :key="item.id" 
+        <div v-for="item in paginatedList" :key="item.id" 
           @click="goToDetail(item)"
           :class="[
             'flex flex-wrap md:grid gap-4 py-3 px-3 hover:bg-muted/40 items-center transition-colors cursor-pointer group rounded-lg relative',
@@ -722,6 +747,36 @@ const hasCustomState = computed(() => {
             </button>
           </div>
 
+        </div>
+
+        <!-- Controls Pagination -->
+        <div v-if="priorityList.length > pageSize" class="flex flex-col sm:flex-row items-center justify-between pt-3 border-t border-border text-xs gap-2 mt-3">
+          <span class="text-muted-foreground font-medium">
+            Menampilkan <strong class="text-foreground">{{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, priorityList.length) }}</strong> dari <strong class="text-foreground">{{ priorityList.length }}</strong> HSO
+          </span>
+          <div class="flex items-center gap-2">
+            <button 
+              @click="prevPage" 
+              :disabled="currentPage === 1"
+              class="px-3 py-1.5 rounded-lg border border-input bg-background font-bold text-foreground hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed transition-all inline-flex items-center gap-1 shadow-2xs cursor-pointer"
+            >
+              <ChevronLeft class="w-3.5 h-3.5" />
+              <span>Sebelumnya</span>
+            </button>
+
+            <span class="px-2 font-extrabold text-foreground">
+              Halaman {{ currentPage }} dari {{ totalPages }}
+            </span>
+
+            <button 
+              @click="nextPage" 
+              :disabled="currentPage >= totalPages"
+              class="px-3 py-1.5 rounded-lg border border-input bg-background font-bold text-foreground hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed transition-all inline-flex items-center gap-1 shadow-2xs cursor-pointer"
+            >
+              <span>Berikutnya</span>
+              <ChevronRight class="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
     </div>

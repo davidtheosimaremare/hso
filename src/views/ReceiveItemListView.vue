@@ -9,10 +9,8 @@ import autoTable from 'jspdf-autotable'
 import { 
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow 
 } from '@/components/ui/table'
-import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Label } from '@/components/ui/label'
 import { 
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue 
 } from '@/components/ui/select'
@@ -20,15 +18,13 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { 
-  Search, RefreshCw, FileText, ArrowRight, Loader2, 
-  Calendar as CalendarIcon, XCircle, ChevronLeft, ChevronRight, 
+  Search, RefreshCw, Loader2, 
+  ChevronLeft, ChevronRight, ChevronDown, 
   Download, FileSpreadsheet, File as FileIcon, Filter,
-  ChevronsUpDown, ArrowUp, ArrowDown, Check, X
+  ChevronsUpDown, ArrowUp, ArrowDown, Check, PackageCheck, ArrowRight
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -45,9 +41,10 @@ const searchQuery = ref('')
 const startDate = ref('')
 const endDate = ref('')
 const statusFilter = ref([]) 
+const dateFilterOption = ref('')
 const isInitialLoad = ref(true)
 
-// Opsi Status Accurate PO (sesuaikan jika beda)
+// Opsi Status Accurate RI
 const availableStatuses = [
   'Diajukan', 'Disetujui', 'Ditutup', 'Draf', 
   'Menunggu diproses', 'Sebagian diproses', 'Terproses', 'Ditolak'
@@ -87,7 +84,6 @@ const updateUrlParams = () => {
 // --- DATA FETCHING ---
 const fetchOrders = async () => {
   isLoading.value = true
-  // Query Supabase table directly
   let query = supabase
     .from('accurate_receive_items')
     .select('id, number, trans_date, vendor_name, status_name, po_number')
@@ -95,7 +91,7 @@ const fetchOrders = async () => {
   const { data, error } = await query.order('trans_date', { ascending: false }).limit(2000)
 
   if (error) {
-    console.error("Error:", error)
+    console.error("Error fetching receive items:", error)
   } else if (data) {
     receiveItems.value = data.map(item => ({
       id_database: item.id,
@@ -110,75 +106,8 @@ const fetchOrders = async () => {
 }
 
 // --- SYNC ACTION ---
-const triggerSync = async () => {
-  if (!confirm('Sync PO dari Accurate sekarang? (Akan mengambil SEMUA data)')) return
-  isLoading.value = true
-  
-  let page = 1
-  let totalProcessed = 0
-  let hasMore = true
-  let errorCount = 0
-
-  try {
-    const { data: { session } } = await supabase.auth.getSession()
-    const endpoint = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sync-accurate-pos'
-    
-    while (hasMore) {
-        // Update Loading Text if possible (or just console)
-        console.log(`Syncing Page ${page}...`)
-        
-        try {
-            const res = await fetch(endpoint, {
-                method: 'POST',
-                headers: {
-                    Authorization: `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ page })
-            })
-            
-            if (!res.ok) throw new Error(await res.text())
-            const result = await res.json()
-            
-            totalProcessed += result.processed || 0
-            hasMore = result.hasMore
-            
-            if (result.errors?.length > 0) errorCount += result.errors.length
-
-            if (hasMore) {
-                page++
-                await new Promise(r => setTimeout(r, 500)) // Nice delay
-            }
-        } catch (pageErr) {
-            console.error(`Error page ${page}:`, pageErr)
-            // Continue to next page? Or stop? 
-            // Better stop to prevent infinite loop on auth error
-            // But if timeout, maybe retry? For now, simplistic stop or specific error handling.
-            hasMore = false 
-            alert(`Error di halaman ${page}: ${pageErr.message}`)
-        }
-    }
-
-    if (errorCount > 0) {
-        alert(`Sync Selesai dengan catatan: ${totalProcessed} data diproses, tapi ada ${errorCount} error. Cek log server.`)
-    } else {
-        alert(`Sukses! Sync PO selesai. Total ${totalProcessed} data diproses.`)
-    }
-    
-    await fetchOrders() // Reload data
-  } catch (e) {
-    console.error(e)
-    alert(`Gagal Sync PO: ${e.message}`)
-  } finally {
-    isLoading.value = false
-  }
-}
-
-// Removing triggerSyncReceiveItem from this file, as it will replace the triggerSync itself.
-
-// Update `triggerSync` function for RI
 const triggerSyncRI = async () => {
-  if (!confirm('Sync Penerimaan Barang dari Accurate sekarang?')) return
+  if (!confirm('Sync Penerimaan Barang (RI) dari Accurate sekarang?')) return
   isLoading.value = true
   
   let page = 1
@@ -191,8 +120,6 @@ const triggerSyncRI = async () => {
     const endpoint = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sync-accurate-receive-items'
     
     while (hasMore) {
-        console.log(`Syncing RI Page ${page}...`)
-        
         try {
             const res = await fetch(endpoint, {
                 method: 'POST',
@@ -305,18 +232,13 @@ onMounted(() => {
   fetchOrders()
   setTimeout(() => {
     isInitialLoad.value = false
-    checkAndTriggerAutoSync() // Trigger Lazy Sync
+    checkAndTriggerAutoSync()
   }, 100)
 })
 
 // --- HELPERS ---
 const parseAccurateDate = (dateStr) => {
   if (!dateStr) return new Date(0)
-  // Format Accurate DB usually is YYYY-MM-DDT... or just YYYY-MM-DD
-  // But wait, our API response 'transDate' from Accurate was DD/MM/YYYY.
-  // Checking data from 'sync-accurate-pos' function...
-  // The upsert saves 'trans_date' directly. Accurate API usually returns timestamps or DD/MM/YYYY.
-  // Let's handle both YYYY-MM-DD and DD/MM/YYYY just in case.
   if (dateStr.includes('/')) {
       const parts = dateStr.split('/')
       return new Date(parts[2], parts[1] - 1, parts[0])
@@ -327,32 +249,9 @@ const parseAccurateDate = (dateStr) => {
 const formatShortDate = (dateStr) => {
     if (!dateStr) return '-'
     const date = parseAccurateDate(dateStr)
-    if (isNaN(date.getTime())) return dateStr // Fallback if parse fails
+    if (isNaN(date.getTime())) return dateStr 
     return new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }).format(date)
 }
-
-const formatCurrency = (val) => {
-    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val)
-}
-
-// --- LOGIC MULTI SELECT ---
-const toggleStatus = (status) => {
-  if (statusFilter.value.includes(status)) {
-    statusFilter.value = statusFilter.value.filter(s => s !== status)
-  } else {
-    statusFilter.value.push(status)
-  }
-}
-
-const removeStatus = (status) => {
-    statusFilter.value = statusFilter.value.filter(s => s !== status)
-}
-
-const isStatusSelected = (status) => statusFilter.value.includes(status)
-
-const hasActiveFilters = computed(() => {
-    return searchQuery.value || startDate.value || endDate.value || statusFilter.value.length > 0
-})
 
 // --- FILTERING & SORTING CORE ---
 const toggleSort = (key) => {
@@ -361,6 +260,30 @@ const toggleSort = (key) => {
   } else {
     sortKey.value = key
     sortOrder.value = 'asc'
+  }
+}
+
+const applyDateFilter = () => {
+  const now = new Date()
+  const formatDate = (d) => {
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
+  if (dateFilterOption.value === 'month') {
+    startDate.value = formatDate(new Date(now.getFullYear(), now.getMonth(), 1))
+    endDate.value = formatDate(new Date(now.getFullYear(), now.getMonth() + 1, 0))
+  } else if (dateFilterOption.value === 'last_month') {
+    startDate.value = formatDate(new Date(now.getFullYear(), now.getMonth() - 1, 1))
+    endDate.value = formatDate(new Date(now.getFullYear(), now.getMonth(), 0))
+  } else if (dateFilterOption.value === 'year') {
+    startDate.value = formatDate(new Date(now.getFullYear(), 0, 1))
+    endDate.value = formatDate(new Date(now.getFullYear(), 11, 31))
+  } else if (dateFilterOption.value !== 'range') {
+    startDate.value = ''
+    endDate.value = ''
   }
 }
 
@@ -377,8 +300,8 @@ const filteredAndSortedOrders = computed(() => {
   }
 
   if (startDate.value || endDate.value) {
-    result = result.filter(po => {
-      const itemDate = parseAccurateDate(po.date)
+    result = result.filter(ri => {
+      const itemDate = parseAccurateDate(ri.date)
       let validStart = true
       let validEnd = true
       if (startDate.value) {
@@ -394,7 +317,7 @@ const filteredAndSortedOrders = computed(() => {
   }
 
   if (statusFilter.value.length > 0) {
-    result = result.filter(po => statusFilter.value.includes(po.status))
+    result = result.filter(ri => statusFilter.value.includes(ri.status))
   }
 
   result.sort((a, b) => {
@@ -404,12 +327,9 @@ const filteredAndSortedOrders = computed(() => {
     if (sortKey.value === 'date') {
         valA = parseAccurateDate(a.date).getTime()
         valB = parseAccurateDate(b.date).getTime()
-    } else if (sortKey.value === 'amount') {
-        valA = Number(valA)
-        valB = Number(valB)
     } else {
-        valA = String(valA).toLowerCase()
-        valB = String(valB).toLowerCase()
+        valA = String(valA || '').toLowerCase()
+        valB = String(valB || '').toLowerCase()
     }
 
     if (valA < valB) return sortOrder.value === 'asc' ? -1 : 1
@@ -431,7 +351,7 @@ watch([searchQuery, startDate, endDate, statusFilter], () => {
 })
 
 // Pagination
-const totalPages = computed(() => Math.ceil(filteredAndSortedOrders.value.length / itemsPerPage.value))
+const totalPages = computed(() => Math.ceil(filteredAndSortedOrders.value.length / itemsPerPage.value) || 1)
 const paginatedOrders = computed(() => {
   const start = (currentPage.value - 1) * itemsPerPage.value
   return filteredAndSortedOrders.value.slice(start, start + itemsPerPage.value)
@@ -440,70 +360,34 @@ const paginatedOrders = computed(() => {
 const nextPage = () => { if (currentPage.value < totalPages.value) currentPage.value++ }
 const prevPage = () => { if (currentPage.value > 1) currentPage.value-- }
 
-// --- FILTER TANGGAL ---
-const setDateFilter = (type) => {
-  const now = new Date()
-  const formatDate = (d) => {
-      const year = d.getFullYear()
-      const month = String(d.getMonth() + 1).padStart(2, '0')
-      const day = String(d.getDate()).padStart(2, '0')
-      return `${year}-${month}-${day}`
-  }
-
-  if (type === 'today') { 
-      startDate.value = formatDate(now)
-      endDate.value = formatDate(now) 
-  } else if (type === 'week') {
-    const day = now.getDay() || 7
-    const startOfWeek = new Date(now)
-    if (day !== 1) startOfWeek.setHours(-24 * (day - 1))
-    startDate.value = formatDate(startOfWeek)
-    const endOfWeek = new Date(startOfWeek)
-    endOfWeek.setDate(startOfWeek.getDate() + 6)
-    endDate.value = formatDate(endOfWeek)
-  } else if (type === 'month') {
-    startDate.value = formatDate(new Date(now.getFullYear(), now.getMonth(), 1))
-    endDate.value = formatDate(new Date(now.getFullYear(), now.getMonth() + 1, 0))
-  }
-}
-
-const dateRangeLabel = computed(() => {
-  if (startDate.value && endDate.value) {
-    if (startDate.value === endDate.value) return new Date(startDate.value).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
-    const start = new Date(startDate.value).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
-    const end = new Date(endDate.value).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
-    return `${start} - ${end}`
-  }
-  return "Filter Tanggal"
-})
-
 const resetFilter = () => { 
     searchQuery.value = ''
     startDate.value = '' 
     endDate.value = ''
+    dateFilterOption.value = ''
     statusFilter.value = [] 
     sortKey.value = 'date'
     sortOrder.value = 'desc' 
 }
 
 // --- EXPORT ---
-const getFilename = (ext) => `Laporan_PurchaseOrder_${new Date().toISOString().split('T')[0]}.${ext}`
+const getFilename = (ext) => `Laporan_PenerimaanBarang_${new Date().toISOString().split('T')[0]}.${ext}`
 
 const exportToExcel = () => {
-  const dataToExport = filteredAndSortedOrders.value.map(ri => ({
-    "No RI": ri.no_ri, "Vendor": ri.vendor, "Tanggal": ri.date, "Status": ri.status, "No PO": ri.po_number
+  const dataToExport = filteredAndSortedOrders.value.map(item => ({
+    "No. RI": item.no_ri, "Vendor": item.vendor, "Tanggal": item.date, "No. PO": item.po_number, "Status": item.status
   }))
   const ws = XLSX.utils.json_to_sheet(dataToExport)
   const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, "Receive Items")
+  XLSX.utils.book_append_sheet(wb, ws, "Penerimaan Barang")
   XLSX.writeFile(wb, getFilename('xlsx'))
 }
 
 const exportToPDF = () => {
   const doc = new jsPDF()
   doc.text("Laporan Penerimaan Barang", 14, 15)
-  const rows = filteredAndSortedOrders.value.map(ri => [ri.no_ri, ri.vendor, ri.date, ri.status, ri.po_number])
-  autoTable(doc, { head: [["No RI", "Vendor", "Tanggal", "Status", "No PO"]], body: rows, startY: 25, headStyles: { fillColor: [185, 28, 28] } })
+  const rows = filteredAndSortedOrders.value.map(item => [item.no_ri, item.vendor, item.date, item.po_number, item.status])
+  autoTable(doc, { head: [["No. RI", "Vendor", "Tanggal", "No. PO", "Status"]], body: rows, startY: 25, headStyles: { fillColor: [185, 28, 28] } })
   doc.save(getFilename('pdf'))
 }
 
@@ -519,268 +403,290 @@ const getStatusColor = (status) => {
     default: return 'bg-slate-50 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
   }
 }
+
+// Logic Select Status
+const isStatusSelected = (status) => statusFilter.value.includes(status)
+const toggleStatus = (status) => {
+  if (statusFilter.value.includes(status)) {
+    statusFilter.value = statusFilter.value.filter(s => s !== status)
+  } else {
+    statusFilter.value.push(status)
+  }
+}
+const selectAllStatuses = () => { statusFilter.value = [...availableStatuses] }
+const clearAllStatuses = () => { statusFilter.value = [] }
+
+const statusFilterLabel = computed(() => {
+  if (statusFilter.value.length === 0) return 'Semua Status'
+  if (statusFilter.value.length === 1) return statusFilter.value[0]
+  return `${statusFilter.value.length} Status Dipilih`
+})
+
+const hasActiveFilters = computed(() => {
+    return searchQuery.value || startDate.value || endDate.value || statusFilter.value.length > 0
+})
 </script>
 
 <template>
-  <div class="space-y-6 pb-20 font-sans text-slate-900 dark:text-slate-100">
+  <div class="space-y-5 pb-20 font-sans">
     
-    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm transition-colors duration-300">
+    <!-- Page Header (Identik dengan Penjualan & Penawaran) -->
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 font-sans">
       <div>
-        <h2 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Penerimaan Barang (RI)</h2>
-        <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">Total: {{ receiveItems.length }} Penerimaan</p>
+        <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Penerimaan Barang</h1>
+        <p class="text-slate-500 dark:text-slate-400 text-sm mt-0.5">
+          <span class="font-bold text-slate-700 dark:text-slate-300">{{ filteredAndSortedOrders.length }}</span> penerimaan ditemukan
+          <span v-if="hasActiveFilters" class="text-red-600 dark:text-red-400 font-medium ml-1">(difilter dari {{ receiveItems.length }})</span>
+        </p>
       </div>
-      <div class="flex gap-2 w-full md:w-auto">
+
+      <!-- Action Buttons -->
+      <div class="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
         <DropdownMenu>
           <DropdownMenuTrigger as-child>
-            <Button variant="outline" class="gap-2 w-full md:w-auto border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
-              <Download class="w-4 h-4" /> Export
+            <Button variant="outline" size="sm" class="h-9 px-3.5 text-xs font-semibold gap-2 border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl transition-all shadow-2xs cursor-pointer">
+              <Download class="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>Ekspor Data</span>
+              <ChevronDown class="w-3.5 h-3.5 opacity-60" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" class="dark:bg-slate-800 dark:border-slate-700">
-            <DropdownMenuItem @click="exportToExcel" class="dark:hover:bg-slate-700 dark:text-slate-300"><FileSpreadsheet class="w-4 h-4 mr-2 text-green-600" /> Excel</DropdownMenuItem>
-            <DropdownMenuItem @click="exportToPDF" class="dark:hover:bg-slate-700 dark:text-slate-300"><FileIcon class="w-4 h-4 mr-2 text-red-600" /> PDF</DropdownMenuItem>
+          <DropdownMenuContent align="end" class="w-44 dark:bg-slate-900 dark:border-slate-800 rounded-xl shadow-xl p-1 font-sans">
+            <DropdownMenuItem @click="exportToExcel" class="flex items-center gap-2 text-xs cursor-pointer dark:hover:bg-slate-800">
+              <FileSpreadsheet class="w-4 h-4 text-emerald-600" />
+              <span>Excel (.xlsx)</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem @click="exportToPDF" class="flex items-center gap-2 text-xs cursor-pointer dark:hover:bg-slate-800">
+              <FileIcon class="w-4 h-4 text-rose-600" />
+              <span>PDF (.pdf)</span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <div v-if="isSyncing" class="flex items-center gap-2 mr-2 text-xs text-slate-500 animate-pulse">
-            <RefreshCw class="w-3 h-3 animate-spin"/>
-            Syncing...
-        </div>
-        <Button size="sm" @click="triggerSyncRI" :disabled="isLoading || isSyncing" class="w-full md:w-auto bg-slate-900 hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 text-white">
-          <RefreshCw class="w-4 h-4 mr-2" :class="{'animate-spin': isLoading}" /> 
-          {{ isLoading ? 'Loading...' : 'Sync Accurate' }}
+
+        <Button
+          @click="triggerSyncRI"
+          :disabled="isLoading || isSyncing"
+          variant="outline"
+          size="sm"
+          class="h-9 px-3.5 text-xs font-bold gap-2 border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-900 dark:text-white rounded-xl shadow-2xs cursor-pointer"
+        >
+          <RefreshCw :class="['w-4 h-4 text-red-600', (isLoading || isSyncing) && 'animate-spin']"/>
+          {{ isSyncing ? 'Syncing...' : isLoading ? 'Memuat...' : 'Sync Accurate' }}
         </Button>
       </div>
     </div>
 
-    <div class="bg-white dark:bg-slate-800 p-5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-4 transition-colors duration-300">
-      <div class="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
-        <Filter class="w-4 h-4 text-red-600 dark:text-red-400"/> FILTER & PENCARIAN
-      </div>
-      
-      <div class="flex flex-col md:flex-row gap-3">
+    <!-- Filter Card (Desain Persis Penjualan & Penawaran) -->
+    <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl p-3.5 shadow-2xs font-sans">
+      <div class="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
         <div class="relative flex-1">
-          <Search class="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-          <Input 
-            placeholder="Cari No. PO atau Nama Vendor..." 
-            class="pl-9 h-10 bg-slate-50 border-slate-200 focus:bg-white dark:bg-slate-900 dark:border-slate-700 dark:focus:bg-slate-950 dark:text-white transition-all w-full" 
+          <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <input
             v-model="searchQuery"
+            type="text"
+            placeholder="Cari No. RI, Vendor, atau No. PO..."
+            class="w-full bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 pl-10 pr-4 py-2 rounded-xl text-sm outline-none focus:ring-2 focus:ring-red-500/60 focus:border-transparent transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 font-sans"
           />
         </div>
 
-        <div class="flex flex-col sm:flex-row gap-2 items-start sm:items-center">
-            <DropdownMenu>
-                <DropdownMenuTrigger as-child>
-                    <Button 
-                        variant="outline" 
-                        class="w-full sm:w-auto justify-start text-left font-normal h-10 min-w-[150px] transition-colors"
-                        :class="startDate ? 'text-red-600 border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 dark:text-red-400' : 'text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700'"
-                    >
-                        <CalendarIcon class="w-4 h-4 mr-2" />
-                        {{ dateRangeLabel }}
-                    </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent class="w-72 p-3 dark:bg-slate-800 dark:border-slate-700" align="end">
-                    <DropdownMenuLabel class="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Pintas Waktu</DropdownMenuLabel>
-                    <div class="grid grid-cols-3 gap-2 mb-3">
-                        <Button variant="outline" size="sm" class="text-xs h-8 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700" @click="setDateFilter('today')">Hari Ini</Button>
-                        <Button variant="outline" size="sm" class="text-xs h-8 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700" @click="setDateFilter('week')">Minggu Ini</Button>
-                        <Button variant="outline" size="sm" class="text-xs h-8 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-700" @click="setDateFilter('month')">Bulan Ini</Button>
-                    </div>
-                    <DropdownMenuSeparator class="dark:bg-slate-700"/>
-                    <div class="space-y-3 mt-3">
-                        <div class="grid gap-1">
-                            <Label class="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold">Dari</Label>
-                            <Input type="date" v-model="startDate" class="h-8 text-xs dark:bg-slate-900 dark:border-slate-600 dark:text-white"/>
-                        </div>
-                        <div class="grid gap-1">
-                            <Label class="text-[10px] text-slate-500 dark:text-slate-400 uppercase font-bold">Sampai</Label>
-                            <Input type="date" v-model="endDate" class="h-8 text-xs dark:bg-slate-900 dark:border-slate-600 dark:text-white"/>
-                        </div>
-                    </div>
-                </DropdownMenuContent>
-            </DropdownMenu>
+        <!-- Multi-Select Status Dropdown -->
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <button class="w-full lg:w-56 flex items-center justify-between bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 px-3.5 py-2 rounded-xl text-sm text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-red-500/60 transition-all font-sans cursor-pointer">
+              <div class="flex items-center gap-2 truncate">
+                <Filter class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span class="truncate font-medium text-xs md:text-sm">{{ statusFilterLabel }}</span>
+              </div>
+              <ChevronDown class="w-4 h-4 text-slate-400 shrink-0 ml-1" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" class="w-64 p-2 dark:bg-slate-900 dark:border-slate-800 rounded-xl shadow-xl font-sans">
+            <div class="flex items-center justify-between px-2.5 py-1.5 mb-1 border-b border-slate-100 dark:border-slate-800">
+              <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Status (Multi)</span>
+              <div class="flex items-center gap-2">
+                <button @click.prevent="selectAllStatuses" class="text-[11px] font-semibold text-blue-600 hover:underline cursor-pointer">Semua</button>
+                <button @click.prevent="clearAllStatuses" class="text-[11px] font-semibold text-red-600 hover:underline cursor-pointer">Kosongkan</button>
+              </div>
+            </div>
+            <div class="space-y-0.5 max-h-60 overflow-y-auto pr-1">
+              <div v-for="st in availableStatuses" :key="st"
+                @click.prevent="toggleStatus(st)"
+                class="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer text-xs font-medium dark:text-slate-200 transition-colors">
+                <div class="w-4 h-4 border rounded flex items-center justify-center transition-all shrink-0"
+                  :class="isStatusSelected(st) ? 'bg-red-600 border-red-600 dark:bg-red-500 dark:border-red-500' : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'">
+                  <Check v-if="isStatusSelected(st)" class="w-3 h-3 text-white" stroke-width="3"/>
+                </div>
+                <span>{{ st }}</span>
+              </div>
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-            <DropdownMenu>
-                <DropdownMenuTrigger as-child>
-                    <Button 
-                        variant="outline" 
-                        class="h-10 w-full sm:w-[180px] justify-between bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-900 dark:border-slate-700 dark:text-slate-300"
-                        :class="{'border-red-300 text-red-600 dark:border-red-800 dark:text-red-400': statusFilter.length > 0}"
-                    >
-                        <span class="truncate">
-                            {{ statusFilter.length === 0 ? 'Semua Status' : `${statusFilter.length} Status Dipilih` }}
-                        </span>
-                        <ChevronDown class="w-4 h-4 opacity-50" />
-                    </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent class="w-[220px] dark:bg-slate-800 dark:border-slate-700 p-2" align="end">
-                    <DropdownMenuLabel class="text-xs mb-1 text-slate-500">Pilih Status (Bisa Banyak)</DropdownMenuLabel>
-                    
-                    <div v-for="status in availableStatuses" :key="status" 
-                         class="flex items-center gap-3 px-2 py-2 rounded-sm hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer text-sm dark:text-slate-200 transition-colors"
-                         @click.prevent="toggleStatus(status)">
-                        
-                        <div class="w-4 h-4 border rounded flex items-center justify-center transition-colors" 
-                             :class="isStatusSelected(status) ? 'bg-slate-900 border-slate-900 dark:bg-white dark:border-white' : 'border-slate-300 dark:border-slate-500 bg-white dark:bg-slate-900'">
-                            <Check v-if="isStatusSelected(status)" class="w-3 h-3 text-white dark:text-slate-900" stroke-width="3" />
-                        </div>
-                        
-                        <span>{{ status }}</span>
-                    </div>
-
-                    <DropdownMenuSeparator class="my-2 dark:bg-slate-700"/>
-                    <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        class="w-full text-xs h-8 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
-                        @click="statusFilter = []"
-                        :disabled="statusFilter.length === 0"
-                    >
-                        Reset Pilihan Status
-                    </Button>
-                </DropdownMenuContent>
-            </DropdownMenu>
+        <!-- Date Filter Dropdown -->
+        <div class="flex items-center gap-2 w-full lg:w-auto">
+          <select v-model="dateFilterOption" @change="applyDateFilter" class="w-full lg:w-44 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-xl text-sm outline-none focus:ring-2 focus:ring-red-500/60 transition-all font-sans cursor-pointer">
+            <option value="">Semua Tanggal</option>
+            <option value="month">Bulan Ini</option>
+            <option value="last_month">Bulan Lalu</option>
+            <option value="year">Tahun Ini</option>
+            <option value="range">Range Tanggal</option>
+          </select>
+          <template v-if="dateFilterOption === 'range'">
+            <input v-model="startDate" type="date" class="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 rounded-lg text-xs outline-none focus:ring-2 focus:ring-red-500/60" />
+            <span class="text-slate-300 dark:text-slate-600">—</span>
+            <input v-model="endDate" type="date" class="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 rounded-lg text-xs outline-none focus:ring-2 focus:ring-red-500/60" />
+          </template>
+          <button v-if="hasActiveFilters" @click="resetFilter" class="px-3 py-2 rounded-xl text-xs font-semibold bg-red-50 text-red-600 dark:bg-red-950/30 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-950/50 transition-colors shrink-0 cursor-pointer">Reset</button>
         </div>
       </div>
-
-      <div v-if="hasActiveFilters" class="flex flex-wrap items-center gap-2 pt-2 border-t border-dashed border-slate-200 dark:border-slate-700">
-          <span class="text-xs font-bold text-slate-400 uppercase mr-1">Active Filters:</span>
-          
-          <Badge v-if="searchQuery" variant="secondary" class="bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200 flex items-center gap-1">
-              Search: {{ searchQuery }}
-              <X class="w-3 h-3 cursor-pointer" @click="searchQuery = ''"/>
-          </Badge>
-
-          <Badge v-if="startDate || endDate" variant="secondary" class="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border-indigo-200 flex items-center gap-1">
-              Date: {{ dateRangeLabel }}
-              <X class="w-3 h-3 cursor-pointer" @click="{startDate=''; endDate=''}"/>
-          </Badge>
-
-          <Badge v-for="status in statusFilter" :key="status" variant="secondary" class="bg-orange-50 text-orange-700 hover:bg-orange-100 border-orange-200 flex items-center gap-1">
-              {{ status }}
-              <X class="w-3 h-3 cursor-pointer" @click="removeStatus(status)"/>
-          </Badge>
-
-          <button @click="resetFilter" class="text-xs text-red-600 hover:underline font-medium ml-2">Reset All</button>
-      </div>
-
     </div>
 
-    <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-x-auto transition-colors duration-300">
+    <!-- Table Container (Desain Persis Penjualan & Penawaran) -->
+    <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-2xs overflow-x-auto font-sans">
       <Table>
-        <TableHeader class="bg-slate-900 dark:bg-black">
-          <TableRow class="hover:bg-slate-900 dark:hover:bg-black border-none">
+        <TableHeader class="bg-slate-50/80 dark:bg-slate-900/80 border-b border-slate-200/80 dark:border-slate-800">
+          <TableRow class="hover:bg-transparent border-none">
             
-            <TableHead class="text-white font-bold cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-900 h-12 w-[180px]" @click="toggleSort('no_ri')">
-                <div class="flex items-center gap-2">No. RI <ChevronsUpDown v-if="sortKey !== 'no_ri'" class="w-3 h-3 opacity-50"/> <component :is="sortOrder === 'asc' ? ArrowUp : ArrowDown" v-else class="w-3 h-3 text-red-400"/></div>
+            <TableHead class="text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white py-3.5 px-4 w-[200px]" @click="toggleSort('no_ri')">
+                <div class="flex items-center gap-1.5">
+                  No. RI 
+                  <component :is="sortKey==='no_ri' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='no_ri' ? 'text-red-600' : 'opacity-30'"/>
+                </div>
             </TableHead>
 
-            <TableHead class="text-white font-bold cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-900" @click="toggleSort('vendor')">
-                <div class="flex items-center gap-2">Vendor <ChevronsUpDown v-if="sortKey !== 'vendor'" class="w-3 h-3 opacity-50"/> <component :is="sortOrder === 'asc' ? ArrowUp : ArrowDown" v-else class="w-3 h-3 text-red-400"/></div>
+            <TableHead class="text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white py-3.5 px-4" @click="toggleSort('vendor')">
+                <div class="flex items-center gap-1.5">
+                  Vendor 
+                  <component :is="sortKey==='vendor' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='vendor' ? 'text-red-600' : 'opacity-30'"/>
+                </div>
             </TableHead>
 
-            <TableHead class="hidden md:table-cell text-white font-bold cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-900 w-[140px]" @click="toggleSort('date')">
-                <div class="flex items-center gap-2">Tanggal <ChevronsUpDown v-if="sortKey !== 'date'" class="w-3 h-3 opacity-50"/> <component :is="sortOrder === 'asc' ? ArrowUp : ArrowDown" v-else class="w-3 h-3 text-red-400"/></div>
+            <TableHead class="hidden md:table-cell text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[140px] py-3.5 px-4" @click="toggleSort('date')">
+                <div class="flex items-center gap-1.5">
+                  Tanggal 
+                  <component :is="sortKey==='date' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='date' ? 'text-red-600' : 'opacity-30'"/>
+                </div>
             </TableHead>
 
-            <TableHead class="text-white font-bold cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-900 w-[140px]" @click="toggleSort('status')">
-                <div class="flex items-center gap-2">Status <ChevronsUpDown v-if="sortKey !== 'status'" class="w-3 h-3 opacity-50"/> <component :is="sortOrder === 'asc' ? ArrowUp : ArrowDown" v-else class="w-3 h-3 text-red-400"/></div>
+            <TableHead class="hidden md:table-cell text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[180px] py-3.5 px-4" @click="toggleSort('po_number')">
+                <div class="flex items-center gap-1.5">
+                  No. PO 
+                  <component :is="sortKey==='po_number' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='po_number' ? 'text-red-600' : 'opacity-30'"/>
+                </div>
             </TableHead>
 
-            <TableHead class="hidden md:table-cell text-right text-white font-bold cursor-pointer hover:bg-slate-800 dark:hover:bg-slate-900 w-[180px]" @click="toggleSort('po_number')">
-                <div class="flex items-center justify-end gap-2">No PO <ChevronsUpDown v-if="sortKey !== 'po_number'" class="w-3 h-3 opacity-50"/> <component :is="sortOrder === 'asc' ? ArrowUp : ArrowDown" v-else class="w-3 h-3 text-red-400"/></div>
+            <TableHead class="text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[140px] py-3.5 px-4" @click="toggleSort('status')">
+                <div class="flex items-center gap-1.5">
+                  Status 
+                  <component :is="sortKey==='status' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='status' ? 'text-red-600' : 'opacity-30'"/>
+                </div>
             </TableHead>
 
-            <TableHead class="w-[50px] text-white"></TableHead>
+            <TableHead class="w-[50px]"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           <TableRow v-if="isLoading">
-            <TableCell colspan="6" class="h-40 text-center text-slate-500 dark:text-slate-400">
-              <div class="flex flex-col items-center justify-center gap-3">
-                <Loader2 class="animate-spin w-8 h-8 text-red-600"/> 
-                <span class="text-sm font-medium">Sedang mengambil data...</span>
+            <TableCell colspan="6" class="py-20 text-center">
+              <div class="flex flex-col items-center gap-3 text-slate-400">
+                <Loader2 class="w-8 h-8 animate-spin text-red-600"/>
+                <span class="text-sm font-medium">Sedang mengambil data dari Accurate...</span>
               </div>
             </TableCell>
           </TableRow>
 
           <TableRow v-else-if="filteredAndSortedOrders.length === 0">
-            <TableCell colspan="6" class="h-40 text-center text-slate-500 dark:text-slate-400 font-medium bg-slate-50 dark:bg-slate-900">
-                Tidak ada data yang sesuai filter.
+            <TableCell colspan="6" class="py-20 text-center">
+              <div class="flex flex-col items-center gap-3 text-slate-400">
+                <div class="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center">
+                  <PackageCheck class="w-6 h-6 opacity-40"/>
+                </div>
+                <p class="text-sm font-medium">Tidak ada data penerimaan barang yang sesuai filter</p>
+                <button v-if="hasActiveFilters" @click="resetFilter" class="text-sm text-red-600 hover:underline font-semibold cursor-pointer">Reset Filter</button>
+              </div>
             </TableCell>
           </TableRow>
 
-          <TableRow v-else v-for="ri in paginatedOrders" :key="ri.id_database" class="group cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0" @click="router.push(`/receive-items/${ri.id_database}`)">
-            
-            <TableCell class="py-4 font-bold text-slate-900 dark:text-white align-middle">
-              <div class="flex items-center gap-3">
-                <div class="p-2 bg-slate-100 dark:bg-slate-700 rounded-md text-slate-500 dark:text-slate-300 group-hover:bg-red-50 group-hover:text-red-600 dark:group-hover:bg-red-900/30 dark:group-hover:text-red-400 transition-colors">
-                    <FileText class="w-4 h-4" />
+          <TableRow 
+            v-else 
+            v-for="ri in paginatedOrders" 
+            :key="ri.id_database" 
+            class="group cursor-pointer hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors border-b border-slate-100 dark:border-slate-800/80 last:border-0"
+          >
+            <TableCell class="py-4 px-4 align-middle whitespace-nowrap">
+              <div class="flex items-center gap-2.5">
+                <div class="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400 group-hover:bg-red-50 group-hover:text-red-600 dark:group-hover:bg-red-950/30 dark:group-hover:text-red-400 transition-colors">
+                  <PackageCheck class="w-4 h-4" />
                 </div>
-                {{ ri.no_ri }}
+                <span class="text-xs md:text-sm font-bold text-slate-900 dark:text-slate-100 font-sans">
+                  {{ ri.no_ri }}
+                </span>
               </div>
             </TableCell>
 
-            <TableCell class="py-4 align-middle">
+            <TableCell class="py-4 px-4 align-middle whitespace-nowrap">
               <div class="flex flex-col">
-                <span class="font-bold text-slate-700 dark:text-slate-200 text-sm truncate max-w-[250px]" :title="ri.vendor">{{ ri.vendor }}</span>
-                <span class="text-[11px] text-slate-400 md:hidden mt-1 font-medium">{{ formatShortDate(ri.date) }}</span>
+                <span class="text-xs md:text-sm font-bold text-slate-900 dark:text-slate-100 font-sans truncate max-w-[250px]" :title="ri.vendor">{{ ri.vendor }}</span>
+                <span class="text-[11px] text-slate-400 md:hidden mt-0.5 font-medium">{{ formatShortDate(ri.date) }}</span>
               </div>
             </TableCell>
 
-            <TableCell class="hidden md:table-cell py-4 text-slate-600 dark:text-slate-400 text-sm font-medium align-middle">
-                {{ formatShortDate(ri.date) }}
+            <TableCell class="hidden md:table-cell py-4 px-4 align-middle whitespace-nowrap">
+              <span class="text-xs md:text-sm font-medium text-slate-600 dark:text-slate-400 font-sans">{{ formatShortDate(ri.date) }}</span>
             </TableCell>
 
-            <TableCell class="py-4 align-middle">
-              <Badge variant="outline" class="transition-all duration-300 font-medium px-2.5 py-0.5 rounded text-xs uppercase tracking-wide border shadow-sm" :class="getStatusColor(ri.status)">
+            <TableCell class="hidden md:table-cell py-4 px-4 align-middle whitespace-nowrap">
+              <span class="text-xs md:text-sm font-semibold text-slate-700 dark:text-slate-300 font-sans">{{ ri.po_number || '-' }}</span>
+            </TableCell>
+
+            <TableCell class="py-4 px-4 align-middle whitespace-nowrap">
+              <Badge variant="outline" class="transition-all font-semibold px-2.5 py-0.5 rounded-lg text-xs border shadow-2xs" :class="getStatusColor(ri.status)">
                 {{ ri.status }}
               </Badge>
             </TableCell>
 
-            <TableCell class="hidden md:table-cell text-right font-bold text-slate-800 dark:text-slate-200 text-sm py-4 align-middle">
-                {{ ri.po_number }}
-            </TableCell>
-
-            <TableCell class="py-4 align-middle text-right">
-                <ArrowRight class="w-5 h-5 text-slate-300 dark:text-slate-600 group-hover:text-red-600 dark:group-hover:text-red-400 group-hover:translate-x-1 transition-all" />
+            <TableCell class="py-4 px-4 align-middle text-right">
+              <ArrowRight class="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-red-600 dark:group-hover:text-red-400 group-hover:translate-x-1 transition-all" />
             </TableCell>
 
           </TableRow>
         </TableBody>
       </Table>
       
-      <div class="flex flex-col sm:flex-row items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 gap-4">
-        
+      <!-- Footer Pagination (Persis Penjualan & Penawaran) -->
+      <div class="flex flex-col sm:flex-row items-center justify-between p-4 bg-slate-50/60 dark:bg-slate-900/60 border-t border-slate-200/80 dark:border-slate-800 gap-4 font-sans">
         <div class="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
-            <div class="flex items-center gap-2">
-                <span class="text-xs text-slate-500 dark:text-slate-400 font-medium">Baris:</span>
-                <Select v-model="itemsPerPage" @update:model-value="currentPage = 1">
-                    <SelectTrigger class="h-8 w-16 text-xs bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 dark:text-slate-200">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent class="dark:bg-slate-800 dark:border-slate-700">
-                        <SelectItem :value="10" class="dark:text-slate-300 dark:focus:bg-slate-700">10</SelectItem>
-                        <SelectItem :value="20" class="dark:text-slate-300 dark:focus:bg-slate-700">20</SelectItem>
-                        <SelectItem :value="50" class="dark:text-slate-300 dark:focus:bg-slate-700">50</SelectItem>
-                        <SelectItem :value="100" class="dark:text-slate-300 dark:focus:bg-slate-700">100</SelectItem>
-                    </SelectContent>
-                </Select>
-            </div>
-            
-            <div class="hidden sm:block h-4 w-px bg-slate-300 dark:bg-slate-700"></div>
-        </div>
-
-        <div class="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
-          <span class="text-xs text-slate-500 dark:text-slate-400 mr-2">
-             Hal <strong>{{ currentPage }}</strong> dari <strong>{{ totalPages || 1 }}</strong>
-          </span>
-          <div class="flex gap-1">
-              <Button variant="outline" size="sm" :disabled="currentPage === 1" @click="prevPage" class="h-8 w-8 p-0 border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:text-red-600 dark:hover:text-red-400"><ChevronLeft class="w-4 h-4"/></Button>
-              <Button variant="outline" size="sm" :disabled="currentPage >= totalPages" @click="nextPage" class="h-8 w-8 p-0 border-slate-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 hover:text-red-600 dark:hover:text-red-400"><ChevronRight class="w-4 h-4"/></Button>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-slate-500 dark:text-slate-400 font-medium">Baris per halaman:</span>
+            <Select v-model="itemsPerPage" @update:model-value="currentPage = 1">
+              <SelectTrigger class="h-8 w-16 text-xs bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent class="dark:bg-slate-900 dark:border-slate-800">
+                <SelectItem :value="10">10</SelectItem>
+                <SelectItem :value="20">20</SelectItem>
+                <SelectItem :value="50">50</SelectItem>
+                <SelectItem :value="100">100</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div class="text-xs text-slate-500 dark:text-slate-400">
+            Total <strong class="text-slate-800 dark:text-slate-200">{{ filteredAndSortedOrders.length }}</strong> penerimaan
           </div>
         </div>
 
+        <div class="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+          <span class="text-xs text-slate-500 dark:text-slate-400 font-medium">
+            Halaman <strong class="text-slate-800 dark:text-slate-200">{{ currentPage }}</strong> dari <strong class="text-slate-800 dark:text-slate-200">{{ totalPages }}</strong>
+          </span>
+          <div class="flex items-center gap-1">
+            <Button variant="outline" size="sm" :disabled="currentPage === 1" @click="prevPage" class="h-8 w-8 p-0 border-slate-200 dark:border-slate-700">
+              <ChevronLeft class="w-4 h-4"/>
+            </Button>
+            <Button variant="outline" size="sm" :disabled="currentPage >= totalPages" @click="nextPage" class="h-8 w-8 p-0 border-slate-200 dark:border-slate-700">
+              <ChevronRight class="w-4 h-4"/>
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   </div>

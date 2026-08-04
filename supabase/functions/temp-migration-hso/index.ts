@@ -13,12 +13,92 @@ serve(async (req) => {
     try {
       // Run the migration SQL
       await connection.queryObject`
-        ALTER TABLE accurate_purchase_order_items ADD COLUMN IF NOT EXISTS hso_number TEXT;
-        ALTER TABLE accurate_delivery_order_items ADD COLUMN IF NOT EXISTS hso_number TEXT;
+        ALTER TABLE public.marketing_events
+          ADD COLUMN IF NOT EXISTS checklist JSONB DEFAULT '[]'::jsonb,
+          ADD COLUMN IF NOT EXISTS media_files JSONB DEFAULT '[]'::jsonb,
+          ADD COLUMN IF NOT EXISTS expenses JSONB DEFAULT '[]'::jsonb,
+          ADD COLUMN IF NOT EXISTS cost_amount NUMERIC DEFAULT 0;
+
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_publication_tables
+            WHERE pubname = 'supabase_realtime' AND tablename = 'marketing_idea_comments'
+          ) THEN
+            ALTER PUBLICATION supabase_realtime ADD TABLE marketing_idea_comments;
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_publication_tables
+            WHERE pubname = 'supabase_realtime' AND tablename = 'marketing_idea_likes'
+          ) THEN
+            ALTER PUBLICATION supabase_realtime ADD TABLE marketing_idea_likes;
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_publication_tables
+            WHERE pubname = 'supabase_realtime' AND tablename = 'marketing_ideas'
+          ) THEN
+            ALTER PUBLICATION supabase_realtime ADD TABLE marketing_ideas;
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_publication_tables
+            WHERE pubname = 'supabase_realtime' AND tablename = 'marketing_events'
+          ) THEN
+            ALTER PUBLICATION supabase_realtime ADD TABLE marketing_events;
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_publication_tables
+            WHERE pubname = 'supabase_realtime' AND tablename = 'purchase_cart'
+          ) THEN
+            ALTER PUBLICATION supabase_realtime ADD TABLE purchase_cart;
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_publication_tables
+            WHERE pubname = 'supabase_realtime' AND tablename = 'hsq_tasks'
+          ) THEN
+            ALTER PUBLICATION supabase_realtime ADD TABLE hsq_tasks;
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_publication_tables
+            WHERE pubname = 'supabase_realtime' AND tablename = 'boq_requests'
+          ) THEN
+            ALTER PUBLICATION supabase_realtime ADD TABLE boq_requests;
+          END IF;
+        END $$;
+      `
+
+      // Inspect marketing_ideas columns
+      const cols = await connection.queryObject`
+        SELECT column_name, data_type FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'marketing_ideas'
+        ORDER BY ordinal_position
+      `
+
+      // Add missing target_date column if needed
+      await connection.queryObject`
+        ALTER TABLE public.marketing_ideas ADD COLUMN IF NOT EXISTS target_date DATE;
+      `
+
+      // Inspect RLS policies
+      const pols = await connection.queryObject`
+        SELECT policyname, cmd, roles::text FROM pg_policies
+        WHERE schemaname = 'public' AND tablename = 'marketing_ideas'
+      `
+
+      // Inspect realtime publication tables
+      const pubs = await connection.queryObject`
+        SELECT tablename FROM pg_publication_tables
+        WHERE pubname = 'supabase_realtime'
+        ORDER BY tablename
       `
 
       return new Response(
-        JSON.stringify({ message: "Migration successful: Added hso_number columns" }),
+        JSON.stringify({ message: "Migration successful: Added columns + Realtime publication for marketing_ideas/comments/likes", columns: cols.rows.map(r => `${r.column_name}:${r.data_type}`), policies: pols.rows, realtimeTables: pubs.rows.map(r => r.tablename) }),
         { headers: { "Content-Type": "application/json" } },
       )
     } finally {

@@ -1,12 +1,20 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import { useAccurateSync } from '@/composables/useAccurateSync'
 import { 
   Database, RefreshCcw, PackageCheck, Truck, ShoppingBag, 
   CheckCircle, XCircle, Info, X
 } from 'lucide-vue-next'
 
-const isOpen = ref(false)
+const props = defineProps({
+  open: { type: Boolean, default: false }
+})
+const emit = defineEmits(['update:open'])
+
+const isOpen = computed({
+  get: () => props.open,
+  set: (v) => emit('update:open', v)
+})
 
 const {
   isSyncing, syncStep, syncProgress, syncLog,
@@ -39,7 +47,7 @@ const syncLogColor = (type) => {
 </script>
 
 <template>
-  <div class="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 flex flex-col items-end gap-3">
+  <div class="fixed bottom-20 md:bottom-20 left-4 md:left-[276px] z-50 flex flex-col items-start gap-3">
     <!-- Panel (visible when open) -->
     <transition
       enter-active-class="transition ease-out duration-200"
@@ -134,20 +142,5 @@ const syncLogColor = (type) => {
         </div>
       </div>
     </transition>
-
-    <!-- Floating Button -->
-    <button
-      @click="isOpen = !isOpen"
-      class="group relative flex items-center justify-center w-10 h-10 rounded-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-lg shadow-slate-900/20 dark:shadow-white/10 hover:scale-105 active:scale-95 transition-all duration-200 focus:outline-none opacity-80 hover:opacity-100"
-    >
-      <Database v-if="!isSyncing" class="w-4 h-4" />
-      <RefreshCcw v-else class="w-4 h-4 animate-spin text-violet-400 dark:text-violet-600" />
-      
-      <!-- Pulse dot when syncing -->
-      <span v-if="isSyncing" class="absolute -top-0.5 -right-0.5 flex h-3 w-3">
-        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
-        <span class="relative inline-flex rounded-full h-3 w-3 bg-violet-500 border-2 border-slate-900 dark:border-white"></span>
-      </span>
-    </button>
   </div>
 </template>

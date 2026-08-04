@@ -1,6 +1,8 @@
 <script setup>
 import { CheckSquare } from 'lucide-vue-next'
 import HSOPriorityCard from './HSOPriorityCard.vue'
+import InvoicePriorityCard from './InvoicePriorityCard.vue'
+
 defineProps({
   sqList: { type: Array, required: true },
   soList: { type: Array, required: true },
@@ -27,6 +29,11 @@ defineEmits(['refresh'])
     <!-- HSO Priority (Full Width) -->
     <div class="w-full">
       <HSOPriorityCard :soList="soList" :shipmentsList="shipmentsList" :poList="poList" :isLoading="isLoading" :targetYear="targetYear" @refresh="$emit('refresh')" />
+    </div>
+
+    <!-- Invoice Priority / Tagihan Belum Dibayar (Full Width) -->
+    <div class="w-full">
+      <InvoicePriorityCard :soList="soList" :siList="siList" :isLoading="isLoading" :targetYear="targetYear" />
     </div>
   </div>
 </template>

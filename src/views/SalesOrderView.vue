@@ -26,10 +26,10 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { 
   Search, RefreshCw, FileText, ArrowRight, Loader2, 
-  Calendar as CalendarIcon, XCircle, ChevronLeft, ChevronRight, 
+  Calendar as CalendarIcon, XCircle, ChevronLeft, ChevronRight, ChevronDown,
   Download, FileSpreadsheet, File as FileIcon, Filter,
   ChevronsUpDown, ArrowUp, ArrowDown, Check, X,
-  ShoppingCart, CheckCircle2, AlertCircle, Bell
+  ShoppingCart, CheckCircle2, AlertCircle, Bell, Sparkles
 } from 'lucide-vue-next'
 import { Checkbox } from '@/components/ui/checkbox'
 
@@ -81,7 +81,7 @@ const cancelBulkMode = () => {
 const searchQuery = ref('')
 const startDate = ref('')
 const endDate = ref('')
-const statusFilter = ref([]) 
+const statusFilter = ref(['Menunggu diproses', 'Sebagian diproses']) 
 const isInitialLoad = ref(true) // Flag to prevent page reset on initial load
 
 // Opsi Status Accurate
@@ -100,7 +100,11 @@ const loadFiltersFromUrl = () => {
   if (q.search) searchQuery.value = q.search
   if (q.start) startDate.value = q.start
   if (q.end) endDate.value = q.end
-  if (q.status) statusFilter.value = q.status.split(',')
+  if (q.status !== undefined) {
+    statusFilter.value = q.status ? q.status.split(',') : []
+  } else {
+    statusFilter.value = ['Menunggu diproses', 'Sebagian diproses']
+  }
   if (q.page) currentPage.value = parseInt(q.page)
   if (q.sort) sortKey.value = q.sort
   if (q.order) sortOrder.value = q.order
@@ -122,24 +126,80 @@ const updateUrlParams = () => {
 }
 
 // --- DATA FETCHING ---
+const extractProjectFromText = (text) => {
+  if (!text) return null
+  const str = String(text)
+  const regex = /pro(?:ject|yek)\s*[:\-]?\s*(.*?)(?=\s*(?:>|status|\n|$))/i
+  const match = str.match(regex)
+  if (match && match[1] && match[1].trim()) {
+    return match[1].replace(/[\s\-]+$/, '').trim()
+  }
+  return null
+}
+
+const extractProjectFromItem = (item) => {
+  if (!item) return null
+  let proj = extractProjectFromText(item.description)
+  if (proj) return proj
+
+  if (item.detailItem && Array.isArray(item.detailItem)) {
+    for (const detail of item.detailItem) {
+      proj = extractProjectFromText(detail.detailNotes || detail.notes || detail.itemDescription)
+      if (proj) return proj
+    }
+  }
+  return null
+}
+
 const fetchOrders = async () => {
   isLoading.value = true
-  const { data, error } = await supabase.functions.invoke('accurate-list-so')
+  try {
+    const [soRes, sqRes] = await Promise.all([
+      supabase.functions.invoke('accurate-list-so', {
+        body: { fields: 'id,number,transDate,customer,totalAmount,statusName,percentShipped,description,detailItem' }
+      }),
+      supabase.functions.invoke('accurate-list-sq', {
+        body: { fields: 'id,number,transDate,customer,totalAmount,statusName,description,detailItem' }
+      }).catch(() => null)
+    ])
 
-  if (error) {
-    console.error("Error:", error)
-  } else if (data && data.d) {
-    salesOrders.value = data.d.map(item => ({
-      id_database: item.id,
-      no_so: item.number,
-      client: item.customer?.name || 'Tanpa Nama',
-      date: item.transDate,
-      amount: Math.round(item.totalAmount), 
-      status: item.statusName || '', 
-      progress: item.percentShipped || 0 
-    }))
+    // Build HSO / SQ project map strictly by exact SQ number
+    const sqProjectMap = {}
+    const sqData = sqRes?.data?.d || []
+    sqData.forEach(sq => {
+      const proj = extractProjectFromItem(sq)
+      if (proj && sq.number) {
+        sqProjectMap[sq.number.toLowerCase()] = proj
+      }
+    })
+
+    const soData = soRes?.data?.d || []
+    salesOrders.value = soData.map(item => {
+      const desc = item.description || ''
+      let proj = extractProjectFromItem(item)
+
+      // Fallback to exact matching SQ number ONLY if not found in SO itself
+      if (!proj && item.number && sqProjectMap[item.number.toLowerCase()]) {
+        proj = sqProjectMap[item.number.toLowerCase()]
+      }
+
+      return {
+        id_database: item.id,
+        no_so: item.number,
+        client: item.customer?.name || 'Tanpa Nama',
+        date: item.transDate,
+        amount: Math.round(item.totalAmount), 
+        status: item.statusName || '', 
+        progress: item.percentShipped || 0,
+        description: desc,
+        project: proj || '-'
+      }
+    })
+  } catch (err) {
+    console.error("Error fetching sales orders:", err)
+  } finally {
+    isLoading.value = false
   }
-  isLoading.value = false
 }
 
 onMounted(() => {
@@ -183,9 +243,38 @@ const removeStatus = (status) => {
 
 const isStatusSelected = (status) => statusFilter.value.includes(status)
 
+const defaultStatusesStr = ['Menunggu diproses', 'Sebagian diproses'].sort().join(',')
+const currentStatusesStr = computed(() => [...statusFilter.value].sort().join(','))
+
 const hasActiveFilters = computed(() => {
-    return searchQuery.value || startDate.value || endDate.value || statusFilter.value.length > 0
+    return searchQuery.value !== '' || 
+           startDate.value !== '' || 
+           endDate.value !== '' || 
+           dateFilterOption.value !== '' || 
+           currentStatusesStr.value !== defaultStatusesStr
 })
+
+const statusFilterLabel = computed(() => {
+  if (statusFilter.value.length === 0) return 'Semua Status'
+  if (statusFilter.value.length === availableStatuses.length) return 'Semua Status'
+  if (statusFilter.value.length === 1) return statusFilter.value[0]
+  
+  const hasMenunggu = statusFilter.value.includes('Menunggu diproses')
+  const hasSebagian = statusFilter.value.includes('Sebagian diproses')
+  if (statusFilter.value.length === 2 && hasMenunggu && hasSebagian) {
+    return 'Menunggu & Sebagian'
+  }
+  
+  return `${statusFilter.value.length} Status`
+})
+
+const selectAllStatuses = () => {
+  statusFilter.value = [...availableStatuses]
+}
+
+const clearAllStatuses = () => {
+  statusFilter.value = []
+}
 
 // --- FILTERING & SORTING CORE ---
 const toggleSort = (key) => {
@@ -204,7 +293,9 @@ const filteredAndSortedOrders = computed(() => {
     const query = searchQuery.value.toLowerCase()
     result = result.filter(so => 
       so.client.toLowerCase().includes(query) || 
-      so.no_so.toLowerCase().includes(query)
+      so.no_so.toLowerCase().includes(query) ||
+      (so.project && so.project.toLowerCase().includes(query)) ||
+      (so.description && so.description.toLowerCase().includes(query))
     )
   }
 
@@ -306,6 +397,29 @@ watch(currentPage, () => {
 })
 
 // --- FILTER TANGGAL ---
+const dateFilterOption = ref('')
+
+const applyDateFilter = () => {
+  startDate.value = ''
+  endDate.value = ''
+  if (dateFilterOption.value === 'month') setDateFilter('month')
+  else if (dateFilterOption.value === 'last_month') setDateFilter('last_month')
+  else if (dateFilterOption.value === 'year') setDateFilter('year')
+}
+
+const statusFilterSingle = computed({
+  get() {
+    return statusFilter.value.length === 1 ? statusFilter.value[0] : 'all'
+  },
+  set(val) {
+    if (val === 'all') {
+      statusFilter.value = []
+    } else {
+      statusFilter.value = [val]
+    }
+  }
+})
+
 const setDateFilter = (type) => {
   const now = new Date()
   const formatDate = (d) => {
@@ -329,6 +443,13 @@ const setDateFilter = (type) => {
   } else if (type === 'month') {
     startDate.value = formatDate(new Date(now.getFullYear(), now.getMonth(), 1))
     endDate.value = formatDate(new Date(now.getFullYear(), now.getMonth() + 1, 0))
+  } else if (type === 'last_month') {
+    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    startDate.value = formatDate(lastMonth)
+    endDate.value = formatDate(new Date(now.getFullYear(), now.getMonth(), 0))
+  } else if (type === 'year') {
+    startDate.value = formatDate(new Date(now.getFullYear(), 0, 1))
+    endDate.value = formatDate(new Date(now.getFullYear(), 11, 31))
   }
 }
 
@@ -346,7 +467,8 @@ const resetFilter = () => {
     searchQuery.value = ''
     startDate.value = '' 
     endDate.value = ''
-    statusFilter.value = [] 
+    statusFilter.value = ['Menunggu diproses', 'Sebagian diproses'] 
+    dateFilterOption.value = ''
     sortKey.value = 'date'
     sortOrder.value = 'desc' 
 }
@@ -881,337 +1003,291 @@ const getStatusColor = (status) => {
       </div>
     </div>
 
-    <!-- Page Header -->
-    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <!-- Page Header (Consistent with Dashboard) -->
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 font-sans">
       <div>
-        <div class="flex items-center gap-3 mb-1">
-          <div class="p-2 bg-gradient-to-br from-red-500 to-rose-600 rounded-xl shadow-lg shadow-red-500/30">
-            <FileText class="w-5 h-5 text-white"/>
-          </div>
-          <h1 class="text-2xl font-extrabold tracking-tight text-slate-900 dark:text-white">Sales Orders</h1>
-        </div>
-        <p class="text-slate-500 dark:text-slate-400 text-sm ml-12">
+        <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Sales Orders</h1>
+        <p class="text-slate-500 dark:text-slate-400 text-sm mt-0.5">
           <span class="font-bold text-slate-700 dark:text-slate-300">{{ filteredAndSortedOrders.length }}</span> pesanan ditemukan
-          <span v-if="hasActiveFilters" class="text-blue-500 ml-1">(difilter dari {{ salesOrders.length }})</span>
+          <span v-if="hasActiveFilters" class="text-red-600 dark:text-red-400 font-medium ml-1">(difilter dari {{ salesOrders.length }})</span>
         </p>
       </div>
-      <div class="flex flex-wrap gap-2 w-full md:w-auto">
-        <!-- Saran Order Button - always visible -->
-        <div class="relative">
-          <button @click="toggleBulkMode('saran')"
-            :class="['inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-md',
-              isBulkMode && selectedOrders.length > 0
-                ? 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white shadow-emerald-500/30'
-                : isBulkMode
-                  ? 'bg-emerald-50 dark:bg-emerald-900/20 border-2 border-emerald-400 text-emerald-700 dark:text-emerald-300 shadow-none'
-                  : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white shadow-emerald-500/30'
-            ]"
-            @mouseenter="showSaranTooltip = true"
-            @mouseleave="showSaranTooltip = false">
-            <ShoppingCart class="w-4 h-4"/>
-            <span v-if="!isBulkMode">Saran Order</span>
-            <span v-else-if="selectedOrders.length === 0">Pilih SO...</span>
-            <span v-else>Download ({{ selectedOrders.length }} SO)</span>
-          </button>
 
-          <!-- Cancel button when in bulk mode -->
-          <button v-if="isBulkMode" @click="cancelBulkMode"
-            class="absolute -top-2 -right-2 w-5 h-5 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white shadow-md transition-all z-10"
-            title="Batalkan Pilih SO">
-            <X class="w-3 h-3"/>
-          </button>
-
-          <!-- Tooltip -->
-          <div v-if="showSaranTooltip && !isBulkMode"
-            class="absolute top-full left-0 mt-2 z-50 w-72 bg-slate-900 dark:bg-slate-950 text-white text-xs rounded-xl p-3.5 shadow-2xl border border-slate-700 pointer-events-none">
-            <div class="flex items-center gap-2 mb-2 pb-2 border-b border-slate-700">
-              <ShoppingCart class="w-4 h-4 text-emerald-400 shrink-0"/>
-              <span class="font-bold text-sm text-white">Saran Order (Bulk)</span>
-            </div>
-            <p class="text-slate-300 leading-relaxed mb-2">Unduh daftar barang yang <strong class="text-emerald-400">perlu dipesan ulang</strong> dari beberapa SO sekaligus, dalam satu file Excel.</p>
-            <div class="bg-slate-800 rounded-lg p-2 space-y-1 text-[11px] text-slate-400">
-              <div class="flex items-start gap-1.5"><span class="text-emerald-400 mt-0.5">✓</span> Qty saran = (Qty SO) - (Stock Gudang)</div>
-              <div class="flex items-start gap-1.5"><span class="text-emerald-400 mt-0.5">✓</span> Hanya barang berstatus "Perlu Dipesan"</div>
-              <div class="flex items-start gap-1.5"><span class="text-amber-400 mt-0.5">!</span> Cek kembali qty sebelum membuat PO</div>
-            </div>
-            <div class="mt-2 pt-2 border-t border-slate-700 text-slate-400 text-[11px]">Klik tombol → centang SO → klik Download</div>
-            <!-- Tooltip arrow -->
-            <div class="absolute -top-1.5 left-6 w-3 h-3 bg-slate-900 dark:bg-slate-950 border-l border-t border-slate-700 rotate-45"></div>
-          </div>
-        </div>
-
-        <!-- Reminder PO Siemens Button -->
-        <div class="relative">
-          <button @click="toggleBulkMode('reminder')"
-            :class="['inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-md',
-              isBulkMode && selectedOrders.length > 0
-                ? 'bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white shadow-purple-500/30'
-                : isBulkMode
-                  ? 'bg-purple-50 dark:bg-purple-900/20 border-2 border-purple-400 text-purple-700 dark:text-purple-300 shadow-none'
-                  : 'bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white shadow-purple-500/30'
-            ]"
-            @mouseenter="showReminderTooltip = true"
-            @mouseleave="showReminderTooltip = false">
-            <Bell class="w-4 h-4"/>
-            <span v-if="!isBulkMode">Reminder PO</span>
-            <span v-else-if="selectedOrders.length === 0">Pilih SO...</span>
-            <span v-else>Reminder ({{ selectedOrders.length }} SO)</span>
-          </button>
-
-          <!-- Tooltip -->
-          <div v-if="showReminderTooltip && !isBulkMode"
-            class="absolute top-full right-0 md:left-0 mt-2 z-50 w-72 bg-slate-900 dark:bg-slate-950 text-white text-xs rounded-xl p-3.5 shadow-2xl border border-slate-700 pointer-events-none">
-            <div class="flex items-center gap-2 mb-2 pb-2 border-b border-slate-700">
-              <Bell class="w-4 h-4 text-purple-400 shrink-0"/>
-              <span class="font-bold text-sm text-white">Reminder PO (Bulk)</span>
-            </div>
-            <p class="text-slate-300 leading-relaxed mb-2">Generate list item PO Siemens yang <strong class="text-purple-400">sedang dalam proses pengiriman</strong> (Ex-Works, ETA JKT, Tiba Dunex).</p>
-            <!-- Tooltip arrow -->
-            <div class="absolute -top-1.5 left-6 w-3 h-3 bg-slate-900 dark:bg-slate-950 border-l border-t border-slate-700 rotate-45"></div>
-          </div>
-        </div>
-        <DropdownMenu>
+      <!-- Action Buttons (Shadcn UI Aesthetic) -->
+      <div class="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+        <!-- Combined Fitur Order Select Dropdown (when not in bulk mode) -->
+        <DropdownMenu v-if="!isBulkMode">
           <DropdownMenuTrigger as-child>
-            <button class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all shadow-sm">
-              <Download class="w-4 h-4"/>Export
-            </button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              class="h-9 px-3.5 text-xs font-semibold gap-2 border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-xl transition-all shadow-2xs cursor-pointer"
+            >
+              <Sparkles class="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>Fitur Order</span>
+              <ChevronDown class="w-3.5 h-3.5 opacity-60" />
+            </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" class="dark:bg-slate-800 dark:border-slate-700 rounded-xl">
-            <DropdownMenuItem @click="exportToExcel" class="dark:hover:bg-slate-700 dark:text-slate-300 rounded-lg cursor-pointer">
-              <FileSpreadsheet class="w-4 h-4 mr-2 text-emerald-600"/>Excel
+          <DropdownMenuContent align="end" class="w-64 dark:bg-slate-900 dark:border-slate-800 rounded-xl shadow-xl p-1.5 font-sans">
+            <DropdownMenuItem @click="toggleBulkMode('saran')" class="flex flex-col items-start gap-1 p-2.5 rounded-lg cursor-pointer dark:hover:bg-slate-800 focus:bg-slate-100 dark:focus:bg-slate-800">
+              <div class="flex items-center gap-2 font-bold text-xs text-emerald-600 dark:text-emerald-400">
+                <ShoppingCart class="w-4 h-4" />
+                <span>Saran Order (Bulk)</span>
+              </div>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">Unduh daftar barang yang perlu dipesan ulang dalam satu file Excel.</p>
             </DropdownMenuItem>
-            <DropdownMenuItem @click="exportToPDF" class="dark:hover:bg-slate-700 dark:text-slate-300 rounded-lg cursor-pointer">
-              <FileIcon class="w-4 h-4 mr-2 text-red-600"/>PDF
+            <DropdownMenuSeparator class="my-1 bg-slate-100 dark:bg-slate-800" />
+            <DropdownMenuItem @click="toggleBulkMode('reminder')" class="flex flex-col items-start gap-1 p-2.5 rounded-lg cursor-pointer dark:hover:bg-slate-800 focus:bg-slate-100 dark:focus:bg-slate-800">
+              <div class="flex items-center gap-2 font-bold text-xs text-purple-600 dark:text-purple-400">
+                <Bell class="w-4 h-4" />
+                <span>Reminder PO Siemens</span>
+              </div>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">Generate list item PO Siemens yang sedang dalam proses pengiriman.</p>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <button @click="fetchOrders" :disabled="isLoading"
-          class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-slate-900 hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 text-white transition-all shadow-md disabled:opacity-60">
-          <RefreshCw :class="['w-4 h-4', isLoading && 'animate-spin']"/>
-          {{ isLoading ? 'Loading...' : 'Sync Accurate' }}
-        </button>
+
+        <!-- Active Bulk Mode Trigger Button -->
+        <div v-else class="flex items-center gap-2">
+          <Button 
+            @click="executeBulkAction"
+            variant="outline"
+            size="sm"
+            :class="bulkModeType === 'saran' ? 'border-emerald-300 dark:border-emerald-800 bg-emerald-600 text-white hover:bg-emerald-700' : 'border-purple-300 dark:border-purple-800 bg-purple-600 text-white hover:bg-purple-700'"
+            class="h-9 px-3.5 text-xs font-bold gap-2 rounded-xl shadow-2xs cursor-pointer"
+          >
+            <component :is="bulkModeType === 'saran' ? ShoppingCart : Bell" class="w-4 h-4" />
+            <span v-if="selectedOrders.length === 0">Pilih SO pada tabel...</span>
+            <span v-else>{{ bulkModeType === 'saran' ? 'Download' : 'Reminder' }} ({{ selectedOrders.length }} SO)</span>
+          </Button>
+
+          <Button 
+            @click="cancelBulkMode" 
+            variant="ghost" 
+            size="sm"
+            class="h-9 px-2.5 text-xs font-semibold text-slate-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-xl cursor-pointer"
+            title="Batal Pilih SO"
+          >
+            <X class="w-4 h-4 mr-1" /> Batal
+          </Button>
+        </div>
+
+        <!-- Sync Accurate Button -->
+        <Button
+          @click="fetchOrders"
+          :disabled="isLoading"
+          variant="outline"
+          size="sm"
+          class="h-9 px-3.5 text-xs font-bold gap-2 border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-900 dark:text-white rounded-xl shadow-2xs cursor-pointer"
+        >
+          <RefreshCw :class="['w-4 h-4 text-red-600', isLoading && 'animate-spin']"/>
+          {{ isLoading ? 'Memuat...' : 'Sync Accurate' }}
+        </Button>
       </div>
     </div>
 
-    <!-- Filter Card -->
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm">
-      <div class="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">
-        <Filter class="w-3.5 h-3.5"/>
-        Filter &amp; Pencarian
-      </div>
-      <div class="flex flex-col md:flex-row gap-3">
+    <!-- Filter Card (Exact Penawaran / HsqListView Style) -->
+    <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl p-3.5 shadow-2xs font-sans">
+      <div class="flex flex-col lg:flex-row items-stretch lg:items-center gap-3">
         <div class="relative flex-1">
-          <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"/>
-          <input v-model="searchQuery" placeholder="Cari No. SO atau Nama Customer..."
-            class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-sm placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-300 dark:focus:ring-slate-600 focus:border-transparent transition-all"/>
+          <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <input
+            v-model="searchQuery"
+            type="text"
+            placeholder="Cari No. SO, Customer, atau Proyek..."
+            class="w-full bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 pl-10 pr-4 py-2 rounded-xl text-sm outline-none focus:ring-2 focus:ring-red-500/60 focus:border-transparent transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 font-sans"
+          />
         </div>
+        <!-- Multi-Select Status Dropdown -->
         <DropdownMenu>
           <DropdownMenuTrigger as-child>
-            <button :class="['inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all', startDate ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300' : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700']">
-              <CalendarIcon class="w-4 h-4"/>{{ dateRangeLabel }}
+            <button class="w-full lg:w-56 flex items-center justify-between bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 px-3.5 py-2 rounded-xl text-sm text-slate-800 dark:text-slate-200 outline-none focus:ring-2 focus:ring-red-500/60 transition-all font-sans cursor-pointer">
+              <div class="flex items-center gap-2 truncate">
+                <Filter class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span class="truncate font-medium text-xs md:text-sm">{{ statusFilterLabel }}</span>
+              </div>
+              <ChevronDown class="w-4 h-4 text-slate-400 shrink-0 ml-1" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent class="w-72 p-4 dark:bg-slate-800 dark:border-slate-700 rounded-2xl" align="end">
-            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Pintas Waktu</p>
-            <div class="grid grid-cols-3 gap-2 mb-4">
-              <button v-for="d in [{v:'today',l:'Hari Ini'},{v:'week',l:'Minggu Ini'},{v:'month',l:'Bulan Ini'}]" :key="d.v"
-                @click="setDateFilter(d.v)"
-                class="px-2 py-1.5 rounded-lg text-xs font-semibold border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition-all">
-                {{ d.l }}
-              </button>
-            </div>
-            <DropdownMenuSeparator class="dark:bg-slate-700 mb-3"/>
-            <div class="space-y-3">
-              <div>
-                <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Dari</label>
-                <input type="date" v-model="startDate" class="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-sm text-slate-900 dark:text-white focus:outline-none"/>
-              </div>
-              <div>
-                <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Sampai</label>
-                <input type="date" v-model="endDate" class="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-sm text-slate-900 dark:text-white focus:outline-none"/>
+          <DropdownMenuContent align="start" class="w-64 p-2 dark:bg-slate-900 dark:border-slate-800 rounded-xl shadow-xl font-sans">
+            <div class="flex items-center justify-between px-2.5 py-1.5 mb-1 border-b border-slate-100 dark:border-slate-800">
+              <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Status (Multi)</span>
+              <div class="flex items-center gap-2">
+                <button @click.prevent="selectAllStatuses" class="text-[11px] font-semibold text-blue-600 hover:underline cursor-pointer">Semua</button>
+                <button @click.prevent="clearAllStatuses" class="text-[11px] font-semibold text-red-600 hover:underline cursor-pointer">Kosongkan</button>
               </div>
             </div>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <DropdownMenu>
-          <DropdownMenuTrigger as-child>
-            <button :class="['inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all min-w-[160px]', statusFilter.length > 0 ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 text-orange-700 dark:text-orange-300' : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700']">
-              <Filter class="w-4 h-4"/>
-              <span class="truncate flex-1 text-left">{{ statusFilter.length === 0 ? 'Semua Status' : statusFilter.length + ' Status' }}</span>
-              <ChevronsUpDown class="w-3.5 h-3.5 opacity-50 shrink-0"/>
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent class="w-56 p-3 dark:bg-slate-800 dark:border-slate-700 rounded-2xl" align="end">
-            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Pilih Status</p>
-            <div class="space-y-1">
-              <div v-for="status in availableStatuses" :key="status"
-                class="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer text-sm dark:text-slate-200 transition-colors"
-                @click.prevent="toggleStatus(status)">
-                <div class="w-4 h-4 border-2 rounded-md flex items-center justify-center transition-all shrink-0"
-                  :class="isStatusSelected(status) ? 'bg-slate-900 border-slate-900 dark:bg-white dark:border-white' : 'border-slate-300 dark:border-slate-500'">
-                  <Check v-if="isStatusSelected(status)" class="w-2.5 h-2.5 text-white dark:text-slate-900" stroke-width="3"/>
+            <div class="space-y-0.5 max-h-60 overflow-y-auto pr-1">
+              <div v-for="st in availableStatuses" :key="st"
+                @click.prevent="toggleStatus(st)"
+                class="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer text-xs font-medium dark:text-slate-200 transition-colors">
+                <div class="w-4 h-4 border rounded flex items-center justify-center transition-all shrink-0"
+                  :class="isStatusSelected(st) ? 'bg-red-600 border-red-600 dark:bg-red-500 dark:border-red-500' : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'">
+                  <Check v-if="isStatusSelected(st)" class="w-3 h-3 text-white" stroke-width="3"/>
                 </div>
-                <span>{{ status }}</span>
+                <span>{{ st }}</span>
               </div>
             </div>
-            <DropdownMenuSeparator class="my-2 dark:bg-slate-700"/>
-            <button @click="statusFilter = []" :disabled="statusFilter.length === 0"
-              class="w-full text-xs text-red-500 hover:text-red-600 font-semibold py-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-all disabled:opacity-40">
-              Reset Status
-            </button>
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
-      <div v-if="hasActiveFilters" class="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-dashed border-slate-100 dark:border-slate-800">
-        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Aktif:</span>
-        <span v-if="searchQuery" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs font-semibold border border-blue-100 dark:border-blue-800">
-          {{ searchQuery }}<button @click="searchQuery=''" class="hover:opacity-70"><X class="w-3 h-3"/></button>
-        </span>
-        <span v-if="startDate || endDate" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-xs font-semibold border border-indigo-100 dark:border-indigo-800">
-          <CalendarIcon class="w-3 h-3"/>{{ dateRangeLabel }}
-          <button @click="startDate=''; endDate=''" class="hover:opacity-70"><X class="w-3 h-3"/></button>
-        </span>
-        <span v-for="status in statusFilter" :key="status"
-          class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 text-xs font-semibold border border-orange-100 dark:border-orange-800">
-          {{ status }}<button @click="removeStatus(status)" class="hover:opacity-70"><X class="w-3 h-3"/></button>
-        </span>
-        <button @click="resetFilter" class="text-xs text-red-500 hover:text-red-600 font-semibold px-2 py-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-all ml-1">Reset Semua</button>
+        <div class="flex items-center gap-2 w-full lg:w-auto">
+          <select v-model="dateFilterOption" @change="applyDateFilter" class="w-full lg:w-44 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-xl text-sm outline-none focus:ring-2 focus:ring-red-500/60 transition-all font-sans cursor-pointer">
+            <option value="">Semua Tanggal</option>
+            <option value="month">Bulan Ini</option>
+            <option value="last_month">Bulan Lalu</option>
+            <option value="year">Tahun Ini</option>
+            <option value="range">Range Tanggal</option>
+          </select>
+          <template v-if="dateFilterOption === 'range'">
+            <input v-model="startDate" type="date" data-range-start class="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 rounded-lg text-xs outline-none focus:ring-2 focus:ring-red-500/60" />
+            <span class="text-slate-300 dark:text-slate-600">—</span>
+            <input v-model="endDate" type="date" class="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 rounded-lg text-xs outline-none focus:ring-2 focus:ring-red-500/60" />
+          </template>
+          <button v-if="hasActiveFilters" @click="resetFilter" class="px-3 py-2 rounded-xl text-xs font-semibold bg-red-50 text-red-600 dark:bg-red-950/30 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-950/50 transition-colors shrink-0 cursor-pointer">Reset</button>
+        </div>
       </div>
     </div>
 
-    <!-- Table -->
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-x-auto">
+    <!-- Table Container (Shadcn UI Style) -->
+    <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-2xs overflow-x-auto font-sans">
       <Table>
-        <TableHeader class="bg-slate-950 dark:bg-black">
-          <TableRow class="hover:bg-slate-950 dark:hover:bg-black border-none">
-            <TableHead v-if="isBulkMode" class="w-12 px-4 text-center">
+        <TableHeader class="bg-slate-50/80 dark:bg-slate-900/80 border-b border-slate-200/80 dark:border-slate-800">
+          <TableRow class="hover:bg-transparent border-none">
+            <TableHead v-if="isBulkMode" class="w-12 px-4 text-center py-3.5">
               <div class="flex items-center justify-center">
-                <div class="w-4 h-4 border-2 border-white/30 rounded-md flex items-center justify-center cursor-pointer transition-all hover:border-white/60"
-                  :class="isAllSelected ? 'bg-red-500 border-red-500' : ''" @click="toggleSelectAll">
-                  <Check v-if="isAllSelected" class="w-2.5 h-2.5 text-white" stroke-width="3"/>
-                </div>
+                <input 
+                  type="checkbox"
+                  :checked="isAllSelected"
+                  @change="toggleSelectAll"
+                  class="w-4 h-4 rounded accent-red-600 cursor-pointer"
+                />
               </div>
             </TableHead>
-            <TableHead class="text-slate-300 font-semibold text-xs uppercase tracking-wider cursor-pointer hover:text-white w-[190px]" @click="toggleSort('no_so')">
-              <div class="flex items-center gap-2">No. SO
-                <component :is="sortKey==='no_so' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-3.5 h-3.5" :class="sortKey==='no_so' ? 'text-red-400' : 'opacity-30'"/>
+            <TableHead class="text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[180px] py-3.5 px-4" @click="toggleSort('no_so')">
+              <div class="flex items-center gap-1.5">
+                No. SO
+                <component :is="sortKey==='no_so' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='no_so' ? 'text-red-600' : 'opacity-30'"/>
               </div>
             </TableHead>
-            <TableHead class="text-slate-300 font-semibold text-xs uppercase tracking-wider cursor-pointer hover:text-white" @click="toggleSort('client')">
-              <div class="flex items-center gap-2">Customer
-                <component :is="sortKey==='client' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-3.5 h-3.5" :class="sortKey==='client' ? 'text-red-400' : 'opacity-30'"/>
+            <TableHead class="text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[130px] py-3.5 px-4" @click="toggleSort('date')">
+              <div class="flex items-center gap-1.5">
+                Tanggal
+                <component :is="sortKey==='date' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='date' ? 'text-red-600' : 'opacity-30'"/>
               </div>
             </TableHead>
-            <TableHead class="hidden md:table-cell text-slate-300 font-semibold text-xs uppercase tracking-wider cursor-pointer hover:text-white w-[140px]" @click="toggleSort('date')">
-              <div class="flex items-center gap-2">Tanggal
-                <component :is="sortKey==='date' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-3.5 h-3.5" :class="sortKey==='date' ? 'text-red-400' : 'opacity-30'"/>
+            <TableHead class="text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white py-3.5 px-4" @click="toggleSort('client')">
+              <div class="flex items-center gap-1.5">
+                Customer
+                <component :is="sortKey==='client' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='client' ? 'text-red-600' : 'opacity-30'"/>
               </div>
             </TableHead>
-            <TableHead class="hidden lg:table-cell text-slate-300 font-semibold text-xs uppercase tracking-wider cursor-pointer hover:text-white w-[170px]" @click="toggleSort('progress')">
-              <div class="flex items-center gap-2">Progress
-                <component :is="sortKey==='progress' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-3.5 h-3.5" :class="sortKey==='progress' ? 'text-red-400' : 'opacity-30'"/>
+            <TableHead class="hidden md:table-cell text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white py-3.5 px-4" @click="toggleSort('project')">
+              <div class="flex items-center gap-1.5">
+                Proyek
+                <component :is="sortKey==='project' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='project' ? 'text-red-600' : 'opacity-30'"/>
               </div>
             </TableHead>
-            <TableHead class="text-slate-300 font-semibold text-xs uppercase tracking-wider cursor-pointer hover:text-white w-[160px]" @click="toggleSort('status')">
-              <div class="flex items-center gap-2">Status
-                <component :is="sortKey==='status' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-3.5 h-3.5" :class="sortKey==='status' ? 'text-red-400' : 'opacity-30'"/>
+            <TableHead class="hidden lg:table-cell text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[230px] py-3.5 px-4" @click="toggleSort('progress')">
+              <div class="flex items-center gap-1.5">
+                Progress
+                <component :is="sortKey==='progress' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='progress' ? 'text-red-600' : 'opacity-30'"/>
               </div>
             </TableHead>
-            <TableHead class="hidden md:table-cell text-right text-slate-300 font-semibold text-xs uppercase tracking-wider cursor-pointer hover:text-white w-[180px]" @click="toggleSort('amount')">
-              <div class="flex items-center justify-end gap-2">Nilai (IDR)
-                <component :is="sortKey==='amount' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-3.5 h-3.5" :class="sortKey==='amount' ? 'text-red-400' : 'opacity-30'"/>
+            <TableHead class="text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[140px] py-3.5 px-4" @click="toggleSort('status')">
+              <div class="flex items-center gap-1.5">
+                Status
+                <component :is="sortKey==='status' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='status' ? 'text-red-600' : 'opacity-30'"/>
               </div>
             </TableHead>
-            <TableHead class="w-10"></TableHead>
+            <TableHead class="hidden md:table-cell text-right text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[180px] py-3.5 px-4" @click="toggleSort('amount')">
+              <div class="flex items-center justify-end gap-1.5">
+                Nilai (IDR)
+                <component :is="sortKey==='amount' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='amount' ? 'text-red-600' : 'opacity-30'"/>
+              </div>
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           <TableRow v-if="isLoading">
-            <TableCell colspan="8" class="py-16 text-center">
+            <TableCell colspan="8" class="py-20 text-center">
               <div class="flex flex-col items-center gap-3 text-slate-400">
-                <Loader2 class="w-8 h-8 animate-spin text-red-500"/>
+                <Loader2 class="w-8 h-8 animate-spin text-red-600"/>
                 <span class="text-sm font-medium">Sedang mengambil data dari Accurate...</span>
               </div>
             </TableCell>
           </TableRow>
           <TableRow v-else-if="filteredAndSortedOrders.length === 0">
-            <TableCell colspan="8" class="py-16 text-center">
+            <TableCell colspan="8" class="py-20 text-center">
               <div class="flex flex-col items-center gap-3 text-slate-400">
-                <div class="w-14 h-14 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center">
-                  <FileText class="w-7 h-7 opacity-40"/>
+                <div class="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center">
+                  <FileText class="w-6 h-6 opacity-40"/>
                 </div>
-                <p class="text-sm font-medium">Tidak ada data yang sesuai filter</p>
-                <button v-if="hasActiveFilters" @click="resetFilter" class="text-xs text-red-500 hover:underline font-semibold">Reset Filter</button>
+                <p class="text-sm font-medium">Tidak ada data pesanan yang sesuai filter</p>
+                <button v-if="hasActiveFilters" @click="resetFilter" class="text-sm text-red-600 hover:underline font-semibold cursor-pointer">Reset Filter</button>
               </div>
             </TableCell>
           </TableRow>
           <TableRow v-else v-for="so in paginatedOrders" :key="so.id_database"
-            class="group cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors border-b border-slate-100 dark:border-slate-800 last:border-0"
+            class="group cursor-pointer hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors border-b border-slate-100 dark:border-slate-800/80 last:border-0"
             @click="router.push(`/sales-orders/${so.no_so.replace(/\//g, '-')}`)">
-            <TableCell v-if="isBulkMode" class="px-4 text-center align-middle" @click.stop>
+            <TableCell v-if="isBulkMode" class="px-4 text-center align-middle py-4" @click.stop>
               <div class="flex items-center justify-center">
-                <div class="w-4 h-4 border-2 border-slate-300 dark:border-slate-600 rounded-md flex items-center justify-center cursor-pointer transition-all hover:border-red-400"
-                  :class="selectedOrders.includes(so.id_database) ? 'bg-red-500 border-red-500' : ''"
-                  @click.stop="toggleSelect(so.id_database)">
-                  <Check v-if="selectedOrders.includes(so.id_database)" class="w-2.5 h-2.5 text-white" stroke-width="3"/>
-                </div>
+                <input 
+                  type="checkbox"
+                  :checked="selectedOrders.includes(so.id_database)"
+                  @change="toggleSelect(so.id_database)"
+                  class="w-4 h-4 rounded accent-red-600 cursor-pointer"
+                />
               </div>
             </TableCell>
-            <TableCell class="py-4 align-middle">
-              <div class="flex items-center gap-2">
-                <div class="w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 group-hover:bg-red-50 dark:group-hover:bg-red-900/20 flex items-center justify-center transition-colors shrink-0">
-                  <FileText class="w-4 h-4 text-slate-400 group-hover:text-red-500 transition-colors"/>
-                </div>
-                <div class="flex flex-col">
-                  <span class="font-bold text-slate-900 dark:text-white text-sm">{{ so.no_so }}</span>
-                </div>
-              </div>
+            <TableCell class="py-4 px-4 align-middle whitespace-nowrap">
+              <span class="text-xs md:text-sm font-bold text-slate-900 dark:text-slate-100 font-sans">
+                {{ so.no_so }}
+              </span>
             </TableCell>
-            <TableCell class="py-4 align-middle">
+            <TableCell class="py-4 px-4 align-middle whitespace-nowrap">
+              <span class="text-xs md:text-sm font-medium text-slate-600 dark:text-slate-400 font-sans">{{ formatShortDate(so.date) }}</span>
+            </TableCell>
+            <TableCell class="py-4 px-4 align-middle">
               <div>
-                <p class="font-semibold text-slate-800 dark:text-slate-200 text-sm truncate max-w-[260px]" :title="so.client">{{ so.client }}</p>
-                <p class="text-xs text-slate-400 mt-0.5 md:hidden">{{ formatShortDate(so.date) }}</p>
+                <p class="font-semibold text-slate-900 dark:text-slate-100 text-xs md:text-sm truncate max-w-[280px]" :title="so.client">{{ so.client }}</p>
               </div>
             </TableCell>
-            <TableCell class="hidden md:table-cell py-4 align-middle whitespace-nowrap">
-              <div class="inline-flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
-                <CalendarIcon class="w-3.5 h-3.5 shrink-0"/>
-                <span class="text-sm font-medium">{{ formatShortDate(so.date) }}</span>
-              </div>
+            <TableCell class="hidden md:table-cell py-4 px-4 align-middle">
+              <span class="text-xs md:text-sm font-medium text-slate-700 dark:text-slate-300 truncate max-w-[220px] block" :title="so.project">
+                {{ so.project }}
+              </span>
             </TableCell>
-            <TableCell class="hidden lg:table-cell py-4 align-middle w-[170px]">
-              <div class="flex items-center gap-2">
-                <div class="flex-1 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+            <TableCell class="hidden lg:table-cell py-4 px-4 align-middle w-[230px]">
+              <div class="flex items-center gap-3">
+                <div class="flex-1 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                   <div class="h-full rounded-full transition-all duration-700"
-                    :class="so.progress === 100 ? 'bg-gradient-to-r from-emerald-500 to-teal-500' : 'bg-gradient-to-r from-blue-500 to-indigo-500'"
+                    :class="so.progress === 100 ? 'bg-emerald-500' : 'bg-red-500'"
                     :style="`width: ${so.progress}%`">
                   </div>
                 </div>
-                <span class="text-xs font-bold text-slate-500 dark:text-slate-400 w-9 text-right shrink-0">{{ so.progress }}%</span>
+                <span class="text-xs font-semibold text-slate-600 dark:text-slate-300 w-10 text-right shrink-0 font-sans">{{ so.progress }}%</span>
               </div>
             </TableCell>
-            <TableCell class="py-4 align-middle">
-              <Badge variant="outline" class="text-[11px] font-semibold px-2.5 py-0.5 rounded-lg border whitespace-nowrap" :class="getStatusColor(so.status)">
+            <TableCell class="py-4 px-4 align-middle">
+              <Badge variant="outline" class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border whitespace-nowrap" :class="getStatusColor(so.status)">
                 {{ so.status }}
               </Badge>
             </TableCell>
-            <TableCell class="hidden md:table-cell text-right py-4 align-middle">
-              <span class="font-bold text-slate-700 dark:text-slate-300 text-sm">{{ formatCurrency(so.amount) }}</span>
-            </TableCell>
-            <TableCell class="py-4 align-middle">
-              <ArrowRight class="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-red-500 dark:group-hover:text-red-400 group-hover:translate-x-0.5 transition-all"/>
+            <TableCell class="hidden md:table-cell text-right py-4 px-4 align-middle">
+              <span class="text-xs md:text-sm font-bold text-slate-900 dark:text-slate-100 font-sans">{{ formatCurrency(so.amount) }}</span>
             </TableCell>
           </TableRow>
         </TableBody>
       </Table>
 
-      <!-- Pagination -->
-      <div class="flex flex-col sm:flex-row items-center justify-between px-6 py-4 bg-slate-50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800 gap-4">
+      <!-- Pagination & Summary Footer -->
+      <div class="flex flex-col sm:flex-row items-center justify-between px-5 py-3.5 bg-slate-50/50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 gap-3">
         <div class="flex items-center gap-4">
           <div class="flex items-center gap-2">
-            <span class="text-xs text-slate-400 font-medium whitespace-nowrap">Baris/halaman:</span>
+            <span class="text-xs text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">Baris/halaman:</span>
             <Select v-model="itemsPerPage" @update:model-value="currentPage = 1">
-              <SelectTrigger class="h-8 w-16 text-xs bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 dark:text-slate-200 rounded-lg">
+              <SelectTrigger class="h-8 w-16 text-xs bg-white dark:bg-slate-800 border-slate-200/80 dark:border-slate-700 dark:text-slate-200 rounded-lg">
                 <SelectValue/>
               </SelectTrigger>
               <SelectContent class="dark:bg-slate-800 dark:border-slate-700 rounded-xl">
@@ -1222,23 +1298,33 @@ const getStatusColor = (status) => {
               </SelectContent>
             </Select>
           </div>
-          <div class="hidden sm:flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
-            Total: <span class="font-bold text-slate-800 dark:text-slate-200 ml-1">{{ formatCurrency(pageTotalAmount) }}</span>
+          <div class="hidden sm:flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200/80 dark:border-slate-700 font-sans">
+            Total Hal: <span class="font-bold text-slate-900 dark:text-white ml-1 font-sans">{{ formatCurrency(pageTotalAmount) }}</span>
           </div>
         </div>
         <div class="flex items-center gap-3">
-          <span class="text-xs text-slate-500 dark:text-slate-400">
-            Hal <strong class="text-slate-800 dark:text-slate-200">{{ currentPage }}</strong> dari <strong class="text-slate-800 dark:text-slate-200">{{ totalPages || 1 }}</strong>
+          <span class="text-xs text-slate-500 dark:text-slate-400 font-medium">
+            Hal <strong class="text-slate-900 dark:text-white font-sans">{{ currentPage }}</strong> dari <strong class="text-slate-900 dark:text-white font-sans">{{ totalPages || 1 }}</strong>
           </span>
-          <div class="flex gap-1">
-            <button :disabled="currentPage === 1" @click="prevPage"
-              class="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 hover:text-red-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+          <div class="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              :disabled="currentPage === 1"
+              @click="prevPage"
+              class="w-8 h-8 rounded-lg border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+            >
               <ChevronLeft class="w-4 h-4"/>
-            </button>
-            <button :disabled="currentPage >= totalPages" @click="nextPage"
-              class="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 hover:text-red-500 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              :disabled="currentPage >= totalPages"
+              @click="nextPage"
+              class="w-8 h-8 rounded-lg border-slate-200/80 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+            >
               <ChevronRight class="w-4 h-4"/>
-            </button>
+            </Button>
           </div>
         </div>
       </div>
