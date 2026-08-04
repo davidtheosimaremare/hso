@@ -1,5 +1,21 @@
 [
   {
+    "hash": "296f98dea7dc014ff7ba127fca99875e6b620075",
+    "shortHash": "296f98d",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 4 10:49:42 2026 +0700",
+    "message": "chore: trigger vercel deployment build"
+  },
+  {
+    "hash": "8b5dbae6cdd2c5471caf844591a172c99e4aa5e0",
+    "shortHash": "8b5dbae",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 4 10:41:05 2026 +0700",
+    "message": "feat: Redesign Delivery Orders and Receive Items views, align invoice priority card progress bar labels, and optimize dashboard KPI pagination"
+  },
+  {
     "hash": "f9b05fc71f862f158a8ff5c1abfd6b7a7972a0db",
     "shortHash": "f9b05fc",
     "author": "davidtheosimaremare",
@@ -382,21 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Thu Jul 9 12:42:38 2026 +0700",
     "message": "fix: make HPO status card inline - Ex-Works | ⏳ Waiting on same row"
-  },
-  {
-    "hash": "7b18befd0b2a5cfdeecb6e76529a7326f3d83493",
-    "shortHash": "7b18bef",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 12:40:34 2026 +0700",
-    "message": "fix: improve HPO status card layout - fix 'Waiting for confirmation' wrapping issue"
-  },
-  {
-    "hash": "27857cc7c778748038350d83dca357c4ba435484",
-    "shortHash": "27857cc",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 12:38:37 2026 +0700",
-    "message": "fix: use exwork_waiting boolean flag instead of text in DATE column - fixes invalid syntax error"
   }
 ]

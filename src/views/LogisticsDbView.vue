@@ -527,7 +527,7 @@ const handleExcelUpload = async (e) => {
       }
       
       // Clear existing raw tracking table before inserting new import batch
-      await supabase.from('raw_forwarder_tracking').delete().neq('hpo_number', '')
+      await supabase.from('raw_forwarder_tracking').delete().neq('hpo_number', '___xyz_impossible___')
 
       const chunkSize = 100
       let successCount = 0
@@ -573,7 +573,7 @@ const clearTrackingDb = async () => {
     const { error } = await supabase
       .from('raw_forwarder_tracking')
       .delete()
-      .neq('hpo_number', '')
+      .neq('hpo_number', '___xyz_impossible___')
     
     if (error) throw error
     alert("Database pelacakan berhasil dibersihkan.")
@@ -620,6 +620,14 @@ const isSyncModalOpen = ref(false)
 const proposedGlobalChanges = ref([]) // proposed updates grouped by HSO
 const totalProposedChangesCount = ref(0)
 const isApplyingGlobalChanges = ref(false)
+const appliedUpdatesCount = ref(0)
+const syncSearchQuery = ref('')
+
+const sanitizeDate = (val) => {
+  if (!val || val === '-' || val === 'Waiting' || val === 'Invalid Date') return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val
+  return null
+}
 
 const startGlobalSync = async () => {
   isGlobalSyncing.value = true
@@ -627,6 +635,8 @@ const startGlobalSync = async () => {
   globalSyncMessage.value = 'Mendapatkan daftar SO aktif dari Accurate...'
   proposedGlobalChanges.value = []
   totalProposedChangesCount.value = 0
+  appliedUpdatesCount.value = 0
+  syncSearchQuery.value = ''
   
   try {
     // 1. Fetch active Sales Orders from Accurate via Edge Function
@@ -645,7 +655,7 @@ const startGlobalSync = async () => {
       return
     }
     
-    globalSyncProgress.value = 20
+    globalSyncProgress.value = 15
     globalSyncMessage.value = `Mengambil detail item untuk ${activeOrders.length} HSO...`
     
     // 2. Load SO details in parallel using Edge Function (batch size is limited to avoid memory issues)
@@ -671,32 +681,42 @@ const startGlobalSync = async () => {
         }
       })
       await Promise.all(promises)
-      globalSyncProgress.value = 20 + Math.min(50, Math.round(((i + chunk.length) / activeOrders.length) * 50))
+      globalSyncProgress.value = 15 + Math.min(45, Math.round(((i + chunk.length) / activeOrders.length) * 45))
     }
     
     if (details.length === 0) {
       throw new Error("Gagal mengambil detail item untuk HSO aktif.")
     }
     
-    globalSyncMessage.value = 'Menganalisis status logistik...'
-    globalSyncProgress.value = 75
+    globalSyncMessage.value = 'Menganalisis pencocokan HPO & status logistik...'
+    globalSyncProgress.value = 65
     
-    // 3. Fetch all HPO mappings from database where detail_notes matches active HSO numbers
+    // 3. Fetch all HPO mappings in safe chunks to avoid URI limits
     const soNumbers = details.map(d => d.number)
-    const orFilter = soNumbers.map(num => `detail_notes.ilike.%${num.replace(/\//g, '%')}%`).join(',')
+    let poItems = []
+    const soChunkSize = 10
     
-    const { data: poItems, error: poError } = await supabase
-      .from('accurate_purchase_order_items')
-      .select(`
-        *,
-        header:accurate_purchase_orders(
-          id, number, trans_date, status_name, vendor_name
-        )
-      `)
-      .or(orFilter)
+    for (let i = 0; i < soNumbers.length; i += soChunkSize) {
+      const chunkNums = soNumbers.slice(i, i + soChunkSize)
+      const orFilter = chunkNums.map(num => `detail_notes.ilike.%${num.replace(/\//g, '%')}%`).join(',')
+      
+      const { data: chunkPoItems, error: poError } = await supabase
+        .from('accurate_purchase_order_items')
+        .select(`
+          *,
+          header:accurate_purchase_orders(
+            id, number, trans_date, status_name, vendor_name
+          )
+        `)
+        .or(orFilter)
+        
+      if (!poError && chunkPoItems) {
+        poItems = poItems.concat(chunkPoItems)
+      }
+    }
       
     const hpoMapping = {}
-    if (!poError && poItems) {
+    if (poItems.length > 0) {
       poItems.forEach(item => {
         const matchedSoNumber = soNumbers.find(num => 
           item.detail_notes && item.detail_notes.toLowerCase().includes(num.toLowerCase())
@@ -712,14 +732,22 @@ const startGlobalSync = async () => {
       })
     }
     
-    // 4. Fetch all shipments from Supabase for these SO IDs
+    globalSyncProgress.value = 80
+    // 4. Fetch all shipments from Supabase for these SO IDs in safe chunks
     const activeSoIds = details.map(d => String(d.id))
-    const { data: shipmentsData, error: shipError } = await supabase
-      .from('shipments')
-      .select('*')
-      .in('so_id', activeSoIds)
-      
-    const shipmentList = shipmentsData || []
+    let shipmentList = []
+    
+    for (let i = 0; i < activeSoIds.length; i += 50) {
+      const idChunk = activeSoIds.slice(i, i + 50)
+      const { data: shipChunk } = await supabase
+        .from('shipments')
+        .select('*')
+        .in('so_id', idChunk)
+        
+      if (shipChunk) {
+        shipmentList = shipmentList.concat(shipChunk)
+      }
+    }
     
     // 5. Fetch tracking rows from database
     const { data: trackingRows, error: trackDbError } = await supabase
@@ -758,7 +786,6 @@ const startGlobalSync = async () => {
     }
     
     // 6. In-Memory Matching
-    const matches = []
     const statusLevels = {
       'Already in Hokiindo Raya': 4,
       'Already in siemens Warehouse': 3,
@@ -1023,7 +1050,7 @@ const startGlobalSync = async () => {
     
     globalSyncProgress.value = 100
     if (changeCounter === 0) {
-      alert("Semua SO sudah sinkron sepenuhnya dengan database pelacakan. Tidak ada pembaruan logistik baru.")
+      alert("Semua HSO/HPO sudah sinkron sepenuhnya dengan database pelacakan. Tidak ada pembaruan logistik baru.")
       isGlobalSyncing.value = false
       return
     }
@@ -1032,8 +1059,8 @@ const startGlobalSync = async () => {
     totalProposedChangesCount.value = changeCounter
     isSyncModalOpen.value = true
   } catch (err) {
-    console.error(err)
-    alert("Gagal melakukan pencocokan status logistik: " + err.message)
+    console.error("Global sync error:", err)
+    alert("Gagal melakukan sinkronisasi HPO: " + err.message)
   } finally {
     isGlobalSyncing.value = false
   }
@@ -1041,6 +1068,7 @@ const startGlobalSync = async () => {
 
 const applyAllSyncUpdates = async () => {
   isApplyingGlobalChanges.value = true
+  appliedUpdatesCount.value = 0
   
   try {
     const updates = []
@@ -1061,6 +1089,11 @@ const applyAllSyncUpdates = async () => {
     for (const update of updates) {
       try {
         let shipmentId = null
+        
+        const cleanExwork = sanitizeDate(update.newExwork)
+        const cleanEta = sanitizeDate(update.newEta)
+        const cleanDelivery = sanitizeDate(update.newDelivery)
+        
         if (update.isVirtual) {
           const insertPayload = {
             so_id: update.soId,
@@ -1078,17 +1111,18 @@ const applyAllSyncUpdates = async () => {
           if (update.exworkWaiting) {
             insertPayload.exwork_waiting = true
             insertPayload.exwork_date = null
-          } else if (update.newExwork && update.newExwork !== '-') {
-            insertPayload.exwork_date = update.newExwork
+          } else if (cleanExwork) {
+            insertPayload.exwork_date = cleanExwork
+            insertPayload.exwork_waiting = false
           }
-          if (update.newEta && update.newEta !== '-') insertPayload.eta_date = update.newEta
+          if (cleanEta) insertPayload.eta_date = cleanEta
           
-          if (update.newDelivery && update.newDelivery !== '-') {
+          if (cleanDelivery) {
             if (update.newStatus === 'Already in Hokiindo Raya') {
-              insertPayload.hokiindo_date = update.newDelivery
-              insertPayload.dunex_date = update.newDelivery
+              insertPayload.hokiindo_date = cleanDelivery
+              insertPayload.dunex_date = cleanDelivery
             } else {
-              insertPayload.dunex_date = update.newDelivery
+              insertPayload.dunex_date = cleanDelivery
             }
           }
           
@@ -1109,18 +1143,18 @@ const applyAllSyncUpdates = async () => {
           if (update.exworkWaiting) {
             shipmentPayload.exwork_waiting = true
             shipmentPayload.exwork_date = null
-          } else if (update.newExwork && update.newExwork !== '-') {
-            shipmentPayload.exwork_date = update.newExwork
+          } else if (cleanExwork) {
+            shipmentPayload.exwork_date = cleanExwork
             shipmentPayload.exwork_waiting = false
           }
-          if (update.newEta && update.newEta !== '-') shipmentPayload.eta_date = update.newEta
+          if (cleanEta) shipmentPayload.eta_date = cleanEta
           
-          if (update.newDelivery && update.newDelivery !== '-') {
+          if (cleanDelivery) {
             if (update.newStatus === 'Already in Hokiindo Raya') {
-              shipmentPayload.hokiindo_date = update.newDelivery
-              shipmentPayload.dunex_date = update.newDelivery
+              shipmentPayload.hokiindo_date = cleanDelivery
+              shipmentPayload.dunex_date = cleanDelivery
             } else {
-              shipmentPayload.dunex_date = update.newDelivery
+              shipmentPayload.dunex_date = cleanDelivery
             }
           }
           
@@ -1137,15 +1171,15 @@ const applyAllSyncUpdates = async () => {
         
         if (shipmentId) {
           let eventDate = null
-          if (update.newStatus === 'Follow up with our forwarder') eventDate = update.newExwork !== '-' ? update.newExwork : null
-          else if (update.newStatus === 'ETA Port JKT') eventDate = update.newEta !== '-' ? update.newEta : null
-          else if (update.newStatus === 'Already in siemens Warehouse' || update.newStatus === 'Already in Hokiindo Raya') eventDate = update.newDelivery !== '-' ? update.newDelivery : null
+          if (update.newStatus === 'Follow up with our forwarder') eventDate = cleanExwork
+          else if (update.newStatus === 'ETA Port JKT') eventDate = cleanEta
+          else if (update.newStatus === 'Already in siemens Warehouse' || update.newStatus === 'Already in Hokiindo Raya') eventDate = cleanDelivery
 
           await supabase.from('shipment_logs').insert({
             shipment_id: shipmentId,
             status_name: update.newStatus,
             event_date: eventDate,
-            notes: 'Auto-updated via Global Sync',
+            notes: 'Auto-updated via Global HPO Sync',
             user_email: userEmail,
             action_detail: `Pembaruan logistik masal untuk item "${update.itemCode}" (HPO: ${update.hpoNumber}) ke status "${update.newStatus}"`
           })
@@ -1153,10 +1187,12 @@ const applyAllSyncUpdates = async () => {
         successCount++
       } catch (err) {
         console.error(`Failed to apply sync for HSO ${update.soNumber} - SKU ${update.itemCode}:`, err)
+      } finally {
+        appliedUpdatesCount.value++
       }
     }
     
-    alert(`Berhasil memperbarui ${successCount} item status logistik secara massal!`)
+    alert(`Berhasil memperbarui ${successCount} dari ${updates.length} item status logistik HPO!`)
     isSyncModalOpen.value = false
     proposedGlobalChanges.value = []
     totalProposedChangesCount.value = 0
@@ -1164,8 +1200,8 @@ const applyAllSyncUpdates = async () => {
     await fetchTrackingStats()
     await fetchTrackingData()
   } catch (err) {
-    console.error(err)
-    alert("Gagal menerapkan pembaruan massal: " + err.message)
+    console.error("Apply sync updates error:", err)
+    alert("Gagal menerapkan pembaruan massal HPO: " + err.message)
   } finally {
     isApplyingGlobalChanges.value = false
   }
@@ -1195,13 +1231,13 @@ onMounted(() => {
       </div>
       <Button 
         v-if="canWrite"
-        size="sm" 
-        class="w-full sm:w-auto shadow-md bg-gradient-to-r from-red-650 to-rose-650 hover:from-red-550 hover:to-rose-550 text-white font-bold transition-all duration-200 hover:shadow-lg active:scale-95 flex items-center justify-center gap-1.5 py-5 sm:py-4 px-4.5 rounded-xl text-xs uppercase tracking-wider bg-red-600 hover:bg-red-500 border border-transparent shadow-red-500/20"
         @click="startGlobalSync"
         :disabled="isGlobalSyncing || isUploading"
+        size="sm" 
+        class="h-9 px-4 text-xs font-semibold gap-2 bg-red-600 hover:bg-red-700 text-white rounded-xl shadow-2xs cursor-pointer transition-all active:scale-95"
       >
         <RefreshCw class="w-4 h-4 shrink-0" :class="isGlobalSyncing ? 'animate-spin' : ''"/>
-        <span>{{ isGlobalSyncing ? 'Sinkronisasi...' : 'Sync Semua HSO Aktif' }}</span>
+        <span>{{ isGlobalSyncing ? 'Sinkronisasi...' : 'Sync Semua HSO' }}</span>
       </Button>
     </div>
 
@@ -1437,93 +1473,69 @@ onMounted(() => {
             </template>
           </TableBody>
         </Table>
-        
-        <!-- Pagination -->
-        <div class="flex items-center justify-between px-4 py-3 border-t border-slate-100 dark:border-slate-800">
-          <span class="text-xs font-medium text-slate-500 dark:text-slate-400">
-            {{ totalRows }} baris — Halaman {{ currentPage }} dari {{ totalPages }}
-          </span>
-          <div class="flex items-center gap-1">
-            <Button
-              variant="outline" size="sm"
-              class="h-8 w-8 p-0 rounded-lg border-slate-200 dark:border-slate-800"
-              :disabled="currentPage <= 1"
-              @click="goToPage(1)"
-            >
-              <span class="text-xs font-bold">&laquo;</span>
-            </Button>
-            <Button
-              variant="outline" size="sm"
-              class="h-8 w-8 p-0 rounded-lg border-slate-200 dark:border-slate-800"
-              :disabled="currentPage <= 1"
-              @click="prevPage"
-            >
-              <span class="text-xs font-bold">&lsaquo;</span>
-            </Button>
-            <span v-if="visiblePages[0] > 1" class="text-xs text-slate-400 px-1">...</span>
-            <Button
-              v-for="p in visiblePages"
-              :key="p"
-              variant="outline" size="sm"
-              class="h-8 w-8 p-0 rounded-lg text-xs font-bold"
-              :class="p === currentPage ? 'bg-red-600 text-white border-red-600 hover:bg-red-500' : 'border-slate-200 dark:border-slate-800'"
-              @click="goToPage(p)"
-            >
-              {{ p }}
-            </Button>
-            <span v-if="visiblePages[visiblePages.length - 1] < totalPages" class="text-xs text-slate-400 px-1">...</span>
-            <Button
-              variant="outline" size="sm"
-              class="h-8 w-8 p-0 rounded-lg border-slate-200 dark:border-slate-800"
-              :disabled="currentPage >= totalPages"
-              @click="nextPage"
-            >
-              <span class="text-xs font-bold">&rsaquo;</span>
-            </Button>
-            <Button
-              variant="outline" size="sm"
-              class="h-8 w-8 p-0 rounded-lg border-slate-200 dark:border-slate-800"
-              :disabled="currentPage >= totalPages"
-              @click="goToPage(totalPages)"
-            >
-              <span class="text-xs font-bold">&raquo;</span>
-            </Button>
-          </div>
+      </div>
+
+      <!-- Pagination -->
+      <div v-if="totalRows > 0" class="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-500 font-sans">
+        <div>
+          Menampilkan <strong class="text-slate-800 dark:text-slate-200">{{ trackingData.length }}</strong> dari <strong class="text-slate-800 dark:text-slate-200">{{ totalRows }}</strong> baris
+        </div>
+        <div class="flex items-center gap-1">
+          <Button variant="outline" size="sm" :disabled="currentPage === 1" @click="prevPage" class="h-8 w-8 p-0 border-slate-200 dark:border-slate-700">
+            &lsaquo;
+          </Button>
+          <span class="px-2 font-medium">Halaman {{ currentPage }} dari {{ totalPages }}</span>
+          <Button variant="outline" size="sm" :disabled="currentPage >= totalPages" @click="nextPage" class="h-8 w-8 p-0 border-slate-200 dark:border-slate-700">
+            &rsaquo;
+          </Button>
         </div>
       </div>
     </div>
 
     <!-- FULL SCREEN GLOBAL SYNC LOADING OVERLAY -->
-    <div v-if="isGlobalSyncing" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl flex flex-col items-center justify-center text-center space-y-4 animate-in zoom-in-95 duration-200">
-        <Loader2 class="w-12 h-12 text-red-650 animate-spin" />
+    <div v-if="isGlobalSyncing" class="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
+      <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 max-w-md w-full shadow-2xl flex flex-col items-center justify-center text-center space-y-4 animate-in zoom-in-95 duration-200">
+        <div class="w-14 h-14 bg-red-100 dark:bg-red-950/40 rounded-full flex items-center justify-center shadow-sm">
+          <RefreshCw class="w-7 h-7 text-red-600 dark:text-red-400 animate-spin" />
+        </div>
         <div class="space-y-1 w-full">
-          <h4 class="font-bold text-slate-900 dark:text-white text-base">Sinkronisasi Semua HSO</h4>
+          <h4 class="font-bold text-slate-900 dark:text-white text-base">Sinkronisasi Status HPO</h4>
           <p class="text-xs text-slate-500 dark:text-slate-400 font-medium">{{ globalSyncMessage }}</p>
         </div>
-        <div class="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
-          <div class="bg-red-600 dark:bg-red-500 h-full rounded-full transition-all duration-300" :style="`width: ${globalSyncProgress}%`"></div>
+        <div class="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden shadow-inner">
+          <div class="bg-gradient-to-r from-red-600 to-rose-500 h-full rounded-full transition-all duration-300" :style="`width: ${globalSyncProgress}%`"></div>
         </div>
-        <span class="text-[10px] font-black text-slate-400 dark:text-slate-500">{{ globalSyncProgress }}%</span>
+        <span class="text-xs font-black text-slate-500 dark:text-slate-400">{{ globalSyncProgress }}% Selesai</span>
       </div>
     </div>
 
     <!-- PREVIEW CONFIRMATION DIALOG -->
     <Dialog :open="isSyncModalOpen" @update:open="val => isSyncModalOpen = val">
-      <DialogContent class="sm:max-w-[800px] max-h-[85vh] flex flex-col p-0 overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 rounded-2xl shadow-2xl">
+      <DialogContent class="sm:max-w-[850px] max-h-[85vh] flex flex-col p-0 overflow-hidden border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 rounded-2xl shadow-2xl">
         <DialogHeader class="p-6 pb-4 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/20">
           <DialogTitle class="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
             <RefreshCw class="w-5 h-5 text-red-600" />
-            <span>Konfirmasi Sinkronisasi Semua HSO Aktif</span>
+            <span>Konfirmasi Sinkronisasi Massal HPO</span>
           </DialogTitle>
           <DialogDescription class="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">
             Menemukan total <strong class="text-slate-900 dark:text-white font-black">{{ totalProposedChangesCount }} item</strong> pembaruan logistik baru di database. Silakan tinjau ringkasan perubahan di bawah ini sebelum disimpan ke pengiriman aktif.
           </DialogDescription>
         </DialogHeader>
 
+        <!-- Batch apply progress state -->
+        <div v-if="isApplyingGlobalChanges" class="p-6 border-b border-slate-100 dark:border-slate-800 bg-red-50/30 dark:bg-red-950/10 space-y-2">
+          <div class="flex items-center justify-between text-xs font-bold text-red-700 dark:text-red-400">
+            <span>Menerapkan pembaruan logistik massal...</span>
+            <span>{{ appliedUpdatesCount }} / {{ totalProposedChangesCount }}</span>
+          </div>
+          <div class="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-2 overflow-hidden shadow-inner">
+            <div class="bg-red-600 h-full transition-all duration-300 rounded-full" :style="{ width: `${Math.round((appliedUpdatesCount / totalProposedChangesCount) * 100)}%` }"></div>
+          </div>
+        </div>
+
         <!-- Scrollable preview list -->
         <div class="flex-1 overflow-y-auto p-6 space-y-6">
-          <div v-for="hso in proposedGlobalChanges" :key="hso.soNumber" class="border border-slate-100 dark:border-slate-800 rounded-xl overflow-hidden shadow-sm bg-slate-50/30 dark:bg-slate-900/10">
+          <div v-for="hso in proposedGlobalChanges" :key="hso.soNumber" class="border border-slate-100 dark:border-slate-800 rounded-xl overflow-hidden shadow-2xs bg-slate-50/30 dark:bg-slate-900/10">
             <!-- HSO Header Info -->
             <div class="bg-slate-50 dark:bg-slate-900/50 px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
               <div class="space-y-0.5">
@@ -1587,12 +1599,12 @@ onMounted(() => {
 
         <DialogFooter class="p-6 pt-4 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/50 dark:bg-slate-900/20 flex flex-col-reverse sm:flex-row gap-2">
           <DialogClose as-child>
-            <Button variant="outline" class="w-full sm:w-auto border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-850 font-bold text-xs uppercase tracking-wider h-10 rounded-xl active:scale-95 transition-all">
+            <Button variant="outline" class="w-full sm:w-auto border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 font-bold text-xs uppercase tracking-wider h-10 rounded-xl active:scale-95 transition-all">
               Batal
             </Button>
           </DialogClose>
           <Button 
-            class="w-full sm:w-auto shadow-md bg-gradient-to-r from-red-650 to-rose-650 hover:from-red-550 hover:to-rose-550 text-white font-bold text-xs uppercase tracking-wider h-10 rounded-xl active:scale-95 transition-all flex items-center justify-center gap-1.5 bg-red-600 hover:bg-red-500 shadow-red-500/20"
+            class="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white font-bold text-xs uppercase tracking-wider h-10 rounded-xl active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm"
             @click="applyAllSyncUpdates"
             :disabled="isApplyingGlobalChanges || !canWrite"
           >
