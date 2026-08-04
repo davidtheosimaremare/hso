@@ -931,30 +931,44 @@ const startGlobalSync = async () => {
         
         const currentStatus = primaryShipment.current_status || ''
         const currentLevel = statusLevels[currentStatus] || 0
-        const newLevel = statusLevels[excelStatus] || 0
-        
-        const isStatusUpgraded = newLevel > currentLevel
+        const excelLevel = statusLevels[excelStatus] || 0
+
+        // PROTECTIVE STATUS GUARD:
+        // 1. If an item is already "Already in Hokiindo Raya" or has a hokiindo_date, its status MUST NEVER be downgraded!
+        // 2. In general, global sync must NEVER downgrade a higher status level to a lower status level.
+        const isAlreadyReceived = currentStatus === 'Already in Hokiindo Raya' || Boolean(primaryShipment.hokiindo_date)
+        let targetStatus = excelStatus
+
+        if (isAlreadyReceived) {
+          targetStatus = 'Already in Hokiindo Raya'
+        } else if (currentLevel > excelLevel) {
+          targetStatus = currentStatus
+        }
+
+        const targetLevel = statusLevels[targetStatus] || 0
+        const isStatusUpgraded = targetLevel > currentLevel
         const dbExworkText = primaryShipment.exwork_waiting ? 'Waiting' : (primaryShipment.exwork_date || '')
         const excelExworkText = bestRow.exwork_waiting ? 'Waiting' : (excelExwork || '')
-        
+
         const isDatesChanged = 
           excelExworkText !== dbExworkText ||
-          (excelEta || '') !== (primaryShipment.eta_date || '') ||
-          (excelDelivery || '') !== (primaryShipment.hokiindo_date || primaryShipment.dunex_date || '')
-          
-        if (isStatusUpgraded || isDatesChanged) {
+          (Boolean(excelEta) && excelEta !== primaryShipment.eta_date) ||
+          (Boolean(excelDelivery) && excelDelivery !== (primaryShipment.hokiindo_date || primaryShipment.dunex_date))
+
+        // Only propose changes if status is upgraded, OR if dates changed without downgrading status
+        if (isStatusUpgraded || (isDatesChanged && targetLevel >= currentLevel)) {
           soProposed.push({
             itemCode: shipment.item_code,
             itemName: soItems.find(i => i.code === shipment.item_code)?.name || 'Produk',
             hpoNumber: shipment.hpo_number,
             oldStatus: currentStatus || 'Belum Ada',
-            newStatus: excelStatus,
+            newStatus: targetStatus,
             oldExwork: dbExworkText || '-',
             newExwork: excelExworkText || '-',
             oldEta: primaryShipment.eta_date || '-',
-            newEta: excelEta || '-',
+            newEta: excelEta || primaryShipment.eta_date || '-',
             oldDelivery: primaryShipment.hokiindo_date || primaryShipment.dunex_date || '-',
-            newDelivery: excelDelivery || '-',
+            newDelivery: (isAlreadyReceived ? primaryShipment.hokiindo_date : excelDelivery) || primaryShipment.hokiindo_date || primaryShipment.dunex_date || '-',
             shipmentIds: dbShipments.map(s => s.id),
             isVirtual: false,
             exworkWaiting: bestRow.exwork_waiting

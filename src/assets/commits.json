@@ -1,5 +1,13 @@
 [
   {
+    "hash": "3dc54969fabe27a13b8d4bef5a8a4c75d4bf4e14",
+    "shortHash": "3dc5496",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 4 16:11:04 2026 +0700",
+    "message": "fix(logistics-db): Redesign HPO sync button styling, fix undefined template variables, and optimize raw tracking wipe query"
+  },
+  {
     "hash": "296f98dea7dc014ff7ba127fca99875e6b620075",
     "shortHash": "296f98d",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Thu Jul 9 12:47:30 2026 +0700",
     "message": "feat: add HPO completion indicator on SO list - shows Lengkap/Belum Lengkap per HSO"
-  },
-  {
-    "hash": "57f194a2d6a836a6733a9b44cdd4d08654334927",
-    "shortHash": "57f194a",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 12:42:38 2026 +0700",
-    "message": "fix: make HPO status card inline - Ex-Works | ⏳ Waiting on same row"
   }
 ]
