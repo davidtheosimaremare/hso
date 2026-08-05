@@ -5,8 +5,9 @@ import {
   Lightbulb, Send, Heart, MessageCircle, Loader2, X, Image,
   RefreshCw, Sparkles, AlertCircle, ChevronDown, Globe,
   MoreHorizontal, Bookmark, Share2, ThumbsUp, Calendar, ChevronLeft, ChevronRight, List, ExternalLink, Pin,
-  Upload, FileText
+  Upload, FileText, Edit3, History, Bold, Italic, Heading, Quote, ListOrdered, Eye, RotateCcw, Check, Clock, User, CornerDownLeft, Edit
 } from 'lucide-vue-next'
+import RichTextEditor from '@/components/RichTextEditor.vue'
 
 // --- State ---
 const isLoading = ref(true)
@@ -400,6 +401,274 @@ const parseIdeaDescription = (text) => {
     return { text: cleanText, driveLink: previewLink, originalLink: link }
   }
   return { text, driveLink: null, originalLink: null }
+}
+
+// --- Rich Editor State & Formatting Helpers ---
+const composerMode = ref('edit') // 'edit' | 'preview'
+const composerTextareaRef = ref(null)
+
+const insertFormatting = (textareaRef, prefix, suffix = '', placeholder = '') => {
+  const el = textareaRef?.$el || textareaRef
+  if (!el) return
+  const start = el.selectionStart || 0
+  const end = el.selectionEnd || 0
+  const text = el.value || ''
+  const selectedText = text.substring(start, end) || placeholder
+  const replacement = `${prefix}${selectedText}${suffix}`
+  
+  el.value = text.substring(0, start) + replacement + text.substring(end)
+  el.dispatchEvent(new Event('input'))
+  
+  nextTick(() => {
+    el.focus()
+    el.setSelectionRange(start + prefix.length, start + prefix.length + selectedText.length)
+  })
+}
+
+const formatRichTextHtml = (text) => {
+  if (!text) return ''
+  // If content is already HTML from visual editor, return as is
+  if (/<[a-z][\s\S]*>/i.test(text)) {
+    return text
+  }
+
+  let safe = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+
+  // Headers
+  safe = safe.replace(/^### (.*$)/gim, '<h4 class="text-sm font-bold text-slate-900 dark:text-white mt-2 mb-1">$1</h4>')
+  safe = safe.replace(/^## (.*$)/gim, '<h3 class="text-base font-extrabold text-slate-900 dark:text-white mt-2 mb-1">$1</h3>')
+  
+  // Bold & Italic
+  safe = safe.replace(/\*\*(.*?)\*\*/g, '<strong class="font-bold text-slate-900 dark:text-white">$1</strong>')
+  safe = safe.replace(/\*(.*?)\*/g, '<em class="italic">$1</em>')
+  
+  // Quotes
+  safe = safe.replace(/^&gt;\s?(.*$)/gim, '<blockquote class="border-l-2 border-red-500 pl-3 italic text-slate-600 dark:text-slate-400 my-1 bg-red-50/50 dark:bg-red-950/20 py-1 rounded-r">$1</blockquote>')
+  
+  // Bullet lists
+  safe = safe.replace(/^[\-\*]\s+(.*$)/gim, '<li class="ml-4 list-disc text-slate-700 dark:text-slate-300">$1</li>')
+
+  // Numbered lists
+  safe = safe.replace(/^(\d+)\.\s+(.*$)/gim, '<li class="ml-4 list-decimal text-slate-700 dark:text-slate-300">$2</li>')
+
+  // Section break
+  safe = safe.replace(/^---$/gim, '<hr class="my-3 border-slate-200 dark:border-slate-800" />')
+  safe = safe.replace(/\n/g, '<br>')
+
+  return safe
+}
+
+// --- Team Editing Modal State ---
+const showEditModal = ref(false)
+const isSubmittingEdit = ref(false)
+const editingIdeaTarget = ref(null)
+const editingIdeaForm = ref({
+  title: '',
+  description: '',
+  tags: '',
+  platforms: [],
+  target_date: ''
+})
+const editModalMode = ref('edit') // 'edit' | 'preview'
+const editDescRef = ref(null)
+
+const openEditModal = (idea) => {
+  editingIdeaTarget.value = idea
+  editingIdeaForm.value = {
+    title: idea.title || '',
+    description: idea.description || '',
+    tags: Array.isArray(idea.tags) ? idea.tags.join(', ') : (idea.tags || ''),
+    platforms: Array.isArray(idea.platforms) && idea.platforms.length ? [...idea.platforms] : (idea.platform ? [idea.platform] : []),
+    target_date: idea.target_date || ''
+  }
+  editModalMode.value = 'edit'
+  showEditModal.value = true
+  openMenuId.value = null
+}
+
+const toggleEditPlatform = (platformKey) => {
+  const current = editingIdeaForm.value.platforms
+  if (current.includes(platformKey)) {
+    if (current.length > 1) {
+      editingIdeaForm.value.platforms = current.filter(p => p !== platformKey)
+    }
+  } else {
+    editingIdeaForm.value.platforms.push(platformKey)
+  }
+}
+
+const saveEditIdea = async () => {
+  if (!editingIdeaTarget.value || !editingIdeaForm.value.title.trim()) return
+  isSubmittingEdit.value = true
+  try {
+    const orig = editingIdeaTarget.value
+    const newTitle = editingIdeaForm.value.title.trim()
+    const newDesc = editingIdeaForm.value.description.trim()
+    const newTags = editingIdeaForm.value.tags.split(',').map(t => t.trim()).filter(Boolean)
+    const newPlatforms = editingIdeaForm.value.platforms
+    const newTargetDate = editingIdeaForm.value.target_date || null
+
+    const changes = []
+    if (orig.title !== newTitle) changes.push('Judul diubah')
+    if (orig.description !== newDesc) changes.push('Isi konten diedit')
+    if (JSON.stringify(orig.tags || []) !== JSON.stringify(newTags)) changes.push('Tag diperbarui')
+    if (JSON.stringify(orig.platforms || []) !== JSON.stringify(newPlatforms)) changes.push('Platform diubah')
+    if (orig.target_date !== newTargetDate) changes.push('Tanggal target diubah')
+
+    if (changes.length === 0) {
+      showEditModal.value = false
+      return
+    }
+
+    const changeSummary = changes.join(', ')
+    const revisionRecord = {
+      idea_id: orig.id,
+      edited_by: currentUser.value || 'Tim Marketing',
+      edited_at: new Date().toISOString(),
+      title: newTitle,
+      description: newDesc,
+      tags: newTags,
+      platforms: newPlatforms,
+      change_summary: changeSummary,
+      previous_title: orig.title,
+      previous_description: orig.description
+    }
+
+    try {
+      await supabase.from('marketing_idea_revisions').insert([revisionRecord])
+    } catch (e) {
+      console.warn('marketing_idea_revisions insert fallback:', e)
+    }
+
+    const existingRevisions = Array.isArray(orig.revisions) ? [...orig.revisions] : []
+    existingRevisions.unshift(revisionRecord)
+
+    const updatePayload = {
+      title: newTitle,
+      description: newDesc,
+      tags: newTags,
+      platforms: newPlatforms,
+      platform: newPlatforms[0] || orig.platform,
+      target_date: newTargetDate,
+      updated_by: currentUser.value,
+      revisions: existingRevisions
+    }
+
+    let { error } = await supabase.from('marketing_ideas').update(updatePayload).eq('id', orig.id)
+    if (error && (error.message?.includes('revisions') || error.code === 'PGRST204')) {
+      const fallbackPayload = { ...updatePayload }
+      delete fallbackPayload.revisions
+      const retry = await supabase.from('marketing_ideas').update(fallbackPayload).eq('id', orig.id)
+      if (retry.error) throw retry.error
+    } else if (error) {
+      throw error
+    }
+
+    Object.assign(orig, updatePayload)
+    showEditModal.value = false
+  } catch (err) {
+    alert('Gagal menyimpan perubahan: ' + err.message)
+  } finally {
+    isSubmittingEdit.value = false
+  }
+}
+
+// --- Revision History Modal State ---
+const showRevisionModal = ref(false)
+const revisionTargetIdea = ref(null)
+const revisionsList = ref([])
+const isLoadingRevisions = ref(false)
+const expandedRevisionId = ref(null)
+
+const openRevisionModal = async (idea) => {
+  revisionTargetIdea.value = idea
+  revisionsList.value = []
+  isLoadingRevisions.value = true
+  showRevisionModal.value = true
+  openMenuId.value = null
+
+  try {
+    const { data, error } = await supabase
+      .from('marketing_idea_revisions')
+      .select('*')
+      .eq('idea_id', idea.id)
+      .order('edited_at', { ascending: false })
+
+    if (!error && data && data.length) {
+      revisionsList.value = data
+    } else if (Array.isArray(idea.revisions) && idea.revisions.length) {
+      revisionsList.value = idea.revisions
+    } else {
+      revisionsList.value = []
+    }
+  } catch (e) {
+    revisionsList.value = Array.isArray(idea.revisions) ? idea.revisions : []
+  } finally {
+    isLoadingRevisions.value = false
+  }
+}
+
+const restoreRevision = async (rev) => {
+  if (!revisionTargetIdea.value || !rev) return
+  const authorName = rev.edited_by?.split('@')[0] || 'pengguna'
+  if (!confirm(`Pulihkan konten ke versi oleh ${authorName}?`)) return
+
+  try {
+    const orig = revisionTargetIdea.value
+    const restoredTitle = rev.title || orig.title
+    const restoredDesc = rev.description || orig.description
+    const restoredTags = Array.isArray(rev.tags) ? rev.tags : orig.tags
+    const restoredPlatforms = Array.isArray(rev.platforms) ? rev.platforms : orig.platforms
+
+    const changeSummary = `Dipulihkan ke versi (${new Date(rev.edited_at).toLocaleDateString('id-ID')})`
+    const newRevRecord = {
+      idea_id: orig.id,
+      edited_by: currentUser.value || 'Tim Marketing',
+      edited_at: new Date().toISOString(),
+      title: restoredTitle,
+      description: restoredDesc,
+      tags: restoredTags,
+      platforms: restoredPlatforms,
+      change_summary: changeSummary,
+      previous_title: orig.title,
+      previous_description: orig.description
+    }
+
+    try {
+      await supabase.from('marketing_idea_revisions').insert([newRevRecord])
+    } catch (e) {}
+
+    const existingRevisions = Array.isArray(orig.revisions) ? [...orig.revisions] : []
+    existingRevisions.unshift(newRevRecord)
+
+    const updatePayload = {
+      title: restoredTitle,
+      description: restoredDesc,
+      tags: restoredTags,
+      platforms: restoredPlatforms,
+      updated_by: currentUser.value,
+      revisions: existingRevisions
+    }
+
+    let { error } = await supabase.from('marketing_ideas').update(updatePayload).eq('id', orig.id)
+    if (error && (error.message?.includes('revisions') || error.code === 'PGRST204')) {
+      const fallbackPayload = { ...updatePayload }
+      delete fallbackPayload.revisions
+      const retry = await supabase.from('marketing_ideas').update(fallbackPayload).eq('id', orig.id)
+      if (retry.error) throw retry.error
+    } else if (error) {
+      throw error
+    }
+
+    Object.assign(orig, updatePayload)
+    alert('Versi berhasil dipulihkan!')
+    showRevisionModal.value = false
+  } catch (err) {
+    alert('Gagal memulihkan versi: ' + err.message)
+  }
 }
 
 // Target Date Modal
@@ -1422,13 +1691,15 @@ watch(selectedEventDetail, () => {
           @keydown.ctrl.enter="submitIdea"
         ></textarea>
 
-        <!-- Description (optional, smaller) -->
-        <textarea
-          v-model="newIdea.description"
-          rows="2"
-          placeholder="Tambahkan detail... angle, target audiens, referensi, dll. (opsional)"
-          class="w-full bg-slate-50 dark:bg-slate-800/50 rounded-xl px-4 py-2.5 outline-none text-xs text-slate-600 dark:text-slate-400 placeholder-slate-300 dark:placeholder-slate-600 resize-none leading-relaxed font-sans border border-slate-100 dark:border-slate-800 focus:border-red-300 dark:focus:border-red-700 transition-colors"
-        ></textarea>
+        <!-- Visual WYSIWYG Rich Text Editor -->
+        <div class="space-y-1">
+          <label class="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-wider">Detail / Isi Konten (Visual Editor)</label>
+          <RichTextEditor
+            v-model="newIdea.description"
+            placeholder="Tulis detail/angle konten... Blok teks lalu tekan Bold (Ctrl/Cmd+B), Italic (Ctrl/Cmd+I), atau buat list agar teks turun dengan rapi."
+            min-height="110px"
+          />
+        </div>
 
         <!-- Attachment Upload -->
         <div class="flex items-center gap-3">
@@ -1594,6 +1865,19 @@ watch(selectedEventDetail, () => {
                       {{ getStatus(s).emoji }} {{ getStatus(s).label }}
                     </button>
                     
+                    <div class="h-px bg-slate-100 dark:bg-slate-800 my-1"></div>
+                    <button @click="openEditModal(idea)"
+                      class="flex items-center gap-2 w-full px-3 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-left">
+                      ✏️ Edit Konten
+                    </button>
+                    <button @click="openRevisionModal(idea)"
+                      class="flex items-center gap-2 w-full px-3 py-2.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors text-left">
+                      📜 Riwayat Revisi
+                      <span v-if="(idea.revisions||[]).length" class="ml-auto px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-[10px] rounded-full text-slate-500 font-mono">
+                        {{ (idea.revisions||[]).length }}
+                      </span>
+                    </button>
+
                     <template v-if="userRole === 'ADMIN'">
                       <div class="h-px bg-slate-100 dark:bg-slate-800 my-1"></div>
                       <button @click="deleteIdea(idea.id)"
@@ -1611,7 +1895,10 @@ watch(selectedEventDetail, () => {
         <!-- Post Content -->
         <div class="px-4 pb-3">
           <p class="text-base font-normal text-slate-900 dark:text-white leading-snug mb-2 font-sans">{{ idea.title }}</p>
-          <p v-if="parseIdeaDescription(idea.description).text" class="text-sm text-slate-600 dark:text-slate-400 leading-relaxed font-sans mb-2">{{ parseIdeaDescription(idea.description).text }}</p>
+          <div v-if="parseIdeaDescription(idea.description).text"
+            class="text-sm text-slate-700 dark:text-slate-300 leading-relaxed font-sans whitespace-pre-wrap mb-2 space-y-1"
+            v-html="formatRichTextHtml(parseIdeaDescription(idea.description).text)">
+          </div>
           
           <!-- Reference Preview as Post Image -->
           <div v-if="parseIdeaDescription(idea.description).driveLink" class="mt-3 mb-3 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 bg-slate-900 max-w-[320px] aspect-[4/5] relative group">
@@ -2613,7 +2900,10 @@ watch(selectedEventDetail, () => {
         <!-- Title & Description -->
         <div>
           <h2 class="text-lg font-black text-slate-900 dark:text-white leading-snug mb-1">{{ selectedIdeaModal.title }}</h2>
-          <p v-if="parseIdeaDescription(selectedIdeaModal.description).text" class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed whitespace-pre-wrap font-sans">{{ parseIdeaDescription(selectedIdeaModal.description).text }}</p>
+          <div v-if="parseIdeaDescription(selectedIdeaModal.description).text"
+            class="text-xs text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap font-sans space-y-1"
+            v-html="formatRichTextHtml(parseIdeaDescription(selectedIdeaModal.description).text)">
+          </div>
         </div>
 
         <!-- Attached Media Preview -->
@@ -2645,8 +2935,234 @@ watch(selectedEventDetail, () => {
       </div>
 
       <!-- Modal Footer -->
-      <div class="p-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+      <div class="p-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center">
+        <div class="flex items-center gap-2">
+          <button @click="openEditModal(selectedIdeaModal); selectedIdeaModal = null"
+            class="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 transition-colors flex items-center gap-1.5">
+            <Edit3 class="w-3.5 h-3.5" />
+            <span>Edit Konten</span>
+          </button>
+          <button @click="openRevisionModal(selectedIdeaModal)"
+            class="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 transition-colors flex items-center gap-1.5">
+            <History class="w-3.5 h-3.5 text-blue-500" />
+            <span>Riwayat Revisi</span>
+          </button>
+        </div>
         <button @click="selectedIdeaModal = null" class="px-5 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors">
+          Tutup
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Edit Idea Modal (Team Editing) -->
+  <div v-if="showEditModal && editingIdeaTarget" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm overflow-y-auto">
+    <div class="bg-white dark:bg-[#1e293b] rounded-2xl max-w-xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150">
+      
+      <!-- Modal Header -->
+      <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/30">
+        <div class="flex items-center gap-2">
+          <div class="p-2 bg-red-50 dark:bg-red-500/10 text-red-500 rounded-xl">
+            <Edit3 class="w-5 h-5" />
+          </div>
+          <div>
+            <h3 class="text-base font-black text-slate-900 dark:text-white">Edit Konten Marketing</h3>
+            <p class="text-[11px] text-slate-400">Revisi akan dicatat dalam riwayat perubahan tim</p>
+          </div>
+        </div>
+        <button @click="showEditModal = false" class="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+          <X class="w-5 h-5" />
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+        <!-- Title Input -->
+        <div class="space-y-1">
+          <label class="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">Judul / Headline Konten</label>
+          <input
+            v-model="editingIdeaForm.title"
+            type="text"
+            placeholder="Masukkan judul konten..."
+            class="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 outline-none text-sm font-bold text-slate-900 dark:text-white focus:border-red-500 transition-colors"
+          />
+        </div>
+
+        <!-- Visual WYSIWYG Rich Text Editor -->
+        <div class="space-y-1">
+          <label class="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">Isi & Detail Konten (Visual Editor)</label>
+          <RichTextEditor
+            v-model="editingIdeaForm.description"
+            placeholder="Tulis detail/angle konten... Format teks langsung terlihat (Visual WYSIWYG)."
+            min-height="140px"
+          />
+        </div>
+
+        <!-- Tags -->
+        <div class="space-y-1">
+          <label class="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">Tag (Pisahkan koma)</label>
+          <input
+            v-model="editingIdeaForm.tags"
+            type="text"
+            placeholder="promo, tutorial, slide"
+            class="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 outline-none text-xs text-slate-700 dark:text-slate-200 font-sans focus:border-red-500 transition-colors"
+          />
+        </div>
+
+        <!-- Platform Selection -->
+        <div class="space-y-1.5">
+          <label class="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">Tayang di Platform</label>
+          <div class="flex flex-wrap gap-2">
+            <button v-for="p in PLATFORMS.filter(x=>x.key!=='all')" :key="p.key"
+              @click="toggleEditPlatform(p.key)"
+              type="button"
+              class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all"
+              :class="editingIdeaForm.platforms.includes(p.key)
+                ? 'text-white border-transparent bg-gradient-to-r shadow-xs ' + (platformGradient[p.key]||'from-slate-500 to-slate-600')
+                : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'">
+              <img v-if="p.icon" :src="`/${p.icon}`" class="w-3.5 h-3.5 object-contain" :alt="p.label" />
+              <span v-else-if="p.emoji">{{ p.emoji }}</span>
+              <span>{{ p.label }}</span>
+              <span v-if="editingIdeaForm.platforms.includes(p.key)" class="ml-1 text-[10px]">✓</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Target Date -->
+        <div class="space-y-1">
+          <label class="text-xs font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">Target Tanggal Tayang / Deadline</label>
+          <input
+            v-model="editingIdeaForm.target_date"
+            type="date"
+            class="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 outline-none text-xs text-slate-700 dark:text-slate-200 font-sans focus:border-red-500 transition-colors"
+          />
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="p-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
+        <button @click="showEditModal = false" class="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition-colors">
+          Batal
+        </button>
+        <button @click="saveEditIdea" :disabled="isSubmittingEdit || !editingIdeaForm.title.trim()"
+          class="px-5 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-red-600 to-red-600 hover:from-red-700 hover:to-red-700 shadow-md transition-all flex items-center gap-1.5 disabled:opacity-40">
+          <Loader2 v-if="isSubmittingEdit" class="w-3.5 h-3.5 animate-spin" />
+          <Check v-else class="w-3.5 h-3.5" />
+          Simpan Perubahan
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Revision History Modal -->
+  <div v-if="showRevisionModal && revisionTargetIdea" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm overflow-y-auto">
+    <div class="bg-white dark:bg-[#1e293b] rounded-2xl max-w-2xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150">
+      
+      <!-- Modal Header -->
+      <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/30">
+        <div class="flex items-center gap-2.5">
+          <div class="p-2 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl">
+            <History class="w-5 h-5" />
+          </div>
+          <div>
+            <h3 class="text-base font-black text-slate-900 dark:text-white">Riwayat Revisi & Audit Log</h3>
+            <p class="text-[11px] text-slate-400 truncate max-w-md">{{ revisionTargetIdea.title }}</p>
+          </div>
+        </div>
+        <button @click="showRevisionModal = false" class="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+          <X class="w-5 h-5" />
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+        <!-- Loading state -->
+        <div v-if="isLoadingRevisions" class="py-12 text-center text-slate-400 flex flex-col items-center gap-2">
+          <Loader2 class="w-6 h-6 animate-spin text-blue-500" />
+          <span class="text-xs">Memuat riwayat revisi...</span>
+        </div>
+
+        <!-- Empty revisions state -->
+        <div v-else-if="revisionsList.length === 0" class="py-12 text-center text-slate-400 bg-slate-50 dark:bg-slate-900/30 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800">
+          <History class="w-8 h-8 mx-auto mb-2 text-slate-300 dark:text-slate-600" />
+          <p class="text-xs font-bold text-slate-600 dark:text-slate-400">Belum ada riwayat revisi</p>
+          <p class="text-[11px] text-slate-400 mt-0.5">Konten ini belum pernah diedit sejak dibuat.</p>
+        </div>
+
+        <!-- Revisions Timeline List -->
+        <div v-else class="space-y-4 relative before:absolute before:top-2 before:bottom-2 before:left-4 before:w-0.5 before:bg-slate-200 dark:before:bg-slate-800">
+          <div v-for="(rev, idx) in revisionsList" :key="rev.id || idx"
+            class="relative pl-9 space-y-2 group">
+            <!-- Timeline Dot -->
+            <div class="absolute left-2.5 top-1.5 w-3 h-3 rounded-full bg-blue-500 border-2 border-white dark:border-[#1e293b] ring-2 ring-blue-100 dark:ring-blue-900/30 shadow-xs"></div>
+
+            <!-- Card item -->
+            <div class="bg-slate-50/80 dark:bg-slate-900/40 rounded-xl p-4 border border-slate-200/80 dark:border-slate-800 space-y-2">
+              <div class="flex items-start justify-between gap-2 flex-wrap">
+                <!-- User & time -->
+                <div class="flex items-center gap-2">
+                  <div class="w-6 h-6 rounded-full bg-gradient-to-br flex items-center justify-center text-white text-[9px] font-black shrink-0"
+                    :class="getAvatarColor(rev.edited_by)">
+                    {{ getInitials(rev.edited_by) }}
+                  </div>
+                  <div>
+                    <span class="text-xs font-black text-slate-800 dark:text-slate-200">
+                      {{ rev.edited_by?.split('@')[0].replace('.', ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Tim' }}
+                    </span>
+                    <span class="text-[10px] text-slate-400 ml-2">
+                      {{ new Date(rev.edited_at).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) }}
+                    </span>
+                  </div>
+                </div>
+
+                <!-- Restore Button -->
+                <button @click="restoreRevision(rev)"
+                  class="px-2.5 py-1 rounded-lg text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 hover:bg-blue-100 transition-colors flex items-center gap-1 ml-auto">
+                  <RotateCcw class="w-3 h-3" />
+                  <span>Pulihkan Versi Ini</span>
+                </button>
+              </div>
+
+              <!-- Summary Tag -->
+              <div v-if="rev.change_summary" class="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 dark:text-amber-400 dark:bg-amber-950/40 px-2 py-0.5 rounded-md border border-amber-200 dark:border-amber-900/40">
+                ✏️ {{ rev.change_summary }}
+              </div>
+
+              <!-- Expand/Collapse Diff -->
+              <div class="pt-1">
+                <button @click="expandedRevisionId = expandedRevisionId === (rev.id || idx) ? null : (rev.id || idx)"
+                  class="text-[11px] font-bold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 flex items-center gap-1 transition-colors">
+                  <span>{{ expandedRevisionId === (rev.id || idx) ? 'Sembunyikan Perbandingan Text' : 'Lihat Detail Perubahan Teks' }}</span>
+                  <ChevronDown class="w-3 h-3 transition-transform" :class="{ 'rotate-180': expandedRevisionId === (rev.id || idx) }" />
+                </button>
+
+                <!-- Diff Content Box -->
+                <div v-if="expandedRevisionId === (rev.id || idx)" class="mt-2.5 grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-slate-200/60 dark:border-slate-800">
+                  <!-- Previous Version -->
+                  <div class="p-3 bg-red-50/50 dark:bg-red-950/20 rounded-xl border border-red-200/50 dark:border-red-900/30 text-xs">
+                    <p class="text-[10px] font-black text-red-500 dark:text-red-400 uppercase tracking-wider mb-1">Versi Sebelum Edit</p>
+                    <p class="font-bold text-slate-800 dark:text-slate-200 mb-1">{{ rev.previous_title || rev.title }}</p>
+                    <p class="text-slate-600 dark:text-slate-400 font-sans whitespace-pre-wrap leading-relaxed text-[11px]">{{ rev.previous_description || '(Kosong)' }}</p>
+                  </div>
+                  <!-- New Version -->
+                  <div class="p-3 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-xl border border-emerald-200/50 dark:border-emerald-900/30 text-xs">
+                    <p class="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider mb-1">Hasil Setelah Edit</p>
+                    <p class="font-bold text-slate-800 dark:text-slate-200 mb-1">{{ rev.title }}</p>
+                    <p class="text-slate-600 dark:text-slate-300 font-sans whitespace-pre-wrap leading-relaxed text-[11px]">{{ rev.description || '(Kosong)' }}</p>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="p-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+        <button @click="showRevisionModal = false" class="px-5 py-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 transition-colors">
           Tutup
         </button>
       </div>

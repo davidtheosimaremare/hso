@@ -1,5 +1,13 @@
 [
   {
+    "hash": "8d6d316e9e0a1f25c4141c5ac46f9a8579ae8c72",
+    "shortHash": "8d6d316",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 4 18:39:34 2026 +0700",
+    "message": "fix(logistics): Add protective status guard preventing downgrade of items already in Hokiindo Raya during bulk HSO sync"
+  },
+  {
     "hash": "3dc54969fabe27a13b8d4bef5a8a4c75d4bf4e14",
     "shortHash": "3dc5496",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Thu Jul 9 12:53:07 2026 +0700",
     "message": "fix: HPO indicator logic - only show for active SOs without HPO, hide for Terproses/Ditutup/100%"
-  },
-  {
-    "hash": "b3e330bea10f393de362247f095cba0c51157c9d",
-    "shortHash": "b3e330b",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 12:47:30 2026 +0700",
-    "message": "feat: add HPO completion indicator on SO list - shows Lengkap/Belum Lengkap per HSO"
   }
 ]

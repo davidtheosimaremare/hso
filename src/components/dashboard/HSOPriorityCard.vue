@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Package, Eye, AlertTriangle, Clock, ArrowUpCircle, ChevronDown, ChevronUp, Pin, X, RotateCcw, RefreshCw, CheckSquare, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { supabase } from '@/lib/supabase'
@@ -14,63 +14,138 @@ const props = defineProps({
 
 const router = useRouter()
 
-// Local storage interactive states
+// Shared team interactive states (backed by Supabase hso_priority_states table)
 const dismissedOrders = ref([])
 const lowPriorityOrders = ref([])
 const pinnedOrders = ref([])
+let prioritySubscription = null
 
-onMounted(() => {
+const fetchPriorityStates = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('hso_priority_states')
+      .select('so_number, status')
+
+    if (!error && data) {
+      pinnedOrders.value = data.filter(d => d.status === 'pinned').map(d => d.so_number)
+      lowPriorityOrders.value = data.filter(d => d.status === 'low_priority').map(d => d.so_number)
+      dismissedOrders.value = data.filter(d => d.status === 'dismissed').map(d => d.so_number)
+
+      // Sync local storage as backup cache
+      localStorage.setItem('hso_pinned_orders', JSON.stringify(pinnedOrders.value))
+      localStorage.setItem('hso_low_priority_orders', JSON.stringify(lowPriorityOrders.value))
+      localStorage.setItem('hso_dismissed_orders', JSON.stringify(dismissedOrders.value))
+    }
+  } catch (e) {
+    console.error('Failed to load global priority states:', e)
+  }
+}
+
+onMounted(async () => {
+  // 1. Initial quick load from local storage cache
   try {
     dismissedOrders.value = JSON.parse(localStorage.getItem('hso_dismissed_orders') || '[]')
     lowPriorityOrders.value = JSON.parse(localStorage.getItem('hso_low_priority_orders') || '[]')
     pinnedOrders.value = JSON.parse(localStorage.getItem('hso_pinned_orders') || '[]')
-  } catch (e) {
-    console.error('Failed to load local storage state:', e)
+  } catch (e) {}
+
+  // 2. Fetch authoritative database state
+  await fetchPriorityStates()
+
+  // 3. Realtime subscription for instant team sync
+  prioritySubscription = supabase
+    .channel('public:hso_priority_states')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'hso_priority_states' }, () => {
+      fetchPriorityStates()
+    })
+    .subscribe()
+})
+
+onUnmounted(() => {
+  if (prioritySubscription) {
+    supabase.removeChannel(prioritySubscription)
   }
 })
 
-const saveState = () => {
-  localStorage.setItem('hso_dismissed_orders', JSON.stringify(dismissedOrders.value))
-  localStorage.setItem('hso_low_priority_orders', JSON.stringify(lowPriorityOrders.value))
-  localStorage.setItem('hso_pinned_orders', JSON.stringify(pinnedOrders.value))
-}
-
-const dismissOrder = (number) => {
-  if (!dismissedOrders.value.includes(number)) {
-    dismissedOrders.value.push(number)
-    saveState()
-  }
-}
-
-const togglePin = (number) => {
+const togglePin = async (number) => {
   if (pinnedOrders.value.includes(number)) {
+    // Unpin item
     pinnedOrders.value = pinnedOrders.value.filter(n => n !== number)
+    try {
+      await supabase.from('hso_priority_states').delete().eq('so_number', number)
+    } catch (e) {
+      console.error('Error deleting pin state:', e)
+    }
   } else {
+    // Pin item
     pinnedOrders.value.push(number)
-    // Remove from low priority just in case
     lowPriorityOrders.value = lowPriorityOrders.value.filter(n => n !== number)
+    dismissedOrders.value = dismissedOrders.value.filter(n => n !== number)
+    try {
+      await supabase.from('hso_priority_states').upsert({
+        so_number: number,
+        status: 'pinned',
+        updated_at: new Date().toISOString()
+      })
+    } catch (e) {
+      console.error('Error saving pin state:', e)
+    }
   }
-  saveState()
 }
 
-const toggleLowPriority = (number) => {
+const toggleLowPriority = async (number) => {
   if (lowPriorityOrders.value.includes(number)) {
     lowPriorityOrders.value = lowPriorityOrders.value.filter(n => n !== number)
+    try {
+      await supabase.from('hso_priority_states').delete().eq('so_number', number)
+    } catch (e) {
+      console.error('Error resetting priority state:', e)
+    }
   } else {
     lowPriorityOrders.value.push(number)
-    // Remove from pinned just in case
     pinnedOrders.value = pinnedOrders.value.filter(n => n !== number)
+    dismissedOrders.value = dismissedOrders.value.filter(n => n !== number)
+    try {
+      await supabase.from('hso_priority_states').upsert({
+        so_number: number,
+        status: 'low_priority',
+        updated_at: new Date().toISOString()
+      })
+    } catch (e) {
+      console.error('Error saving low priority state:', e)
+    }
   }
-  saveState()
 }
 
-const restoreAll = () => {
+const dismissOrder = async (number) => {
+  if (!dismissedOrders.value.includes(number)) {
+    dismissedOrders.value.push(number)
+    pinnedOrders.value = pinnedOrders.value.filter(n => n !== number)
+    lowPriorityOrders.value = lowPriorityOrders.value.filter(n => n !== number)
+    try {
+      await supabase.from('hso_priority_states').upsert({
+        so_number: number,
+        status: 'dismissed',
+        updated_at: new Date().toISOString()
+      })
+    } catch (e) {
+      console.error('Error saving dismiss state:', e)
+    }
+  }
+}
+
+const restoreAll = async () => {
   dismissedOrders.value = []
   lowPriorityOrders.value = []
   pinnedOrders.value = []
   localStorage.removeItem('hso_dismissed_orders')
   localStorage.removeItem('hso_low_priority_orders')
   localStorage.removeItem('hso_pinned_orders')
+  try {
+    await supabase.from('hso_priority_states').delete().neq('so_number', '___impossible_none___')
+  } catch (e) {
+    console.error('Error restoring all priority states:', e)
+  }
 }
 
 const formatCurrency = (val) => {

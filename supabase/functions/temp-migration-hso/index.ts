@@ -69,7 +69,30 @@ serve(async (req) => {
           ) THEN
             ALTER PUBLICATION supabase_realtime ADD TABLE boq_requests;
           END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_publication_tables
+            WHERE pubname = 'supabase_realtime' AND tablename = 'marketing_idea_revisions'
+          ) THEN
+            ALTER PUBLICATION supabase_realtime ADD TABLE marketing_idea_revisions;
+          END IF;
         END $$;
+
+        CREATE TABLE IF NOT EXISTS public.marketing_idea_revisions (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          idea_id UUID NOT NULL REFERENCES public.marketing_ideas(id) ON DELETE CASCADE,
+          edited_by TEXT NOT NULL,
+          edited_at TIMESTAMPTZ DEFAULT NOW(),
+          title TEXT,
+          description TEXT,
+          tags TEXT[],
+          platforms TEXT[],
+          change_summary TEXT,
+          previous_title TEXT,
+          previous_description TEXT
+        );
+
+        ALTER TABLE public.marketing_ideas ADD COLUMN IF NOT EXISTS revisions JSONB DEFAULT '[]'::jsonb;
       `
 
       // Inspect marketing_ideas columns
