@@ -310,7 +310,7 @@ const summaryData = computed(() => {
   }
 })
 
-// Target Tahunan: 2024 = 6 Miliar (500 Juta / bulan), 2025 = 12 Miliar (1 Miliar / bulan), 2026+ = 24 Miliar (2 Miliar / bulan)
+// Target Tahunan: 2024 = 6 Miliar (500 Juta / bulan), 2025 = 12 Miliar (1 Miliar / bulan), 2026+ = 35 Miliar (~2.917 Juta / bulan)
 const yearlyTarget = computed(() => {
   if (targetYear.value === 2024) {
     return 6_000_000_000 // 6 Miliar
@@ -318,7 +318,7 @@ const yearlyTarget = computed(() => {
   if (targetYear.value === 2025) {
     return 12_000_000_000 // 12 Miliar
   }
-  return 24_000_000_000 // 24 Miliar
+  return 35_000_000_000 // 35 Miliar
 })
 
 const monthlyTargetBase = computed(() => yearlyTarget.value / 12)

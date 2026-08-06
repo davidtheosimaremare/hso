@@ -35,7 +35,7 @@ const monthShortNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu',
 
 // Target Maximum Y Value
 const maxY = computed(() => {
-  const target = props.targetSalesData?.yearlyTarget || 24_000_000_000
+  const target = props.targetSalesData?.yearlyTarget || 35_000_000_000
   const maxActual = props.targetSalesData?.monthlyBreakdown?.reduce((max, m) => Math.max(max, m.runCumulativeActual || 0), 0) || 0
   return Math.max(target, maxActual)
 })
