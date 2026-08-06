@@ -1,5 +1,13 @@
 [
   {
+    "hash": "e4205895549c04cad4bec36d21fc4433d7b55d44",
+    "shortHash": "e420589",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Aug 5 11:56:04 2026 +0700",
+    "message": "feat: add Marketing Hub Rich Editor, team editing, revision history, and global task pinning sync"
+  },
+  {
     "hash": "8d6d316e9e0a1f25c4141c5ac46f9a8579ae8c72",
     "shortHash": "8d6d316",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Thu Jul 9 12:55:43 2026 +0700",
     "message": "fix: smart HPO completion logic based on no-stock items and quantity matching"
-  },
-  {
-    "hash": "7d21f0fdefbd1f48f4c5530e8b0b7e1ce704c626",
-    "shortHash": "7d21f0f",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 12:53:07 2026 +0700",
-    "message": "fix: HPO indicator logic - only show for active SOs without HPO, hide for Terproses/Ditutup/100%"
   }
 ]

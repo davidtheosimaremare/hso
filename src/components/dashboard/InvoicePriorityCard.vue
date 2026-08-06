@@ -15,6 +15,8 @@ const props = defineProps({
 const selectedYear = ref(props.targetYear)
 const currentPage = ref(1)
 const pageSize = ref(5)
+const currentPageUnshipped = ref(1)
+const pageSizeUnshipped = ref(5)
 
 watch(
   () => props.targetYear,
@@ -29,6 +31,7 @@ watch(
 
 watch(selectedYear, () => {
   currentPage.value = 1
+  currentPageUnshipped.value = 1
 })
 
 const availableYears = [2024, 2025, 2026]
@@ -135,6 +138,27 @@ const priorityList = computed(() => {
   })
 })
 
+// List SO yang BELUM KIRIM untuk selectedYear
+const unshippedList = computed(() => {
+  return yearSOs.value
+    .filter(so => {
+      const statusLower = (so.statusName || '').toLowerCase().trim()
+      const isClosed = CLOSED_STATUSES.some(cs => statusLower.includes(cs))
+      const pct = Number(so.percentShipped) || 0
+      return !isClosed && pct < 100
+    })
+    .sort((a, b) => (Number(b.totalAmount) || 0) - (Number(a.totalAmount) || 0))
+})
+
+// Pagination unshipped
+const totalPagesUnshipped = computed(() => Math.ceil(unshippedList.value.length / pageSizeUnshipped.value) || 1)
+const paginatedUnshipped = computed(() => {
+  const start = (currentPageUnshipped.value - 1) * pageSizeUnshipped.value
+  return unshippedList.value.slice(start, start + pageSizeUnshipped.value)
+})
+const prevPageUnshipped = () => { if (currentPageUnshipped.value > 1) currentPageUnshipped.value-- }
+const nextPageUnshipped = () => { if (currentPageUnshipped.value < totalPagesUnshipped.value) currentPageUnshipped.value++ }
+
 // Pagination computations
 const totalPages = computed(() => {
   return Math.ceil(priorityList.value.length / pageSize.value) || 1
@@ -238,7 +262,7 @@ const navigateToHso = (hsoNumber) => {
 
     <!-- Ringkasan Angka Status Realisasi & Piutang HSO -->
     <div v-if="!isLoading" class="bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-xl p-4 space-y-3">
-      <!-- 4 Stat Box Grid -->
+      <!-- 4 Stat Box Grid — urutan: Total Omzet | Belum Kirim | Perlu Ditagih | Lunas -->
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-center sm:text-left">
         <!-- 1. Total Omzet HSO -->
         <div class="bg-white dark:bg-slate-900/60 p-2.5 rounded-lg border border-slate-200/60 dark:border-slate-800">
@@ -247,174 +271,222 @@ const navigateToHso = (hsoNumber) => {
           <span class="text-[10px] text-slate-400 block mt-0.5">{{ yearSOs.length }} Pesanan HSO</span>
         </div>
 
-        <!-- 2. Sudah Kirim & Tagih - Lunas -->
+        <!-- 2. Belum Kirim (rose/merah) -->
+        <div class="bg-white dark:bg-slate-900/60 p-2.5 rounded-lg border border-rose-100 dark:border-rose-950">
+          <span class="text-xs text-rose-600 dark:text-rose-400 font-medium block">Belum Kirim</span>
+          <span class="text-base font-extrabold text-rose-600 dark:text-rose-400">{{ formatCurrency(totalUnshippedHsoNominal) }}</span>
+          <span class="text-[10px] text-rose-600/80 dark:text-rose-400/80 font-bold block mt-0.5">{{ unshippedPercent }}% Pending Pengiriman</span>
+        </div>
+
+        <!-- 3. Perlu Ditagih / Piutang (amber/kuning) -->
+        <div class="bg-white dark:bg-slate-900/60 p-2.5 rounded-lg border border-amber-100 dark:border-amber-950">
+          <span class="text-xs text-amber-600 dark:text-amber-400 font-medium block">Perlu Ditagih</span>
+          <span class="text-base font-extrabold text-amber-600 dark:text-amber-400">{{ formatCurrency(totalUnpaidHsiNominal) }}</span>
+          <span class="text-[10px] text-amber-600/80 dark:text-amber-400/80 font-bold block mt-0.5">{{ unpaidPercent }}% Tertunggak ({{ priorityList.length }} HSI)</span>
+        </div>
+
+        <!-- 4. Lunas (emerald) -->
         <div class="bg-white dark:bg-slate-900/60 p-2.5 rounded-lg border border-emerald-100 dark:border-emerald-950">
-          <span class="text-xs text-emerald-600 dark:text-emerald-400 font-medium block">Kirim & Tagih (Lunas)</span>
+          <span class="text-xs text-emerald-600 dark:text-emerald-400 font-medium block">Lunas</span>
           <span class="text-base font-extrabold text-emerald-600 dark:text-emerald-400">{{ formatCurrency(totalPaidHsiNominal) }}</span>
           <span class="text-[10px] text-emerald-600/80 dark:text-emerald-400/80 font-bold block mt-0.5">{{ paidPercent }}% Realisasi Pembayaran</span>
-        </div>
-
-        <!-- 3. Sudah Kirim & Tagih - Belum Dibayar (Piutang) -->
-        <div class="bg-white dark:bg-slate-900/60 p-2.5 rounded-lg border border-rose-100 dark:border-rose-950">
-          <span class="text-xs text-rose-600 dark:text-rose-400 font-medium block">Kirim & Tagih (Piutang)</span>
-          <span class="text-base font-extrabold text-rose-600 dark:text-rose-400">{{ formatCurrency(totalUnpaidHsiNominal) }}</span>
-          <span class="text-[10px] text-rose-600/80 dark:text-rose-400/80 font-bold block mt-0.5">{{ unpaidPercent }}% Tertunggak ({{ priorityList.length }} HSI)</span>
-        </div>
-
-        <!-- 4. Belum Kirim & Tagih -->
-        <div class="bg-white dark:bg-slate-900/60 p-2.5 rounded-lg border border-amber-100 dark:border-amber-950">
-          <span class="text-xs text-amber-600 dark:text-amber-400 font-medium block">Belum Kirim & Tagih</span>
-          <span class="text-base font-extrabold text-amber-600 dark:text-amber-400">{{ formatCurrency(totalUnshippedHsoNominal) }}</span>
-          <span class="text-[10px] text-amber-600/80 dark:text-amber-400/80 font-bold block mt-0.5">{{ unshippedPercent }}% Pending Pengiriman</span>
         </div>
       </div>
 
       <!-- Presentase Bar dengan Keterangan Presisi Tepat Di Atas Masing-Masing Warna Bar -->
       <div class="space-y-1.5 pt-1">
         <div class="w-full flex items-center text-[10px] font-extrabold overflow-hidden">
-          <div 
-            v-if="paidPercent > 0" 
-            :style="{ width: `${paidPercent}%` }" 
-            class="text-emerald-600 dark:text-emerald-400 truncate pr-1 transition-all duration-500 shrink-0"
-            :title="`Kirim & Lunas: ${paidPercent}%`"
-          >
-            {{ paidPercent < 14 ? `Lunas: ${paidPercent}%` : `Kirim & Lunas: ${paidPercent}%` }}
-          </div>
-          <div 
-            v-if="unpaidPercent > 0" 
-            :style="{ width: `${unpaidPercent}%` }" 
-            class="text-rose-600 dark:text-rose-400 truncate px-1 transition-all duration-500 shrink-0"
-            :title="`Kirim & Belum Dibayar: ${unpaidPercent}%`"
-          >
-            {{ unpaidPercent < 18 ? `Piutang: ${unpaidPercent}%` : `Kirim & Belum Dibayar: ${unpaidPercent}%` }}
-          </div>
+          <!-- Belum Kirim (rose) - kiri -->
           <div 
             v-if="unshippedPercent > 0" 
             :style="{ width: `${unshippedPercent}%` }" 
-            class="text-amber-600 dark:text-amber-400 truncate pl-1 text-right transition-all duration-500 shrink-0 ml-auto"
-            :title="`Belum Kirim & Tagih: ${unshippedPercent}%`"
+            class="text-rose-600 dark:text-rose-400 truncate pr-1 transition-all duration-500 shrink-0"
+            :title="`Belum Kirim: ${unshippedPercent}%`"
           >
-            {{ unshippedPercent < 18 ? `Belum Kirim: ${unshippedPercent}%` : `Belum Kirim & Tagih: ${unshippedPercent}%` }}
+            {{ unshippedPercent < 14 ? `Blm Kirim: ${unshippedPercent}%` : `Belum Kirim: ${unshippedPercent}%` }}
+          </div>
+          <!-- Perlu Ditagih (amber) - tengah -->
+          <div 
+            v-if="unpaidPercent > 0" 
+            :style="{ width: `${unpaidPercent}%` }" 
+            class="text-amber-600 dark:text-amber-400 truncate px-1 transition-all duration-500 shrink-0"
+            :title="`Perlu Ditagih: ${unpaidPercent}%`"
+          >
+            {{ unpaidPercent < 14 ? `Ditagih: ${unpaidPercent}%` : `Perlu Ditagih: ${unpaidPercent}%` }}
+          </div>
+          <!-- Lunas (emerald) - kanan -->
+          <div 
+            v-if="paidPercent > 0" 
+            :style="{ width: `${paidPercent}%` }" 
+            class="text-emerald-600 dark:text-emerald-400 truncate pl-1 text-right transition-all duration-500 shrink-0 ml-auto"
+            :title="`Lunas: ${paidPercent}%`"
+          >
+            {{ `Lunas: ${paidPercent}%` }}
           </div>
         </div>
 
         <div class="w-full h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden flex shadow-inner">
+          <!-- Belum Kirim (rose) -->
+          <div 
+            class="bg-rose-500 h-full transition-all duration-500" 
+            :style="{ width: `${unshippedPercent}%` }"
+            :title="`Belum Kirim: ${unshippedPercent}% (${formatCurrency(totalUnshippedHsoNominal)})`"
+          ></div>
+          <!-- Perlu Ditagih (amber) -->
+          <div 
+            class="bg-amber-500 h-full transition-all duration-500" 
+            :style="{ width: `${unpaidPercent}%` }"
+            :title="`Perlu Ditagih: ${unpaidPercent}% (${formatCurrency(totalUnpaidHsiNominal)})`"
+          ></div>
+          <!-- Lunas (emerald) -->
           <div 
             class="bg-emerald-500 h-full transition-all duration-500" 
             :style="{ width: `${paidPercent}%` }"
-            :title="`Kirim & Lunas: ${paidPercent}% (${formatCurrency(totalPaidHsiNominal)})`"
-          ></div>
-          <div 
-            class="bg-rose-500 h-full transition-all duration-500" 
-            :style="{ width: `${unpaidPercent}%` }"
-            :title="`Kirim & Belum Dibayar: ${unpaidPercent}% (${formatCurrency(totalUnpaidHsiNominal)})`"
-          ></div>
-          <div 
-            class="bg-amber-500 h-full transition-all duration-500" 
-            :style="{ width: `${unshippedPercent}%` }"
-            :title="`Belum Kirim & Tagih: ${unshippedPercent}% (${formatCurrency(totalUnshippedHsoNominal)})`"
+            :title="`Lunas: ${paidPercent}% (${formatCurrency(totalPaidHsiNominal)})`"
           ></div>
         </div>
       </div>
     </div>
 
-    <!-- Body / Daftar Tagihan Terbit yang Belum Dibayar -->
-    <div class="flex-1 flex flex-col">
-      <div class="flex items-center justify-between mb-2">
-        <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300">Daftar Tagihan Terbit Belum Dibayar (Piutang)</h4>
-        <span class="text-[11px] font-extrabold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded border border-rose-200/50">
-          Total Piutang: {{ formatCurrency(totalUnpaidHsiNominal) }}
-        </span>
-      </div>
+    <!-- Body / Dua Tabel: Belum Kirim + Perlu Ditagih -->
+    <div class="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-      <!-- Loading state -->
-      <div v-if="isLoading" class="flex-1 flex flex-col justify-center items-center py-10 space-y-2">
-        <div class="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-        <span class="text-xs text-slate-400 font-bold">Memuat data tagihan {{ selectedYear }}...</span>
-      </div>
+      <!-- === TABEL 1: BELUM KIRIM === -->
+      <div class="flex flex-col">
+        <div class="flex items-center justify-between mb-2">
+          <h4 class="text-xs font-bold text-rose-700 dark:text-rose-400">Belum Kirim</h4>
+          <span class="text-[11px] font-extrabold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded border border-rose-200/50">
+            {{ formatCurrency(totalUnshippedHsoNominal) }}
+          </span>
+        </div>
 
-      <!-- Empty state -->
-      <div v-else-if="priorityList.length === 0" class="flex-1 flex flex-col justify-center items-center py-10 text-slate-400 text-center">
-        <p class="text-xs font-bold text-slate-400">Semua Tagihan Terbit Sudah Lunas</p>
-        <p class="text-[10px] text-slate-500 mt-0.5">Tidak ada tagihan tertunggak di tahun {{ selectedYear }}</p>
-      </div>
+        <!-- Loading -->
+        <div v-if="isLoading" class="flex-1 flex flex-col justify-center items-center py-8 space-y-2">
+          <div class="w-5 h-5 border-2 border-rose-500 border-t-transparent rounded-full animate-spin"></div>
+          <span class="text-xs text-slate-400 font-bold">Memuat...</span>
+        </div>
 
-      <!-- Priority List dengan Pagination -->
-      <div v-else class="flex-1 flex flex-col justify-between space-y-3">
-        <div class="space-y-2.5">
-          <div 
-            v-for="item in paginatedList" 
-            :key="item.id" 
-            class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/40 hover:bg-slate-100 dark:hover:bg-slate-800/80 border border-slate-100 dark:border-slate-800 hover:border-emerald-200 dark:hover:border-emerald-900 rounded-xl transition-all shadow-2xs"
-          >
-            <div class="min-w-0 flex-1 pr-3">
-              <div class="flex items-center gap-1.5 mb-1 flex-wrap">
-                <span class="text-xs font-black text-slate-900 dark:text-white truncate">
-                  {{ item.number }}
-                </span>
-                <span :class="['text-[9px] font-black px-1.5 py-0.5 rounded border uppercase', getOverdueBadgeClass(getOverdueDays(item.dueDate))]">
-                  {{ getOverdueLabel(getOverdueDays(item.dueDate)) }}
-                </span>
+        <!-- Empty -->
+        <div v-else-if="unshippedList.length === 0" class="flex-1 flex flex-col justify-center items-center py-8 text-slate-400 text-center">
+          <p class="text-xs font-bold text-slate-400">Semua Pesanan Sudah Terkirim 🎉</p>
+          <p class="text-[10px] text-slate-500 mt-0.5">Tidak ada pending pengiriman di tahun {{ selectedYear }}</p>
+        </div>
+
+        <!-- List -->
+        <div v-else class="flex-1 flex flex-col justify-between space-y-2.5">
+          <div class="space-y-2">
+            <div
+              v-for="so in paginatedUnshipped"
+              :key="so.id"
+              class="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800/40 hover:bg-rose-50/60 dark:hover:bg-rose-950/20 border border-slate-100 dark:border-slate-800 hover:border-rose-200 dark:hover:border-rose-900 rounded-xl transition-all shadow-2xs"
+            >
+              <div class="min-w-0 flex-1 pr-2">
+                <div class="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                  <span class="text-xs font-black text-slate-900 dark:text-white truncate">{{ so.number }}</span>
+                  <span v-if="(so.percentShipped || 0) > 0" class="text-[9px] font-black px-1.5 py-0.5 rounded border bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400 border-rose-200 dark:border-rose-900/40 uppercase">
+                    {{ so.percentShipped }}% terkirim
+                  </span>
+                </div>
+                <p class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">{{ so.customer }}</p>
+                <span class="text-[10px] text-slate-400">{{ formatDateId(so.transDate) }}</span>
               </div>
-              <p class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">{{ item.customer }}</p>
-              <div class="flex items-center gap-2 mt-1 text-[10px] text-slate-400 flex-wrap">
-                <span>Faktur: {{ formatDateId(item.transDate) }}</span>
-                <span>•</span>
-                <span>Jatuh Tempo: {{ formatDateId(item.dueDate) }}</span>
-                
-                <!-- Referensi HSO -->
-                <div v-if="getHsoRef(item)" class="flex items-center gap-1 ml-1">
-                  <span>•</span>
-                  <span class="font-bold text-slate-500 dark:text-slate-400">Ref HSO:</span>
-                  <button 
-                    @click.stop="navigateToHso(getHsoRef(item))" 
-                    class="font-extrabold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 px-2 py-0.5 rounded border border-blue-200/60 dark:border-blue-900/60 transition-colors inline-flex items-center gap-1"
-                    :title="`Buka detail ${getHsoRef(item)}`"
-                  >
-                    <span>{{ getHsoRef(item) }}</span>
-                    <ExternalLink class="w-2.5 h-2.5" />
-                  </button>
+              <div class="flex flex-col items-end shrink-0">
+                <span class="text-xs font-black text-rose-600 dark:text-rose-400">{{ formatCurrency(so.totalAmount) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pagination Belum Kirim -->
+          <div v-if="unshippedList.length > pageSizeUnshipped" class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] gap-2">
+            <span class="text-slate-500 font-medium">{{ (currentPageUnshipped - 1) * pageSizeUnshipped + 1 }}–{{ Math.min(currentPageUnshipped * pageSizeUnshipped, unshippedList.length) }} dari {{ unshippedList.length }}</span>
+            <div class="flex items-center gap-1.5">
+              <button @click="prevPageUnshipped" :disabled="currentPageUnshipped === 1" class="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all inline-flex items-center gap-0.5 shadow-2xs">
+                <ChevronLeft class="w-3 h-3" />
+              </button>
+              <span class="font-extrabold text-slate-600 dark:text-slate-300">{{ currentPageUnshipped }}/{{ totalPagesUnshipped }}</span>
+              <button @click="nextPageUnshipped" :disabled="currentPageUnshipped >= totalPagesUnshipped" class="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all inline-flex items-center gap-0.5 shadow-2xs">
+                <ChevronRight class="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- === TABEL 2: PERLU DITAGIH (Piutang) === -->
+      <div class="flex flex-col">
+        <div class="flex items-center justify-between mb-2">
+          <h4 class="text-xs font-bold text-amber-700 dark:text-amber-400">Perlu Ditagih (Piutang)</h4>
+          <span class="text-[11px] font-extrabold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200/50">
+            {{ formatCurrency(totalUnpaidHsiNominal) }}
+          </span>
+        </div>
+
+        <!-- Loading -->
+        <div v-if="isLoading" class="flex-1 flex flex-col justify-center items-center py-8 space-y-2">
+          <div class="w-5 h-5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+          <span class="text-xs text-slate-400 font-bold">Memuat...</span>
+        </div>
+
+        <!-- Empty -->
+        <div v-else-if="priorityList.length === 0" class="flex-1 flex flex-col justify-center items-center py-8 text-slate-400 text-center">
+          <p class="text-xs font-bold text-slate-400">Semua Tagihan Terbit Sudah Lunas 🎉</p>
+          <p class="text-[10px] text-slate-500 mt-0.5">Tidak ada piutang tertunggak di tahun {{ selectedYear }}</p>
+        </div>
+
+        <!-- List -->
+        <div v-else class="flex-1 flex flex-col justify-between space-y-2.5">
+          <div class="space-y-2">
+            <div 
+              v-for="item in paginatedList" 
+              :key="item.id" 
+              class="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-800/40 hover:bg-amber-50/60 dark:hover:bg-amber-950/20 border border-slate-100 dark:border-slate-800 hover:border-amber-200 dark:hover:border-amber-900 rounded-xl transition-all shadow-2xs"
+            >
+              <div class="min-w-0 flex-1 pr-2">
+                <div class="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                  <span class="text-xs font-black text-slate-900 dark:text-white truncate">{{ item.number }}</span>
+                  <span :class="['text-[9px] font-black px-1.5 py-0.5 rounded border uppercase', getOverdueBadgeClass(getOverdueDays(item.dueDate))]">
+                    {{ getOverdueLabel(getOverdueDays(item.dueDate)) }}
+                  </span>
+                </div>
+                <p class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">{{ item.customer }}</p>
+                <div class="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400 flex-wrap">
+                  <span>JT: {{ formatDateId(item.dueDate) }}</span>
+                  <div v-if="getHsoRef(item)" class="flex items-center gap-1">
+                    <span>•</span>
+                    <button 
+                      @click.stop="navigateToHso(getHsoRef(item))" 
+                      class="font-extrabold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 px-1.5 py-0.5 rounded border border-blue-200/60 dark:border-blue-900/60 transition-colors inline-flex items-center gap-1"
+                      :title="`Buka detail ${getHsoRef(item)}`"
+                    >
+                      <span>{{ getHsoRef(item) }}</span>
+                      <ExternalLink class="w-2.5 h-2.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-
-            <div class="flex flex-col items-end shrink-0">
-              <span class="text-xs font-black text-rose-600 dark:text-rose-400">{{ formatCurrency(item.outstandingAmount) }}</span>
-              <span class="text-[9px] text-slate-400 mt-0.5">dari total {{ formatCurrencyShort(item.totalAmount) }}</span>
+              <div class="flex flex-col items-end shrink-0">
+                <span class="text-xs font-black text-amber-600 dark:text-amber-400">{{ formatCurrency(item.outstandingAmount) }}</span>
+                <span class="text-[9px] text-slate-400 mt-0.5">dari {{ formatCurrencyShort(item.totalAmount) }}</span>
+              </div>
             </div>
           </div>
-        </div>
 
-        <!-- Controls Pagination -->
-        <div v-if="priorityList.length > pageSize" class="flex flex-col sm:flex-row items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800 text-xs gap-2">
-          <span class="text-slate-500 font-medium">
-            Menampilkan <strong class="text-slate-700 dark:text-slate-300">{{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, priorityList.length) }}</strong> dari <strong class="text-slate-700 dark:text-slate-300">{{ priorityList.length }}</strong> HSI
-          </span>
-          <div class="flex items-center gap-2">
-            <button 
-              @click="prevPage" 
-              :disabled="currentPage === 1"
-              class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all inline-flex items-center gap-1 shadow-2xs"
-            >
-              <ChevronLeft class="w-3.5 h-3.5" />
-              <span>Sebelumnya</span>
-            </button>
-
-            <span class="px-2 font-extrabold text-slate-700 dark:text-slate-200">
-              Halaman {{ currentPage }} dari {{ totalPages }}
-            </span>
-
-            <button 
-              @click="nextPage" 
-              :disabled="currentPage >= totalPages"
-              class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all inline-flex items-center gap-1 shadow-2xs"
-            >
-              <span>Berikutnya</span>
-              <ChevronRight class="w-3.5 h-3.5" />
-            </button>
+          <!-- Pagination Perlu Ditagih -->
+          <div v-if="priorityList.length > pageSize" class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] gap-2">
+            <span class="text-slate-500 font-medium">{{ (currentPage - 1) * pageSize + 1 }}–{{ Math.min(currentPage * pageSize, priorityList.length) }} dari {{ priorityList.length }} HSI</span>
+            <div class="flex items-center gap-1.5">
+              <button @click="prevPage" :disabled="currentPage === 1" class="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all inline-flex items-center shadow-2xs">
+                <ChevronLeft class="w-3 h-3" />
+              </button>
+              <span class="font-extrabold text-slate-600 dark:text-slate-300">{{ currentPage }}/{{ totalPages }}</span>
+              <button @click="nextPage" :disabled="currentPage >= totalPages" class="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all inline-flex items-center shadow-2xs">
+                <ChevronRight class="w-3 h-3" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
     </div>
   </div>
 </template>
