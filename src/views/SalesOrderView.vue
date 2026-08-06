@@ -54,22 +54,26 @@ const isBulkDownloading = ref(false)
 const bulkProgress = ref(0)
 const bulkStatus = ref('')
 const isBulkMode = ref(false) // Show checkbox column
+const bulkModeType = ref('saran') // 'saran' | 'reminder'
 const showSaranTooltip = ref(false)
 const showReminderTooltip = ref(false)
 
 const toggleBulkMode = (type = 'saran') => {
-  if (isBulkMode.value) {
-    // If already in mode and items selected -> download
-    if (selectedOrders.value.length > 0) {
-      if (type === 'saran') bulkDownloadSaranOrder()
-      else if (type === 'reminder') bulkDownloadReminderPO()
-    } else {
-      // Toggle off
-      isBulkMode.value = false
-    }
+  if (isBulkMode.value && bulkModeType.value === type) {
+    // Already in same mode — toggle off
+    isBulkMode.value = false
+    selectedOrders.value = []
   } else {
     isBulkMode.value = true
+    bulkModeType.value = type
+    selectedOrders.value = []
   }
+}
+
+const executeBulkAction = () => {
+  if (selectedOrders.value.length === 0) return
+  if (bulkModeType.value === 'saran') bulkDownloadSaranOrder()
+  else if (bulkModeType.value === 'reminder') bulkDownloadReminderPO()
 }
 
 const cancelBulkMode = () => {
