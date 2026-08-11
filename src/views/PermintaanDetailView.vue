@@ -117,7 +117,18 @@ const fetchTaskDetail = async () => {
       
     if (error) throw error
     console.log('Task data fetched:', data)
-    task.value = data
+    task.value = data || {}
+    
+    // Set defaults for missing fields (backward compatibility)
+    if (task.value) {
+      const requiredFields = ['project_name', 'customer_name', 'pic_name', 'assignee', 'target_date', 'description', 'file_link']
+      requiredFields.forEach(field => {
+        if (!task.value[field]) task.value[field] = '-'
+      })
+      
+      // Ensure file_link is not empty string
+      if (task.value.file_link === '') task.value.file_link = null
+    }
     if (task.value) {
       const localStatus = localStorage.getItem(`boq_status_${taskId}`)
       if (localStatus) {
