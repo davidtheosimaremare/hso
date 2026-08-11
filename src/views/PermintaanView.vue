@@ -128,10 +128,35 @@ const getLocalMeta = (id) => {
   }
 }
 
-const getProjectName = (task) => task.project_name || task.metadata?.project_name || getLocalMeta(task.id)?.project_name || ''
-const getCustomerName = (task) => task.customer_name || task.metadata?.customer_name || getLocalMeta(task.id)?.customer_name || ''
-const getPicName = (task) => task.pic_name || task.metadata?.pic_name || getLocalMeta(task.id)?.pic_name || ''
-const getFileLink = (task) => task.file_link || task.metadata?.file_link || getLocalMeta(task.id)?.file_link || ''
+const parseMeta = (meta) => {
+  if (!meta) return {}
+  if (typeof meta === 'object') return meta
+  if (typeof meta === 'string') {
+    try { return JSON.parse(meta) } catch (e) { return {} }
+  }
+  return {}
+}
+
+const getProjectName = (task) => {
+  if (!task) return ''
+  const meta = parseMeta(task.metadata)
+  return task.project_name || meta.project_name || getLocalMeta(task.id)?.project_name || ''
+}
+const getCustomerName = (task) => {
+  if (!task) return ''
+  const meta = parseMeta(task.metadata)
+  return task.customer_name || meta.customer_name || getLocalMeta(task.id)?.customer_name || ''
+}
+const getPicName = (task) => {
+  if (!task) return ''
+  const meta = parseMeta(task.metadata)
+  return task.pic_name || meta.pic_name || getLocalMeta(task.id)?.pic_name || ''
+}
+const getFileLink = (task) => {
+  if (!task) return ''
+  const meta = parseMeta(task.metadata)
+  return task.file_link || meta.file_link || getLocalMeta(task.id)?.file_link || ''
+}
 
 const formatDate = (dateStr) => {
   if (!dateStr) return '-'
@@ -453,13 +478,16 @@ const submitForm = async () => {
       const taskId = editingTask.value.id
       saveLocalMeta(taskId, payload.metadata)
 
-      // Stage 1: Try full payload with direct columns + metadata
+      // Stage 1: Try full payload with direct columns + metadata + file_link
       const { error: err1 } = await supabase.from('boq_requests').update(payload).eq('id', taskId)
       if (err1) {
         console.warn('Stage 1 Update notice:', err1.message)
-        // Stage 2: Try payload with metadata
+        // Stage 2: Try payload with direct columns + metadata
         const stage2Payload = {
           title: payload.title,
+          project_name: payload.project_name,
+          customer_name: payload.customer_name,
+          pic_name: payload.pic_name,
           description: payload.description,
           assignee: payload.assignee,
           target_date: payload.target_date,
@@ -470,9 +498,12 @@ const submitForm = async () => {
         const { error: err2 } = await supabase.from('boq_requests').update(stage2Payload).eq('id', taskId)
         if (err2) {
           console.warn('Stage 2 Update notice:', err2.message)
-          // Stage 3: Base payload (100% guaranteed to succeed)
+          // Stage 3: Base payload with direct columns
           const basePayload = {
             title: payload.title,
+            project_name: payload.project_name,
+            customer_name: payload.customer_name,
+            pic_name: payload.pic_name,
             description: payload.description,
             assignee: payload.assignee,
             target_date: payload.target_date,
@@ -494,9 +525,12 @@ const submitForm = async () => {
       const { data: insData1, error: err1 } = await supabase.from('boq_requests').insert([payload]).select()
       if (err1) {
         console.warn('Stage 1 Insert notice:', err1.message)
-        // Stage 2: Try with metadata
+        // Stage 2: Try with direct columns + metadata
         const stage2Payload = {
           title: payload.title,
+          project_name: payload.project_name,
+          customer_name: payload.customer_name,
+          pic_name: payload.pic_name,
           description: payload.description,
           assignee: payload.assignee,
           target_date: payload.target_date,
@@ -509,9 +543,12 @@ const submitForm = async () => {
         const { data: insData2, error: err2 } = await supabase.from('boq_requests').insert([stage2Payload]).select()
         if (err2) {
           console.warn('Stage 2 Insert notice:', err2.message)
-          // Stage 3: Base payload
+          // Stage 3: Base payload with direct columns
           const basePayload = {
             title: payload.title,
+            project_name: payload.project_name,
+            customer_name: payload.customer_name,
+            pic_name: payload.pic_name,
             description: payload.description,
             assignee: payload.assignee,
             target_date: payload.target_date,

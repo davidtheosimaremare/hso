@@ -18,7 +18,9 @@ import {
   Check,
   Building2,
   FolderKanban,
-  UserCheck
+  UserCheck,
+  Pencil,
+  X
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -30,6 +32,110 @@ const isLoading = ref(true)
 const isError = ref(false)
 const currentUserEmail = ref('')
 const isCopied = ref(false)
+
+// Edit Modal State
+const isEditModalOpen = ref(false)
+const isSavingEdit = ref(false)
+const users = ref([])
+const editForm = ref({
+  title: '',
+  project_name: '',
+  customer_name: '',
+  pic_name: '',
+  description: '',
+  assignee: '',
+  target_date: '',
+  file_link: ''
+})
+
+const fetchUsers = async () => {
+  try {
+    const { data } = await supabase.from('user_access').select('email').order('email')
+    users.value = data || []
+  } catch (e) {}
+}
+
+const openEditModal = () => {
+  if (!task.value) return
+  editForm.value = {
+    title: task.value.title || '',
+    project_name: getProjectName.value !== '-' ? getProjectName.value : '',
+    customer_name: getCustomerName.value !== '-' ? getCustomerName.value : '',
+    pic_name: getPicName.value !== '-' ? getPicName.value : '',
+    description: task.value.description || '',
+    assignee: task.value.assignee || '',
+    target_date: task.value.target_date || '',
+    file_link: getFileLink.value || task.value.file_url || ''
+  }
+  fetchUsers()
+  isEditModalOpen.value = true
+}
+
+const saveEditTask = async () => {
+  if (!editForm.value.title) { alert('Judul harus diisi!'); return }
+  isSavingEdit.value = true
+  try {
+    const meta = {
+      project_name: editForm.value.project_name || '',
+      customer_name: editForm.value.customer_name || '',
+      pic_name: editForm.value.pic_name || '',
+      file_link: editForm.value.file_link || ''
+    }
+
+    const payload = {
+      title: editForm.value.title,
+      project_name: editForm.value.project_name || '',
+      customer_name: editForm.value.customer_name || '',
+      pic_name: editForm.value.pic_name || '',
+      description: editForm.value.description || '',
+      assignee: editForm.value.assignee || '',
+      target_date: editForm.value.target_date || null,
+      file_link: editForm.value.file_link || null,
+      metadata: meta
+    }
+
+    try { localStorage.setItem(`boq_meta_${taskId}`, JSON.stringify(meta)) } catch {}
+
+    const { error: err1 } = await supabase.from('boq_requests').update(payload).eq('id', taskId)
+    if (err1) {
+      console.warn('Update payload notice:', err1.message)
+      const stage2 = {
+        title: payload.title,
+        project_name: payload.project_name,
+        customer_name: payload.customer_name,
+        pic_name: payload.pic_name,
+        description: payload.description,
+        assignee: payload.assignee,
+        target_date: payload.target_date,
+        metadata: payload.metadata
+      }
+      const { error: err2 } = await supabase.from('boq_requests').update(stage2).eq('id', taskId)
+      if (err2) {
+        await supabase.from('boq_requests').update({
+          title: payload.title,
+          project_name: payload.project_name,
+          customer_name: payload.customer_name,
+          pic_name: payload.pic_name,
+          description: payload.description,
+          assignee: payload.assignee,
+          target_date: payload.target_date
+        }).eq('id', taskId)
+      }
+    }
+
+    task.value = {
+      ...task.value,
+      ...payload
+    }
+
+    isEditModalOpen.value = false
+  } catch (err) {
+    console.error('Error saving task edit:', err)
+    alert('Gagal menyimpan perubahan.')
+  } finally {
+    isSavingEdit.value = false
+  }
+}
 
 const shareLink = async () => {
   const url = window.location.href
@@ -245,25 +351,38 @@ const formatShortDate = (dateString) => {
   })
 }
 
+const parseMeta = (meta) => {
+  if (!meta) return {}
+  if (typeof meta === 'object') return meta
+  if (typeof meta === 'string') {
+    try { return JSON.parse(meta) } catch (e) { return {} }
+  }
+  return {}
+}
+
 // Helper functions to get data from metadata fallback and localStorage
 const getProjectName = computed(() => {
   if (!task.value) return '-'
-  const val = task.value.project_name || task.value.metadata?.project_name || getLocalMeta(taskId)?.project_name
+  const meta = parseMeta(task.value.metadata)
+  const val = task.value.project_name || meta.project_name || getLocalMeta(taskId)?.project_name
   return (val && val !== '-') ? val : '-'
 })
 const getCustomerName = computed(() => {
   if (!task.value) return '-'
-  const val = task.value.customer_name || task.value.metadata?.customer_name || getLocalMeta(taskId)?.customer_name
+  const meta = parseMeta(task.value.metadata)
+  const val = task.value.customer_name || meta.customer_name || getLocalMeta(taskId)?.customer_name
   return (val && val !== '-') ? val : '-'
 })
 const getPicName = computed(() => {
   if (!task.value) return '-'
-  const val = task.value.pic_name || task.value.metadata?.pic_name || getLocalMeta(taskId)?.pic_name
+  const meta = parseMeta(task.value.metadata)
+  const val = task.value.pic_name || meta.pic_name || getLocalMeta(taskId)?.pic_name
   return (val && val !== '-') ? val : '-'
 })
 const getFileLink = computed(() => {
   if (!task.value) return null
-  const val = task.value.file_link || task.value.metadata?.file_link || getLocalMeta(taskId)?.file_link
+  const meta = parseMeta(task.value.metadata)
+  const val = task.value.file_link || meta.file_link || getLocalMeta(taskId)?.file_link
   return (val && val !== '-') ? val : null
 })
 </script>
@@ -293,6 +412,14 @@ const getFileLink = computed(() => {
           Kembali ke Board
         </button>
         <div class="flex items-center gap-2">
+          <button 
+            @click="openEditModal" 
+            class="inline-flex items-center text-xs font-bold text-blue-700 dark:text-blue-200 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 transition-all shadow-sm cursor-pointer"
+          >
+            <Pencil class="w-3.5 h-3.5 mr-1.5" />
+            <span>Edit Permintaan</span>
+          </button>
+
           <button 
             @click="shareLink" 
             class="inline-flex items-center text-xs font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 transition-all shadow-sm cursor-pointer"
@@ -553,6 +680,75 @@ const getFileLink = computed(() => {
           </div>
         </div>
 
+      </div>
+    </div>
+
+    <!-- Modal Edit Permintaan -->
+    <div v-if="isEditModalOpen" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+      <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4 my-8">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+          <h3 class="text-lg font-black text-slate-900 dark:text-white">Edit Detail Permintaan</h3>
+          <button @click="isEditModalOpen = false" class="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+            <X class="w-5 h-5" />
+          </button>
+        </div>
+
+        <form @submit.prevent="saveEditTask" class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Judul / Subject *</label>
+            <input v-model="editForm.title" type="text" required class="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Proyek *</label>
+              <input v-model="editForm.project_name" type="text" placeholder="Nama proyek..." class="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Customer *</label>
+              <input v-model="editForm.customer_name" type="text" placeholder="Nama customer..." class="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">PIC Customer *</label>
+              <input v-model="editForm.pic_name" type="text" placeholder="Nama PIC..." class="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Deadline *</label>
+              <input v-model="editForm.target_date" type="date" class="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Action By / Assignee</label>
+            <select v-model="editForm.assignee" class="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option value="">-- Pilih User --</option>
+              <option v-for="u in users" :key="u.email" :value="u.email">{{ u.email }}</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Link Dokumen / Google Drive</label>
+            <input v-model="editForm.file_link" type="url" placeholder="https://drive.google.com/..." class="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Deskripsi Tugas</label>
+            <textarea v-model="editForm.description" rows="3" class="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
+          </div>
+
+          <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <button type="button" @click="isEditModalOpen = false" class="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl">
+              Batal
+            </button>
+            <button type="submit" :disabled="isSavingEdit" class="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md disabled:opacity-50 inline-flex items-center">
+              <Loader2 v-if="isSavingEdit" class="w-4 h-4 mr-2 animate-spin" />
+              Simpan Perubahan
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   </div>

@@ -1,7 +1,15 @@
 [
   {
-    "hash": "f3d958affc11c7f4feb0b6fcc94de4b4f7b5152b",
-    "shortHash": "f3d958a",
+    "hash": "17515dd57eabdf52e51e8219e12774faa9d8a228",
+    "shortHash": "17515dd",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 11 17:15:17 2026 +0700",
+    "message": "fix: ensure project_name, customer_name, pic_name, file_link, and metadata are saved and parsed cleanly, add edit modal to detail view"
+  },
+  {
+    "hash": "3c3c8b7176fa4e92ffe3bd3ed664314b8e370218",
+    "shortHash": "3c3c8b7",
     "author": "davidtheosimaremare",
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 11 17:10:55 2026 +0700",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Jul 10 23:04:52 2026 +0700",
     "message": "feat: group HPO export buttons into dropdown, add fallback HPO display, improve date parsing and count indicator"
-  },
-  {
-    "hash": "a2400c658b73e386c3c61f2975467cfc57fa2829",
-    "shortHash": "a2400c6",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Jul 10 18:02:57 2026 +0700",
-    "message": "fix: reference error in applyExcelUpdates due to block scoping of column variables"
   }
 ]
