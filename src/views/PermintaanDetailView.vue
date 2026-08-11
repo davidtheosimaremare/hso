@@ -235,13 +235,16 @@ const formatShortDate = (dateString) => {
 
 // Helper functions to get data from metadata fallback
 const getProjectName = computed(() => {
-  return task.value?.project_name || task.value?.metadata?.project_name || '-'
+  if (!task.value) return '-'
+  return task.value.project_name || task.value.metadata?.project_name || task.value.metadata?.customer_name || '-'
 })
 const getCustomerName = computed(() => {
-  return task.value?.customer_name || task.value?.metadata?.customer_name || '-'
+  if (!task.value) return '-'
+  return task.value.customer_name || task.value.metadata?.customer_name || '-'
 })
 const getPicName = computed(() => {
-  return task.value?.pic_name || task.value?.metadata?.pic_name || '-'
+  if (!task.value) return '-'
+  return task.value.pic_name || task.value.metadata?.pic_name || '-'
 })
 </script>
 
