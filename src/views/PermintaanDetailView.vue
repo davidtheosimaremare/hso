@@ -232,6 +232,17 @@ const formatShortDate = (dateString) => {
     day: 'numeric', month: 'short', year: 'numeric'
   })
 }
+
+// Helper functions to get data from metadata fallback
+const getProjectName = computed(() => {
+  return task.value?.project_name || task.value?.metadata?.project_name || '-'
+})
+const getCustomerName = computed(() => {
+  return task.value?.customer_name || task.value?.metadata?.customer_name || '-'
+})
+const getPicName = computed(() => {
+  return task.value?.pic_name || task.value?.metadata?.pic_name || '-'
+})
 </script>
 
 <template>
@@ -330,24 +341,24 @@ const formatShortDate = (dateString) => {
           <!-- Project -->
           <div class="bg-card p-4 rounded-xl border border-border">
             <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Proyek</p>
-            <p class="font-bold text-foreground text-sm truncate" :title="task.project_name || '-'">
-              {{ task.project_name || '-' }}
+            <p class="font-bold text-foreground text-sm truncate" :title="getProjectName">
+              {{ getProjectName }}
             </p>
           </div>
 
           <!-- Customer -->
           <div class="bg-card p-4 rounded-xl border border-border">
             <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Customer</p>
-            <p class="font-bold text-foreground text-sm truncate" :title="task.customer_name || '-'">
-              {{ task.customer_name || '-' }}
+            <p class="font-bold text-foreground text-sm truncate" :title="getCustomerName">
+              {{ getCustomerName }}
             </p>
           </div>
 
           <!-- PIC -->
           <div class="bg-card p-4 rounded-xl border border-border">
             <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">PIC</p>
-            <p class="font-bold text-foreground text-sm truncate" :title="task.pic_name || '-'">
-              {{ task.pic_name || '-' }}
+            <p class="font-bold text-foreground text-sm truncate" :title="getPicName">
+              {{ getPicName }}
             </p>
           </div>
 
