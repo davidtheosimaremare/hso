@@ -364,8 +364,6 @@ const getPicName = computed(() => {
               {{ getPicName || '-' }}
             </p>
           </div>
-            </p>
-          </div>
 
           <!-- Action By (Assignee) -->
           <div class="bg-card p-4 rounded-xl border border-border">
