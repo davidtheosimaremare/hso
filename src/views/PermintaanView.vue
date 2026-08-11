@@ -362,6 +362,93 @@ const submitForm = async () => {
       } catch (e) {}
     }
 
+    const sendTaskEmailNotification = async (taskData) => {
+      const recipient = taskData.assignee
+      if (!recipient || !recipient.includes('@')) return
+
+      try {
+        const taskNumStr = taskData.task_number ? ` (TASK-${taskData.task_number})` : ''
+        const driveLink = taskData.file_link || taskData.file_url || ''
+        const appUrl = `${window.location.origin}/permintaan/${taskData.id}`
+        const formatD = (d) => {
+          if (!d) return '-'
+          try { return new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) } catch { return d }
+        }
+
+        const subject = `[Permintaan Tugas Baru] ${taskData.title}${taskNumStr}`
+
+        const htmlBody = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; background: #f8fafc; padding: 24px; border-radius: 16px; border: 1px solid #e2e8f0;">
+            <div style="background: #2563eb; padding: 16px 20px; border-radius: 12px; margin-bottom: 20px; color: #ffffff;">
+              <h2 style="margin: 0; font-size: 18px; font-weight: bold;">Tugas Baru Didelegasikan Kepada Anda</h2>
+              <p style="margin: 4px 0 0 0; font-size: 13px; opacity: 0.9;">Permintaan tugas baru di Aplikasi HSO</p>
+            </div>
+
+            <div style="background: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; margin-bottom: 16px;">
+              ${taskData.task_number ? `<span style="display: inline-block; background: #e2e8f0; color: #475569; font-size: 11px; font-weight: bold; padding: 3px 8px; border-radius: 4px; margin-bottom: 8px;">TASK-${taskData.task_number}</span>` : ''}
+              <h3 style="margin: 0 0 12px 0; font-size: 20px; color: #0f172a; font-weight: 800;">${taskData.title}</h3>
+
+              <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px;">
+                <tr>
+                  <td style="padding: 6px 0; color: #64748b; font-weight: bold; width: 110px;">Proyek:</td>
+                  <td style="padding: 6px 0; color: #0f172a; font-weight: 600;">${taskData.project_name || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; color: #64748b; font-weight: bold;">Customer:</td>
+                  <td style="padding: 6px 0; color: #0f172a; font-weight: 600;">${taskData.customer_name || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; color: #64748b; font-weight: bold;">PIC:</td>
+                  <td style="padding: 6px 0; color: #0f172a; font-weight: 600;">${taskData.pic_name || '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; color: #64748b; font-weight: bold;">Deadline:</td>
+                  <td style="padding: 6px 0; color: #dc2626; font-weight: bold;">${formatD(taskData.target_date)}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 0; color: #64748b; font-weight: bold;">Action By:</td>
+                  <td style="padding: 6px 0; color: #2563eb; font-weight: bold;">${recipient}</td>
+                </tr>
+              </table>
+            </div>
+
+            <div style="background: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; margin-bottom: 20px;">
+              <h4 style="margin: 0 0 8px 0; font-size: 13px; font-weight: bold; color: #475569; text-transform: uppercase;">Deskripsi Tugas:</h4>
+              <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #334155; white-space: pre-wrap;">${taskData.description || 'Tidak ada deskripsi.'}</p>
+            </div>
+
+            ${driveLink ? `
+            <div style="margin-bottom: 20px; text-align: center;">
+              <a href="${driveLink}" target="_blank" style="display: inline-block; background: #059669; color: #ffffff; font-weight: bold; text-decoration: none; padding: 12px 24px; border-radius: 10px; font-size: 14px;">
+                📂 Buka Lampiran Google Drive
+              </a>
+            </div>
+            ` : ''}
+
+            <div style="text-align: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0;">
+              <a href="${appUrl}" target="_blank" style="display: inline-block; background: #2563eb; color: #ffffff; font-weight: bold; text-decoration: none; padding: 12px 28px; border-radius: 10px; font-size: 14px;">
+                🔗 Lihat Detail Permintaan di Web HSO
+              </a>
+              <p style="margin-top: 16px; font-size: 11px; color: #94a3b8;">Email otomatis ini dikirim dari sistem HSO (Hokiindo Sales Order System).</p>
+            </div>
+          </div>
+        `
+
+        console.log('Mengirim notifikasi delegasi tugas ke email:', recipient)
+        await supabase.functions.invoke('send-custom-email', {
+          body: {
+            to: recipient,
+            subject: subject,
+            html: htmlBody
+          }
+        })
+      } catch (err) {
+        console.warn('Gagal mengirim email delegasi:', err)
+      }
+    }
+
+    let savedTaskObj = null
+
     if (editingTask.value) {
       const taskId = editingTask.value.id
       saveLocalMeta(taskId, payload.metadata)
@@ -396,6 +483,7 @@ const submitForm = async () => {
           if (err3) throw err3
         }
       }
+      savedTaskObj = { ...payload, id: taskId, task_number: editingTask.value.task_number }
       showToast('Permintaan Diperbarui', `Tugas "${payload.title}" berhasil diperbarui.`)
     } else {
       const { data: userData } = await supabase.auth.getUser()
@@ -434,14 +522,23 @@ const submitForm = async () => {
           }
           const { data: insData3, error: err3 } = await supabase.from('boq_requests').insert([basePayload]).select()
           if (err3) throw err3
-          if (insData3?.[0]?.id) saveLocalMeta(insData3[0].id, payload.metadata)
+          if (insData3?.[0]?.id) {
+            saveLocalMeta(insData3[0].id, payload.metadata)
+            savedTaskObj = insData3[0]
+          }
         } else if (insData2?.[0]?.id) {
           saveLocalMeta(insData2[0].id, payload.metadata)
+          savedTaskObj = insData2[0]
         }
       } else if (insData1?.[0]?.id) {
         saveLocalMeta(insData1[0].id, payload.metadata)
+        savedTaskObj = insData1[0]
       }
       showToast('Permintaan Baru Dibuat!', `Tugas "${payload.title}" berhasil ditambahkan ke To Do.`)
+    }
+
+    if (savedTaskObj) {
+      sendTaskEmailNotification(savedTaskObj)
     }
 
     closeModal()

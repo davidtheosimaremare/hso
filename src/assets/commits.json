@@ -1,5 +1,85 @@
 [
   {
+    "hash": "f3d958affc11c7f4feb0b6fcc94de4b4f7b5152b",
+    "shortHash": "f3d958a",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 11 17:10:55 2026 +0700",
+    "message": "feat: implement task email notifications, deadline reminder cron, and user_access notification_email mapping"
+  },
+  {
+    "hash": "db6698cd36a3e88128cb67341adb455069d3071a",
+    "shortHash": "db6698c",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 11 12:13:04 2026 +0700",
+    "message": "fix: improve computed helpers to properly handle metadata fallbacks"
+  },
+  {
+    "hash": "86d7d523a47062359648fc2fc7c179c7ca375d2d",
+    "shortHash": "86d7d52",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 11 12:11:13 2026 +0700",
+    "message": "fix: remove duplicate closing tags in PermintaanDetailView"
+  },
+  {
+    "hash": "e62493f5bcf340e4bafe7dda8730aa20ca82e090",
+    "shortHash": "e62493f",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 11 12:09:25 2026 +0700",
+    "message": "fix: add default fallback for computed helper values in detail view"
+  },
+  {
+    "hash": "29d03a691e6f7c1ecbdecca2ab63291f41dff583",
+    "shortHash": "29d03a6",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 11 12:08:19 2026 +0700",
+    "message": "fix: add null check in computed helpers for detail view"
+  },
+  {
+    "hash": "c2f25f12a440d66e494eddc3de68174f2992c4d6",
+    "shortHash": "c2f25f1",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 11 11:54:02 2026 +0700",
+    "message": "fix: add computed helpers to get project/customer/pic from metadata in detail view"
+  },
+  {
+    "hash": "44bc880f68e8371c9a914bb4a24ba4b20cb8d44c",
+    "shortHash": "44bc880",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 11 11:51:36 2026 +0700",
+    "message": "refine: simplify template rendering for meta info cards"
+  },
+  {
+    "hash": "7588887274ecdb6d931bc4e50d3e243cb2b32cd3",
+    "shortHash": "7588887",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 11 11:51:00 2026 +0700",
+    "message": "fix: add default values for missing fields in detail view"
+  },
+  {
+    "hash": "56fc222940f62e7518bbecc4f0d4a5b4f5779efa",
+    "shortHash": "56fc222",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 11 11:50:16 2026 +0700",
+    "message": "chore: add debug log for task data in detail view"
+  },
+  {
+    "hash": "10824dcd7373a78419c83984cddd0d4845b032bb",
+    "shortHash": "10824dc",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 11 10:09:18 2026 +0700",
+    "message": "feat: update sales orders with PO number display, permintaan BOQ with tabs and required fields, and fix 2026 target sales with PPn deduction"
+  },
+  {
     "hash": "e274eed71d50c25e9803e47c6f25741a9f17aba2",
     "shortHash": "e274eed",
     "author": "davidtheosimaremare",
@@ -318,85 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Jul 10 18:02:57 2026 +0700",
     "message": "fix: reference error in applyExcelUpdates due to block scoping of column variables"
-  },
-  {
-    "hash": "6f2e9064e18d8e439e2b906d488bfaf1bba7417b",
-    "shortHash": "6f2e906",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Jul 10 17:29:19 2026 +0700",
-    "message": "fix: skip fully-shipped items in Excel import modal and Export Reminder PO"
-  },
-  {
-    "hash": "33305c22431797d1a25c4c6399eddaca008d09fd",
-    "shortHash": "33305c2",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 18:12:29 2026 +0700",
-    "message": "fix: comprehensive HDO display — 2-step fallback in getHdosForItem, getSingleHdoQty, and loading state in template"
-  },
-  {
-    "hash": "a3ad98dc6962e921b51cb556dc3b6a8b64a9c2a7",
-    "shortHash": "a3ad98d",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 18:02:43 2026 +0700",
-    "message": "fix: STOCK items (qty_to_order=0) now correctly show MENUNGGU PENGIRIMAN instead of SUDAH DIPESAN caused by stale HPO in DB"
-  },
-  {
-    "hash": "8062c51ecc6f778121946057dd61a41e8a9b01f9",
-    "shortHash": "8062c51",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 18:00:13 2026 +0700",
-    "message": "fix: move getHdosForItem and getSingleHdoQty before getDisplayedQtyShipped to fix const TDZ — HDO box now shows correctly"
-  },
-  {
-    "hash": "d48eb94f7159f6dd796c98dd0388010da8104251",
-    "shortHash": "d48eb94",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 17:58:16 2026 +0700",
-    "message": "fix: correct note-aware HDO matching — getDisplayedQtyShipped and getSingleHdoQty now respect STOCK vs NO STOCK split"
-  },
-  {
-    "hash": "99e271373b88c31dcc0dc5d24289b1ef46f37dc8",
-    "shortHash": "99e2713",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 17:44:35 2026 +0700",
-    "message": "fix: resolve duplicate HDO display between stock and no-stock rows by strictly matching notes"
-  },
-  {
-    "hash": "f592dd826607215c8c6c37fd038b01b91877beca",
-    "shortHash": "f592dd8",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 14:09:29 2026 +0700",
-    "message": "fix: resolve duplicate Excel row matching and handle date cleaning on status transitions"
-  },
-  {
-    "hash": "da35f51a85525aaa1a2076f8acf81d9bc978014c",
-    "shortHash": "da35f51",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 14:00:12 2026 +0700",
-    "message": "feat: support extracting date from status text column automatically (e.g. ETA Port JKT 03 Jul 26)"
-  },
-  {
-    "hash": "65970e9280fc477d0a6278a851ecdfe60e2cd62a",
-    "shortHash": "65970e9",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 13:08:24 2026 +0700",
-    "message": "feat: show supplier (vendor) name badge under HPO number in tracking card"
-  },
-  {
-    "hash": "b6e4d39ae20894b0f1a107910f3996dda037e307",
-    "shortHash": "b6e4d39",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 13:06:03 2026 +0700",
-    "message": "revert: restore stock item restriction for HPO display"
   }
 ]
