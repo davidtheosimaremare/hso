@@ -116,6 +116,7 @@ const fetchTaskDetail = async () => {
       .single()
       
     if (error) throw error
+    console.log('Task data fetched:', data)
     task.value = data
     if (task.value) {
       const localStatus = localStorage.getItem(`boq_status_${taskId}`)
