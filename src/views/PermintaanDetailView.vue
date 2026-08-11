@@ -330,7 +330,7 @@ const formatShortDate = (dateString) => {
           <!-- Project -->
           <div class="bg-card p-4 rounded-xl border border-border">
             <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Proyek</p>
-            <p class="font-bold text-foreground text-sm truncate" :title="task.project_name || '-'" :class="{ 'text-muted-foreground': !task.project_name }">
+            <p class="font-bold text-foreground text-sm truncate" :title="task.project_name || '-'">
               {{ task.project_name || '-' }}
             </p>
           </div>
@@ -338,7 +338,7 @@ const formatShortDate = (dateString) => {
           <!-- Customer -->
           <div class="bg-card p-4 rounded-xl border border-border">
             <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Customer</p>
-            <p class="font-bold text-foreground text-sm truncate" :title="task.customer_name || '-'" :class="{ 'text-muted-foreground': !task.customer_name }">
+            <p class="font-bold text-foreground text-sm truncate" :title="task.customer_name || '-'">
               {{ task.customer_name || '-' }}
             </p>
           </div>
@@ -346,7 +346,7 @@ const formatShortDate = (dateString) => {
           <!-- PIC -->
           <div class="bg-card p-4 rounded-xl border border-border">
             <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">PIC</p>
-            <p class="font-bold text-foreground text-sm truncate" :title="task.pic_name || '-'" :class="{ 'text-muted-foreground': !task.pic_name }">
+            <p class="font-bold text-foreground text-sm truncate" :title="task.pic_name || '-'">
               {{ task.pic_name || '-' }}
             </p>
           </div>
@@ -354,7 +354,7 @@ const formatShortDate = (dateString) => {
           <!-- Action By (Assignee) -->
           <div class="bg-card p-4 rounded-xl border border-border">
             <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Action By</p>
-            <p class="font-bold text-foreground text-sm truncate" :title="task.assignee" :class="{ 'text-muted-foreground': !task.assignee }">
+            <p class="font-bold text-foreground text-sm truncate" :title="task.assignee">
               {{ task.assignee ? task.assignee.split('@')[0] : 'Belum ditugaskan' }}
             </p>
           </div>
@@ -362,7 +362,7 @@ const formatShortDate = (dateString) => {
           <!-- Deadline -->
           <div class="bg-card p-4 rounded-xl border border-border">
             <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Deadline</p>
-            <p class="font-bold text-foreground text-sm truncate" :title="task.target_date || '-'" :class="{ 'text-muted-foreground': !task.target_date }">
+            <p class="font-bold text-foreground text-sm truncate" :title="task.target_date || '-'">
               {{ task.target_date ? formatDate(task.target_date) : '-' }}
             </p>
           </div>
