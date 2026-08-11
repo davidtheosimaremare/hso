@@ -344,24 +344,26 @@ const getPicName = computed(() => {
           <!-- Project -->
           <div class="bg-card p-4 rounded-xl border border-border">
             <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Proyek</p>
-            <p class="font-bold text-foreground text-sm truncate" :title="getProjectName">
-              {{ getProjectName }}
+            <p class="font-bold text-foreground text-sm truncate" :title="getProjectName || '-'">
+              {{ getProjectName || '-' }}
             </p>
           </div>
 
           <!-- Customer -->
           <div class="bg-card p-4 rounded-xl border border-border">
             <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Customer</p>
-            <p class="font-bold text-foreground text-sm truncate" :title="getCustomerName">
-              {{ getCustomerName }}
+            <p class="font-bold text-foreground text-sm truncate" :title="getCustomerName || '-'">
+              {{ getCustomerName || '-' }}
             </p>
           </div>
 
           <!-- PIC -->
           <div class="bg-card p-4 rounded-xl border border-border">
             <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">PIC</p>
-            <p class="font-bold text-foreground text-sm truncate" :title="getPicName">
-              {{ getPicName }}
+            <p class="font-bold text-foreground text-sm truncate" :title="getPicName || '-'">
+              {{ getPicName || '-' }}
+            </p>
+          </div>
             </p>
           </div>
 
