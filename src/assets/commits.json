@@ -1,5 +1,29 @@
 [
   {
+    "hash": "e274eed71d50c25e9803e47c6f25741a9f17aba2",
+    "shortHash": "e274eed",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 7 04:58:04 2026 +0700",
+    "message": "feat: update target penjualan 2026 dari 24M menjadi 35M"
+  },
+  {
+    "hash": "7a093c9570b04d71b8925d0056229ecfd1c533b3",
+    "shortHash": "7a093c9",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Aug 6 12:35:40 2026 +0700",
+    "message": "fix: tambah bulkModeType & executeBulkAction di SalesOrderView"
+  },
+  {
+    "hash": "0cb4b9500754c9c036c10e2e6ac0ce162bf9e7d6",
+    "shortHash": "0cb4b95",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Aug 6 10:10:13 2026 +0700",
+    "message": "feat: reorder & recolor dashboard invoice priority card"
+  },
+  {
     "hash": "e4205895549c04cad4bec36d21fc4433d7b55d44",
     "shortHash": "e420589",
     "author": "davidtheosimaremare",
@@ -374,29 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Thu Jul 9 13:06:03 2026 +0700",
     "message": "revert: restore stock item restriction for HPO display"
-  },
-  {
-    "hash": "66f88dcbe0bff98fd5841e3e8c88a99eb9979813",
-    "shortHash": "66f88dc",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 13:01:31 2026 +0700",
-    "message": "fix: allow HPOs to be displayed for stock items"
-  },
-  {
-    "hash": "604c699bd7fbfbce63928ddc06098a12e7eaa519",
-    "shortHash": "604c699",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 12:58:54 2026 +0700",
-    "message": "fix: resolve blank page by moving paginatedOrders watch below its initialization"
-  },
-  {
-    "hash": "f2f315a0eb6473d90f5b406d2ecefa70ca7211b3",
-    "shortHash": "f2f315a",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 9 12:55:43 2026 +0700",
-    "message": "fix: smart HPO completion logic based on no-stock items and quantity matching"
   }
 ]

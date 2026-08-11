@@ -158,9 +158,9 @@ const extractProjectFromItem = (item) => {
 const fetchOrders = async () => {
   isLoading.value = true
   try {
-    const [soRes, sqRes] = await Promise.all([
+      const [soRes, sqRes] = await Promise.all([
       supabase.functions.invoke('accurate-list-so', {
-        body: { fields: 'id,number,transDate,customer,totalAmount,statusName,percentShipped,description,detailItem' }
+        body: { fields: 'id,number,transDate,customer,totalAmount,statusName,percentShipped,description,detailItem,poNumber' }
       }),
       supabase.functions.invoke('accurate-list-sq', {
         body: { fields: 'id,number,transDate,customer,totalAmount,statusName,description,detailItem' }
@@ -178,27 +178,28 @@ const fetchOrders = async () => {
     })
 
     const soData = soRes?.data?.d || []
-    salesOrders.value = soData.map(item => {
-      const desc = item.description || ''
-      let proj = extractProjectFromItem(item)
+      salesOrders.value = soData.map(item => {
+        const desc = item.description || ''
+        let proj = extractProjectFromItem(item)
 
-      // Fallback to exact matching SQ number ONLY if not found in SO itself
-      if (!proj && item.number && sqProjectMap[item.number.toLowerCase()]) {
-        proj = sqProjectMap[item.number.toLowerCase()]
-      }
+        // Fallback to exact matching SQ number ONLY if not found in SO itself
+        if (!proj && item.number && sqProjectMap[item.number.toLowerCase()]) {
+          proj = sqProjectMap[item.number.toLowerCase()]
+        }
 
-      return {
-        id_database: item.id,
-        no_so: item.number,
-        client: item.customer?.name || 'Tanpa Nama',
-        date: item.transDate,
-        amount: Math.round(item.totalAmount), 
-        status: item.statusName || '', 
-        progress: item.percentShipped || 0,
-        description: desc,
-        project: proj || '-'
-      }
-    })
+        return {
+          id_database: item.id,
+          no_so: item.number,
+          client: item.customer?.name || 'Tanpa Nama',
+          po_number: item.poNumber || '-',
+          date: item.transDate,
+          amount: Math.round(item.totalAmount), 
+          status: item.statusName || '', 
+          progress: item.percentShipped || 0,
+          description: desc,
+          project: proj || '-'
+        }
+      })
   } catch (err) {
     console.error("Error fetching sales orders:", err)
   } finally {
@@ -1245,17 +1246,20 @@ const getStatusColor = (status) => {
               </div>
             </TableCell>
             <TableCell class="py-4 px-4 align-middle whitespace-nowrap">
-              <span class="text-xs md:text-sm font-bold text-slate-900 dark:text-slate-100 font-sans">
-                {{ so.no_so }}
-              </span>
+              <div class="flex flex-col gap-0.5">
+                <span class="text-xs md:text-sm font-bold text-slate-900 dark:text-slate-100 font-sans">
+                  {{ so.no_so }}
+                </span>
+                <span v-if="so.po_number && so.po_number !== '-'" class="text-xs font-medium text-slate-500 dark:text-slate-400">
+                  PO: {{ so.po_number }}
+                </span>
+              </div>
             </TableCell>
             <TableCell class="py-4 px-4 align-middle whitespace-nowrap">
               <span class="text-xs md:text-sm font-medium text-slate-600 dark:text-slate-400 font-sans">{{ formatShortDate(so.date) }}</span>
             </TableCell>
             <TableCell class="py-4 px-4 align-middle">
-              <div>
-                <p class="font-semibold text-slate-900 dark:text-slate-100 text-xs md:text-sm truncate max-w-[280px]" :title="so.client">{{ so.client }}</p>
-              </div>
+              <p class="font-semibold text-slate-900 dark:text-slate-100 text-xs md:text-sm truncate max-w-[280px]" :title="so.client">{{ so.client }}</p>
             </TableCell>
             <TableCell class="hidden md:table-cell py-4 px-4 align-middle">
               <span class="text-xs md:text-sm font-medium text-slate-700 dark:text-slate-300 truncate max-w-[220px] block" :title="so.project">

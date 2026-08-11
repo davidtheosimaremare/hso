@@ -339,7 +339,8 @@ const targetSalesData = computed(() => {
     const d = parseAccurateDate(so.transDate)
     if (d && d.getFullYear() === selectedYear) {
       const monthIdx = d.getMonth()
-      monthlyActuals[monthIdx] += (Number(so.totalAmount) || 0)
+      const amountBeforePPn = (Number(so.totalAmount) || 0) * 0.89
+      monthlyActuals[monthIdx] += amountBeforePPn
       monthlyQtys[monthIdx] += 1
     }
   })

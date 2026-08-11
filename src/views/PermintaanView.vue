@@ -80,10 +80,12 @@ const formData = ref({
   pic_name: '',
   description: '',
   assignee: '',
-  target_date: ''
+  target_date: '',
+  file_link: ''
 })
 const fileInput = ref(null)
 const selectedFile = ref(null)
+const fileOption = ref('upload')
 
 // History State
 const allTasksRaw = ref([])
@@ -129,6 +131,7 @@ const getLocalMeta = (id) => {
 const getProjectName = (task) => task.project_name || task.metadata?.project_name || getLocalMeta(task.id)?.project_name || ''
 const getCustomerName = (task) => task.customer_name || task.metadata?.customer_name || getLocalMeta(task.id)?.customer_name || ''
 const getPicName = (task) => task.pic_name || task.metadata?.pic_name || getLocalMeta(task.id)?.pic_name || ''
+const getFileLink = (task) => task.file_link || task.metadata?.file_link || getLocalMeta(task.id)?.file_link || ''
 
 const formatDate = (dateStr) => {
   if (!dateStr) return '-'
@@ -254,9 +257,11 @@ const openModal = (task = null) => {
       pic_name: picName,
       description: task.description || '',
       assignee: task.assignee || '',
-      target_date: task.target_date || ''
+      target_date: task.target_date || '',
+      file_link: task.file_link || ''
     }
     customerSearchQuery.value = custName
+    fileOption.value = task.file_link ? 'link' : (task.file_url ? 'upload' : 'upload')
   } else {
     editingTask.value = null
     formData.value = {
@@ -266,9 +271,11 @@ const openModal = (task = null) => {
       pic_name: '',
       description: '',
       assignee: '',
-      target_date: ''
+      target_date: '',
+      file_link: ''
     }
     customerSearchQuery.value = ''
+    fileOption.value = 'upload'
   }
   isCustomerDropdownOpen.value = false
   selectedFile.value = null
@@ -280,15 +287,26 @@ const closeModal = () => {
   isCustomerDropdownOpen.value = false
 }
 const handleFileChange = (event) => { selectedFile.value = event.target.files[0] || null }
+const handleLinkChange = (event) => { formData.value.file_link = event.target.value }
 
 // ---- Submit ----
 const submitForm = async () => {
   if (!formData.value.title) { alert('Subject / Judul permintaan harus diisi!'); return }
+  if (!formData.value.project_name) { alert('Project / Proyek harus diisi!'); return }
+  if (!formData.value.customer_name) { alert('Customer harus diisi!'); return }
+  if (!formData.value.pic_name) { alert('PIC Customer harus diisi!'); return }
+  if (!formData.value.target_date) { alert('Deadline harus diisi!'); return }
+  
   isSubmitting.value = true
   try {
     let fileUrl = editingTask.value?.file_url
     let fileName = editingTask.value?.file_name
-    if (selectedFile.value) {
+    let fileLink = formData.value.file_link || editingTask.value?.file_link
+    
+    if (fileOption.value === 'link' && fileLink) {
+      fileUrl = fileLink
+      fileName = fileLink
+    } else if (selectedFile.value) {
       // 1. Upload to Google Drive via 'upload-to-drive' edge function (same as Marketing Hub)
       try {
         const driveFormData = new FormData()
@@ -328,10 +346,12 @@ const submitForm = async () => {
       target_date: formData.value.target_date || null,
       file_url: fileUrl,
       file_name: fileName,
+      file_link: fileLink || null,
       metadata: {
         project_name: formData.value.project_name || '',
         customer_name: finalCustomer,
-        pic_name: formData.value.pic_name || ''
+        pic_name: formData.value.pic_name || '',
+        file_link: fileLink || ''
       }
     }
 
@@ -597,10 +617,10 @@ const deleteTask = async (taskId) => {
               </span>
             </div>
 
-            <div v-if="task.file_url" class="pt-1">
-               <a :href="task.file_url" target="_blank" class="inline-flex items-center gap-1.5 text-[11px] text-primary hover:underline font-medium bg-primary/5 px-2 py-1 rounded-md border border-primary/10">
+            <div v-if="task.file_url || getFileLink(task)" class="pt-1">
+               <a :href="getFileLink(task) || task.file_url" target="_blank" class="inline-flex items-center gap-1.5 text-[11px] text-primary hover:underline font-medium bg-primary/5 px-2 py-1 rounded-md border border-primary/10">
                  <Paperclip class="w-3 h-3" />
-                 <span class="truncate max-w-[160px]">{{ task.file_name || 'Lihat Lampiran' }}</span>
+                 <span class="truncate max-w-[160px]">{{ getFileLink(task) ? 'Lihat Sheet' : (task.file_name || 'Lihat Lampiran') }}</span>
                </a>
             </div>
 
@@ -703,6 +723,9 @@ const deleteTask = async (taskId) => {
               <p v-if="task.pic_name" class="text-[11px] text-muted-foreground mt-0.5">
                 PIC: {{ task.pic_name }}
               </p>
+              <p v-if="task.pic_name" class="text-[11px] text-muted-foreground mt-0.5">
+                PIC: {{ task.pic_name }}
+              </p>
               <p v-if="task.description" class="text-xs text-muted-foreground line-clamp-2 mt-1 leading-relaxed">
                 {{ task.description }}
               </p>
@@ -722,10 +745,10 @@ const deleteTask = async (taskId) => {
               </span>
             </div>
 
-            <div v-if="task.file_url" class="pt-1">
-               <a :href="task.file_url" target="_blank" class="inline-flex items-center gap-1.5 text-[11px] text-primary hover:underline font-medium bg-primary/5 px-2 py-1 rounded-md border border-primary/10">
+            <div v-if="task.file_url || getFileLink(task)" class="pt-1">
+               <a :href="getFileLink(task) || task.file_url" target="_blank" class="inline-flex items-center gap-1.5 text-[11px] text-primary hover:underline font-medium bg-primary/5 px-2 py-1 rounded-md border border-primary/10">
                  <Paperclip class="w-3 h-3" />
-                 <span class="truncate max-w-[160px]">{{ task.file_name || 'Lihat Lampiran' }}</span>
+                 <span class="truncate max-w-[160px]">{{ getFileLink(task) ? 'Lihat Sheet' : (task.file_name || 'Lihat Lampiran') }}</span>
                </a>
             </div>
 
@@ -873,9 +896,9 @@ const deleteTask = async (taskId) => {
       </div>
     </div>
 
-    <!-- Modal Form (8 Required Fields) -->
+    <!-- Modal Form (9 Required Fields) -->
     <div v-if="isModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs">
-      <div class="bg-card rounded-2xl shadow-xl w-full max-w-xl overflow-hidden border border-border">
+      <div class="bg-card rounded-2xl shadow-xl w-full max-w-3xl overflow-hidden border border-border">
         <div class="flex items-center justify-between px-6 py-4 border-b border-border">
           <h2 class="text-base font-bold text-foreground">{{ editingTask ? 'Edit Permintaan' : 'Permintaan Baru' }}</h2>
           <button @click="closeModal" class="p-1.5 text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted transition-colors cursor-pointer">
@@ -883,7 +906,7 @@ const deleteTask = async (taskId) => {
           </button>
         </div>
 
-        <div class="p-6 space-y-4 text-sm max-h-[80vh] overflow-y-auto sidebar-thin">
+        <div class="p-6 space-y-4 text-sm max-h-[85vh] overflow-y-auto sidebar-thin">
           <!-- 1. Subject / Judul -->
           <div>
             <label class="block text-xs font-semibold text-muted-foreground mb-1.5">1. Subject / Judul <span class="text-rose-500">*</span></label>
@@ -891,10 +914,10 @@ const deleteTask = async (taskId) => {
           </div>
 
           <!-- 2. Project / Proyek & 3. Customer (2-Column Grid) -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <!-- 2. Project / Proyek -->
             <div>
-              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">2. Project / Proyek</label>
+              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">2. Project / Proyek <span class="text-rose-500">*</span></label>
               <input v-model="formData.project_name" type="text" placeholder="Nama proyek / pekerjaan..." class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
             </div>
 
@@ -957,17 +980,17 @@ const deleteTask = async (taskId) => {
             </div>
           </div>
 
-          <!-- 4. PIC & 6. Action by (2-Column Grid) -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <!-- 4. PIC & 5. Action by (2-Column Grid) -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <!-- 4. PIC -->
             <div>
-              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">4. PIC Customer</label>
+              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">4. PIC Customer <span class="text-rose-500">*</span></label>
               <input v-model="formData.pic_name" type="text" placeholder="Nama PIC / Kontak Person..." class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
             </div>
 
-            <!-- 6. Action by -->
+            <!-- 5. Action by -->
             <div>
-              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">6. Action by (Delegasi)</label>
+              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">5. Action by (Delegasi) <span class="text-rose-500">*</span></label>
               <select v-model="formData.assignee" class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer">
                 <option value="">-- Pilih Tim / User --</option>
                 <option v-for="u in users" :key="u.email" :value="u.email">{{ u.email }}</option>
@@ -975,27 +998,61 @@ const deleteTask = async (taskId) => {
             </div>
           </div>
 
-          <!-- 5. Description / Catatan -->
+          <!-- 6. Description / Catatan -->
           <div>
-            <label class="block text-xs font-semibold text-muted-foreground mb-1.5">5. Description / Catatan</label>
+            <label class="block text-xs font-semibold text-muted-foreground mb-1.5">6. Description / Catatan <span class="text-rose-500">*</span></label>
             <textarea v-model="formData.description" rows="3" placeholder="Tuliskan spesifikasi, catatan teknis, atau keterangan..." class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"></textarea>
           </div>
 
-          <!-- 7. Deadline & 8. File (2-Column Grid) -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <!-- 7. Deadline & File (2-Column Grid) -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <!-- 7. Deadline -->
             <div>
-              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">7. Deadline (Target Selesai)</label>
+              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">7. Deadline (Target Selesai) <span class="text-rose-500">*</span></label>
               <input v-model="formData.target_date" type="date" class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer" />
             </div>
 
-            <!-- 8. File -->
+            <!-- 8. File Attachment -->
             <div>
-              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">8. File Attachment (PDF/Excel)</label>
-              <input type="file" ref="fileInput" @change="handleFileChange" accept=".pdf,.xls,.xlsx,.csv" class="block w-full text-xs text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-muted file:text-foreground hover:file:bg-muted/80 cursor-pointer" />
-              <p v-if="editingTask?.file_url && !selectedFile" class="text-xs text-muted-foreground mt-2 flex items-center gap-1">
-                File tersimpan: <a :href="editingTask.file_url" target="_blank" class="text-primary underline font-medium">{{ editingTask.file_name || 'Lihat' }}</a>
-              </p>
+              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">8. File Attachment</label>
+              <div class="flex items-center gap-2 mb-3">
+                <button 
+                  type="button"
+                  @click="fileOption = 'upload'"
+                  :class="[
+                    'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
+                    fileOption === 'upload'
+                      ? 'bg-primary text-primary-foreground border-primary shadow-xs'
+                      : 'bg-muted text-muted-foreground border-border hover:bg-muted/80'
+                  ]"
+                >
+                  Upload File
+                </button>
+                <button 
+                  type="button"
+                  @click="fileOption = 'link'"
+                  :class="[
+                    'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border',
+                    fileOption === 'link'
+                      ? 'bg-primary text-primary-foreground border-primary shadow-xs'
+                      : 'bg-muted text-muted-foreground border-border hover:bg-muted/80'
+                  ]"
+                >
+                  Link Google Sheet
+                </button>
+              </div>
+              <template v-if="fileOption === 'upload'">
+                <input type="file" ref="fileInput" @change="handleFileChange" accept=".pdf,.xls,.xlsx,.csv" class="block w-full text-xs text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-muted file:text-foreground hover:file:bg-muted/80 cursor-pointer" />
+                <p v-if="editingTask?.file_url && !selectedFile && fileOption === 'upload'" class="text-xs text-muted-foreground mt-2 flex items-center gap-1">
+                  File tersimpan: <a :href="editingTask.file_url" target="_blank" class="text-primary underline font-medium">{{ editingTask.file_name || 'Lihat' }}</a>
+                </p>
+              </template>
+              <template v-else>
+                <input v-model="formData.file_link" type="text" placeholder="https://drive.google.com/..." class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+                <p v-if="editingTask?.file_link && !formData.file_link" class="text-xs text-muted-foreground mt-2 flex items-center gap-1">
+                  Link tersimpan: <a :href="editingTask.file_link" target="_blank" class="text-primary underline font-medium truncate max-w-[200px]">{{ editingTask.file_link }}</a>
+                </p>
+              </template>
             </div>
           </div>
         </div>

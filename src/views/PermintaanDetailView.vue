@@ -271,7 +271,7 @@ const formatShortDate = (dateString) => {
               </button>
             </div>
           </div>
-          <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div v-if="task.task_number" class="mb-2">
                 <span class="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">TASK-{{ task.task_number }}</span>
@@ -280,7 +280,7 @@ const formatShortDate = (dateString) => {
                 {{ task.title }}
               </h1>
             </div>
-            <div class="flex items-center gap-1 shrink-0">
+            <div class="flex items-center gap-2 flex-wrap">
               <select 
                 :value="task.status" 
                 @change="updateTaskStatus($event.target.value)"
@@ -291,16 +291,34 @@ const formatShortDate = (dateString) => {
                 <option value="IN_PROGRESS">🔄 In Progress</option>
                 <option value="DONE">✅ Done</option>
               </select>
+
+              <button 
+                v-if="task.status !== 'IN_PROGRESS' && task.assignee === currentUserEmail" 
+                @click="updateTaskStatus('IN_PROGRESS')"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 border border-blue-200 dark:border-blue-800 transition-colors"
+              >
+                <Loader2 class="w-3.5 h-3.5" />
+                Mulai Dikerjakan
+              </button>
+
+              <button 
+                v-if="task.status === 'IN_PROGRESS' && task.assignee === currentUserEmail" 
+                @click="updateTaskStatus('DONE')"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 transition-colors"
+              >
+                <CheckCircle2 class="w-3.5 h-3.5" />
+                Selesai
+              </button>
             </div>
           </div>
         </div>
 
         <!-- Meta Info Cards -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div class="grid grid-cols-1 sm:grid-cols-5 gap-4">
           <!-- Project -->
           <div class="bg-card p-4 rounded-xl border border-border">
             <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Proyek</p>
-            <p class="font-bold text-foreground text-sm truncate" :title="task.project_name">
+            <p class="font-bold text-foreground text-sm truncate" :title="task.project_name || '-'" :class="{ 'text-muted-foreground': !task.project_name }">
               {{ task.project_name || '-' }}
             </p>
           </div>
@@ -308,15 +326,15 @@ const formatShortDate = (dateString) => {
           <!-- Customer -->
           <div class="bg-card p-4 rounded-xl border border-border">
             <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Customer</p>
-            <p class="font-bold text-foreground text-sm truncate" :title="task.customer_name">
+            <p class="font-bold text-foreground text-sm truncate" :title="task.customer_name || '-'" :class="{ 'text-muted-foreground': !task.customer_name }">
               {{ task.customer_name || '-' }}
             </p>
           </div>
 
           <!-- PIC -->
           <div class="bg-card p-4 rounded-xl border border-border">
-            <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">PIC Customer</p>
-            <p class="font-bold text-foreground text-sm truncate" :title="task.pic_name">
+            <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">PIC</p>
+            <p class="font-bold text-foreground text-sm truncate" :title="task.pic_name || '-'" :class="{ 'text-muted-foreground': !task.pic_name }">
               {{ task.pic_name || '-' }}
             </p>
           </div>
@@ -324,8 +342,16 @@ const formatShortDate = (dateString) => {
           <!-- Action By (Assignee) -->
           <div class="bg-card p-4 rounded-xl border border-border">
             <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Action By</p>
-            <p class="font-bold text-foreground text-sm truncate" :title="task.assignee">
+            <p class="font-bold text-foreground text-sm truncate" :title="task.assignee" :class="{ 'text-muted-foreground': !task.assignee }">
               {{ task.assignee ? task.assignee.split('@')[0] : 'Belum ditugaskan' }}
+            </p>
+          </div>
+
+          <!-- Deadline -->
+          <div class="bg-card p-4 rounded-xl border border-border">
+            <p class="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Deadline</p>
+            <p class="font-bold text-foreground text-sm truncate" :title="task.target_date || '-'" :class="{ 'text-muted-foreground': !task.target_date }">
+              {{ task.target_date ? formatDate(task.target_date) : '-' }}
             </p>
           </div>
         </div>
@@ -364,14 +390,14 @@ const formatShortDate = (dateString) => {
         </div>
 
         <!-- Attachment -->
-        <div v-if="task.file_url" class="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
-          <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Lampiran File</h2>
-          <a :href="task.file_url" target="_blank" class="inline-flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors group">
+        <div v-if="task.file_url || task.file_link" class="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-200 dark:border-slate-800">
+          <h2 class="text-lg font-bold text-slate-900 dark:text-white mb-4">Lampiran</h2>
+          <a :href="task.file_link || task.file_url" target="_blank" class="inline-flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors group">
             <div class="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400">
               <Paperclip class="w-5 h-5" />
             </div>
             <div class="flex-1 min-w-0">
-              <p class="text-sm font-semibold text-slate-900 dark:text-white truncate">{{ task.file_name || 'Lihat Dokumen' }}</p>
+              <p class="text-sm font-semibold text-slate-900 dark:text-white truncate">{{ task.file_link ? 'Lihat Sheet' : (task.file_name || 'Lihat Dokumen') }}</p>
               <p class="text-xs text-slate-500 dark:text-slate-400">Klik untuk mengunduh / melihat</p>
             </div>
             <Download class="w-4 h-4 text-slate-400 group-hover:text-blue-500" />

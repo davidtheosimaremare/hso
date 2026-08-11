@@ -26,7 +26,7 @@ import {
   Loader2, Calendar, MapPin, Truck, Building2, ArrowLeft,
   Edit, CheckCircle2, Clock, Anchor, Factory, FileText, 
   PackageCheck, Share2, Info, ExternalLink, Package, Hourglass, 
-  Layers, AlertCircle, ShoppingCart, Download, AlertTriangle,
+  Layers, AlertCircle, Download, AlertTriangle,
   ChevronDown, ChevronUp, Plane, Box, Copy, Search, UploadCloud, FileSpreadsheet, Mail, Bell, RefreshCw
 } from 'lucide-vue-next'
 
@@ -1734,7 +1734,19 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
          }
       })
     } else if (skipHpoSync) {
-      console.log('⏭️ Skipping HPO sync (status update only)')
+      // Meski skip HPO sync penuh, tetap jalankan HDO sync dan HPO sync secara background
+      // agar dokumen terkait (HDO, HPO) ter-load dengan benar setelah status update
+      console.log('⏭️ Skipping full HPO sync loader, but running HDO + HPO background sync...')
+      if (soDetail.value?.number) {
+        fetchHpoInBackground(soDetail.value.number).then(() => {
+          if (soDetail.value?.shipments) {
+            const doList = soDetail.value.shipments.map(s => s.no)
+            if (doList.length > 0) {
+              fetchHdoInBackground(doList)
+            }
+          }
+        })
+      }
     }
     
     // Auto scroll if highlight param exists
@@ -2825,7 +2837,10 @@ const sendReminderEmail = async () => {
               <h1 class="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight font-sans">
                 {{ soDetail.number }}
               </h1>
-              <p class="text-sm font-medium text-slate-500 dark:text-slate-400 mt-1 font-sans">
+              <span v-if="soDetail.po_number && soDetail.po_number !== '-'" class="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1.5">
+                PO: {{ soDetail.po_number }}
+              </span>
+              <p class="text-sm font-medium text-slate-500 dark:text-slate-400 mt-1.5 font-sans">
                 {{ soDetail.client }}
               </p>
               <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5 font-sans" v-if="soDetail.project && soDetail.project !== '-'">
