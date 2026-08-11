@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { 
@@ -20,7 +20,11 @@ import {
   FolderKanban,
   UserCheck,
   Pencil,
-  X
+  X,
+  Search,
+  Plus,
+  Zap,
+  Timer
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -33,10 +37,21 @@ const isError = ref(false)
 const currentUserEmail = ref('')
 const isCopied = ref(false)
 
-// Edit Modal State
+// Edit Modal State (Full Parity with Create Form)
 const isEditModalOpen = ref(false)
 const isSavingEdit = ref(false)
 const users = ref([])
+const accurateCustomers = ref([])
+
+// Customer Search Combobox State
+const customerComboboxRef = ref(null)
+const isCustomerDropdownOpen = ref(false)
+const customerSearchQuery = ref('')
+
+const fileInput = ref(null)
+const selectedFile = ref(null)
+const fileOption = ref('upload')
+
 const editForm = ref({
   title: '',
   project_name: '',
@@ -48,6 +63,28 @@ const editForm = ref({
   file_link: ''
 })
 
+const filteredAccurateCustomers = computed(() => {
+  const query = customerSearchQuery.value.toLowerCase().trim()
+  if (!query) return accurateCustomers.value
+  return accurateCustomers.value.filter(c => c.toLowerCase().includes(query))
+})
+
+const selectCustomer = (name) => {
+  editForm.value.customer_name = name
+  customerSearchQuery.value = name
+  isCustomerDropdownOpen.value = false
+}
+
+const handleClickOutsideCustomer = (event) => {
+  if (customerComboboxRef.value && !customerComboboxRef.value.contains(event.target)) {
+    isCustomerDropdownOpen.value = false
+  }
+}
+
+const handleFileChange = (event) => {
+  selectedFile.value = event.target.files[0] || null
+}
+
 const fetchUsers = async () => {
   try {
     const { data } = await supabase.from('user_access').select('email').order('email')
@@ -55,42 +92,116 @@ const fetchUsers = async () => {
   } catch (e) {}
 }
 
+const fetchAccurateCustomers = async () => {
+  try {
+    const [soRes, sqRes] = await Promise.allSettled([
+      supabase.functions.invoke('accurate-list-so', { body: { fields: 'customer' } }),
+      supabase.functions.invoke('accurate-list-sq', { body: { fields: 'customer' } })
+    ])
+    const names = new Set()
+    if (soRes.status === 'fulfilled' && soRes.value.data?.d) {
+      soRes.value.data.d.forEach(i => { if (i.customer?.name) names.add(i.customer.name.trim()) })
+    }
+    if (sqRes.status === 'fulfilled' && sqRes.value.data?.d) {
+      sqRes.value.data.d.forEach(i => { if (i.customer?.name) names.add(i.customer.name.trim()) })
+    }
+    accurateCustomers.value = Array.from(names).sort()
+  } catch (err) {
+    console.error('Error fetching accurate customers:', err)
+  }
+}
+
 const openEditModal = () => {
   if (!task.value) return
+  const custName = getCustomerName.value !== '-' ? getCustomerName.value : ''
   editForm.value = {
     title: task.value.title || '',
     project_name: getProjectName.value !== '-' ? getProjectName.value : '',
-    customer_name: getCustomerName.value !== '-' ? getCustomerName.value : '',
+    customer_name: custName,
     pic_name: getPicName.value !== '-' ? getPicName.value : '',
     description: task.value.description || '',
     assignee: task.value.assignee || '',
     target_date: task.value.target_date || '',
     file_link: getFileLink.value || task.value.file_url || ''
   }
+  customerSearchQuery.value = custName
+  fileOption.value = (getFileLink.value || task.value.file_link) ? 'link' : 'upload'
+  selectedFile.value = null
+  if (fileInput.value) fileInput.value.value = ''
+  
   fetchUsers()
+  fetchAccurateCustomers()
   isEditModalOpen.value = true
 }
 
+const closeEditModal = () => {
+  isEditModalOpen.value = false
+  isCustomerDropdownOpen.value = false
+}
+
 const saveEditTask = async () => {
-  if (!editForm.value.title) { alert('Judul harus diisi!'); return }
+  if (!editForm.value.title) { alert('Subject / Judul permintaan harus diisi!'); return }
+  if (!editForm.value.project_name) { alert('Project / Proyek harus diisi!'); return }
+  if (!editForm.value.customer_name) { alert('Customer harus diisi!'); return }
+  if (!editForm.value.pic_name) { alert('PIC Customer harus diisi!'); return }
+  if (!editForm.value.target_date) { alert('Deadline harus diisi!'); return }
+
   isSavingEdit.value = true
   try {
+    let fileUrl = task.value?.file_url
+    let fileName = task.value?.file_name
+    let fileLink = editForm.value.file_link || task.value?.file_link
+
+    if (fileOption.value === 'link' && fileLink) {
+      fileUrl = fileLink
+      fileName = fileLink
+    } else if (selectedFile.value) {
+      try {
+        const driveFormData = new FormData()
+        driveFormData.append('file', selectedFile.value)
+        const { data: driveData, error: driveError } = await supabase.functions.invoke('upload-to-drive', {
+          body: driveFormData
+        })
+        if (!driveError && driveData?.webViewLink) {
+          fileUrl = driveData.webViewLink
+          fileName = selectedFile.value.name
+        }
+      } catch (driveErr) {
+        console.warn('Google Drive upload notice:', driveErr)
+      }
+
+      if (!fileUrl || fileUrl === task.value?.file_url) {
+        const fileExt = selectedFile.value.name.split('.').pop()
+        const filePath = `uploads/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`
+        const { error: uploadError } = await supabase.storage.from('boq-files').upload(filePath, selectedFile.value)
+        if (!uploadError) {
+          const { data: publicUrlData } = supabase.storage.from('boq-files').getPublicUrl(filePath)
+          fileUrl = publicUrlData.publicUrl
+          fileName = selectedFile.value.name
+        }
+      }
+    }
+
+    const finalCustomer = customerSearchQuery.value || editForm.value.customer_name || ''
+
     const meta = {
       project_name: editForm.value.project_name || '',
-      customer_name: editForm.value.customer_name || '',
+      customer_name: finalCustomer,
       pic_name: editForm.value.pic_name || '',
-      file_link: editForm.value.file_link || ''
+      file_link: fileLink || ''
     }
 
     const payload = {
       title: editForm.value.title,
       project_name: editForm.value.project_name || '',
-      customer_name: editForm.value.customer_name || '',
+      customer_name: finalCustomer,
       pic_name: editForm.value.pic_name || '',
       description: editForm.value.description || '',
       assignee: editForm.value.assignee || '',
       target_date: editForm.value.target_date || null,
-      file_link: editForm.value.file_link || null,
+      file_url: fileUrl,
+      file_name: fileName,
+      file_link: fileLink || null,
       metadata: meta
     }
 
@@ -98,8 +209,9 @@ const saveEditTask = async () => {
 
     const { error: err1 } = await supabase.from('boq_requests').update(payload).eq('id', taskId)
     if (err1) {
-      console.warn('Update payload notice:', err1.message)
-      const stage2 = {
+      console.warn('Stage 1 update notice (full payload):', err1.message)
+      // Stage 2: Direct columns + metadata (without file_link)
+      const stage2Payload = {
         title: payload.title,
         project_name: payload.project_name,
         customer_name: payload.customer_name,
@@ -107,19 +219,38 @@ const saveEditTask = async () => {
         description: payload.description,
         assignee: payload.assignee,
         target_date: payload.target_date,
+        file_url: payload.file_url,
+        file_name: payload.file_name,
         metadata: payload.metadata
       }
-      const { error: err2 } = await supabase.from('boq_requests').update(stage2).eq('id', taskId)
+      const { error: err2 } = await supabase.from('boq_requests').update(stage2Payload).eq('id', taskId)
       if (err2) {
-        await supabase.from('boq_requests').update({
+        console.warn('Stage 2 update notice (without file_link column):', err2.message)
+        // Stage 3: Metadata + base columns (without customer_name/project_name/pic_name direct columns)
+        const stage3Payload = {
           title: payload.title,
-          project_name: payload.project_name,
-          customer_name: payload.customer_name,
-          pic_name: payload.pic_name,
           description: payload.description,
           assignee: payload.assignee,
-          target_date: payload.target_date
-        }).eq('id', taskId)
+          target_date: payload.target_date,
+          file_url: payload.file_url,
+          file_name: payload.file_name,
+          metadata: payload.metadata
+        }
+        const { error: err3 } = await supabase.from('boq_requests').update(stage3Payload).eq('id', taskId)
+        if (err3) {
+          console.warn('Stage 3 update notice (without metadata column):', err3.message)
+          // Stage 4: Base payload only
+          const stage4Payload = {
+            title: payload.title,
+            description: payload.description,
+            assignee: payload.assignee,
+            target_date: payload.target_date,
+            file_url: payload.file_url,
+            file_name: payload.file_name
+          }
+          const { error: err4 } = await supabase.from('boq_requests').update(stage4Payload).eq('id', taskId)
+          if (err4) throw err4
+        }
       }
     }
 
@@ -128,7 +259,7 @@ const saveEditTask = async () => {
       ...payload
     }
 
-    isEditModalOpen.value = false
+    closeEditModal()
   } catch (err) {
     console.error('Error saving task edit:', err)
     alert('Gagal menyimpan perubahan.')
@@ -171,10 +302,15 @@ const updateTaskStatus = async (newStatus) => {
   if (newStatus === 'IN_PROGRESS' && !task.value.in_progress_at) {
     updatePayload.in_progress_at = now
     task.value.in_progress_at = now
-  }
-  if (newStatus === 'DONE' && !task.value.done_at) {
-    updatePayload.done_at = now
-    task.value.done_at = now
+  } else if (newStatus === 'DONE') {
+    if (!task.value.in_progress_at) {
+      updatePayload.in_progress_at = task.value.created_at || now
+      task.value.in_progress_at = task.value.created_at || now
+    }
+    if (!task.value.done_at) {
+      updatePayload.done_at = now
+      task.value.done_at = now
+    }
   }
 
   try {
@@ -224,6 +360,11 @@ onMounted(async () => {
   
   await fetchTaskDetail()
   await fetchComments()
+  document.addEventListener('click', handleClickOutsideCustomer)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutsideCustomer)
 })
 
 const fetchTaskDetail = async () => {
@@ -238,14 +379,8 @@ const fetchTaskDetail = async () => {
     console.log('Task data fetched:', data)
     task.value = data || {}
     
-    if (task.value) {
-      const localStatus = localStorage.getItem(`boq_status_${taskId}`)
-      if (localStatus) {
-        task.value.status = localStatus
-      } else if (!task.value.in_progress_at && !task.value.done_at) {
-        task.value.status = 'TODO'
-        try { localStorage.setItem(`boq_status_${taskId}`, 'TODO') } catch {}
-      }
+    if (task.value && task.value.status) {
+      try { localStorage.setItem(`boq_status_${taskId}`, task.value.status) } catch {}
     }
   } catch (err) {
     console.error('Error fetching task:', err)
@@ -384,6 +519,32 @@ const getFileLink = computed(() => {
   const meta = parseMeta(task.value.metadata)
   const val = task.value.file_link || meta.file_link || getLocalMeta(taskId)?.file_link
   return (val && val !== '-') ? val : null
+})
+
+const getWorkDuration = computed(() => {
+  if (!task.value || task.value.status !== 'DONE' || !task.value.in_progress_at || !task.value.done_at) {
+    return '-'
+  }
+  
+  const start = new Date(task.value.in_progress_at)
+  const end = new Date(task.value.done_at)
+    
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return '-'
+
+  const diffMs = Math.max(0, end.getTime() - start.getTime())
+  const totalMinutes = Math.floor(diffMs / (1000 * 60))
+  const totalHours = Math.floor(totalMinutes / 60)
+  const days = Math.floor(totalHours / 24)
+
+  const hours = totalHours % 24
+  const minutes = totalMinutes % 60
+
+  const timeParts = []
+  if (days > 0) timeParts.push(`${days} Hari`)
+  if (hours > 0) timeParts.push(`${hours} Jam`)
+  if (minutes > 0 || (days === 0 && hours === 0)) timeParts.push(`${minutes} Menit`)
+
+  return timeParts.join(' ')
 })
 </script>
 
@@ -576,7 +737,7 @@ const getFileLink = computed(() => {
                 </div>
                 <div class="flex-1 min-w-0">
                   <p class="text-xs font-bold text-slate-800 dark:text-slate-100 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400">
-                    {{ getFileLink ? 'Lihat Google Sheet / Link' : (task.file_name || 'Lihat Dokumen Lampiran') }}
+                    {{ getFileLink ? 'Buka Link Dokumen' : (task.file_name || 'Lihat Dokumen Lampiran') }}
                   </p>
                   <p class="text-[11px] text-slate-400">Klik untuk membuka / mengunduh file</p>
                 </div>
@@ -607,6 +768,39 @@ const getFileLink = computed(() => {
                 <p class="text-xs font-bold text-slate-700 dark:text-slate-200">
                   {{ task.done_at ? formatDate(task.done_at) : '-' }}
                 </p>
+              </div>
+            </div>
+
+            <!-- Performa & Durasi Pengerjaan Bar (Hanya Muncul Jika Tugas Sudah Selesai) -->
+            <div 
+              v-if="task.status === 'DONE' && task.in_progress_at && task.done_at" 
+              class="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800/80"
+            >
+              <div class="flex items-center justify-between text-xs font-bold">
+                <div class="flex items-center gap-1.5 text-slate-700 dark:text-slate-200">
+                  <Zap class="w-3.5 h-3.5 text-amber-500" />
+                  <span>Durasi Pengerjaan</span>
+                </div>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                  Selesai
+                </span>
+              </div>
+
+              <!-- Visual Progress / Performance Bar Indicator -->
+              <div class="space-y-1.5">
+                <div class="w-full h-2.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden relative border border-slate-200/60 dark:border-slate-700/60">
+                  <div 
+                    class="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500" 
+                    style="width: 100%;"
+                  ></div>
+                </div>
+
+                <div class="flex items-center justify-between text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                  <span>Total Waktu Penyelesaian:</span>
+                  <span class="font-bold text-slate-800 dark:text-slate-100">
+                    {{ getWorkDuration }}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -683,72 +877,174 @@ const getFileLink = computed(() => {
       </div>
     </div>
 
-    <!-- Modal Edit Permintaan -->
-    <div v-if="isEditModalOpen" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div class="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 space-y-4 my-8">
-        <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-          <h3 class="text-lg font-black text-slate-900 dark:text-white">Edit Detail Permintaan</h3>
-          <button @click="isEditModalOpen = false" class="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
-            <X class="w-5 h-5" />
+    <!-- Modal Form Edit Permintaan (Matches Create Form Exactly) -->
+    <div v-if="isEditModalOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs">
+      <div class="bg-card rounded-2xl shadow-xl w-full max-w-3xl overflow-hidden border border-border">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-border">
+          <h2 class="text-base font-bold text-foreground">Edit Permintaan</h2>
+          <button @click="closeEditModal" class="p-1.5 text-muted-foreground hover:text-foreground rounded-lg hover:bg-muted transition-colors cursor-pointer">
+            <X class="w-4 h-4" />
           </button>
         </div>
 
-        <form @submit.prevent="saveEditTask" class="space-y-4">
+        <div class="p-6 space-y-4 text-sm max-h-[85vh] overflow-y-auto sidebar-thin text-left">
+          <!-- 1. Subject / Judul -->
           <div>
-            <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Judul / Subject *</label>
-            <input v-model="editForm.title" type="text" required class="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <label class="block text-xs font-semibold text-muted-foreground mb-1.5">1. Subject / Judul <span class="text-rose-500">*</span></label>
+            <input v-model="editForm.title" type="text" placeholder="Contoh: Permintaan BOQ Panel GI Subang 150kV..." class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <!-- 2. Project / Proyek & 3. Customer (2-Column Grid) -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- 2. Project / Proyek -->
             <div>
-              <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Proyek *</label>
-              <input v-model="editForm.project_name" type="text" placeholder="Nama proyek..." class="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">2. Project / Proyek <span class="text-rose-500">*</span></label>
+              <input v-model="editForm.project_name" type="text" placeholder="Nama proyek / pekerjaan..." class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
             </div>
-            <div>
-              <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Customer *</label>
-              <input v-model="editForm.customer_name" type="text" placeholder="Nama customer..." class="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" />
+
+            <!-- 3. Customer (Searchable Combobox) -->
+            <div ref="customerComboboxRef" class="relative">
+              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">3. Customer <span class="text-rose-500">*</span></label>
+              <div class="relative">
+                <input 
+                  type="text" 
+                  v-model="customerSearchQuery"
+                  @focus="isCustomerDropdownOpen = true"
+                  @input="editForm.customer_name = customerSearchQuery; isCustomerDropdownOpen = true"
+                  placeholder="Cari / ketik nama customer..." 
+                  class="w-full pl-9 pr-8 py-2 border border-input rounded-xl bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                <Search class="w-4 h-4 text-muted-foreground absolute left-3 top-2.5" />
+                <button 
+                  v-if="customerSearchQuery" 
+                  type="button"
+                  @click="customerSearchQuery = ''; editForm.customer_name = ''; isCustomerDropdownOpen = true" 
+                  class="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground p-0.5 rounded cursor-pointer"
+                >
+                  <X class="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <!-- Searchable Popover Dropdown List -->
+              <div 
+                v-if="isCustomerDropdownOpen" 
+                class="absolute z-50 left-0 right-0 mt-1.5 max-h-52 overflow-y-auto rounded-xl border border-border bg-card shadow-lg p-1 text-xs space-y-0.5 sidebar-thin"
+              >
+                <!-- Registered Customers from Accurate -->
+                <div 
+                  v-for="cName in filteredAccurateCustomers" 
+                  :key="cName"
+                  @click="selectCustomer(cName)"
+                  class="px-3 py-2 rounded-lg hover:bg-muted font-medium text-foreground cursor-pointer flex items-center justify-between transition-colors"
+                >
+                  <div class="flex items-center gap-2 truncate">
+                    <Building2 class="w-3.5 h-3.5 text-primary shrink-0" />
+                    <span class="truncate">{{ cName }}</span>
+                  </div>
+                  <Check v-if="editForm.customer_name === cName" class="w-3.5 h-3.5 text-primary shrink-0" />
+                </div>
+
+                <!-- Custom Input Selection -->
+                <div 
+                  v-if="customerSearchQuery && !accurateCustomers.includes(customerSearchQuery)"
+                  @click="selectCustomer(customerSearchQuery)"
+                  class="px-3 py-2 rounded-lg bg-primary/10 hover:bg-primary/20 font-semibold text-primary cursor-pointer flex items-center gap-2 border border-primary/20 transition-colors"
+                >
+                  <Plus class="w-3.5 h-3.5 shrink-0" />
+                  <span class="truncate">Gunakan Kustom: "{{ customerSearchQuery }}"</span>
+                </div>
+
+                <div v-if="filteredAccurateCustomers.length === 0 && !customerSearchQuery" class="px-3 py-3 text-center text-muted-foreground">
+                  Ketik nama customer untuk mencari...
+                </div>
+              </div>
             </div>
           </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <!-- 4. PIC & 5. Action by (2-Column Grid) -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- 4. PIC -->
             <div>
-              <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">PIC Customer *</label>
-              <input v-model="editForm.pic_name" type="text" placeholder="Nama PIC..." class="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">4. PIC Customer <span class="text-rose-500">*</span></label>
+              <input v-model="editForm.pic_name" type="text" placeholder="Nama PIC / Kontak Person..." class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
             </div>
+
+            <!-- 5. Action by -->
             <div>
-              <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Deadline *</label>
-              <input v-model="editForm.target_date" type="date" class="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">5. Action by (Delegasi)</label>
+              <select v-model="editForm.assignee" class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer">
+                <option value="">-- Pilih Tim / User --</option>
+                <option v-for="u in users" :key="u.email" :value="u.email">{{ u.email }}</option>
+              </select>
             </div>
           </div>
 
+          <!-- 6. Description / Catatan -->
           <div>
-            <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Action By / Assignee</label>
-            <select v-model="editForm.assignee" class="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="">-- Pilih User --</option>
-              <option v-for="u in users" :key="u.email" :value="u.email">{{ u.email }}</option>
-            </select>
+            <label class="block text-xs font-semibold text-muted-foreground mb-1.5">6. Description / Catatan</label>
+            <textarea v-model="editForm.description" rows="3" placeholder="Tuliskan spesifikasi, catatan teknis, atau keterangan..." class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"></textarea>
           </div>
 
-          <div>
-            <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Link Dokumen / Google Drive</label>
-            <input v-model="editForm.file_link" type="url" placeholder="https://drive.google.com/..." class="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" />
-          </div>
+          <!-- 7. Deadline & File (2-Column Grid) -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- 7. Deadline -->
+            <div>
+              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">7. Deadline (Target Selesai) <span class="text-rose-500">*</span></label>
+              <input v-model="editForm.target_date" type="date" class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer" />
+            </div>
 
-          <div>
-            <label class="block text-xs font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Deskripsi Tugas</label>
-            <textarea v-model="editForm.description" rows="3" class="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
+            <!-- 8. File Attachment -->
+            <div>
+              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">8. File Attachment</label>
+              <div class="flex items-center gap-2 mb-3">
+                <button 
+                  type="button"
+                  @click="fileOption = 'upload'"
+                  :class="[
+                    'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border cursor-pointer',
+                    fileOption === 'upload'
+                      ? 'bg-primary text-primary-foreground border-primary shadow-xs'
+                      : 'bg-muted text-muted-foreground border-border hover:bg-muted/80'
+                  ]"
+                >
+                  Upload File
+                </button>
+                <button 
+                  type="button"
+                  @click="fileOption = 'link'"
+                  :class="[
+                    'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border cursor-pointer',
+                    fileOption === 'link'
+                      ? 'bg-primary text-primary-foreground border-primary shadow-xs'
+                      : 'bg-muted text-muted-foreground border-border hover:bg-muted/80'
+                  ]"
+                >
+                  Link Dokumen / URL
+                </button>
+              </div>
+              <template v-if="fileOption === 'upload'">
+                <input type="file" ref="fileInput" @change="handleFileChange" accept=".pdf,.xls,.xlsx,.csv" class="block w-full text-xs text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-muted file:text-foreground hover:file:bg-muted/80 cursor-pointer" />
+                <p v-if="task?.file_url && !selectedFile && fileOption === 'upload'" class="text-xs text-muted-foreground mt-2 flex items-center gap-1">
+                  File tersimpan: <a :href="task.file_url" target="_blank" class="text-primary underline font-medium">{{ task.file_name || 'Lihat' }}</a>
+                </p>
+              </template>
+              <template v-else>
+                <input v-model="editForm.file_link" type="text" placeholder="Tempel link URL (Google Drive, Docs, Sheet, dll)..." class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+                <p v-if="task?.file_link && !editForm.file_link" class="text-xs text-muted-foreground mt-2 flex items-center gap-1">
+                  Link tersimpan: <a :href="task.file_link" target="_blank" class="text-primary underline font-medium truncate max-w-[200px]">{{ task.file_link }}</a>
+                </p>
+              </template>
+            </div>
           </div>
+        </div>
 
-          <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-            <button type="button" @click="isEditModalOpen = false" class="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl">
-              Batal
-            </button>
-            <button type="submit" :disabled="isSavingEdit" class="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md disabled:opacity-50 inline-flex items-center">
-              <Loader2 v-if="isSavingEdit" class="w-4 h-4 mr-2 animate-spin" />
-              Simpan Perubahan
-            </button>
-          </div>
-        </form>
+        <div class="px-6 py-4 bg-muted/40 border-t border-border flex justify-end gap-2.5">
+          <button @click="closeEditModal" class="px-4 py-2 text-xs font-semibold text-muted-foreground hover:bg-muted rounded-xl transition-colors cursor-pointer">Batal</button>
+          <button @click="saveEditTask" :disabled="isSavingEdit" class="px-4 py-2 text-xs font-semibold text-primary-foreground bg-primary hover:bg-primary/90 rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-xs">
+            <Loader2 v-if="isSavingEdit" class="w-3.5 h-3.5 animate-spin" />
+            Simpan Perubahan
+          </button>
+        </div>
       </div>
     </div>
   </div>

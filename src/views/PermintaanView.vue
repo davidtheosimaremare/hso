@@ -481,8 +481,8 @@ const submitForm = async () => {
       // Stage 1: Try full payload with direct columns + metadata + file_link
       const { error: err1 } = await supabase.from('boq_requests').update(payload).eq('id', taskId)
       if (err1) {
-        console.warn('Stage 1 Update notice:', err1.message)
-        // Stage 2: Try payload with direct columns + metadata
+        console.warn('Stage 1 Update notice (full payload):', err1.message)
+        // Stage 2: Try payload with direct columns + metadata (without file_link)
         const stage2Payload = {
           title: payload.title,
           project_name: payload.project_name,
@@ -497,21 +497,32 @@ const submitForm = async () => {
         }
         const { error: err2 } = await supabase.from('boq_requests').update(stage2Payload).eq('id', taskId)
         if (err2) {
-          console.warn('Stage 2 Update notice:', err2.message)
-          // Stage 3: Base payload with direct columns
-          const basePayload = {
+          console.warn('Stage 2 Update notice (without file_link):', err2.message)
+          // Stage 3: Try payload with metadata + base columns (without project_name/customer_name/pic_name)
+          const stage3Payload = {
             title: payload.title,
-            project_name: payload.project_name,
-            customer_name: payload.customer_name,
-            pic_name: payload.pic_name,
             description: payload.description,
             assignee: payload.assignee,
             target_date: payload.target_date,
             file_url: payload.file_url,
-            file_name: payload.file_name
+            file_name: payload.file_name,
+            metadata: payload.metadata
           }
-          const { error: err3 } = await supabase.from('boq_requests').update(basePayload).eq('id', taskId)
-          if (err3) throw err3
+          const { error: err3 } = await supabase.from('boq_requests').update(stage3Payload).eq('id', taskId)
+          if (err3) {
+            console.warn('Stage 3 Update notice (without metadata):', err3.message)
+            // Stage 4: Pure base payload
+            const stage4Payload = {
+              title: payload.title,
+              description: payload.description,
+              assignee: payload.assignee,
+              target_date: payload.target_date,
+              file_url: payload.file_url,
+              file_name: payload.file_name
+            }
+            const { error: err4 } = await supabase.from('boq_requests').update(stage4Payload).eq('id', taskId)
+            if (err4) throw err4
+          }
         }
       }
       savedTaskObj = { ...payload, id: taskId, task_number: editingTask.value.task_number }
@@ -524,8 +535,8 @@ const submitForm = async () => {
       // Stage 1: Try full payload
       const { data: insData1, error: err1 } = await supabase.from('boq_requests').insert([payload]).select()
       if (err1) {
-        console.warn('Stage 1 Insert notice:', err1.message)
-        // Stage 2: Try with direct columns + metadata
+        console.warn('Stage 1 Insert notice (full payload):', err1.message)
+        // Stage 2: Try without file_link column
         const stage2Payload = {
           title: payload.title,
           project_name: payload.project_name,
@@ -542,24 +553,40 @@ const submitForm = async () => {
         }
         const { data: insData2, error: err2 } = await supabase.from('boq_requests').insert([stage2Payload]).select()
         if (err2) {
-          console.warn('Stage 2 Insert notice:', err2.message)
-          // Stage 3: Base payload with direct columns
-          const basePayload = {
+          console.warn('Stage 2 Insert notice (without file_link):', err2.message)
+          // Stage 3: Metadata + base columns
+          const stage3Payload = {
             title: payload.title,
-            project_name: payload.project_name,
-            customer_name: payload.customer_name,
-            pic_name: payload.pic_name,
             description: payload.description,
             assignee: payload.assignee,
             target_date: payload.target_date,
             file_url: payload.file_url,
             file_name: payload.file_name,
             created_by: payload.created_by,
-            status: payload.status
+            status: payload.status,
+            metadata: payload.metadata
           }
-          const { data: insData3, error: err3 } = await supabase.from('boq_requests').insert([basePayload]).select()
-          if (err3) throw err3
-          if (insData3?.[0]?.id) {
+          const { data: insData3, error: err3 } = await supabase.from('boq_requests').insert([stage3Payload]).select()
+          if (err3) {
+            console.warn('Stage 3 Insert notice (without metadata):', err3.message)
+            // Stage 4: Pure base payload
+            const stage4Payload = {
+              title: payload.title,
+              description: payload.description,
+              assignee: payload.assignee,
+              target_date: payload.target_date,
+              file_url: payload.file_url,
+              file_name: payload.file_name,
+              created_by: payload.created_by,
+              status: payload.status
+            }
+            const { data: insData4, error: err4 } = await supabase.from('boq_requests').insert([stage4Payload]).select()
+            if (err4) throw err4
+            if (insData4?.[0]?.id) {
+              saveLocalMeta(insData4[0].id, payload.metadata)
+              savedTaskObj = insData4[0]
+            }
+          } else if (insData3?.[0]?.id) {
             saveLocalMeta(insData3[0].id, payload.metadata)
             savedTaskObj = insData3[0]
           }
@@ -588,28 +615,49 @@ const submitForm = async () => {
   }
 }
 
-// ---- Status Update (status column only - avoids DB trigger issues) ----
+// ---- Status Update (with timestamps & localStorage sync) ----
 const updateStatus = async (taskId, newStatus) => {
   const task = allTasksRaw.value.find(t => String(t.id) === String(taskId))
   if (!task) return
 
-  // Optimistic update
+  const oldStatus = task.status
   task.status = newStatus
+  try { localStorage.setItem(`boq_status_${taskId}`, newStatus) } catch {}
   filterTasksByPeriod()
 
-  // Sync to DB - only update status column
+  const now = new Date().toISOString()
+  const payload = { status: newStatus }
+
+  if (newStatus === 'IN_PROGRESS' && !task.in_progress_at) {
+    payload.in_progress_at = now
+    task.in_progress_at = now
+  } else if (newStatus === 'DONE') {
+    if (!task.in_progress_at) {
+      payload.in_progress_at = task.created_at || now
+      task.in_progress_at = task.created_at || now
+    }
+    if (!task.done_at) {
+      payload.done_at = now
+      task.done_at = now
+    }
+  }
+
+  // Sync to DB
   try {
     const { error } = await supabase
       .from('boq_requests')
-      .update({ status: newStatus })
+      .update(payload)
       .eq('id', taskId)
     if (error) {
-      console.warn('Status update error, reverting:', error.message)
-      await fetchTasks()
+      console.warn('Status update notice:', error.message)
+      const { error: err2 } = await supabase.from('boq_requests').update({ status: newStatus }).eq('id', taskId)
+      if (err2) {
+        task.status = oldStatus
+        filterTasksByPeriod()
+      }
     }
   } catch (err) {
     console.warn('DB error:', err)
-    await fetchTasks()
   }
 }
 
@@ -754,7 +802,7 @@ const deleteTask = async (taskId) => {
             <div v-if="task.file_url || getFileLink(task)" class="pt-1">
                <a :href="getFileLink(task) || task.file_url" target="_blank" class="inline-flex items-center gap-1.5 text-[11px] text-primary hover:underline font-medium bg-primary/5 px-2 py-1 rounded-md border border-primary/10">
                  <Paperclip class="w-3 h-3" />
-                 <span class="truncate max-w-[160px]">{{ getFileLink(task) ? 'Lihat Sheet' : (task.file_name || 'Lihat Lampiran') }}</span>
+                 <span class="truncate max-w-[160px]">{{ getFileLink(task) ? 'Buka Link Dokumen' : (task.file_name || 'Lihat Lampiran') }}</span>
                </a>
             </div>
 
@@ -882,7 +930,7 @@ const deleteTask = async (taskId) => {
             <div v-if="task.file_url || getFileLink(task)" class="pt-1">
                <a :href="getFileLink(task) || task.file_url" target="_blank" class="inline-flex items-center gap-1.5 text-[11px] text-primary hover:underline font-medium bg-primary/5 px-2 py-1 rounded-md border border-primary/10">
                  <Paperclip class="w-3 h-3" />
-                 <span class="truncate max-w-[160px]">{{ getFileLink(task) ? 'Lihat Sheet' : (task.file_name || 'Lihat Lampiran') }}</span>
+                 <span class="truncate max-w-[160px]">{{ getFileLink(task) ? 'Buka Link Dokumen' : (task.file_name || 'Lihat Lampiran') }}</span>
                </a>
             </div>
 
@@ -1172,7 +1220,7 @@ const deleteTask = async (taskId) => {
                       : 'bg-muted text-muted-foreground border-border hover:bg-muted/80'
                   ]"
                 >
-                  Link Google Sheet
+                  Link Dokumen / URL
                 </button>
               </div>
               <template v-if="fileOption === 'upload'">
@@ -1182,7 +1230,7 @@ const deleteTask = async (taskId) => {
                 </p>
               </template>
               <template v-else>
-                <input v-model="formData.file_link" type="text" placeholder="https://drive.google.com/..." class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+                <input v-model="formData.file_link" type="text" placeholder="Tempel link URL (Google Drive, Docs, Sheet, dll)..." class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
                 <p v-if="editingTask?.file_link && !formData.file_link" class="text-xs text-muted-foreground mt-2 flex items-center gap-1">
                   Link tersimpan: <a :href="editingTask.file_link" target="_blank" class="text-primary underline font-medium truncate max-w-[200px]">{{ editingTask.file_link }}</a>
                 </p>

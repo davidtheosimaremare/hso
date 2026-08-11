@@ -1,7 +1,15 @@
 [
   {
-    "hash": "17515dd57eabdf52e51e8219e12774faa9d8a228",
-    "shortHash": "17515dd",
+    "hash": "8f9d60e6be7c10dbaf21fc224c20a0fe9e7c41b1",
+    "shortHash": "8f9d60e",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 11 17:41:10 2026 +0700",
+    "message": "feat(permintaan): sync status, 4-stage fallback, accurate customer combobox & duration indicator"
+  },
+  {
+    "hash": "d3e880cfe07210870edf1a59330a7e016144a5de",
+    "shortHash": "d3e880c",
     "author": "davidtheosimaremare",
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 11 17:15:17 2026 +0700",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Jul 10 23:33:53 2026 +0700",
     "message": "feat: implement dual responsive card layout for product items and optimize mobile views"
-  },
-  {
-    "hash": "a266c9822b65ef557edce75eefedcf98dde939de",
-    "shortHash": "a266c98",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Jul 10 23:04:52 2026 +0700",
-    "message": "feat: group HPO export buttons into dropdown, add fallback HPO display, improve date parsing and count indicator"
   }
 ]
