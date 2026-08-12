@@ -26,7 +26,7 @@ import {
   Loader2, Calendar, MapPin, Truck, Building2, ArrowLeft,
   Edit, CheckCircle2, Clock, Anchor, Factory, FileText, 
   PackageCheck, Share2, Info, ExternalLink, Package, Hourglass, 
-  Layers, AlertCircle, Download, AlertTriangle,
+  Layers, AlertCircle, Download, AlertTriangle, ShoppingCart,
   ChevronDown, ChevronUp, Plane, Box, Copy, Search, UploadCloud, FileSpreadsheet, Mail, Bell, RefreshCw
 } from 'lucide-vue-next'
 

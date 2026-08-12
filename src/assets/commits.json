@@ -1,5 +1,13 @@
 [
   {
+    "hash": "5f86ba70ed9963e13af1360b8aa24f8fc2ecd0e6",
+    "shortHash": "5f86ba7",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Aug 12 08:18:22 2026 +0700",
+    "message": "feat(sales-order): set item status to SIAP DIKIRIM when arrived at Hokiindo and display surplus/shortage note at bottom"
+  },
+  {
     "hash": "b0ed510fcf947084330c70e9100012f3cb20a0ae",
     "shortHash": "b0ed510",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Sat Jul 11 19:27:58 2026 +0700",
     "message": "feat: implement centralized logistics database sync and bulk active HSOs updates"
-  },
-  {
-    "hash": "d58f69d4746c0ddaae05ff64deb8a62b6659a6fa",
-    "shortHash": "d58f69d",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Jul 10 23:33:53 2026 +0700",
-    "message": "feat: implement dual responsive card layout for product items and optimize mobile views"
   }
 ]
