@@ -1,5 +1,13 @@
 [
   {
+    "hash": "7efea502decbcd6ff5ab7e602926a4b9c4599a27",
+    "shortHash": "7efea50",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Aug 12 10:12:54 2026 +0700",
+    "message": "feat(sales-order): add Dokumen & Lampiran Accurate section and PDF download button to HSO detail"
+  },
+  {
     "hash": "65497137bbf7b8a743cd5dcd76956b862ecccef2",
     "shortHash": "6549713",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Sun Jul 12 10:25:37 2026 +0700",
     "message": "feat: Clear pre-filled HSO notes when adding to cart and fix HSO redirect links in CartView"
-  },
-  {
-    "hash": "eda124c3e8880642ac2ccf5da70a6c66fdcbcff3",
-    "shortHash": "eda124c",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Sun Jul 12 10:21:06 2026 +0700",
-    "message": "feat: Sort purchase cart items by earliest added (created_at ascending)"
   }
 ]

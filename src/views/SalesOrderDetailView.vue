@@ -2777,35 +2777,51 @@ const sendReminderEmail = async () => {
   }
 }
 
-const isDownloadingPdf = ref(false)
+const downloadingAttId = ref(null)
 
-const downloadAccuratePdf = async () => {
-  if (!soDetail.value?.id) return
-  isDownloadingPdf.value = true
+const formatFileSize = (bytes) => {
+  if (!bytes) return ''
+  if (typeof bytes === 'string' && (bytes.includes('KB') || bytes.includes('MB') || bytes.includes('B'))) return bytes
+  const num = Number(bytes)
+  if (isNaN(num)) return bytes
+  if (num >= 1024 * 1024) return (num / (1024 * 1024)).toFixed(1) + ' MB'
+  return (num / 1024).toFixed(0) + ' KB'
+}
+
+const downloadAttachment = async (att) => {
+  if (!att) return
+  const attKey = att.id || att.attachmentId || att.name || att.fileName
+  downloadingAttId.value = attKey
   try {
+    const fileName = att.fileName || att.name || att.title || 'dokumen_transaksi'
     const { data, error } = await supabase.functions.invoke('accurate-print-doc', {
       body: {
-        id: soDetail.value.id,
-        type: 'sales-order'
+        attachmentId: att.id || att.attachmentId,
+        url: att.url || att.downloadUrl || att.path,
+        filename: fileName
       }
     })
     if (error) throw error
-    if (!data) throw new Error('File PDF tidak ditemukan')
+    if (!data) throw new Error('File tidak ditemukan')
 
-    const blob = new Blob([data], { type: 'application/pdf' })
+    const blob = new Blob([data], { type: att.fileType || 'application/octet-stream' })
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `SO-${soDetail.value.number}.pdf`
+    a.download = fileName
     document.body.appendChild(a)
     a.click()
     window.URL.revokeObjectURL(url)
     a.remove()
   } catch (err) {
-    console.error('Print PDF error:', err)
-    alert('Gagal mengunduh PDF dari Accurate: ' + err.message)
+    console.error('Download attachment error:', err)
+    if (att.url || att.downloadUrl) {
+      window.open(att.url || att.downloadUrl, '_blank')
+    } else {
+      alert('Gagal mengunduh dokumen transaksi: ' + (err.message || 'Error'))
+    }
   } finally {
-    isDownloadingPdf.value = false
+    downloadingAttId.value = null
   }
 }
 </script>
@@ -2897,12 +2913,6 @@ const downloadAccuratePdf = async () => {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button size="sm" variant="outline" class="h-8 px-3 text-xs font-semibold border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" @click="downloadAccuratePdf" :disabled="isDownloadingPdf || isLoading">
-              <Loader2 v-if="isDownloadingPdf" class="w-3.5 h-3.5 mr-1.5 animate-spin text-red-600"/>
-              <FileText v-else class="w-3.5 h-3.5 mr-1.5 text-red-600 dark:text-red-400"/>
-              <span>{{ isDownloadingPdf ? 'Mengunduh...' : 'PDF Accurate' }}</span>
-            </Button>
-
             <Button v-if="canWrite" size="sm" variant="outline" class="h-8 px-3 text-xs font-semibold border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" @click="openEmailModal" :disabled="isLoading">
               <Mail class="w-3.5 h-3.5 mr-1.5 text-blue-600 dark:text-blue-400"/>
               <span>Email Reminder</span>
@@ -2959,44 +2969,61 @@ const downloadAccuratePdf = async () => {
           </div>
         </div>
 
-        <!-- DOKUMEN & LAMPIRAN ACCURATE CARD -->
+        <!-- DOKUMEN TRANSAKSI ACCURATE CARD -->
         <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-2xs p-4 font-sans space-y-3">
-          <div class="flex items-center justify-between">
+          <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
             <div class="flex items-center gap-2">
-              <FileText class="w-4 h-4 text-red-600 dark:text-red-400" />
-              <h3 class="text-sm font-bold text-slate-900 dark:text-white">Dokumen &amp; Lampiran Accurate</h3>
+              <Paperclip class="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <h3 class="text-sm font-bold text-slate-900 dark:text-white">Dokumen Transaksi</h3>
+              <span v-if="soDetail.attachments && soDetail.attachments.length > 0" class="text-[11px] font-semibold bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-800">
+                {{ soDetail.attachments.length }} Dokumen
+              </span>
             </div>
-            <Badge variant="outline" class="text-[10px] font-semibold text-slate-500 border-slate-200 dark:border-slate-700">Accurate Sync</Badge>
+            <span class="text-[11px] font-medium text-slate-400 dark:text-slate-500">Accurate Online</span>
           </div>
-          
-          <div class="flex flex-wrap items-center gap-3 pt-1">
-            <!-- Download PDF SO Button -->
-            <Button 
-              size="sm" 
-              variant="outline" 
-              class="h-9 px-3.5 text-xs font-semibold border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 transition-all cursor-pointer gap-2"
-              @click="downloadAccuratePdf" 
-              :disabled="isDownloadingPdf"
-            >
-              <Loader2 v-if="isDownloadingPdf" class="w-4 h-4 animate-spin text-red-600" />
-              <FileText v-else class="w-4 h-4 text-red-600 dark:text-red-400" />
-              <span>{{ isDownloadingPdf ? 'Mengunduh PDF SO...' : 'Cetak / Download PDF SO (Accurate)' }}</span>
-            </Button>
 
-            <!-- Attachments from Accurate if present -->
-            <template v-if="soDetail.attachments && soDetail.attachments.length > 0">
-              <div v-for="(att, idx) in soDetail.attachments" :key="idx" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs">
-                <Paperclip class="w-3.5 h-3.5 text-slate-500" />
-                <span class="font-medium text-slate-700 dark:text-slate-300 truncate max-w-[200px]">{{ att.fileName || att.name || `Lampiran ${idx + 1}` }}</span>
-                <a v-if="att.url || att.downloadUrl" :href="att.url || att.downloadUrl" target="_blank" class="text-blue-600 dark:text-blue-400 font-bold hover:underline ml-1">
-                  Buka
-                </a>
+          <!-- Attachments List -->
+          <div v-if="soDetail.attachments && soDetail.attachments.length > 0" class="divide-y divide-slate-100 dark:divide-slate-800">
+            <div 
+              v-for="(att, idx) in soDetail.attachments" 
+              :key="att.id || idx" 
+              class="py-2.5 flex items-center justify-between gap-3 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 px-2 rounded-lg transition-colors"
+            >
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/50 flex items-center justify-center shrink-0">
+                  <FileText v-if="(att.fileName || att.name || '').toLowerCase().endsWith('.pdf')" class="w-4 h-4 text-red-500" />
+                  <Paperclip v-else class="w-4 h-4 text-blue-500" />
+                </div>
+                <div class="min-w-0">
+                  <p class="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                    {{ att.fileName || att.name || att.title || `Dokumen ${idx + 1}` }}
+                  </p>
+                  <p class="text-[11px] text-slate-400 dark:text-slate-500 flex items-center gap-2 mt-0.5">
+                    <span v-if="att.uploadDate || att.date || att.createdDate">{{ att.uploadDate || att.date || att.createdDate }}</span>
+                    <span v-if="(att.uploadDate || att.date) && (att.fileSize || att.size)">&bull;</span>
+                    <span v-if="att.fileSize || att.size">{{ formatFileSize(att.fileSize || att.size) }} {{ att.fileType || '' }}</span>
+                  </p>
+                </div>
               </div>
-            </template>
-            <div v-else class="text-xs text-slate-400 dark:text-slate-500 italic flex items-center gap-1.5 py-1">
-              <Info class="w-3.5 h-3.5 shrink-0" />
-              <span>Dokumen PDF SO dari Accurate siap diunduh. Lampiran berkas yang diunggah saat input SO di Accurate Online akan tampil di sini.</span>
+
+              <Button 
+                size="sm" 
+                variant="ghost" 
+                class="h-8 w-8 p-0 text-slate-600 dark:text-slate-300 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg cursor-pointer shrink-0" 
+                @click="downloadAttachment(att)" 
+                :disabled="downloadingAttId === (att.id || att.attachmentId || att.name)"
+                title="Download Dokumen"
+              >
+                <Loader2 v-if="downloadingAttId === (att.id || att.attachmentId || att.name)" class="w-4 h-4 animate-spin text-blue-600" />
+                <Download v-else class="w-4 h-4" />
+              </Button>
             </div>
+          </div>
+
+          <!-- Empty State -->
+          <div v-else class="text-xs text-slate-400 dark:text-slate-500 italic flex items-center gap-2 py-3 px-2 bg-slate-50/50 dark:bg-slate-900/50 rounded-lg border border-dashed border-slate-200 dark:border-slate-800">
+            <Info class="w-4 h-4 text-slate-400 shrink-0" />
+            <span>Belum ada dokumen transaksi yang diunggah di Accurate Online untuk pesanan ini.</span>
           </div>
         </div>
 

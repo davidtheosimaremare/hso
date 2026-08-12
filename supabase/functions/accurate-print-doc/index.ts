@@ -22,16 +22,20 @@ serve(async (req) => {
     const accessToken = Deno.env.get('ACCURATE_ACCESS_TOKEN')
     const signatureSecret = Deno.env.get('ACCURATE_SIGNATURE_SECRET')
     
-    // Ambil parameter dari Body: ID dan Tipe Dokumen
-    const { id, type } = await req.json() // type: 'sales-order', 'delivery-order', 'sales-invoice'
+    const body = await req.json()
+    const { id, type, attachmentId, url, filename } = body
 
-    if (!id || !type) throw new Error('ID dan Tipe Dokumen wajib diisi!')
+    let endpointUrl = ''
+    if (url) {
+      endpointUrl = url.startsWith('http') ? url : `https://zeus.accurate.id/accurate/api${url.startsWith('/') ? '' : '/'}${url}`
+    } else if (attachmentId) {
+      endpointUrl = `https://zeus.accurate.id/accurate/api/attachment/download.do?id=${attachmentId}`
+    } else if (id && type) {
+      endpointUrl = `https://zeus.accurate.id/accurate/api/${type}/print.do?id=${id}`
+    } else {
+      throw new Error('Parameter id/type atau attachmentId/url wajib diisi!')
+    }
 
-    // Tentukan Endpoint berdasarkan tipe
-    // Contoh: https://zeus.accurate.id/accurate/api/delivery-order/print.do?id=18300
-    const endpointUrl = `https://zeus.accurate.id/accurate/api/${type}/print.do?id=${id}`
-
-    // Generate Signature
     const timestamp = new Date().toISOString()
     let signatureHeader = {}
     if (signatureSecret) {
@@ -39,9 +43,8 @@ serve(async (req) => {
       signatureHeader = { 'X-Api-Timestamp': timestamp, 'X-Api-Signature': signature }
     }
 
-    console.log(`Downloading PDF for ${type} ID ${id}...`)
+    console.log(`Fetching document from Accurate: ${endpointUrl}...`)
 
-    // Fetch PDF (Bukan JSON)
     const response = await fetch(endpointUrl, {
       method: 'GET',
       headers: {
@@ -50,22 +53,22 @@ serve(async (req) => {
       }
     })
 
-    if (!response.ok) throw new Error(`Gagal download PDF: ${response.status}`)
+    if (!response.ok) throw new Error(`Gagal download dokumen dari Accurate: ${response.status}`)
 
-    // Ambil Data Binary (Blob)
-    const pdfBuffer = await response.arrayBuffer()
+    const contentType = response.headers.get('content-type') || 'application/octet-stream'
+    const fileBuffer = await response.arrayBuffer()
+    const outFilename = filename || `dokumen-${id || attachmentId || 'accurate'}`
 
-    // Kembalikan sebagai File PDF ke browser
-    return new Response(pdfBuffer, {
+    return new Response(fileBuffer, {
       headers: { 
         ...corsHeaders,
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `inline; filename="${type}-${id}.pdf"`
+        'Content-Type': contentType,
+        'Content-Disposition': `inline; filename="${outFilename}"`
       },
     })
 
   } catch (error) {
-    console.error("Print Error:", error.message)
+    console.error("Download Error:", error.message)
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
