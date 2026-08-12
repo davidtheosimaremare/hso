@@ -1,5 +1,13 @@
 [
   {
+    "hash": "83cfda74f27fd9cab79412a1df9a50b712fed4e0",
+    "shortHash": "83cfda7",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Aug 12 09:55:32 2026 +0700",
+    "message": "fix: handle active_session_id error in MainLayout safely"
+  },
+  {
     "hash": "be532b80a3afcf81f8a845b47a7295359e94c385",
     "shortHash": "be532b8",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Sun Jul 12 10:17:49 2026 +0700",
     "message": "feat: Update HSO item status to 'DI KERANJANG' and show checked button when in cart"
-  },
-  {
-    "hash": "be5d3e32505d48b9e288a22fe639b125d92c94ec",
-    "shortHash": "be5d3e3",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Sun Jul 12 10:04:34 2026 +0700",
-    "message": "feat: Add Purchase Cart feature and convert database migrations to standard 14-digit format"
   }
 ]

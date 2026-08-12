@@ -28,10 +28,10 @@ const fetchAll = async () => {
   try {
     const [boq, mkt, mktIdeas, hpb, task] = await Promise.all([
       supabase.from('boq_requests').select('id, title, status, created_at').order('created_at', { ascending: false }).limit(50),
-      supabase.from('marketing_events').select('id, name as title, status, created_at').order('created_at', { ascending: false }).limit(50),
+      supabase.from('marketing_events').select('id, title:name, status, created_at').order('created_at', { ascending: false }).limit(50),
       supabase.from('marketing_ideas').select('id, title, status, created_at').order('created_at', { ascending: false }).limit(50),
-      supabase.from('purchase_cart').select('id, title, status, created_at').order('created_at', { ascending: false }).limit(50),
-      supabase.from('hsq_tasks').select('id, task_title as title, status, created_at').order('created_at', { ascending: false }).limit(50)
+      supabase.from('purchase_cart').select('id, title:item_name, created_at').order('created_at', { ascending: false }).limit(50),
+      supabase.from('hsq_tasks').select('id, title:task_title, status, created_at').order('created_at', { ascending: false }).limit(50)
     ])
 
     const normalize = (items, path) => (items || []).map(i => ({

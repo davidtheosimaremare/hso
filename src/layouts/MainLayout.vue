@@ -457,7 +457,7 @@ const fetchNotifications = async () => {
     // Fetch marketing events
     const { data: marketingData, error: marketingError } = await supabase
       .from('marketing_events')
-      .select('id, name as title, status, created_at')
+      .select('id, title:name, status, created_at')
       .order('created_at', { ascending: false })
       .limit(5)
 
@@ -471,14 +471,14 @@ const fetchNotifications = async () => {
     // Fetch HPB proposals (from purchase_cart as placeholder)
     const { data: hpbData, error: hpbError } = await supabase
       .from('purchase_cart')
-      .select('id, title, status, created_at')
+      .select('id, title:item_name, created_at')
       .order('created_at', { ascending: false })
       .limit(5)
 
     // Fetch sales tasks (hsq_tasks) – map to related HSQ number for route
     const { data: taskData, error: taskError } = await supabase
       .from('hsq_tasks')
-      .select('id, task_title as title, status, created_at, hsq_number')
+      .select('id, title:task_title, status, created_at, hsq_number')
       .order('created_at', { ascending: false })
       .limit(5)
 
