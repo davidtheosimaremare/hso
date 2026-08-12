@@ -26,7 +26,7 @@ import {
   Loader2, Calendar, MapPin, Truck, Building2, ArrowLeft,
   Edit, CheckCircle2, Clock, Anchor, Factory, FileText, 
   PackageCheck, Share2, Info, ExternalLink, Package, Hourglass, 
-  Layers, AlertCircle, Download, AlertTriangle, ShoppingCart,
+  Layers, AlertCircle, Download, AlertTriangle, ShoppingCart, Paperclip,
   ChevronDown, ChevronUp, Plane, Box, Copy, Search, UploadCloud, FileSpreadsheet, Mail, Bell, RefreshCw
 } from 'lucide-vue-next'
 
@@ -1617,6 +1617,8 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
       status_global: d.statusName,
       to_address: d.toAddress,
       notes: d.description,
+      attachments: d.attachments || d.documents || d.files || d.fileList || [],
+      raw_accurate_data: d,
       items: sortedItems.map(item => {
         const code = item.item?.no || '-'
         const seq = item.seq || 0
@@ -2774,6 +2776,38 @@ const sendReminderEmail = async () => {
     isSendingEmail.value = false
   }
 }
+
+const isDownloadingPdf = ref(false)
+
+const downloadAccuratePdf = async () => {
+  if (!soDetail.value?.id) return
+  isDownloadingPdf.value = true
+  try {
+    const { data, error } = await supabase.functions.invoke('accurate-print-doc', {
+      body: {
+        id: soDetail.value.id,
+        type: 'sales-order'
+      }
+    })
+    if (error) throw error
+    if (!data) throw new Error('File PDF tidak ditemukan')
+
+    const blob = new Blob([data], { type: 'application/pdf' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `SO-${soDetail.value.number}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    window.URL.revokeObjectURL(url)
+    a.remove()
+  } catch (err) {
+    console.error('Print PDF error:', err)
+    alert('Gagal mengunduh PDF dari Accurate: ' + err.message)
+  } finally {
+    isDownloadingPdf.value = false
+  }
+}
 </script>
 
 <template>
@@ -2863,6 +2897,12 @@ const sendReminderEmail = async () => {
               </DropdownMenuContent>
             </DropdownMenu>
 
+            <Button size="sm" variant="outline" class="h-8 px-3 text-xs font-semibold border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" @click="downloadAccuratePdf" :disabled="isDownloadingPdf || isLoading">
+              <Loader2 v-if="isDownloadingPdf" class="w-3.5 h-3.5 mr-1.5 animate-spin text-red-600"/>
+              <FileText v-else class="w-3.5 h-3.5 mr-1.5 text-red-600 dark:text-red-400"/>
+              <span>{{ isDownloadingPdf ? 'Mengunduh...' : 'PDF Accurate' }}</span>
+            </Button>
+
             <Button v-if="canWrite" size="sm" variant="outline" class="h-8 px-3 text-xs font-semibold border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" @click="openEmailModal" :disabled="isLoading">
               <Mail class="w-3.5 h-3.5 mr-1.5 text-blue-600 dark:text-blue-400"/>
               <span>Email Reminder</span>
@@ -2919,7 +2959,47 @@ const sendReminderEmail = async () => {
           </div>
         </div>
 
-        <!-- TABLE CARD CONTAINER (Clean Shadcn UI Table) -->
+        <!-- DOKUMEN & LAMPIRAN ACCURATE CARD -->
+        <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-2xs p-4 font-sans space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <FileText class="w-4 h-4 text-red-600 dark:text-red-400" />
+              <h3 class="text-sm font-bold text-slate-900 dark:text-white">Dokumen &amp; Lampiran Accurate</h3>
+            </div>
+            <Badge variant="outline" class="text-[10px] font-semibold text-slate-500 border-slate-200 dark:border-slate-700">Accurate Sync</Badge>
+          </div>
+          
+          <div class="flex flex-wrap items-center gap-3 pt-1">
+            <!-- Download PDF SO Button -->
+            <Button 
+              size="sm" 
+              variant="outline" 
+              class="h-9 px-3.5 text-xs font-semibold border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 transition-all cursor-pointer gap-2"
+              @click="downloadAccuratePdf" 
+              :disabled="isDownloadingPdf"
+            >
+              <Loader2 v-if="isDownloadingPdf" class="w-4 h-4 animate-spin text-red-600" />
+              <FileText v-else class="w-4 h-4 text-red-600 dark:text-red-400" />
+              <span>{{ isDownloadingPdf ? 'Mengunduh PDF SO...' : 'Cetak / Download PDF SO (Accurate)' }}</span>
+            </Button>
+
+            <!-- Attachments from Accurate if present -->
+            <template v-if="soDetail.attachments && soDetail.attachments.length > 0">
+              <div v-for="(att, idx) in soDetail.attachments" :key="idx" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs">
+                <Paperclip class="w-3.5 h-3.5 text-slate-500" />
+                <span class="font-medium text-slate-700 dark:text-slate-300 truncate max-w-[200px]">{{ att.fileName || att.name || `Lampiran ${idx + 1}` }}</span>
+                <a v-if="att.url || att.downloadUrl" :href="att.url || att.downloadUrl" target="_blank" class="text-blue-600 dark:text-blue-400 font-bold hover:underline ml-1">
+                  Buka
+                </a>
+              </div>
+            </template>
+            <div v-else class="text-xs text-slate-400 dark:text-slate-500 italic flex items-center gap-1.5 py-1">
+              <Info class="w-3.5 h-3.5 shrink-0" />
+              <span>Dokumen PDF SO dari Accurate siap diunduh. Lampiran berkas yang diunggah saat input SO di Accurate Online akan tampil di sini.</span>
+            </div>
+          </div>
+        </div>
+
         <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-2xs overflow-hidden flex flex-col font-sans">
           <div class="border-b border-slate-200/80 dark:border-slate-800 px-4 py-3 bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">

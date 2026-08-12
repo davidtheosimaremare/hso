@@ -1,5 +1,13 @@
 [
   {
+    "hash": "65497137bbf7b8a743cd5dcd76956b862ecccef2",
+    "shortHash": "6549713",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Aug 12 10:00:08 2026 +0700",
+    "message": "fix: correct Supabase PostgREST column alias syntax for notification queries"
+  },
+  {
     "hash": "83cfda74f27fd9cab79412a1df9a50b712fed4e0",
     "shortHash": "83cfda7",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Sun Jul 12 10:21:06 2026 +0700",
     "message": "feat: Sort purchase cart items by earliest added (created_at ascending)"
-  },
-  {
-    "hash": "ab8d7605e8733ff76838c86b893a6d1738783213",
-    "shortHash": "ab8d760",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Sun Jul 12 10:17:49 2026 +0700",
-    "message": "feat: Update HSO item status to 'DI KERANJANG' and show checked button when in cart"
   }
 ]
