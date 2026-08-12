@@ -1,5 +1,13 @@
 [
   {
+    "hash": "3395a02a9c58360b07e011765772ff45e55fda71",
+    "shortHash": "3395a02",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Aug 12 10:35:08 2026 +0700",
+    "message": "feat(sales-order): display Accurate transaction documents attachments card matching Accurate modal"
+  },
+  {
     "hash": "7efea502decbcd6ff5ab7e602926a4b9c4599a27",
     "shortHash": "7efea50",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Sun Jul 12 17:23:37 2026 +0700",
     "message": "feat: Add collapsible HSO grouping and batch crosscheck features in CartView"
-  },
-  {
-    "hash": "ca56f10f984fb9abb08d10f7185f8f8ce46af72a",
-    "shortHash": "ca56f10",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Sun Jul 12 10:25:37 2026 +0700",
-    "message": "feat: Clear pre-filled HSO notes when adding to cart and fix HSO redirect links in CartView"
   }
 ]

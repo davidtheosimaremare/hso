@@ -54,6 +54,9 @@ serve(async (req) => {
       }
       candidateParams.push(`id=${encodeURIComponent(reqId)}`)
     } else {
+      candidateParams.push(`id=${encodeURIComponent(reqId)}&includeAttachment=true`)
+      candidateParams.push(`id=${encodeURIComponent(reqId)}&includeAttachments=true`)
+      candidateParams.push(`id=${encodeURIComponent(reqId)}&withAttachment=true`)
       candidateParams.push(`id=${encodeURIComponent(reqId)}`)
       candidateParams.push(`number=${encodeURIComponent(reqId)}`)
     }
@@ -124,6 +127,47 @@ serve(async (req) => {
         // Field baru: 'realStock' berisi availableToSell
         realStock: d.item?.id ? (stockMap[d.item.id] || 0) : 0
       }))
+    }
+
+    // 3. FETCH ATTACHMENTS (JIKA ADA LAMPIRAN DOKUMEN TRANSAKSI)
+    if (docData.attachmentExist || (docData.attachmentCount && docData.attachmentCount > 0) || (docData.processHistory && docData.processHistory.length > 0)) {
+      const typeMap: Record<string, string> = {
+        'SO': 'SALES_ORDER',
+        'SI': 'SALES_INVOICE',
+        'DO': 'DELIVERY_ORDER',
+        'SQ': 'SALES_QUOTATION',
+        'PO': 'PURCHASE_ORDER'
+      }
+
+      const targetsToFetch = [
+        { id: docData.id, transactionType: 'SALES_ORDER' }
+      ]
+
+      if (Array.isArray(docData.processHistory)) {
+        for (const h of docData.processHistory) {
+          const tType = typeMap[h.historyType] || h.historyType
+          targetsToFetch.push({ id: h.id, transactionType: tType })
+        }
+      }
+
+      let allAttachments: any[] = []
+
+      for (const target of targetsToFetch) {
+        if (!target.id) continue
+        try {
+          const url = `${BASE_API}/attachment/list.do?id=${target.id}&transactionType=${target.transactionType}`
+          const attRes = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${accessToken}`, ...signatureHeader }
+          })
+          if (attRes.ok) {
+            const attJson = await attRes.json()
+            if (attJson.s && Array.isArray(attJson.d) && attJson.d.length > 0) {
+              allAttachments.push(...attJson.d)
+            }
+          }
+        } catch (_) {}
+      }
+      docData.attachments = allAttachments
     }
 
     return new Response(JSON.stringify({ s: true, d: docData }), {
