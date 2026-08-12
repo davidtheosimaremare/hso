@@ -282,10 +282,10 @@ const filteredItems = computed(() => {
       return item.logistics_status === 'Hold by Customer'
     }
     if (itemStatusFilter.value === 'NEED_ORDER') {
-      return statusText.includes('PERLU DIPESAN') || statusText.includes('KURANG DIPESAN') || statusText.includes('HPB:') || statusText.includes('DI KERANJANG')
+      return needsOrdering(item) || statusText.includes('HPB:') || statusText.includes('DI KERANJANG')
     }
     if (itemStatusFilter.value === 'ORDERED') {
-      const isOrdered = statusText === 'SUDAH DIPESAN' || statusText === 'KELEBIHAN DIPESAN'
+      const isOrdered = statusText === 'SUDAH DIPESAN' || statusText === 'KELEBIHAN DIPESAN' || (isItemArrivedAtHokiindo(item) && getHpoEntries(item).length > 0)
       const hpos = getHpoEntries(item)
       const hasHpoInDb = item.logistics_hpo && item.logistics_hpo.trim().length > 0
       
@@ -339,8 +339,7 @@ const isAllSelected = computed(() => {
 const itemsToPurchase = computed(() => {
     if (!soDetail.value || !soDetail.value.items) return []
     return soDetail.value.items.map(item => {
-        const statusText = getRowStatus(item).text || '';
-        if (statusText.startsWith('PERLU DIPESAN') || statusText.startsWith('KURANG DIPESAN')) {
+        if (needsOrdering(item)) {
             const hpoEntries = getHpoEntries(item);
             let finalSuggestion = item.qty_to_order;
             if (hpoEntries.length > 0) {
@@ -1955,6 +1954,50 @@ const getHpoDisplayDate = (item, hpoShipment) => {
   return getVisualStatusDate(hpoShipment) || '-'
 }
 
+const isItemArrivedAtHokiindo = (item) => {
+  if (isDisplayedFullyShipped(item)) return false
+  if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) === 0) return false
+
+  const hpos = getHpoEntries(item)
+  if (hpos.length > 0) {
+    return hpos.some(hpo => {
+      const shipment = getHpoShipment(item, hpo.poNumber)
+      if (!shipment || Object.keys(shipment).length === 0) return false
+      return getVisualStatus(shipment) === 'Already in Hokiindo Raya'
+    })
+  }
+
+  if (item.hokiindo_date) return true
+  if (item.logistics_status === 'Already in Hokiindo Raya') return true
+
+  return false
+}
+
+const getItemPoDiscrepancy = (item) => {
+  if (item.qty_to_order <= 0) return null
+  const entries = getHpoEntries(item)
+  if (entries.length === 0) return null
+  const totalPo = entries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
+  const diff = totalPo - item.qty_to_order
+  if (diff > 0) {
+    return {
+      type: 'excess',
+      text: `Kelebihan dipesan (+${diff} ${item.unit || 'Pcs'})`,
+      detail: `Total PO: ${totalPo} ${item.unit || 'Pcs'} (Kebutuhan: ${item.qty_to_order} ${item.unit || 'Pcs'})`,
+      qty: diff
+    }
+  } else if (diff < 0) {
+    const shortage = Math.abs(diff)
+    return {
+      type: 'shortage',
+      text: `Kekurangan dipesan (-${shortage} ${item.unit || 'Pcs'})`,
+      detail: `Total PO: ${totalPo} ${item.unit || 'Pcs'} (Kebutuhan: ${item.qty_to_order} ${item.unit || 'Pcs'})`,
+      qty: shortage
+    }
+  }
+  return null
+}
+
 const getRowStatus = (item) => {
   // PRIORITAS TERTINGGI: Jika item di-hold oleh customer
   if (item.logistics_status === 'Hold by Customer') {
@@ -1967,6 +2010,11 @@ const getRowStatus = (item) => {
   // Jika sudah dikirim semua (tidak ada sisa tapi belum dikonfirmasi fully_shipped)
   if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) === 0) {
     return { text: 'PRODUK SUDAH DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
+  }
+
+  // Jika item sudah tiba di Gudang Hokiindo -> Status utama: SIAP DIKIRIM
+  if (isItemArrivedAtHokiindo(item)) {
+    return { text: 'SIAP DIKIRIM', class: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800', icon: Package }
   }
   
   // Item STOCK (qty_to_order === 0): tidak perlu dipesan, cek status pengiriman saja
@@ -2012,7 +2060,7 @@ const getRowStatus = (item) => {
       if (isInCart(item.code)) {
         return { text: `DI KERANJANG (PERLU ${item.qty_to_order} ${item.unit})`, class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: ShoppingCart }
       }
-      return { text: `PERLU DIPESAN (${item.qty_to_order} ${item.unit})`, class: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800', icon: AlertCircle }
+      return { text: `PERLU DIPESAN (${item.qty_to_order} ${item.unit})`, class: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-emerald-800', icon: AlertCircle }
     }
   }
 
@@ -2042,6 +2090,40 @@ const getRowStatus = (item) => {
   
   // Default
   return { text: 'MENUNGGU', class: 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700', icon: Hourglass }
+}
+
+// Helper: Check if item has a specific shipment status (Exwork, ETA, Dunex, Hokiindo)
+const hasAnyShipmentStatus = (item, targetStatus) => {
+  // If product is already fully shipped to customer, it no longer belongs to in-transit or warehouse arrival tracking filters
+  if (isDisplayedFullyShipped(item)) return false
+  
+  const hpos = getHpoEntries(item)
+  if (hpos.length === 0) {
+    const hasTracking = !!(
+      item.exwork_date ||
+      item.exwork_waiting ||
+      item.eta_date ||
+      item.dunex_date ||
+      item.hokiindo_date ||
+      (item.logistics_status && item.logistics_status !== 'Pending Process')
+    )
+    if (!hasTracking) return false
+
+    const status = getVisualStatus({
+      current_status: item.logistics_status,
+      exwork_date: item.exwork_date,
+      exwork_waiting: item.exwork_waiting,
+      eta_date: item.eta_date,
+      dunex_date: item.dunex_date,
+      hokiindo_date: item.hokiindo_date
+    })
+    return status === targetStatus
+  }
+  return hpos.some(hpo => {
+    const shipment = getHpoShipment(item, hpo.poNumber)
+    if (!shipment || Object.keys(shipment).length === 0) return false
+    return getVisualStatus(shipment) === targetStatus
+  })
 }
 
 // Helper: Hitung berapa hari sejak tanggal order
@@ -2157,43 +2239,6 @@ const getHpoShortage = (item) => {
   
   const totalPo = entries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
   return item.qty_to_order - totalPo
-}
-
-// Helper: Check if item has a specific shipment status (Exwork, ETA, Dunex, Hokiindo)
-const hasAnyShipmentStatus = (item, targetStatus) => {
-  // If product is already fully shipped to customer, it no longer belongs to in-transit or warehouse arrival tracking filters
-  if (isDisplayedFullyShipped(item)) return false
-  
-  // If item is ready stock (SIAP DIKIRIM / qty_to_order === 0), it is not in-transit
-  if (item.qty_to_order === 0 || getRowStatus(item).text === 'SIAP DIKIRIM') return false
-  
-  const hpos = getHpoEntries(item)
-  if (hpos.length === 0) {
-    const hasTracking = !!(
-      item.exwork_date ||
-      item.exwork_waiting ||
-      item.eta_date ||
-      item.dunex_date ||
-      item.hokiindo_date ||
-      (item.logistics_status && item.logistics_status !== 'Pending Process')
-    )
-    if (!hasTracking) return false
-
-    const status = getVisualStatus({
-      current_status: item.logistics_status,
-      exwork_date: item.exwork_date,
-      exwork_waiting: item.exwork_waiting,
-      eta_date: item.eta_date,
-      dunex_date: item.dunex_date,
-      hokiindo_date: item.hokiindo_date
-    })
-    return status === targetStatus
-  }
-  return hpos.some(hpo => {
-    const shipment = getHpoShipment(item, hpo.poNumber)
-    if (!shipment || Object.keys(shipment).length === 0) return false
-    return getVisualStatus(shipment) === targetStatus
-  })
 }
 
 const groupedShipments = computed(() => {
@@ -3110,6 +3155,21 @@ const sendReminderEmail = async () => {
                             <Clock class="w-3.5 h-3.5 shrink-0" />
                             Pesanan sudah {{ getDaysSinceOrder() }} hari
                         </div>
+
+                        <!-- Keterangan Kelebihan / Kekurangan Dipesan -->
+                        <div v-if="getItemPoDiscrepancy(item)" class="mt-1.5 p-2 rounded-md border text-xs font-sans space-y-0.5"
+                             :class="getItemPoDiscrepancy(item).type === 'excess' 
+                               ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300' 
+                               : 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300'"
+                        >
+                            <div class="flex items-center gap-1.5 font-bold">
+                                <AlertTriangle class="w-3.5 h-3.5 shrink-0" />
+                                <span>{{ getItemPoDiscrepancy(item).text }}</span>
+                            </div>
+                            <div class="text-[11px] opacity-90 pl-5">
+                                {{ getItemPoDiscrepancy(item).detail }}
+                            </div>
+                        </div>
                     </div>
                     
                     <!-- Hold by Customer Indicator -->
@@ -3441,6 +3501,21 @@ const sendReminderEmail = async () => {
                     <span class="font-bold text-[9px] uppercase text-slate-400 block mb-0.5">Admin Logistics Note:</span>
                     {{ item.logistics_note }}
                   </div>
+
+                  <!-- Keterangan Kelebihan / Kekurangan Dipesan -->
+                  <div v-if="getItemPoDiscrepancy(item)" class="mt-2 p-2.5 rounded-xl border text-xs font-sans space-y-0.5"
+                       :class="getItemPoDiscrepancy(item).type === 'excess' 
+                         ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300' 
+                         : 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800 text-red-800 dark:text-red-300'"
+                  >
+                    <div class="flex items-center gap-1.5 font-bold">
+                      <AlertTriangle class="w-3.5 h-3.5 shrink-0" />
+                      <span>{{ getItemPoDiscrepancy(item).text }}</span>
+                    </div>
+                    <div class="text-[11px] opacity-90 pl-5">
+                      {{ getItemPoDiscrepancy(item).detail }}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -3511,9 +3586,9 @@ const sendReminderEmail = async () => {
                     
                     <!-- Status type indicator bar -->
                     <div class="flex-shrink-0 flex flex-col items-center gap-1 w-24">
-                        <div :class="getRowStatus(item).text.startsWith('KURANG') ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-red-100 text-red-700 border-red-200'"
+                        <div :class="getHpoEntries(item).length > 0 ? 'bg-orange-100 text-orange-700 border-orange-200' : 'bg-red-100 text-red-700 border-red-200'"
                             class="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border whitespace-nowrap text-center">
-                            {{ getRowStatus(item).text.startsWith('KURANG') ? 'Kurang PO' : 'Belum Dipesan' }}
+                            {{ getHpoEntries(item).length > 0 ? 'Kurang PO' : 'Belum Dipesan' }}
                         </div>
                     </div>
 
@@ -3542,7 +3617,7 @@ const sendReminderEmail = async () => {
                     <!-- Order Suggestion -->
                     <div class="flex-shrink-0 text-center">
                         <div class="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-0.5">Perlu Dipesan</div>
-                        <Badge :class="getRowStatus(item).text.startsWith('KURANG') ? 'bg-orange-500 hover:bg-orange-600' : 'bg-red-600 hover:bg-red-700'" class="text-white text-sm font-bold px-3 py-0.5 min-w-[64px] justify-center">
+                        <Badge :class="getHpoEntries(item).length > 0 ? 'bg-orange-500 hover:bg-orange-600' : 'bg-red-600 hover:bg-red-700'" class="text-white text-sm font-bold px-3 py-0.5 min-w-[64px] justify-center">
                             {{ item.order_suggestion }} {{ item.unit }}
                         </Badge>
                     </div>
