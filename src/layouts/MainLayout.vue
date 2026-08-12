@@ -101,11 +101,16 @@ const checkSingleDeviceSession = async (email) => {
   if (!email || !localSessionId) return
 
   try {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('user_access')
       .select('active_session_id')
       .eq('email', email)
       .maybeSingle()
+
+    if (error) {
+      console.warn('Session verification notice:', error.message)
+      return
+    }
 
     if (data?.active_session_id && data.active_session_id !== localSessionId) {
       alert('⚠️ Sesi Login Berakhir!\nAkun Anda baru saja di-login dari perangkat atau browser lain. Sesi pada perangkat ini telah di-logout demi keamanan.')

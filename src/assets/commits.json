@@ -1,5 +1,13 @@
 [
   {
+    "hash": "be532b80a3afcf81f8a845b47a7295359e94c385",
+    "shortHash": "be532b8",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Aug 12 09:44:37 2026 +0700",
+    "message": "fix: import missing ShoppingCart icon in SalesOrderDetailView to prevent ReferenceError"
+  },
+  {
     "hash": "5f86ba70ed9963e13af1360b8aa24f8fc2ecd0e6",
     "shortHash": "5f86ba7",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Sun Jul 12 10:04:34 2026 +0700",
     "message": "feat: Add Purchase Cart feature and convert database migrations to standard 14-digit format"
-  },
-  {
-    "hash": "87e92fcb5c4e7cf1bc0a8f746f0cdb22dc16f7c0",
-    "shortHash": "87e92fc",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Sat Jul 11 19:27:58 2026 +0700",
-    "message": "feat: implement centralized logistics database sync and bulk active HSOs updates"
   }
 ]
