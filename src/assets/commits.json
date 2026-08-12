@@ -1,5 +1,13 @@
 [
   {
+    "hash": "8ebcbac9456d4133ffc371734379a65111dcfb15",
+    "shortHash": "8ebcbac",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Aug 12 10:46:59 2026 +0700",
+    "message": "feat: enhance Accurate SO detail edge function with attachment fetching logic"
+  },
+  {
     "hash": "3395a02a9c58360b07e011765772ff45e55fda71",
     "shortHash": "3395a02",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Sun Jul 12 21:31:56 2026 +0700",
     "message": "feat: Add send to HPB Accurate integration, including proposed number calculator and dialog"
-  },
-  {
-    "hash": "68f4ef23df517d7eb78f0d0d9e97bd2d5fcb6b74",
-    "shortHash": "68f4ef2",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Sun Jul 12 17:23:37 2026 +0700",
-    "message": "feat: Add collapsible HSO grouping and batch crosscheck features in CartView"
   }
 ]
