@@ -79,6 +79,170 @@ const editForm = ref({
 })
 const hasProjectRef = computed(() => editForm.value.has_project_ref)
 
+// --- Inline Description State & Handlers ---
+const isEditingInlineDescription = ref(false)
+const inlineDescriptionHtml = ref('')
+const isSavingInlineDescription = ref(false)
+
+const startEditInlineDescription = () => {
+  inlineDescriptionHtml.value = task.value?.description || ''
+  isEditingInlineDescription.value = true
+}
+
+const cancelEditInlineDescription = () => {
+  isEditingInlineDescription.value = false
+  inlineDescriptionHtml.value = ''
+}
+
+const saveInlineDescription = async () => {
+  if (!task.value) return
+  isSavingInlineDescription.value = true
+  try {
+    const newDesc = inlineDescriptionHtml.value.trim()
+    
+    // Optimistic local UI update
+    task.value.description = newDesc
+    
+    const { error } = await supabase
+      .from('boq_requests')
+      .update({ description: newDesc })
+      .eq('id', taskId)
+
+    if (error) {
+      console.warn('Inline description update notice:', error.message)
+    }
+    isEditingInlineDescription.value = false
+  } catch (err) {
+    console.error('Error saving inline description:', err)
+    alert('Gagal menyimpan deskripsi.')
+  } finally {
+    isSavingInlineDescription.value = false
+  }
+}
+
+// --- Inline Attachment State & Handlers ---
+const isAddingInlineAttachment = ref(false)
+const inlineAttachmentMode = ref('file') // 'file' | 'link'
+const inlineLinkUrl = ref('')
+const inlineFileInput = ref(null)
+const isUploadingInlineAttachment = ref(false)
+
+const startAddInlineAttachment = () => {
+  isAddingInlineAttachment.value = true
+  inlineAttachmentMode.value = 'file'
+  inlineLinkUrl.value = ''
+}
+
+const cancelInlineAttachment = () => {
+  isAddingInlineAttachment.value = false
+  inlineLinkUrl.value = ''
+}
+
+const saveInlineAttachmentsToDb = async (newAttachments) => {
+  if (!task.value) return
+  const existingMeta = parseMeta(task.value.metadata) || {}
+  const updatedMeta = { ...existingMeta, attachments: newAttachments }
+  
+  // Optimistic UI update
+  task.value.metadata = updatedMeta
+  try { localStorage.setItem(`boq_meta_${taskId}`, JSON.stringify(updatedMeta)) } catch {}
+
+  const firstAtt = newAttachments.length > 0 ? newAttachments[0] : null
+  const fileUrl = firstAtt ? firstAtt.url : null
+  const fileName = firstAtt ? firstAtt.name : null
+  const fileLink = firstAtt && firstAtt.type === 'link' ? firstAtt.url : null
+
+  await supabase.from('boq_requests').update({
+    file_url: fileUrl,
+    file_name: fileName,
+    file_link: fileLink || null,
+    metadata: updatedMeta
+  }).eq('id', taskId)
+}
+
+const removeInlineAttachment = async (index) => {
+  if (!confirm('Apakah Anda yakin ingin menghapus lampiran ini?')) return
+  const currentAtts = [...taskAttachments.value]
+  currentAtts.splice(index, 1)
+  await saveInlineAttachmentsToDb(currentAtts)
+}
+
+const saveInlineLinkAttachment = async () => {
+  if (!inlineLinkUrl.value.trim()) { alert('URL link wajib diisi!'); return }
+  let url = inlineLinkUrl.value.trim()
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = `https://${url}`
+  }
+  let title = ''
+  try { title = new URL(url).hostname } catch { title = url }
+
+  const currentAtts = [...taskAttachments.value]
+  currentAtts.push({
+    id: Date.now().toString() + Math.random().toString(36).substring(7),
+    name: title,
+    url: url,
+    type: 'link'
+  })
+
+  await saveInlineAttachmentsToDb(currentAtts)
+  inlineLinkUrl.value = ''
+  isAddingInlineAttachment.value = false
+}
+
+const handleInlineFileUpload = async (event) => {
+  const files = Array.from(event.dataTransfer?.files || event.target?.files || [])
+  if (files.length === 0) return
+
+  isUploadingInlineAttachment.value = true
+  const currentAtts = [...taskAttachments.value]
+
+  for (const file of files) {
+    try {
+      let fileUrl = ''
+      let fileName = file.name
+
+      try {
+        const driveFormData = new FormData()
+        driveFormData.append('file', file)
+        const { data: driveData, error: driveError } = await supabase.functions.invoke('upload-to-drive', {
+          body: driveFormData
+        })
+        if (!driveError && driveData?.webViewLink) {
+          fileUrl = driveData.webViewLink
+        }
+      } catch (driveErr) {
+        console.warn('Drive upload fallback:', driveErr)
+      }
+
+      if (!fileUrl) {
+        const fileExt = file.name.split('.').pop()
+        const filePath = `uploads/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`
+        const { error: uploadError } = await supabase.storage.from('boq-files').upload(filePath, file)
+        if (!uploadError) {
+          const { data: publicUrlData } = supabase.storage.from('boq-files').getPublicUrl(filePath)
+          fileUrl = publicUrlData.publicUrl
+        }
+      }
+
+      if (fileUrl) {
+        currentAtts.push({
+          id: Date.now().toString() + Math.random().toString(36).substring(7),
+          name: fileName,
+          url: fileUrl,
+          type: 'file'
+        })
+      }
+    } catch (err) {
+      console.error('Error uploading inline file attachment:', err)
+    }
+  }
+
+  await saveInlineAttachmentsToDb(currentAtts)
+  isUploadingInlineAttachment.value = false
+  isAddingInlineAttachment.value = false
+  if (inlineFileInput.value) inlineFileInput.value.value = ''
+}
+
 const toggleAssignee = (email) => {
   if (!email) return
   const idx = editForm.value.assignees.indexOf(email)
@@ -968,10 +1132,10 @@ const getWorkDuration = computed(() => {
               </div>
             </div>
 
-            <!-- Metadata Info Panel (Full Readable Text, No Truncation!) -->
-            <div class="bg-slate-50/70 dark:bg-slate-800/40 rounded-xl p-4 border border-slate-100 dark:border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 min-w-0">
-              <!-- Proyek -->
-              <div class="flex items-start gap-3 min-w-0">
+            <!-- Metadata Info Panel (Conditional Layout: Only Shows Filled Fields!) -->
+            <div class="bg-slate-50/70 dark:bg-slate-800/40 rounded-xl p-4 border border-slate-100 dark:border-slate-800/80 flex flex-wrap gap-4 min-w-0">
+              <!-- Proyek (Only shown if filled) -->
+              <div v-if="getProjectName !== '-'" class="flex items-start gap-3 min-w-[200px] flex-1">
                 <div class="p-2 rounded-lg bg-red-100/70 dark:bg-red-900/40 text-red-600 dark:text-red-400 mt-0.5 shrink-0">
                   <FolderKanban class="w-4 h-4" />
                 </div>
@@ -983,8 +1147,8 @@ const getWorkDuration = computed(() => {
                 </div>
               </div>
 
-              <!-- Customer -->
-              <div class="flex items-start gap-3 min-w-0">
+              <!-- Customer (Only shown if filled) -->
+              <div v-if="getCustomerName !== '-'" class="flex items-start gap-3 min-w-[200px] flex-1">
                 <div class="p-2 rounded-lg bg-rose-100/70 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 mt-0.5 shrink-0">
                   <Building2 class="w-4 h-4" />
                 </div>
@@ -996,8 +1160,8 @@ const getWorkDuration = computed(() => {
                 </div>
               </div>
 
-              <!-- PIC -->
-              <div class="flex items-start gap-3 min-w-0">
+              <!-- PIC (Only shown if filled) -->
+              <div v-if="getPicName !== '-'" class="flex items-start gap-3 min-w-[200px] flex-1">
                 <div class="p-2 rounded-lg bg-red-100/70 dark:bg-red-900/40 text-red-600 dark:text-red-400 mt-0.5 shrink-0">
                   <User class="w-4 h-4" />
                 </div>
@@ -1010,7 +1174,7 @@ const getWorkDuration = computed(() => {
               </div>
 
               <!-- Action By (Multi-Assignee) -->
-              <div class="flex items-start gap-3 min-w-0 sm:col-span-2 md:col-span-1">
+              <div class="flex items-start gap-3 min-w-[200px] flex-1">
                 <div class="p-2 rounded-lg bg-rose-100/70 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 mt-0.5 shrink-0">
                   <UserCheck class="w-4 h-4" />
                 </div>
@@ -1036,7 +1200,7 @@ const getWorkDuration = computed(() => {
               </div>
 
               <!-- Deadline -->
-              <div class="flex items-start gap-3 sm:col-span-2 md:col-span-1 min-w-0">
+              <div class="flex items-start gap-3 min-w-[200px] flex-1">
                 <div class="p-2 rounded-lg bg-red-100/70 dark:bg-red-900/40 text-red-600 dark:text-red-400 mt-0.5 shrink-0">
                   <Calendar class="w-4 h-4" />
                 </div>
@@ -1049,25 +1213,54 @@ const getWorkDuration = computed(() => {
               </div>
             </div>
 
-            <!-- Description -->
+            <!-- Description (In-Line Edit Mode supported!) -->
             <div class="space-y-2 min-w-0">
               <div class="flex items-center justify-between">
                 <h3 class="text-xs font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Deskripsi Tugas</h3>
-                <button @click="openEditModal" class="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 dark:text-red-400 hover:underline cursor-pointer">
+                <button
+                  v-if="!isEditingInlineDescription"
+                  @click="startEditInlineDescription"
+                  class="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 dark:text-red-400 hover:underline cursor-pointer"
+                >
                   <Pencil class="w-3 h-3" /> Edit Deskripsi
                 </button>
               </div>
-              <div
-                v-if="task.description"
-                class="rich-content-display prose prose-slate dark:prose-invert max-w-none text-sm leading-relaxed bg-slate-50/50 dark:bg-slate-800/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800/80 overflow-hidden"
-                v-html="task.description"
-              />
-              <div v-else class="flex items-center justify-between p-4 rounded-xl bg-slate-50/50 dark:bg-slate-800/20 border border-slate-100 dark:border-slate-800/80 text-sm text-muted-foreground italic">
-                <span>Tidak ada deskripsi.</span>
-                <button @click="openEditModal" class="inline-flex items-center gap-1 not-italic font-bold text-red-600 dark:text-red-400 hover:underline cursor-pointer">
-                  <Plus class="w-3.5 h-3.5" /> Tambah Deskripsi
-                </button>
+
+              <!-- Inline Editor View -->
+              <div v-if="isEditingInlineDescription" class="space-y-3 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 animate-in fade-in duration-200">
+                <RichTextEditor v-model="inlineDescriptionHtml" placeholder="Tuliskan deskripsi atau rincian tugas..." />
+                <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                  <button
+                    @click="cancelEditInlineDescription"
+                    class="px-3.5 py-1.5 rounded-lg text-xs font-bold border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    @click="saveInlineDescription"
+                    :disabled="isSavingInlineDescription"
+                    class="px-4 py-1.5 rounded-lg text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-sm flex items-center gap-1.5 cursor-pointer transition-all active:scale-95"
+                  >
+                    <Loader2 v-if="isSavingInlineDescription" class="w-3.5 h-3.5 animate-spin" />
+                    <span>{{ isSavingInlineDescription ? 'Menyimpan...' : 'Simpan Deskripsi' }}</span>
+                  </button>
+                </div>
               </div>
+
+              <!-- Read-only Description Display -->
+              <template v-else>
+                <div
+                  v-if="task.description"
+                  class="rich-content-display prose prose-slate dark:prose-invert max-w-none text-sm leading-relaxed bg-slate-50/50 dark:bg-slate-800/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800/80 overflow-hidden"
+                  v-html="task.description"
+                />
+                <div v-else class="flex items-center justify-between p-4 rounded-xl bg-slate-50/50 dark:bg-slate-800/20 border border-slate-100 dark:border-slate-800/80 text-sm text-muted-foreground italic">
+                  <span>Tidak ada deskripsi.</span>
+                  <button @click="startEditInlineDescription" class="inline-flex items-center gap-1 not-italic font-bold text-red-600 dark:text-red-400 hover:underline cursor-pointer">
+                    <Plus class="w-3.5 h-3.5" /> Tambah Deskripsi
+                  </button>
+                </div>
+              </template>
             </div>
 
             <!-- Sub-tugas & Checklist -->
@@ -1101,42 +1294,116 @@ const getWorkDuration = computed(() => {
               </div>
             </div>
 
-            <!-- Attachments -->
+            <!-- Attachments (In-Line Add Mode supported!) -->
             <div class="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
               <div class="flex items-center justify-between">
                 <h3 class="text-xs font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">
                   Lampiran Dokumen ({{ taskAttachments.length }})
                 </h3>
-                <button @click="openEditModal" class="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 dark:text-red-400 hover:underline cursor-pointer">
+                <button
+                  v-if="!isAddingInlineAttachment"
+                  @click="startAddInlineAttachment"
+                  class="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 dark:text-red-400 hover:underline cursor-pointer"
+                >
                   <Plus class="w-3 h-3" /> Tambah Lampiran
                 </button>
               </div>
 
-              <div v-if="taskAttachments.length > 0" class="space-y-2">
-                <a
-                  v-for="att in taskAttachments"
-                  :key="att.id || att.url"
-                  :href="att.url"
-                  target="_blank"
-                  class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700/80 hover:border-red-400 dark:hover:border-red-500 bg-slate-50 dark:bg-slate-800/40 hover:bg-red-50/40 dark:hover:bg-red-900/20 transition-all group"
-                >
-                  <div class="w-9 h-9 rounded-lg bg-red-600 text-white flex items-center justify-center shrink-0 shadow-sm">
-                    <Paperclip v-if="att.type === 'file'" class="w-4 h-4" />
-                    <Link v-else class="w-4 h-4" />
+              <!-- Inline Attachment Add Container -->
+              <div v-if="isAddingInlineAttachment" class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 space-y-3 animate-in fade-in duration-200">
+                <div class="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-700">
+                  <div class="flex items-center gap-2">
+                    <button
+                      type="button"
+                      @click="inlineAttachmentMode = 'file'"
+                      class="px-3 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer"
+                      :class="inlineAttachmentMode === 'file' ? 'bg-red-600 text-white border-red-600 shadow-xs' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600'"
+                    >
+                      Upload Berkas / File
+                    </button>
+                    <button
+                      type="button"
+                      @click="inlineAttachmentMode = 'link'"
+                      class="px-3 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer"
+                      :class="inlineAttachmentMode === 'link' ? 'bg-red-600 text-white border-red-600 shadow-xs' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-300 dark:border-slate-600'"
+                    >
+                      Input URL Link Dokumen
+                    </button>
                   </div>
-                  <div class="flex-1 min-w-0">
-                    <p class="text-xs font-bold text-slate-800 dark:text-slate-100 truncate group-hover:text-red-600 dark:group-hover:text-red-400">
-                      {{ att.type === 'link' ? (att.name || 'Buka Link Dokumen') : (att.name || 'Lihat Dokumen Lampiran') }}
-                    </p>
-                    <p class="text-[11px] text-slate-400">Klik untuk membuka / mengunduh {{ att.type === 'link' ? 'link' : 'file' }}</p>
+                  <button @click="cancelInlineAttachment" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                    <X class="w-4 h-4" />
+                  </button>
+                </div>
+
+                <!-- Mode File Upload -->
+                <div v-if="inlineAttachmentMode === 'file'" class="space-y-2">
+                  <label class="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-50/80 dark:hover:bg-slate-800/80 cursor-pointer transition-all text-center">
+                    <input ref="inlineFileInput" type="file" multiple @change="handleInlineFileUpload" class="hidden" />
+                    <Loader2 v-if="isUploadingInlineAttachment" class="w-6 h-6 animate-spin text-red-600 mb-2" />
+                    <Paperclip v-else class="w-6 h-6 text-slate-400 mb-2" />
+                    <span class="text-xs font-bold text-slate-700 dark:text-slate-200">
+                      {{ isUploadingInlineAttachment ? 'Mengunggah Berkas...' : 'Klik untuk Pilih Berkas / File' }}
+                    </span>
+                    <span class="text-[11px] text-slate-400 mt-0.5">PDF, Gambar, Excel, DOCX, ZIP (Sync Otomatis)</span>
+                  </label>
+                </div>
+
+                <!-- Mode Link Input -->
+                <div v-else class="space-y-3">
+                  <input
+                    v-model="inlineLinkUrl"
+                    type="url"
+                    placeholder="Tempelkan URL Link Dokumen (contoh: https://drive.google.com/...)"
+                    class="w-full px-3 py-2 text-xs border border-slate-300 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:border-red-500"
+                  />
+                  <div class="flex justify-end gap-2">
+                    <button
+                      @click="saveInlineLinkAttachment"
+                      class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl cursor-pointer shadow-sm active:scale-95 transition-all"
+                    >
+                      Simpan Link Dokumen
+                    </button>
                   </div>
-                  <Download class="w-4 h-4 text-slate-400 group-hover:text-red-500 shrink-0" />
-                </a>
+                </div>
               </div>
 
-              <div v-else class="flex items-center justify-between p-3.5 rounded-xl bg-slate-50/50 dark:bg-slate-800/20 border border-slate-100 dark:border-slate-800/80 text-xs text-slate-400">
+              <!-- Attachments List -->
+              <div v-if="taskAttachments.length > 0" class="space-y-2">
+                <div
+                  v-for="(att, idx) in taskAttachments"
+                  :key="att.id || att.url"
+                  class="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700/80 hover:border-red-400 dark:hover:border-red-500 bg-slate-50 dark:bg-slate-800/40 hover:bg-red-50/40 dark:hover:bg-red-900/20 transition-all group"
+                >
+                  <a :href="att.url" target="_blank" class="flex items-center gap-3 flex-1 min-w-0">
+                    <div class="w-9 h-9 rounded-lg bg-red-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                      <Paperclip v-if="att.type === 'file'" class="w-4 h-4" />
+                      <Link v-else class="w-4 h-4" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-xs font-bold text-slate-800 dark:text-slate-100 truncate group-hover:text-red-600 dark:group-hover:text-red-400">
+                        {{ att.type === 'link' ? (att.name || 'Buka Link Dokumen') : (att.name || 'Lihat Dokumen Lampiran') }}
+                      </p>
+                      <p class="text-[11px] text-slate-400">Klik untuk membuka / mengunduh {{ att.type === 'link' ? 'link' : 'file' }}</p>
+                    </div>
+                  </a>
+                  <div class="flex items-center gap-2">
+                    <a :href="att.url" target="_blank" class="p-1.5 text-slate-400 hover:text-red-500 rounded-lg">
+                      <Download class="w-4 h-4" />
+                    </a>
+                    <button
+                      @click.prevent="removeInlineAttachment(idx)"
+                      class="p-1.5 text-slate-400 hover:text-red-600 rounded-lg transition-colors cursor-pointer"
+                      title="Hapus Lampiran Ini"
+                    >
+                      <Trash2 class="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div v-else-if="!isAddingInlineAttachment" class="flex items-center justify-between p-3.5 rounded-xl bg-slate-50/50 dark:bg-slate-800/20 border border-slate-100 dark:border-slate-800/80 text-xs text-slate-400">
                 <span>Belum ada lampiran berkas atau link dokumen.</span>
-                <button @click="openEditModal" class="inline-flex items-center gap-1 font-bold text-red-600 dark:text-red-400 hover:underline cursor-pointer">
+                <button @click="startAddInlineAttachment" class="inline-flex items-center gap-1 font-bold text-red-600 dark:text-red-400 hover:underline cursor-pointer">
                   <Paperclip class="w-3.5 h-3.5" /> Tambah Berkas / Link
                 </button>
               </div>

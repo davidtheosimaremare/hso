@@ -1,5 +1,13 @@
 [
   {
+    "hash": "e949880f921855af91b66fe24af6124339aa3258",
+    "shortHash": "e949880",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 14 12:43:44 2026 +0700",
+    "message": "feat(collaborate): redesign task email template to professional white theme with red button and sync in-app notifications"
+  },
+  {
     "hash": "7ad62552aa54d4583bc03e27b1012c92fc37b3cb",
     "shortHash": "7ad6255",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Mon Jul 13 17:42:50 2026 +0700",
     "message": "feat: add clickable HSO Ref links in HPB details and sync HSO with HPB flow improvements"
-  },
-  {
-    "hash": "1ba0602b5b4ce33218ea0ebd2b32b2524b886e3c",
-    "shortHash": "1ba0602",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Mon Jul 13 16:27:12 2026 +0700",
-    "message": "feat: replace HPB modal with a dedicated detail sub-page view (/hpb/:id)"
   }
 ]
