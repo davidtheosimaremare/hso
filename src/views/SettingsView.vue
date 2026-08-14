@@ -210,7 +210,7 @@ const fetchUsers = async () => {
     try {
         const { data, error } = await supabase
             .from('user_access')
-            .select('id, email, is_active, role, allowed_modules, created_at')
+            .select('id, email, is_active, role, allowed_modules, created_at, notification_email')
             .order('created_at', { ascending: false })
         
         if (error) throw error
@@ -317,7 +317,7 @@ const openEditModal = (user) => {
     email: user.email,
     role: user.role || 'STAFF',
     full_name: contact.full_name || '',
-    notification_email: contact.notification_email || user.email || '',
+    notification_email: user.notification_email || contact.notification_email || user.email || '',
     whatsapp_number: contact.whatsapp_number || '',
     allowed_modules: user.allowed_modules ? [...user.allowed_modules] : ['dashboard:read']
   }
@@ -328,11 +328,12 @@ const openEditModal = (user) => {
 const handleUpdatePermissions = async () => {
   isSaving.value = true
   try {
-    // Save contact info locally and try DB update
+    // Save contact info locally and DB update
     saveUserContact(editingUser.value.email, editingUser.value.full_name, editingUser.value.notification_email, editingUser.value.whatsapp_number)
 
     const updatePayload = {
       role: editingUser.value.role,
+      notification_email: editingUser.value.notification_email?.trim() || null,
       allowed_modules: editingUser.value.role === 'ADMIN' ? 
         modulesList.flatMap(m => [`${m.key}:read`, `${m.key}:write`]) : 
         editingUser.value.allowed_modules

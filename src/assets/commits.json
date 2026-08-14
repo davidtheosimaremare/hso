@@ -1,5 +1,13 @@
 [
   {
+    "hash": "2c3b1d3d235b0ebb0ea85c2bda792669be06fbe0",
+    "shortHash": "2c3b1d3",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 14 15:50:13 2026 +0700",
+    "message": "fix(notifications): resolve multi-assignee email truncation and live user_access notification_email lookup for task dispatches"
+  },
+  {
     "hash": "f890bb1c7db916dbbfb5bd142bdf08527b5e1b4d",
     "shortHash": "f890bb1",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Jul 14 13:09:24 2026 +0700",
     "message": "fix: allow HPO display on items with partial stock notes when qty_to_order > 0"
-  },
-  {
-    "hash": "ae0d0f74fe7b83bc600b319275011089ab3684c2",
-    "shortHash": "ae0d0f7",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Mon Jul 13 23:54:19 2026 +0700",
-    "message": "feat: add SOP and User Guide view and navigation menu"
   }
 ]
