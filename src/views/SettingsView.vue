@@ -40,7 +40,7 @@ const notifSettings = ref({
   smtp_host: localStorage.getItem('hir_smtp_host') || 'smtp.gmail.com',
   smtp_port: localStorage.getItem('hir_smtp_port') || '587',
   fonnte_token: localStorage.getItem('hir_fonnte_token') || '',
-  wa_enabled: localStorage.getItem('hir_wa_enabled') !== 'false',
+  wa_enabled: localStorage.getItem('hir_wa_enabled') === 'true',
   batch_delay_seconds: parseInt(localStorage.getItem('hir_batch_delay_seconds') || '3'),
   max_emails_per_minute: parseInt(localStorage.getItem('hir_max_emails_per_minute') || '30'),
   delivery_mode: localStorage.getItem('hir_delivery_mode') || 'INSTANT',

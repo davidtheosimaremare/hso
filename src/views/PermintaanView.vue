@@ -1213,32 +1213,8 @@ const sendMultiChannelTaskNotification = async (taskData, type = 'ASSIGNED', opt
       }
     }
 
-    // 3. WhatsApp Notification via Fonnte API
-    if (shouldWa && waNumber && fonnteToken) {
-      try {
-        let waMessage = ''
-        if (type === 'ASSIGNED') {
-          waMessage = `📌 *TUGAS BARU DIDELEGASIKAN*\n\nHalo *${recipient}*, Anda ditugaskan pada:\n📋 *Judul*: ${taskData.title}\n📅 *Deadline*: ${targetDateStr}\n\nSilakan cek detail tugas di web HSO:\n${appUrl}`
-        } else if (type === 'APPROACHING') {
-          waMessage = `⏰ *PENGINGAT DEADLINE TUGAS (H-1)*\n\nHalo *${recipient}*, tugas berikut mendekati deadline:\n📋 *Judul*: ${taskData.title}\n📅 *Deadline*: ${targetDateStr}\n\nMohon segera diselesaikan:\n${appUrl}`
-        } else if (type === 'OVERDUE') {
-          waMessage = `⚠️ *PERINGATAN TUGAS OVERDUE*\n\nHalo *${recipient}*, tugas berikut telah MELEWATI deadline:\n📋 *Judul*: ${taskData.title}\n📅 *Target*: ${targetDateStr} (Overdue)\n\nMohon koordinasi dan selesaikan tugas ini:\n${appUrl}`
-        }
-
-        const formData = new FormData()
-        formData.append('target', waNumber)
-        formData.append('message', waMessage)
-        formData.append('countryCode', '62')
-
-        fetch('https://api.fonnte.com/send', {
-          method: 'POST',
-          headers: { 'Authorization': fonnteToken },
-          body: formData
-        }).catch(err => console.warn('Fonnte fetch background notice:', err))
-      } catch (err) {
-        console.warn('Note on Fonnte WA send:', err)
-      }
-    }
+    // Note: Mobile/WhatsApp notifications for To-Do tasks are intentionally disabled to prevent user distraction.
+    // Task updates are sent via Web In-App Notification & Workspace Email.
   }
 }
 

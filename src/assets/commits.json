@@ -1,5 +1,21 @@
 [
   {
+    "hash": "3381eba1ae4b3818ec92c2dab900ba33f498f5e3",
+    "shortHash": "3381eba",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 14 12:19:18 2026 +0700",
+    "message": "fix(settings): update display name to HIR Workspace Notification"
+  },
+  {
+    "hash": "cc80d95a4ca3add1d3c33252c366fea57828b68f",
+    "shortHash": "cc80d95",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 14 12:03:58 2026 +0700",
+    "message": "feat(notifications): update workspace default email to workspace@hokiindo.co.id and enable dynamic sender header"
+  },
+  {
     "hash": "7ef0858aa4dcdfcc7dbd5b4d773165c6d04a9241",
     "shortHash": "7ef0858",
     "author": "davidtheosimaremare",
@@ -382,21 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Mon Jul 13 12:00:11 2026 +0700",
     "message": "feat: exclude ready/stock items from public tracking in-process section"
-  },
-  {
-    "hash": "4f3b8604795adc1255611d20ec186126f7aadcb1",
-    "shortHash": "4f3b860",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Mon Jul 13 11:54:36 2026 +0700",
-    "message": "feat: implement stock availability modal, SKU clipboard, and STOCK HPO visual exclusion"
-  },
-  {
-    "hash": "14d7de698e727699282d32916179b7e347f3964d",
-    "shortHash": "14d7de6",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Sun Jul 12 21:37:36 2026 +0700",
-    "message": "feat: Add persistent HPB proposed number preview section at the bottom of CartView"
   }
 ]
