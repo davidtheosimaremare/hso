@@ -62,7 +62,7 @@ serve(async (req) => {
         const smtpPort = parseInt(Deno.env.get('SMTP_PORT') || '587')
         const smtpUser = Deno.env.get('SMTP_USER') || ''
         const smtpPass = Deno.env.get('SMTP_PASSWORD') || ''
-        const smtpFrom = Deno.env.get('SMTP_FROM') || 'Hokiindo Shop <noreply@hokiindo.co.id>'
+        const smtpFrom = Deno.env.get('SMTP_FROM') || 'HSO Workspace <workspace@hokiindo.co.id>'
         // Read body for test parameter
         const { test, test_recipients } = await req.json().catch(() => ({}))
         const recipients = test_recipients || Deno.env.get('NOTIFICATION_RECIPIENTS') || smtpUser

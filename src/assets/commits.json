@@ -1,5 +1,13 @@
 [
   {
+    "hash": "7ef0858aa4dcdfcc7dbd5b4d773165c6d04a9241",
+    "shortHash": "7ef0858",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 14 10:48:40 2026 +0700",
+    "message": "feat(collaborate): refine compact filter bar, neutral styling & task highlight"
+  },
+  {
     "hash": "00cf944b5f1edbb5af5d047bd153fe07b306d687",
     "shortHash": "00cf944",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Sun Jul 12 21:37:36 2026 +0700",
     "message": "feat: Add persistent HPB proposed number preview section at the bottom of CartView"
-  },
-  {
-    "hash": "dac2b8a3f2c98f3a6fa42367518c7b32bce5f584",
-    "shortHash": "dac2b8a",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Sun Jul 12 21:35:51 2026 +0700",
-    "message": "feat: Adjust HPB Accurate integration to send all active items in cart as a single HPB instead of per HSO group"
   }
 ]

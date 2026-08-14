@@ -19,7 +19,7 @@ serve(async (req) => {
     const smtpPort = parseInt(Deno.env.get('SMTP_PORT') || '587')
     const smtpUser = Deno.env.get('SMTP_USER') || ''
     const smtpPass = Deno.env.get('SMTP_PASSWORD') || ''
-    const smtpFrom = Deno.env.get('SMTP_FROM') || 'Hokiindo Shop <noreply@hokiindo.co.id>'
+    const smtpFrom = Deno.env.get('SMTP_FROM') || 'HSO Workspace <workspace@hokiindo.co.id>'
     const fallbackEmail = Deno.env.get('FALLBACK_NOTIFICATION_EMAIL') || smtpUser
 
     if (!supabaseUrl || !supabaseServiceKey) throw new Error('Supabase configuration missing!')

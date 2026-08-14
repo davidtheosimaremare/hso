@@ -35,7 +35,7 @@ const isTestingEmail = ref(false)
 const isTestingWa = ref(false)
 
 const notifSettings = ref({
-  workspace_sender_email: localStorage.getItem('hir_workspace_sender_email') || 'workspace-notif@hokiindo.co.id',
+  workspace_sender_email: localStorage.getItem('hir_workspace_sender_email') || 'workspace@hokiindo.co.id',
   workspace_sender_name: localStorage.getItem('hir_workspace_sender_name') || 'HSO Workspace Notification',
   smtp_host: localStorage.getItem('hir_smtp_host') || 'smtp.hokiindo.co.id',
   smtp_port: localStorage.getItem('hir_smtp_port') || '587',
@@ -125,12 +125,50 @@ const saveNotificationSettings = () => {
 }
 
 const testSendEmail = async () => {
+  const testRecipient = prompt('Masukkan email tujuan pengujian notifikasi:', 'davidtheosimaremare@gmail.com')
+  if (!testRecipient) return
+
   isTestingEmail.value = true
   try {
-    await new Promise(r => setTimeout(r, 1200))
-    alert(`[Simulasi Uji Coba Kirim Email Notifikasi]\nPengirim: ${notifSettings.value.workspace_sender_name} <${notifSettings.value.workspace_sender_email}>\nMode: ${notifSettings.value.delivery_mode}\nSMTP Server: ${notifSettings.value.smtp_host}:${notifSettings.value.smtp_port}\nStatus: Berhasil dikirim ke antrean server!`)
+    const { data, error } = await supabase.functions.invoke('send-custom-email', {
+      body: {
+        to: testRecipient,
+        from_email: notifSettings.value.workspace_sender_email,
+        from_name: notifSettings.value.workspace_sender_name,
+        subject: '🧪 [Test Workspace HSO] Pengujian Notifikasi Email',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 16px; padding: 24px; background-color: #ffffff;">
+            <div style="border-bottom: 2px solid #dc2626; padding-bottom: 12px; margin-bottom: 16px;">
+              <h2 style="color: #0f172a; margin: 0; font-size: 18px;">HSO Workspace Notification System</h2>
+              <span style="font-size: 11px; font-weight: bold; color: #dc2626; background-color: #fef2f2; padding: 2px 8px; border-radius: 6px; display: inline-block; margin-top: 6px;">Uji Coba Pengiriman</span>
+            </div>
+            
+            <p style="color: #334155; font-size: 14px; line-height: 1.5;">Halo,</p>
+            <p style="color: #334155; font-size: 14px; line-height: 1.5;">
+              Email ini merupakan pesan uji coba untuk memverifikasi bahwa pengiriman notifikasi dari sub-email resmi Workspace <strong>${notifSettings.value.workspace_sender_email}</strong> (${notifSettings.value.workspace_sender_name}) berjalan dengan lancar.
+            </p>
+
+            <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; padding: 12px; margin: 16px 0; font-size: 12px; color: #475569;">
+              <p style="margin: 2px 0;"><strong>• Sub-Email Pengirim:</strong> ${notifSettings.value.workspace_sender_email}</p>
+              <p style="margin: 2px 0;"><strong>• SMTP Server:</strong> ${notifSettings.value.smtp_host}:${notifSettings.value.smtp_port}</p>
+              <p style="margin: 2px 0;"><strong>• Target Penerima:</strong> ${testRecipient}</p>
+              <p style="margin: 2px 0;"><strong>• Waktu Pengiriman:</strong> ${new Date().toLocaleString('id-ID')}</p>
+            </div>
+
+            <p style="color: #64748b; font-size: 12px; margin-top: 20px; border-top: 1px dashed #e2e8f0; pt: 12px;">
+              Email otomatis dari Sistem Hokiindo Operational (HSO).
+            </p>
+          </div>
+        `
+      }
+    })
+
+    if (error) throw error
+
+    alert(`✅ Email pengujian berhasil dikirim!\n\nTujuan: ${testRecipient}\nPengirim: ${notifSettings.value.workspace_sender_name} <${notifSettings.value.workspace_sender_email}>`)
   } catch (e) {
-    alert('Gagal uji coba email: ' + e.message)
+    console.error('Email Test Error:', e)
+    alert(`[Hasil Uji Coba Email Notifikasi]\nTujuan: ${testRecipient}\nSub-Email: ${notifSettings.value.workspace_sender_email}\n\nKeterangan: ${e.message || e}`)
   } finally {
     isTestingEmail.value = false
   }
@@ -484,7 +522,7 @@ const deleteUser = async (user) => {
             <Label class="font-bold text-slate-700 dark:text-slate-300">Email Pengirim (Workspace Sub-Email)</Label>
             <Input 
               v-model="notifSettings.workspace_sender_email" 
-              placeholder="contoh: workspace-notif@hokiindo.co.id" 
+              placeholder="contoh: workspace@hokiindo.co.id" 
               class="mt-1 bg-slate-50 dark:bg-slate-900 border-slate-300 dark:border-slate-700"
             />
             <p class="text-[11px] text-slate-400 mt-1">Email resmi yang tampil di kotak masuk penerima notifikasi tugas/BOQ.</p>

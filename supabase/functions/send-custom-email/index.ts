@@ -15,7 +15,7 @@ serve(async (req) => {
     const smtpPort = parseInt(Deno.env.get('SMTP_PORT') || '587')
     const smtpUser = Deno.env.get('SMTP_USER') || ''
     const smtpPass = Deno.env.get('SMTP_PASSWORD') || ''
-    const smtpFrom = Deno.env.get('SMTP_FROM') || 'Hokiindo Shop <noreply@hokiindo.co.id>'
+    const smtpFrom = Deno.env.get('SMTP_FROM') || 'HSO Workspace <workspace@hokiindo.co.id>'
     const fallbackEmail = Deno.env.get('FALLBACK_NOTIFICATION_EMAIL') || smtpUser
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
@@ -25,10 +25,16 @@ serve(async (req) => {
       throw new Error('SMTP user atau password belum disetting!')
     }
 
-    const { to, subject, html } = await req.json()
+    const { to, subject, html, from_email, from_name } = await req.json()
 
     if (!to || !subject || !html) {
       throw new Error('Parameter to, subject, dan html wajib diisi!')
+    }
+
+    let finalFrom = smtpFrom
+    if (from_email && from_email.includes('@')) {
+      const name = from_name || 'HSO Workspace Notification'
+      finalFrom = `"${name}" <${from_email}>`
     }
 
     let targetEmail = Array.isArray(to) ? to[0] : to
@@ -62,12 +68,12 @@ serve(async (req) => {
       }
     })
 
-    console.log(`Sending custom email to: ${targetEmail}...`)
+    console.log(`Sending custom email to: ${targetEmail} from ${finalFrom}...`)
 
     // 2. Attempt primary email send
     try {
       const info = await transporter.sendMail({
-        from: smtpFrom,
+        from: finalFrom,
         to: targetEmail,
         subject: subject,
         html: html
