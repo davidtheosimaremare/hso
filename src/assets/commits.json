@@ -1,5 +1,13 @@
 [
   {
+    "hash": "65e5fb2d8bb904cfdab2fe98aec3e37ce13aaabe",
+    "shortHash": "65e5fb2",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 14 12:29:47 2026 +0700",
+    "message": "feat(auth): upgrade single active session check to IP-based location security"
+  },
+  {
     "hash": "bc40edf650b0479f2766fff2a3eb9cc265825bad",
     "shortHash": "bc40edf",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Mon Jul 13 16:22:57 2026 +0700",
     "message": "feat: add Rencana Pembelian collapsible menu and Permintaan Barang (HPB) list & detail views with Excel export"
-  },
-  {
-    "hash": "fbea158db93683e2b99d730f462741f161a3e2c3",
-    "shortHash": "fbea158",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Mon Jul 13 12:07:30 2026 +0700",
-    "message": "feat: hide logistics dates on public tracking for STOCK items"
   }
 ]

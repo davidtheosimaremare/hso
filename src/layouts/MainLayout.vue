@@ -101,6 +101,26 @@ const toggleDarkMode = () => {
     localStorage.setItem('theme', 'light')
   }
 }
+
+// Single IP-Based Device Session Modal State
+const showSessionModal = ref(false)
+const sessionModalInfo = ref({ newIp: "", time: "" })
+
+const triggerSessionModal = (ip) => {
+  sessionModalInfo.value = {
+    newIp: ip || "Jaringan/IP Lain",
+    time: new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
+  }
+  showSessionModal.value = true
+}
+
+const handleSessionLogout = async () => {
+  showSessionModal.value = false
+  localStorage.removeItem("hir_active_session_id")
+  await supabase.auth.signOut()
+  router.push("/")
+}
+
 // Single IP-Based Device Session Verification
 const checkSingleDeviceSession = async (email) => {
   const localSessionId = localStorage.getItem('hir_active_session_id')
@@ -119,7 +139,7 @@ const checkSingleDeviceSession = async (email) => {
 
     // Only kick out session if login comes from a DIFFERENT IP address!
     if (data.last_login_ip && localIp && data.last_login_ip !== localIp) {
-      alert(`⚠️ Sesi Login Berakhir!\nAkun Anda baru saja di-login dari lokasi/IP lain (${data.last_login_ip}). Sesi pada perangkat ini telah di-logout demi keamanan.`)
+      triggerSessionModal(data.last_login_ip)
       localStorage.removeItem('hir_active_session_id')
       await supabase.auth.signOut()
       router.push('/')
@@ -159,7 +179,7 @@ onMounted(async () => {
           const localIp = localStorage.getItem('hir_client_ip') || ''
           const newIp = payload.new?.last_login_ip
           if (newIp && localIp && newIp !== localIp) {
-            alert(`⚠️ Sesi Login Berakhir!\nAkun Anda baru saja di-login dari lokasi/IP lain (${newIp}). Sesi pada perangkat ini telah di-logout demi keamanan.`)
+            triggerSessionModal(newIp)
             localStorage.removeItem('hir_active_session_id')
             supabase.auth.signOut()
             router.push('/')
