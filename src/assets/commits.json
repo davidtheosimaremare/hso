@@ -1,5 +1,13 @@
 [
   {
+    "hash": "49951a261790fc0ce8697902ce6ee3c4cd1d2ab6",
+    "shortHash": "49951a2",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 14 16:25:44 2026 +0700",
+    "message": "fix(settings): persist user notification_email directly to user_access database table"
+  },
+  {
     "hash": "2c3b1d3d235b0ebb0ea85c2bda792669be06fbe0",
     "shortHash": "2c3b1d3",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Wed Jul 15 13:52:57 2026 +0700",
     "message": "fix: HP0 typo to HPO, pagination sliding window, STOCK breakdown in LogisticsDb"
-  },
-  {
-    "hash": "ee2a66abbbbc1313942abcb7dc8ea83774ee95f7",
-    "shortHash": "ee2a66a",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Jul 14 13:09:24 2026 +0700",
-    "message": "fix: allow HPO display on items with partial stock notes when qty_to_order > 0"
   }
 ]
