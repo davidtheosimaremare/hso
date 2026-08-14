@@ -1,5 +1,13 @@
 [
   {
+    "hash": "7ad62552aa54d4583bc03e27b1012c92fc37b3cb",
+    "shortHash": "7ad6255",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 14 12:38:08 2026 +0700",
+    "message": "feat(auth): display interactive security modal when login from different IP is detected"
+  },
+  {
     "hash": "65e5fb2d8bb904cfdab2fe98aec3e37ce13aaabe",
     "shortHash": "65e5fb2",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Mon Jul 13 16:27:12 2026 +0700",
     "message": "feat: replace HPB modal with a dedicated detail sub-page view (/hpb/:id)"
-  },
-  {
-    "hash": "c64fbbc68df382b143711b8772bac5facf7fada9",
-    "shortHash": "c64fbbc",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Mon Jul 13 16:22:57 2026 +0700",
-    "message": "feat: add Rencana Pembelian collapsible menu and Permintaan Barang (HPB) list & detail views with Excel export"
   }
 ]

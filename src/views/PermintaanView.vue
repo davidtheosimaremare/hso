@@ -1141,11 +1141,11 @@ const sendMultiChannelTaskNotification = async (taskData, type = 'ASSIGNED', opt
       let titleStr = 'Tugas Baru Didelegasikan'
       let msgStr = `Anda ditugaskan pada "${taskData.title}" (${taskNumStr}). Deadline: ${targetDateStr}`
       if (type === 'APPROACHING') {
-        titleStr = '⏰ Peringatan Deadline (H-1)'
-        msgStr = `Tugas "${taskData.title}" (${taskNumStr}) mendekati deadline (${targetDateStr}). Mohon segera diselesaikan!`
+        titleStr = 'Peringatan Deadline (H-1)'
+        msgStr = `Tugas "${taskData.title}" (${taskNumStr}) mendekati deadline (${targetDateStr}). Mohon segera diselesaikan.`
       } else if (type === 'OVERDUE') {
-        titleStr = '⚠️ Peringatan Tugas Overdue'
-        msgStr = `Tugas "${taskData.title}" (${taskNumStr}) telah MELEWATI deadline (${targetDateStr})!`
+        titleStr = 'Peringatan Tugas Overdue'
+        msgStr = `Tugas "${taskData.title}" (${taskNumStr}) telah melewati deadline (${targetDateStr}).`
       }
 
       await supabase.from('notifications').insert([{
@@ -1164,43 +1164,66 @@ const sendMultiChannelTaskNotification = async (taskData, type = 'ASSIGNED', opt
     if (shouldEmail && notifEmail && notifEmail.includes('@')) {
       try {
         let subject = `[Tugas Baru] ${taskData.title}`
-        let headerBg = '#2563eb'
         let headerTitle = 'Tugas Baru Didelegasikan Kepada Anda'
         if (type === 'APPROACHING') {
-          subject = `[PERINGATAN H-1 DEADLINE] Tugas "${taskData.title}"`
-          headerBg = '#eab308'
-          headerTitle = '⏰ Pengingat Deadline Tugas (H-1)'
+          subject = `[Peringatan Deadline H-1] Tugas: "${taskData.title}"`
+          headerTitle = 'Pengingat Deadline Tugas (H-1)'
         } else if (type === 'OVERDUE') {
-          subject = `[PERINGATAN OVERDUE] Tugas "${taskData.title}" Melewati Deadline!`
-          headerBg = '#dc2626'
-          headerTitle = '⚠️ Peringatan Tugas Overdue (Lewat Deadline)'
+          subject = `[Peringatan Overdue] Tugas: "${taskData.title}"`
+          headerTitle = 'Peringatan Tugas Overdue (Lewat Deadline)'
         }
 
         const htmlBody = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; background: #f8fafc; padding: 24px; border-radius: 16px; border: 1px solid #e2e8f0;">
-            <div style="background: ${headerBg}; padding: 16px 20px; border-radius: 12px; margin-bottom: 20px; color: #ffffff;">
-              <h2 style="margin: 0; font-size: 18px; font-weight: bold;">${headerTitle}</h2>
-              <p style="margin: 4px 0 0 0; font-size: 13px; opacity: 0.9;">Tugas Tim (To-Do List) HSO Workspace</p>
-            </div>
-            <div style="background: #ffffff; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; margin-bottom: 16px;">
-              <span style="display: inline-block; background: #e2e8f0; color: #475569; font-size: 11px; font-weight: bold; padding: 3px 8px; border-radius: 4px; margin-bottom: 8px;">${taskNumStr}</span>
-              <h3 style="margin: 0 0 12px 0; font-size: 20px; color: #0f172a; font-weight: 800;">${taskData.title}</h3>
-              <table style="width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 12px;">
-                <tr>
-                  <td style="padding: 6px 0; color: #64748b; font-weight: bold; width: 110px;">Deadline:</td>
-                  <td style="padding: 6px 0; color: #dc2626; font-weight: bold;">${targetDateStr}</td>
-                </tr>
-                ${projectStr !== '-' ? `
-                <tr>
-                  <td style="padding: 6px 0; color: #64748b; font-weight: bold;">Proyek:</td>
-                  <td style="padding: 6px 0; color: #0f172a; font-weight: 600;">${projectStr}</td>
-                </tr>` : ''}
-              </table>
-            </div>
-            <div style="text-align: center; margin-top: 24px;">
-              <a href="${appUrl}" target="_blank" style="display: inline-block; background: #2563eb; color: #ffffff; font-weight: bold; text-decoration: none; padding: 12px 28px; border-radius: 10px; font-size: 14px;">
-                🔗 Buka Detail Tugas di Aplikasi
-              </a>
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #ffffff; padding: 32px 16px; color: #1e293b;">
+            <div style="max-width: 560px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+              
+              <div style="border-bottom: 1px solid #f1f5f9; padding-bottom: 16px; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between;">
+                <span style="font-size: 13px; font-weight: 800; color: #0f172a; tracking: 0.5px;">HIR WORKSPACE</span>
+                <span style="font-size: 12px; color: #64748b; font-weight: 500;">Pemberitahuan Tugas</span>
+              </div>
+
+              <div style="margin-bottom: 20px;">
+                <h2 style="margin: 0 0 6px 0; font-size: 18px; font-weight: 700; color: #0f172a; line-height: 1.3;">${headerTitle}</h2>
+                <p style="margin: 0; font-size: 13px; color: #64748b;">Halo, Anda ditugaskan pada item pekerjaan berikut di HIR Workspace.</p>
+              </div>
+
+              <div style="border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; background-color: #ffffff; margin-bottom: 24px;">
+                <div style="font-size: 11px; font-weight: 700; color: #64748b; margin-bottom: 4px;">ID TUGAS: ${taskNumStr}</div>
+                <h3 style="margin: 0 0 16px 0; font-size: 16px; font-weight: 700; color: #0f172a; line-height: 1.4;">${taskData.title}</h3>
+                
+                <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                  <tr style="border-top: 1px solid #f8fafc;">
+                    <td style="padding: 8px 0; color: #64748b; width: 130px; font-weight: 500;">Target Deadline:</td>
+                    <td style="padding: 8px 0; color: #dc2626; font-weight: 700;">${targetDateStr}</td>
+                  </tr>
+                  ${projectStr !== '-' ? `
+                  <tr style="border-top: 1px solid #f8fafc;">
+                    <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Proyek / Unit:</td>
+                    <td style="padding: 8px 0; color: #0f172a; font-weight: 600;">${projectStr}</td>
+                  </tr>` : ''}
+                  ${meta.customer_name ? `
+                  <tr style="border-top: 1px solid #f8fafc;">
+                    <td style="padding: 8px 0; color: #64748b; font-weight: 500;">Pelanggan:</td>
+                    <td style="padding: 8px 0; color: #0f172a; font-weight: 600;">${meta.customer_name}</td>
+                  </tr>` : ''}
+                  ${meta.notes || taskData.description ? `
+                  <tr style="border-top: 1px solid #f8fafc;">
+                    <td style="padding: 8px 0; color: #64748b; font-weight: 500; vertical-align: top;">Deskripsi:</td>
+                    <td style="padding: 8px 0; color: #334155; font-weight: 400; line-height: 1.5;">${meta.notes || taskData.description}</td>
+                  </tr>` : ''}
+                </table>
+              </div>
+
+              <div style="text-align: center; margin-bottom: 24px;">
+                <a href="${appUrl}" target="_blank" style="display: inline-block; background-color: #dc2626; color: #ffffff; font-weight: 600; text-decoration: none; padding: 12px 28px; border-radius: 8px; font-size: 14px;">
+                  Lihat Detail Tugas
+                </a>
+              </div>
+
+              <div style="border-top: 1px solid #f1f5f9; padding-top: 16px; margin-top: 24px; font-size: 12px; color: #94a3b8; text-align: center;">
+                Email notifikasi ini dikirimkan secara otomatis dari Sistem HIR Workspace Hokiindo.
+              </div>
+
             </div>
           </div>
         `
