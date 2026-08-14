@@ -1,5 +1,13 @@
 [
   {
+    "hash": "f890bb1c7db916dbbfb5bd142bdf08527b5e1b4d",
+    "shortHash": "f890bb1",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 14 14:31:45 2026 +0700",
+    "message": "feat(collaborate): hide empty metadata fields (Proyek, Customer, PIC) and add inline description & attachment editing without modal popup"
+  },
+  {
     "hash": "e949880f921855af91b66fe24af6124339aa3258",
     "shortHash": "e949880",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Mon Jul 13 23:54:19 2026 +0700",
     "message": "feat: add SOP and User Guide view and navigation menu"
-  },
-  {
-    "hash": "21604bb73ae92c9cd8a5c5575919eab31c8765a2",
-    "shortHash": "21604bb",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Mon Jul 13 17:42:50 2026 +0700",
-    "message": "feat: add clickable HSO Ref links in HPB details and sync HSO with HPB flow improvements"
   }
 ]

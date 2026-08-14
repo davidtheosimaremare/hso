@@ -1115,22 +1115,27 @@ const sendMultiChannelTaskNotification = async (taskData, type = 'ASSIGNED', opt
   for (const recipient of recipients) {
     if (!recipient) continue
 
-    // Resolve user contact info from local storage / user_access
+    // Resolve user contact info live from user_access / local storage
     let notifEmail = recipient
-    let waNumber = ''
     try {
-      const raw = localStorage.getItem('hir_team_contacts')
-      if (raw) {
-        const contacts = JSON.parse(raw)
-        const contact = contacts[recipient.toLowerCase()]
-        if (contact) {
-          if (contact.notification_email) notifEmail = contact.notification_email
-          if (contact.whatsapp_number) waNumber = contact.whatsapp_number
+      const { data: userAcc } = await supabase
+        .from('user_access')
+        .select('notification_email')
+        .eq('email', recipient)
+        .maybeSingle()
+
+      if (userAcc?.notification_email && userAcc.notification_email.includes('@')) {
+        notifEmail = userAcc.notification_email
+      } else {
+        const raw = localStorage.getItem('hir_team_contacts')
+        if (raw) {
+          const contacts = JSON.parse(raw)
+          const contact = contacts[recipient.toLowerCase()]
+          if (contact?.notification_email) notifEmail = contact.notification_email
         }
       }
     } catch (e) {}
 
-    const fonnteToken = localStorage.getItem('hir_fonnte_token') || ''
     const taskNumStr = taskData.task_number ? `TASK-${taskData.task_number}` : 'TASK'
     const appUrl = `${window.location.origin}/collaborate/${taskData.id}`
     const projectStr = taskData.project_name || getProjectName(taskData) || '-'
@@ -1229,7 +1234,13 @@ const sendMultiChannelTaskNotification = async (taskData, type = 'ASSIGNED', opt
         `
 
         await supabase.functions.invoke('send-custom-email', {
-          body: { to: notifEmail, subject, html: htmlBody }
+          body: {
+            to: notifEmail,
+            from_email: 'workspace@hokiindo.co.id',
+            from_name: 'HIR Workspace Notification',
+            subject,
+            html: htmlBody
+          }
         })
       } catch (err) {
         console.warn('Note on email notification invoke:', err)

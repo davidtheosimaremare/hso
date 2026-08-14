@@ -37,24 +37,50 @@ serve(async (req) => {
       finalFrom = `"${name}" <${from_email}>`
     }
 
-    let targetEmail = Array.isArray(to) ? to[0] : to
+    // Parse all target recipients (support array, string, comma-separated)
+    let rawRecipients: string[] = []
+    if (Array.isArray(to)) {
+      rawRecipients = to.flatMap((item: any) => typeof item === 'string' ? item.split(',') : []).map((s: string) => s.trim()).filter(Boolean)
+    } else if (typeof to === 'string') {
+      rawRecipients = to.split(',').map((s: string) => s.trim()).filter(Boolean)
+    }
 
-    // 1. Check if user_access has a mapped notification_email
-    if (supabaseUrl && supabaseServiceKey && targetEmail) {
+    if (rawRecipients.length === 0) {
+      throw new Error('Penerima email (to) tidak valid!')
+    }
+
+    // Create Supabase client for user_access lookup
+    let supabase: any = null
+    if (supabaseUrl && supabaseServiceKey) {
       try {
-        const supabase = createClient(supabaseUrl, supabaseServiceKey)
-        const { data: userData } = await supabase
-          .from('user_access')
-          .select('notification_email')
-          .eq('email', targetEmail)
-          .maybeSingle()
-        
-        if (userData?.notification_email && userData.notification_email.includes('@')) {
-          console.log(`Redirecting notification for ${targetEmail} -> ${userData.notification_email}`)
-          targetEmail = userData.notification_email
+        supabase = createClient(supabaseUrl, supabaseServiceKey)
+      } catch (e) {
+        console.warn('Notice creating Supabase client:', e)
+      }
+    }
+
+    // Resolve each recipient's configured notification_email from user_access
+    const targetEmails: string[] = []
+    for (const rawEmail of rawRecipients) {
+      let resolved = rawEmail
+      if (supabase && rawEmail.includes('@')) {
+        try {
+          const { data: userData } = await supabase
+            .from('user_access')
+            .select('notification_email')
+            .eq('email', rawEmail)
+            .maybeSingle()
+
+          if (userData?.notification_email && userData.notification_email.includes('@')) {
+            console.log(`Redirecting notification for ${rawEmail} -> ${userData.notification_email}`)
+            resolved = userData.notification_email
+          }
+        } catch (dbErr) {
+          console.warn(`Notice checking user_access for ${rawEmail}:`, dbErr)
         }
-      } catch (dbErr) {
-        console.warn('Notice checking user_access notification_email:', dbErr)
+      }
+      if (resolved && !targetEmails.includes(resolved)) {
+        targetEmails.push(resolved)
       }
     }
 
@@ -68,59 +94,63 @@ serve(async (req) => {
       }
     })
 
-    console.log(`Sending custom email to: ${targetEmail} from ${finalFrom}...`)
+    console.log(`Sending custom email to ${targetEmails.length} recipient(s): ${targetEmails.join(', ')} from ${finalFrom}...`)
 
-    // 2. Attempt primary email send
-    try {
-      const info = await transporter.sendMail({
-        from: finalFrom,
-        to: targetEmail,
-        subject: subject,
-        html: html
-      })
+    const successList: string[] = []
+    const failedList: string[] = []
 
-      console.log("Email sent successfully to primary recipient! MessageId:", info.messageId)
-      return new Response(JSON.stringify({ s: true, message: `Email berhasil dikirim ke ${targetEmail}.`, messageId: info.messageId }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    } catch (primaryError: any) {
-      console.warn(`Failed to send email to ${targetEmail}: ${primaryError.message}. Triggering admin fallback...`)
-
-      // 3. Fallback mechanism: Forward to admin/fallback email if primary recipient bounces/fails
-      if (fallbackEmail && fallbackEmail.includes('@') && targetEmail !== fallbackEmail) {
-        const fallbackNoticeHtml = `
-          <div style="background:#fef2f2; border:1px solid #fca5a5; border-radius:10px; padding:12px 16px; margin-bottom:16px; font-family:sans-serif; font-size:13px; color:#991b1b;">
-            <strong>⚠️ Catatan Sistem (Email Fallback):</strong><br/>
-            Email notifikasi ini seharusnya dikirim ke <u>${targetEmail}</u>, namun gagal terkirim (email tidak aktif/invalid).<br/>
-            Sistem secara otomatis meneruskan pesan ini ke Anda agar tugas/informasi tidak terlewat.
-          </div>
-        ` + html
-
-        const fallbackInfo = await transporter.sendMail({
-          from: smtpFrom,
-          to: fallbackEmail,
-          subject: `[FORWARD / FALLBACK] ` + subject,
-          html: fallbackNoticeHtml
+    for (const targetEmail of targetEmails) {
+      try {
+        const info = await transporter.sendMail({
+          from: finalFrom,
+          to: targetEmail,
+          subject: subject,
+          html: html
         })
+        console.log(`Email sent successfully to ${targetEmail}! MessageId: ${info.messageId}`)
+        successList.push(targetEmail)
+      } catch (primaryError: any) {
+        console.warn(`Failed to send email to ${targetEmail}: ${primaryError.message}. Triggering admin fallback...`)
+        failedList.push(targetEmail)
 
-        console.log("Fallback email sent successfully to admin:", fallbackEmail)
-        return new Response(JSON.stringify({
-          s: true,
-          fallback: true,
-          message: `Email utama ke ${targetEmail} tidak valid, otomatis diteruskan ke ${fallbackEmail}.`,
-          messageId: fallbackInfo.messageId
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
+        // Fallback mechanism: Forward to admin/fallback email if primary recipient bounces/fails
+        if (fallbackEmail && fallbackEmail.includes('@') && targetEmail !== fallbackEmail) {
+          try {
+            const fallbackNoticeHtml = `
+              <div style="background:#fef2f2; border:1px solid #fca5a5; border-radius:10px; padding:12px 16px; margin-bottom:16px; font-family:sans-serif; font-size:13px; color:#991b1b;">
+                <strong>⚠️ Catatan Sistem (Email Fallback):</strong><br/>
+                Email notifikasi ini seharusnya dikirim ke <u>${targetEmail}</u>, namun gagal terkirim (email tidak aktif/invalid).<br/>
+                Sistem secara otomatis meneruskan pesan ini ke Anda agar tugas/informasi tidak terlewat.
+              </div>
+            ` + html
+
+            await transporter.sendMail({
+              from: smtpFrom,
+              to: fallbackEmail,
+              subject: `[FORWARD / FALLBACK] ` + subject,
+              html: fallbackNoticeHtml
+            })
+            console.log(`Fallback email sent successfully to admin (${fallbackEmail}) for ${targetEmail}`)
+          } catch (fallbackErr: any) {
+            console.error(`Fallback email error for ${targetEmail}:`, fallbackErr.message)
+          }
+        }
       }
-
-      throw primaryError
     }
+
+    return new Response(JSON.stringify({
+      s: true,
+      message: `Email diproses untuk ${targetEmails.length} penerima.`,
+      successfulRecipients: successList,
+      failedRecipients: failedList
+    }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
 
   } catch (error: any) {
     console.error("Function Error:", error.message)
     return new Response(JSON.stringify({ error: error.message }), {
-      status: 200, // Return 200 so web app doesn't crash, with error message included
+      status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   }
