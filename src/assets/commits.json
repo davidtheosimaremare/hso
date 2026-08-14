@@ -1,5 +1,13 @@
 [
   {
+    "hash": "ae688128a3296bb8cbb29948929e63963b68ffb8",
+    "shortHash": "ae68812",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 14 12:25:46 2026 +0700",
+    "message": "feat(collaborate): disable mobile WhatsApp notifications for To-Do tasks to prevent distraction"
+  },
+  {
     "hash": "3381eba1ae4b3818ec92c2dab900ba33f498f5e3",
     "shortHash": "3381eba",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Mon Jul 13 12:04:02 2026 +0700",
     "message": "feat: show SIAP DIKIRIM for stock items without logistics details and revert public tracking changes"
-  },
-  {
-    "hash": "38cf72762161b0d789a607b392dc9e2af35f83ee",
-    "shortHash": "38cf727",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Mon Jul 13 12:00:11 2026 +0700",
-    "message": "feat: exclude ready/stock items from public tracking in-process section"
   }
 ]

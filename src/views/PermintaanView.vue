@@ -1564,22 +1564,6 @@ const deleteTask = async (taskId) => {
     <!-- Filter Bar (Compact, Responsive & Space-Filled for Board, Table, Gantt) -->
     <div ref="filterBarRef" class="bg-card rounded-2xl border border-border p-3">
       <div class="flex flex-wrap items-center gap-2.5 w-full">
-
-        <!-- Filter Count Indicator -->
-        <div class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-muted/60 border border-border shrink-0">
-          <Filter class="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-          <span class="text-xs font-bold text-foreground">Filter</span>
-          <span 
-            v-if="activeFilterCount > 0" 
-            class="text-[10px] font-black px-1.5 py-0.2 rounded-full bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900"
-          >
-            {{ activeFilterCount }}
-          </span>
-          <span v-else class="text-[10px] font-bold text-muted-foreground bg-muted px-1.5 py-0.5 rounded-md">
-            {{ tableTasks.length }}
-          </span>
-        </div>
-
         <!-- 1. Search Box (Fluid & Space Filled) -->
         <div class="relative flex-1 min-w-[200px]">
           <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
