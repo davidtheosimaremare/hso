@@ -101,28 +101,33 @@ const toggleDarkMode = () => {
     localStorage.setItem('theme', 'light')
   }
 }
-// Single Device Session Verification
+// Single IP-Based Device Session Verification
 const checkSingleDeviceSession = async (email) => {
   const localSessionId = localStorage.getItem('hir_active_session_id')
-  if (!email || !localSessionId) return
+  if (!email) return
 
   try {
     const { data, error } = await supabase
       .from('user_access')
-      .select('active_session_id')
+      .select('active_session_id, last_login_ip')
       .eq('email', email)
       .maybeSingle()
 
-    if (error) {
-      console.warn('Session verification notice:', error.message)
-      return
-    }
+    if (error || !data) return
 
-    if (data?.active_session_id && data.active_session_id !== localSessionId) {
-      alert('⚠️ Sesi Login Berakhir!\nAkun Anda baru saja di-login dari perangkat atau browser lain. Sesi pada perangkat ini telah di-logout demi keamanan.')
+    const localIp = localStorage.getItem('hir_client_ip') || ''
+
+    // Only kick out session if login comes from a DIFFERENT IP address!
+    if (data.last_login_ip && localIp && data.last_login_ip !== localIp) {
+      alert(`⚠️ Sesi Login Berakhir!\nAkun Anda baru saja di-login dari lokasi/IP lain (${data.last_login_ip}). Sesi pada perangkat ini telah di-logout demi keamanan.`)
       localStorage.removeItem('hir_active_session_id')
       await supabase.auth.signOut()
       router.push('/')
+    } else {
+      // Same IP -> update local session id seamlessly so user is never logged out on the same network
+      if (data.active_session_id) {
+        localStorage.setItem('hir_active_session_id', data.active_session_id)
+      }
     }
   } catch (err) {
     console.warn('Session verification notice:', err)
@@ -136,10 +141,10 @@ onMounted(async () => {
   if (user) {
     userEmail.value = user.email
 
-    // Enforce Single Device Active Session
+    // Enforce Single IP Active Session
     await checkSingleDeviceSession(user.email)
     
-    // Realtime listener for session overrides from other devices
+    // Realtime listener for session overrides from other IP addresses
     supabase
       .channel(`single_device_${user.email}`)
       .on(
@@ -151,19 +156,22 @@ onMounted(async () => {
           filter: `email=eq.${user.email}`
         },
         (payload) => {
-          const localSessionId = localStorage.getItem('hir_active_session_id')
-          if (payload.new?.active_session_id && payload.new.active_session_id !== localSessionId) {
-            alert('⚠️ Sesi Login Berakhir!\nAkun Anda baru saja di-login dari perangkat atau browser lain. Sesi pada perangkat ini telah di-logout demi keamanan.')
+          const localIp = localStorage.getItem('hir_client_ip') || ''
+          const newIp = payload.new?.last_login_ip
+          if (newIp && localIp && newIp !== localIp) {
+            alert(`⚠️ Sesi Login Berakhir!\nAkun Anda baru saja di-login dari lokasi/IP lain (${newIp}). Sesi pada perangkat ini telah di-logout demi keamanan.`)
             localStorage.removeItem('hir_active_session_id')
             supabase.auth.signOut()
             router.push('/')
+          } else if (payload.new?.active_session_id) {
+            localStorage.setItem('hir_active_session_id', payload.new.active_session_id)
           }
         }
       )
       .subscribe()
 
-    // Periodic heartbeat check every 15s
-    setInterval(() => checkSingleDeviceSession(userEmail.value), 15000)
+    // Periodic heartbeat check every 30s
+    setInterval(() => checkSingleDeviceSession(userEmail.value), 30000)
 
     try {
       const { data } = await supabase

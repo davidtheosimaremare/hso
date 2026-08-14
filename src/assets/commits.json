@@ -1,5 +1,13 @@
 [
   {
+    "hash": "bc40edf650b0479f2766fff2a3eb9cc265825bad",
+    "shortHash": "bc40edf",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 14 12:27:14 2026 +0700",
+    "message": "refactor(collaborate): remove redundant Filter 1 count indicator box"
+  },
+  {
     "hash": "ae688128a3296bb8cbb29948929e63963b68ffb8",
     "shortHash": "ae68812",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Mon Jul 13 12:07:30 2026 +0700",
     "message": "feat: hide logistics dates on public tracking for STOCK items"
-  },
-  {
-    "hash": "4a5c95c7003ca5c84c7e4a9e0f57661e45a44447",
-    "shortHash": "4a5c95c",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Mon Jul 13 12:04:02 2026 +0700",
-    "message": "feat: show SIAP DIKIRIM for stock items without logistics details and revert public tracking changes"
   }
 ]

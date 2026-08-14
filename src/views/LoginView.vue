@@ -55,14 +55,25 @@ const handleLogin = async () => {
     localStorage.removeItem('hir_saved_password')
   }
 
-  // 4. Generate Single Device Active Session ID
+  // 4. Generate Active Session ID & Fetch IP
   if (data.user) {
     const newSessionId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `sess_${Date.now()}_${Math.random().toString(36).substring(2)}`
     localStorage.setItem('hir_active_session_id', newSessionId)
 
+    let clientIp = ''
+    try {
+      const ipRes = await fetch('https://api.ipify.org?format=json')
+      const ipData = await ipRes.json()
+      clientIp = ipData.ip || ''
+      if (clientIp) localStorage.setItem('hir_client_ip', clientIp)
+    } catch (ipErr) {
+      console.warn('IP fetch notice:', ipErr)
+    }
+
     try {
       await supabase.from('user_access').update({
         active_session_id: newSessionId,
+        last_login_ip: clientIp || null,
         last_login_at: new Date().toISOString(),
         last_heartbeat_at: new Date().toISOString()
       }).eq('email', data.user.email)
