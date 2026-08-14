@@ -1450,7 +1450,7 @@ onMounted(() => {
                 </TableCell>
               </TableRow>
               <!-- Expanded HSO Tree Row -->
-              <TableRow v-if="expandedRows[row.id || `${row.hpo_number}-${row.item_code}-${rIdx}`]" class="bg-blue-50/30 dark:bg-blue-950/10 border-b border-slate-100 dark:border-slate-800">
+              <TableRow v-if="expandedRows[row.id || `${row.hpo_number}-${row.item_code}-${rIdx}`]" class="bg-red-50/30 dark:bg-red-950/10 border-b border-slate-100 dark:border-slate-800">
                 <TableCell colspan="9" class="py-3 px-8">
                   <div class="flex flex-col gap-1.5">
                     <div class="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">
@@ -1461,10 +1461,10 @@ onMounted(() => {
                       <div
                         v-for="hso in getHsoRefsForRow(row)"
                         :key="hso.hsoNumber"
-                        class="inline-flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-800/50"
+                        class="inline-flex items-center gap-2 px-3 py-1.5 rounded text-[11px] font-bold bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300 border border-red-200 dark:border-red-800/50"
                       >
                         <span>{{ hso.hsoNumber }}</span>
-                        <span v-if="hso.quantity" class="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 bg-blue-200/50 dark:bg-blue-800/50 rounded text-[10px] font-semibold">
+                        <span v-if="hso.quantity" class="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 bg-red-200/50 dark:bg-red-800/50 rounded text-[10px] font-semibold">
                           <span class="opacity-70">Qty:</span>
                           <span class="font-mono">{{ hso.quantity }}</span>
                         </span>
@@ -1569,7 +1569,7 @@ onMounted(() => {
                     <h5 class="font-mono text-xs font-bold text-slate-900 dark:text-white tracking-tight">{{ item.itemCode }}</h5>
                     <p class="text-[10px] text-slate-500 dark:text-slate-400 font-medium line-clamp-1 mt-0.5">{{ item.itemName }}</p>
                   </div>
-                  <Badge variant="outline" class="font-bold text-[10px] text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20 border-blue-150/30 dark:border-blue-900/30">
+                  <Badge variant="outline" class="font-bold text-[10px] text-red-600 dark:text-red-400 bg-red-50/50 dark:bg-red-950/20 border-red-150/30 dark:border-red-900/30">
                     Ex PO: {{ item.hpoNumber }}
                   </Badge>
                 </div>

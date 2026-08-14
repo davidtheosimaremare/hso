@@ -2023,7 +2023,7 @@ const getRowStatus = (item) => {
   // Harus dicek SEBELUM pengecekan HPO agar HPO lama dari DB tidak salah memicu "SUDAH DIPESAN"
   if (item.qty_to_order === 0) {
     if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) > 0) {
-      return { text: `DIKIRIM SEBAGIAN (SISA ${getDisplayedQtyRemaining(item)} ${item.unit})`, class: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800', icon: Truck }
+      return { text: `DIKIRIM SEBAGIAN (SISA ${getDisplayedQtyRemaining(item)} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: Truck }
     }
     // Belum ada pengiriman sama sekali → siap dikirim
     return { text: 'SIAP DIKIRIM', class: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800', icon: Package }
@@ -2068,7 +2068,7 @@ const getRowStatus = (item) => {
 
   // Jika sudah ada pengiriman sebagian (masih ada sisa), status = DIKIRIM SEBAGIAN
   if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) > 0) {
-    return { text: `DIKIRIM SEBAGIAN (SISA ${getDisplayedQtyRemaining(item)} ${item.unit})`, class: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800', icon: Truck }
+    return { text: `DIKIRIM SEBAGIAN (SISA ${getDisplayedQtyRemaining(item)} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: Truck }
   }
   
   // Jika ada HPO dari Accurate (dan sudah terpenuhi penuh)
@@ -2828,7 +2828,7 @@ const downloadAttachment = async (att) => {
 
 <template>
   <div class="min-h-screen bg-gray-50/50 dark:bg-[#0f172a] pb-20 font-sans transition-colors duration-300">
-    <div class="w-full mx-auto px-6 pt-6 space-y-5">
+    <div class="w-full mx-auto pt-6 space-y-5">
 
       <!-- ERROR STATE -->
       <div v-if="errorMessage" class="flex flex-col items-center justify-center p-12 text-center bg-white dark:bg-slate-800 rounded-xl border border-amber-100 dark:border-amber-900 shadow-sm animate-in zoom-in-95 duration-300">
@@ -2907,14 +2907,14 @@ const downloadAttachment = async (att) => {
                   <span class="font-medium text-xs text-slate-800 dark:text-slate-200">Export Semua HPO</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem @click="exportFullHsoExcel" class="dark:hover:bg-slate-800 rounded-lg cursor-pointer py-2 px-2.5 flex items-center gap-2">
-                  <Download class="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <Download class="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
                   <span class="font-medium text-xs text-slate-800 dark:text-slate-200">Export Detail HSO (Lengkap)</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
             <Button v-if="canWrite" size="sm" variant="outline" class="h-8 px-3 text-xs font-semibold border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" @click="openEmailModal" :disabled="isLoading">
-              <Mail class="w-3.5 h-3.5 mr-1.5 text-blue-600 dark:text-blue-400"/>
+              <Mail class="w-3.5 h-3.5 mr-1.5 text-red-600 dark:text-red-400"/>
               <span>Email Reminder</span>
             </Button>
 
@@ -2973,9 +2973,9 @@ const downloadAttachment = async (att) => {
         <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-2xs p-4 font-sans space-y-3">
           <div class="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2.5">
             <div class="flex items-center gap-2">
-              <Paperclip class="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <Paperclip class="w-4 h-4 text-red-600 dark:text-red-400" />
               <h3 class="text-sm font-bold text-slate-900 dark:text-white">Dokumen Transaksi</h3>
-              <span v-if="soDetail.attachments && soDetail.attachments.length > 0" class="text-[11px] font-semibold bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-800">
+              <span v-if="soDetail.attachments && soDetail.attachments.length > 0" class="text-[11px] font-semibold bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 px-2 py-0.5 rounded-full border border-red-200 dark:border-red-800">
                 {{ soDetail.attachments.length }} Dokumen
               </span>
             </div>
@@ -2990,9 +2990,9 @@ const downloadAttachment = async (att) => {
               class="py-2.5 flex items-center justify-between gap-3 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 px-2 rounded-lg transition-colors"
             >
               <div class="flex items-center gap-3 min-w-0">
-                <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/50 flex items-center justify-center shrink-0">
+                <div class="w-8 h-8 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/50 flex items-center justify-center shrink-0">
                   <FileText v-if="(att.fileName || att.name || '').toLowerCase().endsWith('.pdf')" class="w-4 h-4 text-red-500" />
-                  <Paperclip v-else class="w-4 h-4 text-blue-500" />
+                  <Paperclip v-else class="w-4 h-4 text-red-500" />
                 </div>
                 <div class="min-w-0">
                   <p class="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
@@ -3009,12 +3009,12 @@ const downloadAttachment = async (att) => {
               <Button 
                 size="sm" 
                 variant="ghost" 
-                class="h-8 w-8 p-0 text-slate-600 dark:text-slate-300 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40 rounded-lg cursor-pointer shrink-0" 
+                class="h-8 w-8 p-0 text-slate-600 dark:text-slate-300 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg cursor-pointer shrink-0" 
                 @click="downloadAttachment(att)" 
                 :disabled="downloadingAttId === (att.id || att.attachmentId || att.name)"
                 title="Download Dokumen"
               >
-                <Loader2 v-if="downloadingAttId === (att.id || att.attachmentId || att.name)" class="w-4 h-4 animate-spin text-blue-600" />
+                <Loader2 v-if="downloadingAttId === (att.id || att.attachmentId || att.name)" class="w-4 h-4 animate-spin text-red-600" />
                 <Download v-else class="w-4 h-4" />
               </Button>
             </div>
@@ -3124,7 +3124,7 @@ const downloadAttachment = async (att) => {
                       {{ item.parsed_stock_qty }}
                   </TableCell>
 
-                  <TableCell class="text-center align-top py-2.5 px-1 text-blue-600 dark:text-blue-400 font-semibold text-xs md:text-sm font-sans">
+                  <TableCell class="text-center align-top py-2.5 px-1 text-red-600 dark:text-red-400 font-semibold text-xs md:text-sm font-sans">
                       {{ getDisplayedQtyShipped(item) }}
                   </TableCell>
                   
@@ -3139,7 +3139,7 @@ const downloadAttachment = async (att) => {
                         <span class="text-xs font-medium">Cek PO...</span>
                     </div>
                     <!-- Loading untuk item yang sudah dikirim (cek HDO) -->
-                    <div v-else-if="isSyncing && item.qty_shipped > 0 && !getHdoNumber(item)" class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-blue-50 border border-blue-200 text-blue-700">
+                    <div v-else-if="isSyncing && item.qty_shipped > 0 && !getHdoNumber(item)" class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-red-50 border border-red-200 text-red-700">
                         <Loader2 class="w-4 h-4 animate-spin" />
                         <span class="text-xs font-medium">Cek Resi...</span>
                     </div>
@@ -3163,28 +3163,28 @@ const downloadAttachment = async (att) => {
                         <!-- HDO (Resi Pengiriman) Info -->
                         <!-- Case 1: HDO sudah di-sync dan ditemukan -->
                         <div v-if="getHdosForItem(item).length > 0" class="mt-1 space-y-1">
-                            <div v-for="hdo in getHdosForItem(item)" :key="hdo.no" class="bg-blue-50/60 dark:bg-blue-950/40 border border-dashed border-blue-300/80 dark:border-blue-800/80 rounded-md p-1.5 px-2 flex items-center justify-between text-xs font-sans">
+                            <div v-for="hdo in getHdosForItem(item)" :key="hdo.no" class="bg-red-50/60 dark:bg-red-950/40 border border-dashed border-red-300/80 dark:border-red-800/80 rounded-md p-1.5 px-2 flex items-center justify-between text-xs font-sans">
                                 <div class="flex items-center gap-1.5 min-w-0">
-                                    <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                                    <span class="font-bold text-blue-700 dark:text-blue-300 truncate">{{ hdo.no }}</span>
+                                    <Truck class="w-3.5 h-3.5 text-red-600 dark:text-red-400 shrink-0" />
+                                    <span class="font-bold text-red-700 dark:text-red-300 truncate">{{ hdo.no }}</span>
                                 </div>
-                                <span class="font-bold text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-900/80 px-1.5 py-0.5 rounded text-[11px] shrink-0">
+                                <span class="font-bold text-red-800 dark:text-red-200 bg-red-100 dark:bg-red-900/80 px-1.5 py-0.5 rounded text-[11px] shrink-0">
                                     {{ getSingleHdoQty(hdo, item) }} {{ item.unit }}
                                 </span>
                             </div>
                         </div>
                         <!-- Case 2: HDO sedang di-sync (loading) -->
-                        <div v-else-if="isHdoSyncing && getDisplayedQtyShipped(item) > 0" class="mt-1 bg-blue-50/50 dark:bg-blue-950/30 border border-dashed border-blue-300/60 dark:border-blue-800/60 rounded-md p-1.5 px-2 flex items-center gap-1.5 text-xs text-blue-600 font-medium">
-                            <Loader2 class="w-3.5 h-3.5 text-blue-500 animate-spin shrink-0" />
+                        <div v-else-if="isHdoSyncing && getDisplayedQtyShipped(item) > 0" class="mt-1 bg-red-50/50 dark:bg-red-950/30 border border-dashed border-red-300/60 dark:border-red-800/60 rounded-md p-1.5 px-2 flex items-center gap-1.5 text-xs text-red-600 font-medium">
+                            <Loader2 class="w-3.5 h-3.5 text-red-500 animate-spin shrink-0" />
                             <span>Memuat HDO...</span>
                         </div>
                         <!-- Case 3: Fallback dari DB -->
-                        <div v-else-if="getDisplayedQtyShipped(item) > 0 && item.logistics_hdo" class="mt-1 bg-blue-50/60 dark:bg-blue-950/40 border border-dashed border-blue-300/80 dark:border-blue-800/80 rounded-md p-1.5 px-2 flex items-center justify-between text-xs font-sans">
+                        <div v-else-if="getDisplayedQtyShipped(item) > 0 && item.logistics_hdo" class="mt-1 bg-red-50/60 dark:bg-red-950/40 border border-dashed border-red-300/80 dark:border-red-800/80 rounded-md p-1.5 px-2 flex items-center justify-between text-xs font-sans">
                             <div class="flex items-center gap-1.5 min-w-0">
-                                <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-                                <span class="font-bold text-blue-700 dark:text-blue-300 truncate">{{ item.logistics_hdo }}</span>
+                                <Truck class="w-3.5 h-3.5 text-red-600 dark:text-red-400 shrink-0" />
+                                <span class="font-bold text-red-700 dark:text-red-300 truncate">{{ item.logistics_hdo }}</span>
                             </div>
-                            <span class="font-bold text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-900/80 px-1.5 py-0.5 rounded text-[11px] shrink-0">
+                            <span class="font-bold text-red-800 dark:text-red-200 bg-red-100 dark:bg-red-900/80 px-1.5 py-0.5 rounded text-[11px] shrink-0">
                                 {{ item.qty_shipped }} {{ item.unit }}
                             </span>
                         </div>
@@ -3210,8 +3210,8 @@ const downloadAttachment = async (att) => {
                                         🏢 {{ hpo.vendorName }}
                                     </span>
                                     <template v-for="hpoShipment in [getHpoShipment(item, hpo.poNumber)]" :key="hpoShipment.id || hpo.poNumber">
-                                        <span v-if="hpoShipment.current_status && hpoShipment.current_status !== 'Pending Process'" class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-950/30 text-blue-800 dark:text-blue-300 font-semibold border border-blue-200 dark:border-blue-900 text-xs">
-                                            <Truck class="w-3 h-3 text-blue-600 dark:text-blue-400 shrink-0" />
+                                        <span v-if="hpoShipment.current_status && hpoShipment.current_status !== 'Pending Process'" class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-red-100 dark:bg-red-950/30 text-red-800 dark:text-red-300 font-semibold border border-red-200 dark:border-red-900 text-xs">
+                                            <Truck class="w-3 h-3 text-red-600 dark:text-red-400 shrink-0" />
                                             <span>{{ getHpoDisplayStatus(item, hpoShipment) }}</span>
                                             <span v-if="getHpoDisplayDate(item, hpoShipment) && getHpoDisplayDate(item, hpoShipment) !== '-'" class="opacity-80 font-medium text-[11px]">
                                                 ({{ getHpoDisplayDate(item, hpoShipment) }})
@@ -3234,8 +3234,8 @@ const downloadAttachment = async (att) => {
                                     {{ item.qty_order }} {{ item.unit }}
                                 </span>
                             </div>
-                            <div v-if="item.logistics_status && item.logistics_status !== 'Pending Process'" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50/90 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 font-semibold border border-blue-100 dark:border-blue-900/60 text-[10px]">
-                                <Truck class="w-3 h-3 text-blue-600 shrink-0" />
+                            <div v-if="item.logistics_status && item.logistics_status !== 'Pending Process'" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-50/90 dark:bg-red-950/70 text-red-700 dark:text-red-300 font-semibold border border-red-100 dark:border-red-900/60 text-[10px]">
+                                <Truck class="w-3 h-3 text-red-600 shrink-0" />
                                 <span>{{ item.logistics_status === 'Follow up with our forwarder' ? 'Ex-Works' : item.logistics_status === 'ETA Port JKT' ? 'ETA JKT' : item.logistics_status === 'Already in siemens Warehouse' ? 'Tiba Dunex' : item.logistics_status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : item.logistics_status }}</span>
                                 <span v-if="formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date)" class="opacity-75 font-normal">
                                     ({{ formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date) }})
@@ -3251,7 +3251,7 @@ const downloadAttachment = async (att) => {
                                 Ada kekurangan PO ({{ getDisplayedQtyRemaining(item) }} {{ item.unit }})
                             </span>
                             <!-- Jika stock ready tapi belum dikirim semua -->
-                            <span v-else class="text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                            <span v-else class="text-red-600 dark:text-red-400 flex items-center gap-1">
                                 <Info class="w-3.5 h-3.5 shrink-0" />
                                 Ada {{ getDisplayedQtyRemaining(item) }} {{ item.unit }} belum dikirim
                             </span>
@@ -3427,9 +3427,9 @@ const downloadAttachment = async (att) => {
                   <div class="text-sm font-extrabold text-slate-900 dark:text-white mt-0.5">{{ item.parsed_stock_qty }} <span class="text-[10px] font-normal text-slate-500">{{ item.unit }}</span></div>
                 </div>
                 <!-- Terkirim -->
-                <div class="bg-blue-50/20 dark:bg-blue-900/10 p-2.5 rounded-xl border border-blue-100/50 dark:border-blue-900/20">
-                  <div class="text-[10px] font-bold text-blue-500 dark:text-blue-400 uppercase tracking-wider">Terkirim</div>
-                  <div class="text-sm font-extrabold text-blue-600 dark:text-blue-400 mt-0.5">{{ getDisplayedQtyShipped(item) }} <span class="text-[10px] font-normal text-blue-500">{{ item.unit }}</span></div>
+                <div class="bg-red-50/20 dark:bg-red-900/10 p-2.5 rounded-xl border border-red-100/50 dark:border-red-900/20">
+                  <div class="text-[10px] font-bold text-red-500 dark:text-red-400 uppercase tracking-wider">Terkirim</div>
+                  <div class="text-sm font-extrabold text-red-600 dark:text-red-400 mt-0.5">{{ getDisplayedQtyShipped(item) }} <span class="text-[10px] font-normal text-red-500">{{ item.unit }}</span></div>
                 </div>
                 <!-- Sisa Kirim -->
                 <div class="p-2.5 rounded-xl border" :class="getDisplayedQtyRemaining(item) > 0 ? 'bg-red-50/20 dark:bg-red-900/10 border-red-100/50 dark:border-red-900/20' : 'bg-emerald-50/20 dark:bg-emerald-900/10 border-emerald-100/50 dark:border-emerald-900/20'">
@@ -3445,7 +3445,7 @@ const downloadAttachment = async (att) => {
                   <Loader2 class="w-4 h-4 animate-spin" />
                   <span>Checking purchase order...</span>
                 </div>
-                <div v-else-if="isSyncing && item.qty_shipped > 0 && !getHdoNumber(item)" class="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-950 text-blue-700 dark:text-blue-400 text-xs font-semibold">
+                <div v-else-if="isSyncing && item.qty_shipped > 0 && !getHdoNumber(item)" class="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-950 text-red-700 dark:text-red-400 text-xs font-semibold">
                   <Loader2 class="w-4 h-4 animate-spin" />
                   <span>Checking shipment logs...</span>
                 </div>
@@ -3469,32 +3469,32 @@ const downloadAttachment = async (att) => {
 
                   <!-- HDO List -->
                   <div v-if="getHdosForItem(item).length > 0" class="space-y-2">
-                    <div v-for="hdo in getHdosForItem(item)" :key="hdo.no" class="bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-xl p-3">
-                      <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-blue-100 dark:border-blue-900/60">
-                        <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                        <span class="text-[10px] font-bold text-blue-500 uppercase tracking-wider">HDO Pengiriman</span>
+                    <div v-for="hdo in getHdosForItem(item)" :key="hdo.no" class="bg-red-50/50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-xl p-3">
+                      <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-red-100 dark:border-red-900/60">
+                        <Truck class="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                        <span class="text-[10px] font-bold text-red-500 uppercase tracking-wider">HDO Pengiriman</span>
                       </div>
                       <div class="flex items-center justify-between">
-                        <span class="text-xs font-mono font-bold text-blue-700 dark:text-blue-300">{{ hdo.no }}</span>
-                        <span class="text-xs font-bold text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-900/60 px-2 py-0.5 rounded-lg border border-blue-200/50 dark:border-blue-800">{{ getSingleHdoQty(hdo, item) }} {{ item.unit }}</span>
+                        <span class="text-xs font-mono font-bold text-red-700 dark:text-red-300">{{ hdo.no }}</span>
+                        <span class="text-xs font-bold text-red-800 dark:text-red-200 bg-red-100 dark:bg-red-900/60 px-2 py-0.5 rounded-lg border border-red-200/50 dark:border-red-800">{{ getSingleHdoQty(hdo, item) }} {{ item.unit }}</span>
                       </div>
 
                     </div>
                   </div>
                   
-                  <div v-else-if="isHdoSyncing && getDisplayedQtyShipped(item) > 0" class="bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-xl p-3 flex items-center gap-2">
-                    <Loader2 class="w-4 h-4 text-blue-400 animate-spin" />
-                    <span class="text-xs text-blue-500 font-medium">Memuat data HDO...</span>
+                  <div v-else-if="isHdoSyncing && getDisplayedQtyShipped(item) > 0" class="bg-red-50/50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-xl p-3 flex items-center gap-2">
+                    <Loader2 class="w-4 h-4 text-red-400 animate-spin" />
+                    <span class="text-xs text-red-500 font-medium">Memuat data HDO...</span>
                   </div>
                   
-                  <div v-else-if="getDisplayedQtyShipped(item) > 0 && item.logistics_hdo" class="bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900 rounded-xl p-3">
-                    <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-blue-100 dark:border-blue-900/60">
-                      <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                      <span class="text-[10px] font-bold text-blue-500 uppercase tracking-wider">HDO Pengiriman</span>
+                  <div v-else-if="getDisplayedQtyShipped(item) > 0 && item.logistics_hdo" class="bg-red-50/50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-xl p-3">
+                    <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-red-100 dark:border-red-900/60">
+                      <Truck class="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                      <span class="text-[10px] font-bold text-red-500 uppercase tracking-wider">HDO Pengiriman</span>
                     </div>
                     <div class="flex items-center justify-between">
-                      <span class="text-xs font-mono font-bold text-blue-700 dark:text-blue-300">{{ item.logistics_hdo }}</span>
-                      <span class="text-xs font-bold text-blue-800 dark:text-blue-200 bg-blue-100 dark:bg-blue-900/60 px-2 py-0.5 rounded-lg border border-blue-200/50 dark:border-blue-800">{{ item.qty_shipped }} {{ item.unit }}</span>
+                      <span class="text-xs font-mono font-bold text-red-700 dark:text-red-300">{{ item.logistics_hdo }}</span>
+                      <span class="text-xs font-bold text-red-800 dark:text-red-200 bg-red-100 dark:bg-red-900/60 px-2 py-0.5 rounded-lg border border-red-200/50 dark:border-red-800">{{ item.qty_shipped }} {{ item.unit }}</span>
                     </div>
                   </div>
 
@@ -3520,11 +3520,11 @@ const downloadAttachment = async (att) => {
                       <!-- Logistics status tree inside HPO -->
                       <template v-for="hpoShipment in [getHpoShipment(item, hpo.poNumber)]" :key="hpoShipment.id || hpo.poNumber">
                         <div v-if="hpoShipment.current_status && hpoShipment.current_status !== 'Pending Process'" class="mt-2.5">
-                          <div class="flex flex-col gap-1 bg-blue-50/50 dark:bg-blue-950/20 px-2.5 py-1.5 rounded-lg border border-blue-100 dark:border-blue-900">
+                          <div class="flex flex-col gap-1 bg-red-50/50 dark:bg-red-950/20 px-2.5 py-1.5 rounded-lg border border-red-100 dark:border-red-900">
                             <div class="flex items-center justify-between">
                               <div class="flex items-center gap-1.5 min-w-0">
-                                <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
-                                <span class="text-[11px] font-bold text-blue-700 dark:text-blue-300 truncate">
+                                <Truck class="w-3.5 h-3.5 text-red-600 dark:text-red-400 flex-shrink-0" />
+                                <span class="text-[11px] font-bold text-red-700 dark:text-red-300 truncate">
                                   {{ getHpoDisplayStatus(item, hpoShipment) }}
                                 </span>
                               </div>
@@ -3533,7 +3533,7 @@ const downloadAttachment = async (att) => {
                                 ⏳ Waiting
                               </span>
                             </div>
-                            <span v-if="getHpoDisplayDate(item, hpoShipment) && getHpoDisplayDate(item, hpoShipment) !== '-'" class="text-[10px] font-mono font-bold text-blue-600 dark:text-blue-400 pl-5 truncate">
+                            <span v-if="getHpoDisplayDate(item, hpoShipment) && getHpoDisplayDate(item, hpoShipment) !== '-'" class="text-[10px] font-mono font-bold text-red-600 dark:text-red-400 pl-5 truncate">
                               {{ getHpoDisplayDate(item, hpoShipment) }}
                             </span>
                           </div>
@@ -3558,10 +3558,10 @@ const downloadAttachment = async (att) => {
 
                     <!-- Logistics status if exists -->
                     <div v-if="item.logistics_status && item.logistics_status !== 'Pending Process'" class="mt-2.5">
-                      <div class="flex items-center justify-between gap-2 bg-blue-50/50 dark:bg-blue-950/20 px-2.5 py-1.5 rounded-lg border border-blue-100 dark:border-blue-900">
+                      <div class="flex items-center justify-between gap-2 bg-red-50/50 dark:bg-red-950/20 px-2.5 py-1.5 rounded-lg border border-red-100 dark:border-red-900">
                         <div class="flex items-center gap-1.5 min-w-0">
-                          <Truck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
-                          <span class="text-[11px] font-bold text-blue-700 dark:text-blue-300 truncate">
+                          <Truck class="w-3.5 h-3.5 text-red-600 dark:text-red-400 flex-shrink-0" />
+                          <span class="text-[11px] font-bold text-red-700 dark:text-red-300 truncate">
                             {{ item.logistics_status === 'Follow up with our forwarder' ? 'Ex-Works' : item.logistics_status === 'ETA Port JKT' ? 'ETA JKT' : item.logistics_status === 'Already in siemens Warehouse' ? 'Tiba Dunex' : item.logistics_status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : item.logistics_status }}
                           </span>
                         </div>
@@ -3569,7 +3569,7 @@ const downloadAttachment = async (att) => {
                               class="text-[10px] font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap">
                           ⏳ Waiting
                         </span>
-                        <span v-else class="text-[10px] font-mono font-bold text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                        <span v-else class="text-[10px] font-mono font-bold text-red-600 dark:text-red-400 whitespace-nowrap">
                           {{ formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date) || '-' }}
                         </span>
                       </div>
@@ -3582,7 +3582,7 @@ const downloadAttachment = async (att) => {
                       <AlertTriangle class="w-3.5 h-3.5" />
                       Ada kekurangan PO ({{ getDisplayedQtyRemaining(item) }} {{ item.unit }})
                     </span>
-                    <span v-else class="text-blue-600 dark:text-blue-400 flex items-center gap-1.5">
+                    <span v-else class="text-red-600 dark:text-red-400 flex items-center gap-1.5">
                       <Info class="w-3.5 h-3.5" />
                       Ada {{ getDisplayedQtyRemaining(item) }} {{ item.unit }} belum dikirim
                     </span>
@@ -3705,7 +3705,7 @@ const downloadAttachment = async (att) => {
                             <span class="font-mono font-bold text-sm text-gray-800 dark:text-gray-100 tracking-wide">{{ item.code }}</span>
                             <button @click.stop="copyPartNumber(item.code)"
                                 class="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded transition-colors"
-                                :class="copiedPartNumber === item.code ? 'text-green-500' : 'text-gray-400 hover:text-blue-500'"
+                                :class="copiedPartNumber === item.code ? 'text-green-500' : 'text-gray-400 hover:text-red-500'"
                                 title="Copy Part Number">
                                 <component :is="copiedPartNumber === item.code ? CheckCircle2 : Copy" class="w-3 h-3"/>
                             </button>
@@ -3735,7 +3735,7 @@ const downloadAttachment = async (att) => {
                             @click.stop="copyPurchaseRow(item)"
                             :class="copiedRowCode === item.code
                                 ? 'text-green-600 border-green-400 bg-green-50 dark:bg-green-900/20 opacity-100'
-                                : 'opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 border-gray-200 dark:border-slate-600 hover:border-blue-400'"
+                                : 'opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600 border-gray-200 dark:border-slate-600 hover:border-red-400'"
                             class="transition-all duration-300 flex items-center gap-1 text-xs border rounded px-2 py-1 bg-white dark:bg-slate-800"
                             title="Copy baris ke clipboard (SKU | Deskripsi | Qty)">
                             <component :is="copiedRowCode === item.code ? CheckCircle2 : Copy" class="w-3 h-3"/>
@@ -3752,7 +3752,7 @@ const downloadAttachment = async (att) => {
             <CardHeader class="pb-3 border-b border-gray-100 dark:border-slate-700 px-6 py-4">
               <CardTitle class="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide flex items-center gap-2">
                 <FileText class="w-4 h-4"/> Riwayat Dokumen
-                <Loader2 v-if="isHdoSyncing" class="w-4 h-4 animate-spin text-blue-600" />
+                <Loader2 v-if="isHdoSyncing" class="w-4 h-4 animate-spin text-red-600" />
               </CardTitle>
             </CardHeader>
             <CardContent class="pt-4 px-6 pb-6">
@@ -3768,14 +3768,14 @@ const downloadAttachment = async (att) => {
                 <div v-for="doItem in groupedShipments" :key="doItem.no" class="flex flex-col bg-gray-50 dark:bg-slate-700/50 rounded-lg border border-gray-200 dark:border-slate-600 overflow-hidden transition-all duration-300">
                     <div class="flex justify-between items-center p-3 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700" @click="expandedDocNo = expandedDocNo === doItem.no ? null : doItem.no">
                         <div class="flex items-center gap-3">
-                            <div :class="doItem.type === 'HPO' ? 'text-green-600 dark:text-green-400' : 'text-blue-600 dark:text-blue-400'" class="bg-white dark:bg-slate-800 p-1.5 rounded border border-gray-200 dark:border-slate-600 shadow-sm">
+                            <div :class="doItem.type === 'HPO' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'" class="bg-white dark:bg-slate-800 p-1.5 rounded border border-gray-200 dark:border-slate-600 shadow-sm">
                                 <ShoppingCart v-if="doItem.type === 'HPO'" class="w-4 h-4"/>
                                 <Truck v-else class="w-4 h-4"/>
                             </div>
                             <div>
                                 <div class="text-sm font-bold text-gray-800 dark:text-white flex items-center gap-2">
                                     {{ doItem.no }}
-                                    <span v-if="doItem.source === 'MANUAL'" class="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200">MANUAL</span>
+                                    <span v-if="doItem.source === 'MANUAL'" class="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded border border-red-200">MANUAL</span>
                                     <span v-if="doItem.type === 'HPO'" class="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded border border-green-200">PO</span>
                                 </div>
                                 <div class="text-xs text-gray-500 dark:text-gray-400">{{ doItem.date }}</div>
@@ -3852,8 +3852,8 @@ const downloadAttachment = async (att) => {
                 :key="log.id" 
                 class="flex items-start gap-3 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-700"
               >
-                <div class="flex-shrink-0 w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
-                  <Edit class="w-4 h-4 text-blue-600 dark:text-blue-400"/>
+                <div class="flex-shrink-0 w-8 h-8 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
+                  <Edit class="w-4 h-4 text-red-600 dark:text-red-400"/>
                 </div>
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2 flex-wrap">
@@ -3891,7 +3891,7 @@ const downloadAttachment = async (att) => {
                   <div v-else class="w-full mb-3"><p class="font-bold text-sm text-gray-900 dark:text-white">Mass Update</p></div>
                   
                   <!-- STATUS OTOMATIS - FULL WIDTH -->
-                  <div v-if="selectedItem && !isBulkMode" class="p-5 rounded-lg" :class="hpoMapping[selectedItem.code] ? 'bg-green-50 dark:bg-green-900/20 border-2 border-green-300' : selectedItem.qty_to_order > 0 ? 'bg-red-50 dark:bg-red-900/20 border-2 border-red-300' : 'bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-300'">
+                  <div v-if="selectedItem && !isBulkMode" class="p-5 rounded-lg" :class="hpoMapping[selectedItem.code] ? 'bg-green-50 dark:bg-green-900/20 border-2 border-green-300' : selectedItem.qty_to_order > 0 ? 'bg-red-50 dark:bg-red-900/20 border-2 border-red-300' : 'bg-red-50 dark:bg-red-900/20 border-2 border-red-300'">
                       <!-- Jika ada HPO - BIGGER TEXT -->
                       <div v-if="hpoMapping[selectedItem.code]" class="flex items-center gap-3">
                           <CheckCircle2 class="w-7 h-7 text-green-600" />
@@ -3910,10 +3910,10 @@ const downloadAttachment = async (att) => {
                       </div>
                       <!-- Jika ada stock, siap dikirim -->
                       <div v-else class="flex items-center gap-2">
-                          <Hourglass class="w-5 h-5 text-blue-600" />
+                          <Hourglass class="w-5 h-5 text-red-600" />
                           <div>
-                              <p class="text-xs font-bold text-blue-700">SIAP DIKIRIM</p>
-                              <p class="text-sm text-blue-600">Stok tersedia, siap kirim</p>
+                              <p class="text-xs font-bold text-red-700">SIAP DIKIRIM</p>
+                              <p class="text-sm text-red-600">Stok tersedia, siap kirim</p>
                           </div>
                       </div>
                   </div>
@@ -3957,20 +3957,20 @@ const downloadAttachment = async (att) => {
                      
                      <!-- JIKA ITEM READY (Stock Ada, Tidak Perlu PO) -->
                      <div v-else-if="hpoKey === 'default' && selectedItem.qty_to_order === 0">
-                         <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border-2 border-blue-200 dark:border-blue-800 flex items-start gap-3 mb-4">
+                         <div class="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border-2 border-red-200 dark:border-red-800 flex items-start gap-3 mb-4">
                              <div class="bg-white dark:bg-slate-800 p-2 rounded-full shadow-sm">
-                                 <CheckCircle2 class="w-6 h-6 text-blue-600"/>
+                                 <CheckCircle2 class="w-6 h-6 text-red-600"/>
                              </div>
                              <div>
-                                 <p class="text-base font-bold text-blue-800 dark:text-blue-300">Barang Ready / Siap Kirim</p>
-                                 <p class="text-sm text-blue-600 dark:text-blue-400 mt-1">Stok tersedia. Silakan update keterangan atau Hold jika ditunda.</p>
+                                 <p class="text-base font-bold text-red-800 dark:text-red-300">Barang Ready / Siap Kirim</p>
+                                 <p class="text-sm text-red-600 dark:text-red-400 mt-1">Stok tersedia. Silakan update keterangan atau Hold jika ditunda.</p>
                              </div>
                          </div>
       
                          <!-- Admin Notes -->
                          <div class="mb-4">
                              <label class="text-sm font-bold text-gray-700 dark:text-gray-300 mb-2 block">Keterangan Admin (Internal)</label>
-                             <textarea v-model="statusData.admin_notes" rows="3" class="w-full bg-white dark:bg-gray-800 border-2 border-gray-300 dark:border-gray-600 p-3 text-sm focus:ring-2 ring-blue-500 outline-none rounded placeholder-gray-400" placeholder="Tulis catatan internal di sini..."></textarea>
+                             <textarea v-model="statusData.admin_notes" rows="3" class="w-full bg-white dark:bg-gray-800 border-2 border-gray-300 dark:border-gray-600 p-3 text-sm focus:ring-2 ring-red-500 outline-none rounded placeholder-gray-400" placeholder="Tulis catatan internal di sini..."></textarea>
                              
                              <!-- Quick Text Button -->
                              <div class="mt-2 flex gap-2">
@@ -4003,57 +4003,57 @@ const downloadAttachment = async (att) => {
                              
                              <div class="bg-white dark:bg-gray-800 border-2 border-gray-300 dark:border-gray-600 rounded-lg p-4 space-y-3">
                                  <!-- Ex-Works -->
-                                 <div class="border-l-4 pl-3 transition-all" :class="statusData.status === 'Follow up with our forwarder' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-300'">
+                                 <div class="border-l-4 pl-3 transition-all" :class="statusData.status === 'Follow up with our forwarder' ? 'border-red-600 bg-red-50 dark:bg-red-900/20' : 'border-gray-300'">
                                      <div class="cursor-pointer py-2" @click="statusData.status = 'Follow up with our forwarder'">
                                          <div class="flex items-center gap-3 mb-2">
-                                             <div class="w-3 h-3 rounded-full" :class="statusData.status === 'Follow up with our forwarder' ? 'bg-blue-600' : 'bg-gray-300'"></div>
-                                             <span class="text-base font-medium" :class="statusData.status === 'Follow up with our forwarder' ? 'text-blue-700 dark:text-blue-300 font-bold' : 'text-gray-600 dark:text-gray-400'">Barang Ready (Ex-Works)</span>
+                                             <div class="w-3 h-3 rounded-full" :class="statusData.status === 'Follow up with our forwarder' ? 'bg-red-600' : 'bg-gray-300'"></div>
+                                             <span class="text-base font-medium" :class="statusData.status === 'Follow up with our forwarder' ? 'text-red-700 dark:text-red-300 font-bold' : 'text-gray-600 dark:text-gray-400'">Barang Ready (Ex-Works)</span>
                                          </div>
                                          <div class="ml-6">
                                              <label class="text-xs text-gray-500 dark:text-gray-400 block mb-1">Tanggal Ex-Work:</label>
-                                             <input v-model="statusData.exwork_date" type="date" class="w-full px-3 py-1.5 text-sm border-2 border-gray-300 rounded bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:ring-2 ring-blue-500 outline-none" @click.stop />
+                                             <input v-model="statusData.exwork_date" type="date" class="w-full px-3 py-1.5 text-sm border-2 border-gray-300 rounded bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:ring-2 ring-red-500 outline-none" @click.stop />
                                          </div>
                                      </div>
                                  </div>
                                  
                                  <!-- ETA Port JKT -->
-                                 <div class="border-l-4 pl-3 transition-all" :class="statusData.status === 'ETA Port JKT' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-300'">
+                                 <div class="border-l-4 pl-3 transition-all" :class="statusData.status === 'ETA Port JKT' ? 'border-red-600 bg-red-50 dark:bg-red-900/20' : 'border-gray-300'">
                                      <div class="cursor-pointer py-2" @click="statusData.status = 'ETA Port JKT'">
                                          <div class="flex items-center gap-3 mb-2">
-                                             <div class="w-3 h-3 rounded-full" :class="statusData.status === 'ETA Port JKT' ? 'bg-blue-600' : 'bg-gray-300'"></div>
-                                             <span class="text-base font-medium" :class="statusData.status === 'ETA Port JKT' ? 'text-blue-700 dark:text-blue-300 font-bold' : 'text-gray-600 dark:text-gray-400'">Sedang Transit (ETA JKT)</span>
+                                             <div class="w-3 h-3 rounded-full" :class="statusData.status === 'ETA Port JKT' ? 'bg-red-600' : 'bg-gray-300'"></div>
+                                             <span class="text-base font-medium" :class="statusData.status === 'ETA Port JKT' ? 'text-red-700 dark:text-red-300 font-bold' : 'text-gray-600 dark:text-gray-400'">Sedang Transit (ETA JKT)</span>
                                          </div>
                                          <div class="ml-6">
                                              <label class="text-xs text-gray-500 dark:text-gray-400 block mb-1">Tanggal ETA Port:</label>
-                                             <input v-model="statusData.eta_date" type="date" class="w-full px-3 py-1.5 text-sm border-2 border-gray-300 rounded bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:ring-2 ring-blue-500 outline-none" @click.stop />
+                                             <input v-model="statusData.eta_date" type="date" class="w-full px-3 py-1.5 text-sm border-2 border-gray-300 rounded bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:ring-2 ring-red-500 outline-none" @click.stop />
                                          </div>
                                      </div>
                                  </div>
                                  
                                  <!-- Tiba Dunex -->
-                                 <div class="border-l-4 pl-3 transition-all" :class="statusData.status === 'Already in siemens Warehouse' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-300'">
+                                 <div class="border-l-4 pl-3 transition-all" :class="statusData.status === 'Already in siemens Warehouse' ? 'border-red-600 bg-red-50 dark:bg-red-900/20' : 'border-gray-300'">
                                      <div class="cursor-pointer py-2" @click="statusData.status = 'Already in siemens Warehouse'">
                                          <div class="flex items-center gap-3 mb-2">
-                                             <div class="w-3 h-3 rounded-full" :class="statusData.status === 'Already in siemens Warehouse' ? 'bg-blue-600' : 'bg-gray-300'"></div>
-                                             <span class="text-base font-medium" :class="statusData.status === 'Already in siemens Warehouse' ? 'text-blue-700 dark:text-blue-300 font-bold' : 'text-gray-600 dark:text-gray-400'">Tiba di Dunex</span>
+                                             <div class="w-3 h-3 rounded-full" :class="statusData.status === 'Already in siemens Warehouse' ? 'bg-red-600' : 'bg-gray-300'"></div>
+                                             <span class="text-base font-medium" :class="statusData.status === 'Already in siemens Warehouse' ? 'text-red-700 dark:text-red-300 font-bold' : 'text-gray-600 dark:text-gray-400'">Tiba di Dunex</span>
                                          </div>
                                          <div class="ml-6">
                                              <label class="text-xs text-gray-500 dark:text-gray-400 block mb-1">Tanggal Tiba Dunex:</label>
-                                             <input v-model="statusData.dunex_date" type="date" class="w-full px-3 py-1.5 text-sm border-2 border-gray-300 rounded bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:ring-2 ring-blue-500 outline-none" @click.stop />
+                                             <input v-model="statusData.dunex_date" type="date" class="w-full px-3 py-1.5 text-sm border-2 border-gray-300 rounded bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:ring-2 ring-red-500 outline-none" @click.stop />
                                          </div>
                                      </div>
                                  </div>
                                  
                                  <!-- Tiba Hokiindo -->
-                                 <div class="border-l-4 pl-3 transition-all" :class="statusData.status === 'Already in Hokiindo Raya' ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-300'">
+                                 <div class="border-l-4 pl-3 transition-all" :class="statusData.status === 'Already in Hokiindo Raya' ? 'border-red-600 bg-red-50 dark:bg-red-900/20' : 'border-gray-300'">
                                      <div class="cursor-pointer py-2" @click="statusData.status = 'Already in Hokiindo Raya'">
                                          <div class="flex items-center gap-3 mb-2">
-                                             <div class="w-3 h-3 rounded-full" :class="statusData.status === 'Already in Hokiindo Raya' ? 'bg-blue-600' : 'bg-gray-300'"></div>
-                                             <span class="text-base font-medium" :class="statusData.status === 'Already in Hokiindo Raya' ? 'text-blue-700 dark:text-blue-300 font-bold' : 'text-gray-600 dark:text-gray-400'">Tiba di Hokiindo (Siap Kirim)</span>
+                                             <div class="w-3 h-3 rounded-full" :class="statusData.status === 'Already in Hokiindo Raya' ? 'bg-red-600' : 'bg-gray-300'"></div>
+                                             <span class="text-base font-medium" :class="statusData.status === 'Already in Hokiindo Raya' ? 'text-red-700 dark:text-red-300 font-bold' : 'text-gray-600 dark:text-gray-400'">Tiba di Hokiindo (Siap Kirim)</span>
                                          </div>
                                          <div class="ml-6">
                                              <label class="text-xs text-gray-500 dark:text-gray-400 block mb-1">Tanggal Tiba Hokiindo:</label>
-                                             <input v-model="statusData.hokiindo_date" type="date" class="w-full px-3 py-1.5 text-sm border-2 border-gray-300 rounded bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:ring-2 ring-blue-500 outline-none" @click.stop />
+                                             <input v-model="statusData.hokiindo_date" type="date" class="w-full px-3 py-1.5 text-sm border-2 border-gray-300 rounded bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:ring-2 ring-red-500 outline-none" @click.stop />
                                          </div>
                                      </div>
                                  </div>
@@ -4063,7 +4063,7 @@ const downloadAttachment = async (att) => {
                          <!-- Admin Notes -->
                          <div class="mt-4">
                              <label class="text-sm font-bold text-gray-700 dark:text-gray-300 mb-2 block">Keterangan Admin (Internal)</label>
-                             <textarea v-model="statusData.admin_notes" rows="3" class="w-full bg-white dark:bg-gray-800 border-2 border-gray-300 dark:border-gray-600 p-3 text-sm focus:ring-2 ring-blue-500 dark:ring-blue-400 outline-none rounded placeholder-gray-400" placeholder="Tulis catatan internal di sini..."></textarea>
+                             <textarea v-model="statusData.admin_notes" rows="3" class="w-full bg-white dark:bg-gray-800 border-2 border-gray-300 dark:border-gray-600 p-3 text-sm focus:ring-2 ring-red-500 dark:ring-red-400 outline-none rounded placeholder-gray-400" placeholder="Tulis catatan internal di sini..."></textarea>
                          </div>
                      </div>
                  </div>
@@ -4073,7 +4073,7 @@ const downloadAttachment = async (att) => {
           <!-- Footer with buttons - Always visible at bottom -->
           <div class="sticky bottom-0 p-4 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 flex justify-end items-center gap-4">
               <button @click="isModalOpen = false" class="px-6 py-2.5 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white text-sm font-bold border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">BATAL</button>
-              <button @click="saveUpdate" :disabled="isSubmitting" class="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2.5 font-bold text-sm rounded shadow-lg active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"><Loader2 v-if="isSubmitting" class="w-4 h-4 animate-spin" /> {{ isSubmitting ? 'SAVING...' : isBulkMode ? 'UPDATE ALL' : 'UPDATE ITEM' }}</button>
+              <button @click="saveUpdate" :disabled="isSubmitting" class="bg-red-600 hover:bg-red-700 text-white px-8 py-2.5 font-bold text-sm rounded shadow-lg active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"><Loader2 v-if="isSubmitting" class="w-4 h-4 animate-spin" /> {{ isSubmitting ? 'SAVING...' : isBulkMode ? 'UPDATE ALL' : 'UPDATE ITEM' }}</button>
           </div>
         </SheetContent>
       <!-- Excel Import Confirmation Modal -->
@@ -4138,7 +4138,7 @@ const downloadAttachment = async (att) => {
                     <TableCell>
                       <div class="flex flex-col">
                         <span class="text-slate-400 line-through">{{ row.dbStatus || '-' }}</span>
-                        <span class="font-bold text-slate-900 dark:text-white" :class="row.dbStatus !== row.excelStatus && 'text-blue-600 dark:text-blue-400'">
+                        <span class="font-bold text-slate-900 dark:text-white" :class="row.dbStatus !== row.excelStatus && 'text-red-600 dark:text-red-400'">
                           {{ row.excelStatus || '-' }}
                         </span>
                       </div>
@@ -4210,7 +4210,7 @@ const downloadAttachment = async (att) => {
           <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 flex justify-between items-center shrink-0">
             <div>
               <h3 class="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Mail class="w-5 h-5 text-blue-600 dark:text-blue-400"/>
+                <Mail class="w-5 h-5 text-red-600 dark:text-red-400"/>
                 Kirim Email Reminder HSO
               </h3>
               <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -4228,7 +4228,7 @@ const downloadAttachment = async (att) => {
               <input 
                 v-model="emailForm.to" 
                 type="text" 
-                class="w-full px-3.5 py-2 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs font-medium"
+                class="w-full px-3.5 py-2 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500 text-xs font-medium"
               />
             </div>
 
@@ -4238,7 +4238,7 @@ const downloadAttachment = async (att) => {
               <input 
                 v-model="emailForm.subject" 
                 type="text" 
-                class="w-full px-3.5 py-2 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs font-medium"
+                class="w-full px-3.5 py-2 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500 text-xs font-medium"
               />
             </div>
 
@@ -4249,7 +4249,7 @@ const downloadAttachment = async (att) => {
                 v-model="emailForm.customMessage" 
                 rows="3" 
                 placeholder="Contoh: Berikut resume status pengiriman produk HSO..."
-                class="w-full px-3.5 py-2 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs font-medium"
+                class="w-full px-3.5 py-2 border border-slate-200 dark:border-slate-800 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500 text-xs font-medium"
               ></textarea>
             </div>
 
@@ -4295,7 +4295,7 @@ const downloadAttachment = async (att) => {
                           <td class="p-2 font-mono font-semibold">{{ item.hpo }}</td>
                           <td class="p-2 font-bold text-center">{{ item.qty }}</td>
                           <td class="p-2">
-                            <span class="inline-block px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-[10px] font-bold border border-blue-200 dark:border-blue-800">
+                            <span class="inline-block px-1.5 py-0.5 rounded bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 text-[10px] font-bold border border-red-200 dark:border-red-800">
                               {{ item.status }}
                             </span>
                           </td>
@@ -4313,7 +4313,7 @@ const downloadAttachment = async (att) => {
                     </h4>
                     <button 
                       @click="copyTableToClipboard('resume')"
-                      class="px-2 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[10px] font-bold text-slate-700 dark:text-slate-300 rounded border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-1 active:scale-95 focus:ring-1 focus:ring-blue-500"
+                      class="px-2 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-[10px] font-bold text-slate-700 dark:text-slate-300 rounded border border-slate-200 dark:border-slate-700 transition-all flex items-center gap-1 active:scale-95 focus:ring-1 focus:ring-red-500"
                     >
                       <component :is="isResumeCopied ? CheckCircle2 : Copy" class="w-3 h-3 text-slate-500" />
                       {{ isResumeCopied ? 'Tabel Disalin!' : 'Copy Table' }}
@@ -4337,7 +4337,7 @@ const downloadAttachment = async (att) => {
                             <span class="block text-[10px] text-slate-400 truncate max-w-[200px]">{{ item.name }}</span>
                           </td>
                           <td class="p-2 text-center">{{ item.qty_order }}</td>
-                          <td class="p-2 text-center text-blue-600 dark:text-blue-400 font-bold">{{ item.qty_shipped }}</td>
+                          <td class="p-2 text-center text-red-600 dark:text-red-400 font-bold">{{ item.qty_shipped }}</td>
                           <td class="p-2 text-center text-red-600 dark:text-red-400 font-bold">{{ item.qty_remaining }}</td>
                           <td class="p-2">
                             <span class="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold border" :class="item.statusClass">
@@ -4356,7 +4356,7 @@ const downloadAttachment = async (att) => {
           <!-- Footer -->
           <div class="px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/30 flex justify-end gap-3 shrink-0">
             <Button variant="outline" @click="isEmailModalOpen = false" :disabled="isSendingEmail">BATAL</Button>
-            <Button class="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5" @click="sendReminderEmail" :disabled="isSendingEmail">
+            <Button class="bg-red-600 hover:bg-red-700 text-white flex items-center gap-1.5" @click="sendReminderEmail" :disabled="isSendingEmail">
               <Loader2 v-if="isSendingEmail" class="w-4 h-4 animate-spin"/>
               <Mail v-else class="w-4 h-4"/>
               <span>{{ isSendingEmail ? 'MENGIRIM...' : 'KIRIM EMAIL' }}</span>

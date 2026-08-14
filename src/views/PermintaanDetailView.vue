@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { 
@@ -24,8 +24,12 @@ import {
   Search,
   Plus,
   Zap,
-  Timer
+  Timer,
+  Link,
+  Repeat,
+  CheckSquare
 } from 'lucide-vue-next'
+import RichTextEditor from '@/components/RichTextEditor.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -49,19 +53,79 @@ const isCustomerDropdownOpen = ref(false)
 const customerSearchQuery = ref('')
 
 const fileInput = ref(null)
-const selectedFile = ref(null)
-const fileOption = ref('upload')
+const attachmentMode = ref('file')
+const newLinkUrl = ref('')
+const newLinkTitle = ref('')
+const isUploadingAttachment = ref(false)
+const isDraggingOver = ref(false)
+const modalNewSubtask = ref('')
 
 const editForm = ref({
   title: '',
+  has_project_ref: false,
   project_name: '',
   customer_name: '',
   pic_name: '',
   description: '',
-  assignee: '',
+  assignees: [],
+  subtasks: [],
   target_date: '',
-  file_link: ''
+  file_link: '',
+  attachments: [],
+  is_recurring: false,
+  recurrence_type: 'MONTHLY',
+  recurrence_day: 1,
+  recurrence_weekday: 1
 })
+const hasProjectRef = computed(() => editForm.value.has_project_ref)
+
+const toggleAssignee = (email) => {
+  if (!email) return
+  const idx = editForm.value.assignees.indexOf(email)
+  if (idx > -1) {
+    editForm.value.assignees.splice(idx, 1)
+  } else {
+    editForm.value.assignees.push(email)
+  }
+}
+
+const addModalSubtask = () => {
+  if (!modalNewSubtask.value.trim()) return
+  editForm.value.subtasks.push({
+    id: Date.now().toString() + Math.random().toString(36).substring(7),
+    title: modalNewSubtask.value.trim(),
+    completed: false
+  })
+  modalNewSubtask.value = ''
+}
+
+const removeModalSubtask = (index) => {
+  editForm.value.subtasks.splice(index, 1)
+}
+
+const setQuickDate = (daysToAdd) => {
+  const target = new Date()
+  target.setDate(target.getDate() + daysToAdd)
+  editForm.value.target_date = target.toISOString().split('T')[0]
+}
+
+const getUserDisplayName = (email) => {
+  if (!email) return ''
+  const trimmed = email.trim()
+  try {
+    const raw = localStorage.getItem('hir_team_contacts')
+    if (raw) {
+      const contacts = JSON.parse(raw)
+      const contact = contacts[trimmed.toLowerCase()]
+      if (contact && contact.full_name && contact.full_name.trim()) {
+        return `${contact.full_name.trim()} (${trimmed})`
+      }
+    }
+  } catch (e) {}
+  const prefix = trimmed.split('@')[0] || trimmed
+  const formatted = prefix.split('.').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+  return `${formatted} (${trimmed})`
+}
 
 const filteredAccurateCustomers = computed(() => {
   const query = customerSearchQuery.value.toLowerCase().trim()
@@ -82,7 +146,77 @@ const handleClickOutsideCustomer = (event) => {
 }
 
 const handleFileChange = (event) => {
-  selectedFile.value = event.target.files[0] || null
+  handleFilesUpload(event)
+}
+
+const addLinkAttachment = () => {
+  if (!newLinkUrl.value.trim()) { alert('URL link wajib diisi!'); return }
+  let url = newLinkUrl.value.trim()
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    url = `https://${url}`
+  }
+  let title = ''
+  try { title = new URL(url).hostname } catch { title = url }
+  editForm.value.attachments.push({
+    id: Date.now().toString() + Math.random().toString(36).substring(7),
+    name: title,
+    url: url,
+    type: 'link'
+  })
+  newLinkUrl.value = ''
+}
+
+const removeAttachment = (index) => {
+  editForm.value.attachments.splice(index, 1)
+}
+
+const handleFilesUpload = async (event) => {
+  const files = Array.from(event.dataTransfer?.files || event.target?.files || [])
+  if (files.length === 0) return
+
+  isUploadingAttachment.value = true
+  for (const file of files) {
+    try {
+      let fileUrl = ''
+      let fileName = file.name
+
+      try {
+        const driveFormData = new FormData()
+        driveFormData.append('file', file)
+        const { data: driveData, error: driveError } = await supabase.functions.invoke('upload-to-drive', {
+          body: driveFormData
+        })
+        if (!driveError && driveData?.webViewLink) {
+          fileUrl = driveData.webViewLink
+        }
+      } catch (driveErr) {
+        console.warn('Drive upload fallback:', driveErr)
+      }
+
+      if (!fileUrl) {
+        const fileExt = file.name.split('.').pop()
+        const filePath = `uploads/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`
+        const { error: uploadError } = await supabase.storage.from('boq-files').upload(filePath, file)
+        if (!uploadError) {
+          const { data: publicUrlData } = supabase.storage.from('boq-files').getPublicUrl(filePath)
+          fileUrl = publicUrlData.publicUrl
+        }
+      }
+
+      if (fileUrl) {
+        editForm.value.attachments.push({
+          id: Date.now().toString() + Math.random().toString(36).substring(7),
+          name: fileName,
+          url: fileUrl,
+          type: 'file'
+        })
+      }
+    } catch (err) {
+      console.error('Error uploading file attachment:', err)
+    }
+  }
+  isUploadingAttachment.value = false
+  if (fileInput.value) fileInput.value.value = ''
 }
 
 const fetchUsers = async () => {
@@ -114,19 +248,47 @@ const fetchAccurateCustomers = async () => {
 const openEditModal = () => {
   if (!task.value) return
   const custName = getCustomerName.value !== '-' ? getCustomerName.value : ''
+  const meta = parseMeta(task.value.metadata)
+
+  let attachmentsArr = Array.isArray(meta.attachments) ? JSON.parse(JSON.stringify(meta.attachments)) : []
+  if (attachmentsArr.length === 0 && (task.value.file_url || task.value.file_link)) {
+    attachmentsArr.push({
+      id: 'legacy_1',
+      name: task.value.file_name || 'Lampiran Dokumen',
+      url: task.value.file_link || task.value.file_url,
+      type: task.value.file_link ? 'link' : 'file'
+    })
+  }
+
+  let assigneesArr = Array.isArray(meta.assignees) ? [...meta.assignees] : []
+  if (assigneesArr.length === 0 && task.value.assignee) {
+    assigneesArr = task.value.assignee.split(',').map(s => s.trim()).filter(Boolean)
+  }
+
+  const projName = getProjectName.value !== '-' ? getProjectName.value : ''
+  const picName = getPicName.value !== '-' ? getPicName.value : ''
+
   editForm.value = {
     title: task.value.title || '',
-    project_name: getProjectName.value !== '-' ? getProjectName.value : '',
+    has_project_ref: meta.has_project_ref !== undefined ? meta.has_project_ref : !!(projName || custName || picName),
+    project_name: projName,
     customer_name: custName,
-    pic_name: getPicName.value !== '-' ? getPicName.value : '',
+    pic_name: picName,
     description: task.value.description || '',
-    assignee: task.value.assignee || '',
+    assignees: assigneesArr,
+    subtasks: Array.isArray(meta.subtasks) ? JSON.parse(JSON.stringify(meta.subtasks)) : [],
     target_date: task.value.target_date || '',
-    file_link: getFileLink.value || task.value.file_url || ''
+    file_link: '',
+    attachments: attachmentsArr,
+    is_recurring: meta.is_recurring || false,
+    recurrence_type: meta.recurrence_type || 'MONTHLY',
+    recurrence_day: meta.recurrence_day || 1,
+    recurrence_weekday: meta.recurrence_weekday !== undefined ? meta.recurrence_weekday : 1
   }
   customerSearchQuery.value = custName
-  fileOption.value = (getFileLink.value || task.value.file_link) ? 'link' : 'upload'
-  selectedFile.value = null
+  attachmentMode.value = 'file'
+  newLinkUrl.value = ''
+  modalNewSubtask.value = ''
   if (fileInput.value) fileInput.value.value = ''
   
   fetchUsers()
@@ -141,63 +303,48 @@ const closeEditModal = () => {
 
 const saveEditTask = async () => {
   if (!editForm.value.title) { alert('Subject / Judul permintaan harus diisi!'); return }
-  if (!editForm.value.project_name) { alert('Project / Proyek harus diisi!'); return }
-  if (!editForm.value.customer_name) { alert('Customer harus diisi!'); return }
-  if (!editForm.value.pic_name) { alert('PIC Customer harus diisi!'); return }
+  if (editForm.value.assignees.length === 0) { alert('Silakan pilih minimal satu penanggung jawab (Action by)!'); return }
   if (!editForm.value.target_date) { alert('Deadline harus diisi!'); return }
+  if (hasProjectRef.value) {
+    if (!editForm.value.project_name) { alert('Project / Proyek harus diisi!'); return }
+    if (!editForm.value.customer_name) { alert('Customer harus diisi!'); return }
+    if (!editForm.value.pic_name) { alert('PIC Customer harus diisi!'); return }
+  }
 
   isSavingEdit.value = true
   try {
-    let fileUrl = task.value?.file_url
-    let fileName = task.value?.file_name
-    let fileLink = editForm.value.file_link || task.value?.file_link
+    const firstAtt = editForm.value.attachments && editForm.value.attachments.length > 0 ? editForm.value.attachments[0] : null
+    const fileUrl = firstAtt ? firstAtt.url : null
+    const fileName = firstAtt ? firstAtt.name : null
+    const fileLink = firstAtt && firstAtt.type === 'link' ? firstAtt.url : null
 
-    if (fileOption.value === 'link' && fileLink) {
-      fileUrl = fileLink
-      fileName = fileLink
-    } else if (selectedFile.value) {
-      try {
-        const driveFormData = new FormData()
-        driveFormData.append('file', selectedFile.value)
-        const { data: driveData, error: driveError } = await supabase.functions.invoke('upload-to-drive', {
-          body: driveFormData
-        })
-        if (!driveError && driveData?.webViewLink) {
-          fileUrl = driveData.webViewLink
-          fileName = selectedFile.value.name
-        }
-      } catch (driveErr) {
-        console.warn('Google Drive upload notice:', driveErr)
-      }
+    const finalCustomer = hasProjectRef.value ? (customerSearchQuery.value || editForm.value.customer_name || '') : ''
+    const finalAssigneeStr = editForm.value.assignees.join(', ')
 
-      if (!fileUrl || fileUrl === task.value?.file_url) {
-        const fileExt = selectedFile.value.name.split('.').pop()
-        const filePath = `uploads/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`
-        const { error: uploadError } = await supabase.storage.from('boq-files').upload(filePath, selectedFile.value)
-        if (!uploadError) {
-          const { data: publicUrlData } = supabase.storage.from('boq-files').getPublicUrl(filePath)
-          fileUrl = publicUrlData.publicUrl
-          fileName = selectedFile.value.name
-        }
-      }
-    }
-
-    const finalCustomer = customerSearchQuery.value || editForm.value.customer_name || ''
-
+    const existingMeta = parseMeta(task.value?.metadata) || {}
     const meta = {
-      project_name: editForm.value.project_name || '',
+      ...existingMeta,
+      has_project_ref: hasProjectRef.value,
+      project_name: hasProjectRef.value ? (editForm.value.project_name || '') : '',
       customer_name: finalCustomer,
-      pic_name: editForm.value.pic_name || '',
-      file_link: fileLink || ''
+      pic_name: hasProjectRef.value ? (editForm.value.pic_name || '') : '',
+      file_link: fileLink || '',
+      assignees: editForm.value.assignees || [],
+      subtasks: editForm.value.subtasks || [],
+      attachments: editForm.value.attachments || [],
+      is_recurring: editForm.value.is_recurring || false,
+      recurrence_type: editForm.value.is_recurring ? (editForm.value.recurrence_type || 'MONTHLY') : 'NONE',
+      recurrence_day: editForm.value.is_recurring ? (Number(editForm.value.recurrence_day) || 1) : 1,
+      recurrence_weekday: editForm.value.is_recurring ? (editForm.value.recurrence_weekday !== undefined ? Number(editForm.value.recurrence_weekday) : 1) : 1
     }
 
     const payload = {
       title: editForm.value.title,
-      project_name: editForm.value.project_name || '',
+      project_name: hasProjectRef.value ? (editForm.value.project_name || '') : '',
       customer_name: finalCustomer,
-      pic_name: editForm.value.pic_name || '',
+      pic_name: hasProjectRef.value ? (editForm.value.pic_name || '') : '',
       description: editForm.value.description || '',
-      assignee: editForm.value.assignee || '',
+      assignee: finalAssigneeStr,
       target_date: editForm.value.target_date || null,
       file_url: fileUrl,
       file_name: fileName,
@@ -292,8 +439,15 @@ const shareLink = async () => {
 
 const updateTaskStatus = async (newStatus) => {
   if (!task.value) return
-  
-  // Update state & localStorage immediately
+  const oldStatus = task.value.status
+  if (oldStatus === newStatus) return
+
+  if (!canChangeStatus.value) {
+    alert('Anda hanya dapat melihat tugas ini. Hanya penanggung jawab / pembuat yang bisa mengubah status.')
+    return
+  }
+  if (!confirm(`Pindahkan tugas "${task.value.title}" ke ${newStatus === 'IN_PROGRESS' ? 'In Progress' : (newStatus === 'DONE' ? 'Done' : 'To Do')}?`)) return
+
   task.value.status = newStatus
   try { localStorage.setItem(`boq_status_${taskId}`, newStatus) } catch {}
 
@@ -313,6 +467,15 @@ const updateTaskStatus = async (newStatus) => {
     }
   }
 
+  // Catat riwayat perubahan status di metadata.status_history
+  const meta = parseMeta(task.value.metadata)
+  const history = Array.isArray(meta.status_history) ? JSON.parse(JSON.stringify(meta.status_history)) : []
+  history.push({ from: oldStatus, to: newStatus, changed_by: currentUserEmail.value, changed_at: now })
+  meta.status_history = history
+  task.value.metadata = meta
+  updatePayload.metadata = meta
+  try { localStorage.setItem(`boq_meta_${taskId}`, JSON.stringify(meta)) } catch {}
+
   try {
     const { error } = await supabase
       .from('boq_requests')
@@ -321,10 +484,16 @@ const updateTaskStatus = async (newStatus) => {
     
     if (error) {
       console.warn('Update with timestamps notice:', error.message)
-      await supabase
+      const { error: err2 } = await supabase
         .from('boq_requests')
-        .update({ status: newStatus })
+        .update({ status: newStatus, metadata: meta })
         .eq('id', taskId)
+      if (err2) {
+        const { error: err3 } = await supabase.from('boq_requests').update({ status: newStatus }).eq('id', taskId)
+        if (err3) {
+          task.value.status = oldStatus
+        }
+      }
     }
   } catch (err) {
     console.warn('Supabase DB update notice (saved locally):', err)
@@ -335,10 +504,16 @@ const updateTaskStatus = async (newStatus) => {
 const comments = ref([])
 const newComment = ref('')
 const isSubmittingComment = ref(false)
+let commentsRealtimeChannel = null
+
+// Warna tema merah untuk komentar
+const COMMENT_PRIMARY_COLOR = 'bg-red-600'
+const COMMENT_HOVER_COLOR = 'hover:bg-red-700'
+const COMMENT_TEXT_COLOR = 'text-white'
 
 const statusConfig = {
   'TODO': { label: 'To Do', color: 'bg-slate-100 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700' },
-  'IN_PROGRESS': { label: 'In Progress', color: 'bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-950/50 dark:text-blue-400 dark:border-blue-800' },
+  'IN_PROGRESS': { label: 'In Progress', color: 'bg-red-50 text-red-700 border-red-300 dark:bg-red-950/50 dark:text-red-400 dark:border-red-800' },
   'DONE': { label: 'Done', color: 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/50 dark:text-emerald-400 dark:border-emerald-800' }
 }
 
@@ -361,10 +536,14 @@ onMounted(async () => {
   await fetchTaskDetail()
   await fetchComments()
   document.addEventListener('click', handleClickOutsideCustomer)
+  setupCommentsRealtime()
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutsideCustomer)
+  if (commentsRealtimeChannel) {
+    supabase.removeChannel(commentsRealtimeChannel)
+  }
 })
 
 const fetchTaskDetail = async () => {
@@ -448,6 +627,43 @@ const deleteComment = async (commentId) => {
   }
 }
 
+const setupCommentsRealtime = () => {
+  if (!taskId) return
+  
+  commentsRealtimeChannel = supabase
+    .channel('boq-comments-realtime')
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'boq_comments',
+        filter: `request_id=eq.${taskId}`
+      },
+      (payload) => {
+        const newComment = payload.new
+        if (!comments.value.some(c => c.id === newComment.id)) {
+          comments.value.push(newComment)
+        }
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'boq_comments',
+        filter: `request_id=eq.${taskId}`
+      },
+      (payload) => {
+        if (payload.old) {
+          comments.value = comments.value.filter(c => c.id !== payload.old.id)
+        }
+      }
+    )
+    .subscribe()
+}
+
 const deleteTask = async () => {
   if (!confirm('Apakah Anda yakin ingin menghapus permintaan ini? Semua data terkait (termasuk komentar) akan terhapus.')) return
   try {
@@ -456,7 +672,7 @@ const deleteTask = async () => {
       .delete()
       .eq('id', taskId)
     if (error) throw error
-    router.push('/permintaan')
+    router.push('/collaborate')
   } catch (err) {
     alert('Gagal menghapus permintaan.')
   }
@@ -514,12 +730,93 @@ const getPicName = computed(() => {
   const val = task.value.pic_name || meta.pic_name || getLocalMeta(taskId)?.pic_name
   return (val && val !== '-') ? val : '-'
 })
-const getFileLink = computed(() => {
+const taskAttachments = computed(() => {
+  if (!task.value) return []
+  const meta = parseMeta(task.value.metadata)
+  if (Array.isArray(meta.attachments) && meta.attachments.length > 0) {
+    return meta.attachments
+  }
+  if (task.value.file_url || task.value.file_link) {
+    return [{
+      id: 'legacy_1',
+      name: task.value.file_name || 'Lampiran Dokumen',
+      url: task.value.file_link || task.value.file_url,
+      type: task.value.file_link ? 'link' : 'file'
+    }]
+  }
+  return []
+})
+
+const taskAssignees = computed(() => {
+  if (!task.value) return []
+  const meta = parseMeta(task.value.metadata)
+  if (Array.isArray(meta.assignees) && meta.assignees.length > 0) {
+    return meta.assignees
+  }
+  if (task.value.assignee) {
+    return task.value.assignee.split(',').map(s => s.trim()).filter(Boolean)
+  }
+  return []
+})
+
+const taskSubtasks = computed(() => {
+  if (!task.value) return []
+  const meta = parseMeta(task.value.metadata)
+  return Array.isArray(meta.subtasks) ? meta.subtasks : []
+})
+
+const recurringInfo = computed(() => {
   if (!task.value) return null
   const meta = parseMeta(task.value.metadata)
-  const val = task.value.file_link || meta.file_link || getLocalMeta(taskId)?.file_link
-  return (val && val !== '-') ? val : null
+  if (!meta.is_recurring) return null
+  if (meta.recurrence_type === 'WEEKLY') {
+    const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu']
+    return `Mingguan • Setiap ${dayNames[meta.recurrence_weekday !== undefined ? Number(meta.recurrence_weekday) : 1]}`
+  }
+  return `Bulanan • Setiap tanggal ${meta.recurrence_day || 1}`
 })
+
+const doneSubtasksCount = computed(() => taskSubtasks.value.filter(s => s.completed).length)
+
+const canChangeStatus = computed(() => {
+  if (!task.value) return false
+  return taskAssignees.value.includes(currentUserEmail.value) || task.value.created_by === currentUserEmail.value
+})
+
+const statusHistory = computed(() => {
+  if (!task.value) return []
+  const meta = parseMeta(task.value.metadata)
+  return Array.isArray(meta.status_history) ? [...meta.status_history].reverse() : []
+})
+
+const isOverdue = computed(() => {
+  if (!task.value || !task.value.target_date || task.value.status === 'DONE') return false
+  const target = new Date(task.value.target_date)
+  target.setHours(23, 59, 59, 999)
+  return new Date() > target
+})
+
+const toggleSubtask = async (subtask) => {
+  if (!task.value) return
+  subtask.completed = !subtask.completed
+  const meta = parseMeta(task.value.metadata)
+  meta.subtasks = taskSubtasks.value
+  try {
+    const { error } = await supabase
+      .from('boq_requests')
+      .update({ metadata: meta })
+      .eq('id', taskId)
+    if (error) {
+      console.warn('Subtask toggle notice:', error.message)
+      subtask.completed = !subtask.completed
+    } else {
+      try { localStorage.setItem(`boq_meta_${taskId}`, JSON.stringify(meta)) } catch {}
+    }
+  } catch (err) {
+    console.warn('Subtask toggle error:', err)
+    subtask.completed = !subtask.completed
+  }
+}
 
 const getWorkDuration = computed(() => {
   if (!task.value || task.value.status !== 'DONE' || !task.value.in_progress_at || !task.value.done_at) {
@@ -549,17 +846,17 @@ const getWorkDuration = computed(() => {
 </script>
 
 <template>
-  <div class="p-4 md:p-6 max-w-6xl mx-auto space-y-5">
+  <div class="p-4 md:p-6 w-full max-w-[1600px] mx-auto space-y-5">
     <!-- Loading State -->
     <div v-if="isLoading" class="flex flex-col items-center justify-center py-20">
-      <Loader2 class="w-8 h-8 animate-spin text-blue-500 mb-4" />
+      <Loader2 class="w-8 h-8 animate-spin text-red-500 mb-4" />
       <p class="text-slate-500 font-medium">Memuat detail permintaan...</p>
     </div>
 
     <!-- Error State -->
     <div v-else-if="isError || !task" class="text-center py-20 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800">
       <p class="text-red-500 font-medium mb-4">Permintaan tidak ditemukan atau telah dihapus.</p>
-      <button @click="router.push('/permintaan')" class="text-blue-600 hover:underline">
+      <button @click="router.push('/collaborate')" class="text-red-600 hover:underline">
         Kembali ke Board Permintaan
       </button>
     </div>
@@ -568,14 +865,14 @@ const getWorkDuration = computed(() => {
     <div v-else class="space-y-5">
       <!-- Top Action Bar -->
       <div class="flex items-center justify-between">
-        <button @click="router.push('/permintaan')" class="inline-flex items-center text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition-colors">
+        <button @click="router.push('/collaborate')" class="inline-flex items-center text-xs font-bold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200 transition-colors">
           <ArrowLeft class="w-4 h-4 mr-1.5" />
           Kembali ke Board
         </button>
         <div class="flex items-center gap-2">
           <button 
             @click="openEditModal" 
-            class="inline-flex items-center text-xs font-bold text-blue-700 dark:text-blue-200 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 transition-all shadow-sm cursor-pointer"
+            class="inline-flex items-center text-xs font-bold text-red-700 dark:text-red-200 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-800 transition-all shadow-sm cursor-pointer"
           >
             <Pencil class="w-3.5 h-3.5 mr-1.5" />
             <span>Edit Permintaan</span>
@@ -619,6 +916,7 @@ const getWorkDuration = computed(() => {
                 
                 <div class="flex items-center gap-2">
                   <select 
+                    v-if="canChangeStatus"
                     :value="task.status" 
                     @change="updateTaskStatus($event.target.value)"
                     class="px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider border outline-none cursor-pointer shadow-sm transition-all"
@@ -628,17 +926,25 @@ const getWorkDuration = computed(() => {
                     <option value="IN_PROGRESS" class="bg-white text-slate-800 font-semibold">In Progress</option>
                     <option value="DONE" class="bg-white text-slate-800 font-semibold">Done</option>
                   </select>
+                  <span
+                    v-else
+                    class="inline-flex items-center px-3.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider border shadow-sm"
+                    :class="statusConfig[task.status]?.color || 'bg-slate-100 text-slate-700 border-slate-200'"
+                    title="Hanya penanggung jawab / pembuat yang dapat mengubah status"
+                  >
+                    {{ statusConfig[task.status]?.label || task.status }}
+                  </span>
 
                   <button 
-                    v-if="task.status !== 'IN_PROGRESS' && task.assignee === currentUserEmail" 
+                    v-if="task.status !== 'IN_PROGRESS' && canChangeStatus" 
                     @click="updateTaskStatus('IN_PROGRESS')"
-                    class="inline-flex items-center px-3.5 py-1 rounded-lg text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800 transition-all shadow-sm cursor-pointer"
+                    class="inline-flex items-center px-3.5 py-1 rounded-lg text-xs font-bold text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/50 border border-red-200 dark:border-red-800 transition-all shadow-sm cursor-pointer"
                   >
                     Mulai Dikerjakan
                   </button>
 
                   <button 
-                    v-if="task.status === 'IN_PROGRESS' && task.assignee === currentUserEmail" 
+                    v-if="task.status === 'IN_PROGRESS' && canChangeStatus" 
                     @click="updateTaskStatus('DONE')"
                     class="inline-flex items-center px-3.5 py-1 rounded-lg text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 transition-all shadow-sm cursor-pointer"
                   >
@@ -650,13 +956,23 @@ const getWorkDuration = computed(() => {
               <h1 class="text-2xl md:text-3xl font-black text-slate-900 dark:text-white tracking-tight leading-tight break-words min-w-0">
                 {{ task.title }}
               </h1>
+
+              <div class="flex flex-wrap items-center gap-2">
+                <span v-if="recurringInfo" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-[10px] font-bold border border-red-200 dark:border-red-800">
+                  <Repeat class="w-3 h-3 text-red-600 dark:text-red-400" />
+                  Tugas Rutin — {{ recurringInfo }}
+                </span>
+                <span v-if="task.created_by" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] font-bold">
+                  <User class="w-3 h-3" /> Dibuat oleh {{ getUserDisplayName(task.created_by) }}
+                </span>
+              </div>
             </div>
 
             <!-- Metadata Info Panel (Full Readable Text, No Truncation!) -->
             <div class="bg-slate-50/70 dark:bg-slate-800/40 rounded-xl p-4 border border-slate-100 dark:border-slate-800/80 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 min-w-0">
               <!-- Proyek -->
               <div class="flex items-start gap-3 min-w-0">
-                <div class="p-2 rounded-lg bg-blue-100/70 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0">
+                <div class="p-2 rounded-lg bg-red-100/70 dark:bg-red-900/40 text-red-600 dark:text-red-400 mt-0.5 shrink-0">
                   <FolderKanban class="w-4 h-4" />
                 </div>
                 <div class="min-w-0 flex-1">
@@ -669,7 +985,7 @@ const getWorkDuration = computed(() => {
 
               <!-- Customer -->
               <div class="flex items-start gap-3 min-w-0">
-                <div class="p-2 rounded-lg bg-emerald-100/70 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0">
+                <div class="p-2 rounded-lg bg-rose-100/70 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 mt-0.5 shrink-0">
                   <Building2 class="w-4 h-4" />
                 </div>
                 <div class="min-w-0 flex-1">
@@ -682,7 +998,7 @@ const getWorkDuration = computed(() => {
 
               <!-- PIC -->
               <div class="flex items-start gap-3 min-w-0">
-                <div class="p-2 rounded-lg bg-purple-100/70 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400 mt-0.5 shrink-0">
+                <div class="p-2 rounded-lg bg-red-100/70 dark:bg-red-900/40 text-red-600 dark:text-red-400 mt-0.5 shrink-0">
                   <User class="w-4 h-4" />
                 </div>
                 <div class="min-w-0 flex-1">
@@ -693,27 +1009,40 @@ const getWorkDuration = computed(() => {
                 </div>
               </div>
 
-              <!-- Action By -->
-              <div class="flex items-start gap-3 min-w-0">
-                <div class="p-2 rounded-lg bg-amber-100/70 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0">
+              <!-- Action By (Multi-Assignee) -->
+              <div class="flex items-start gap-3 min-w-0 sm:col-span-2 md:col-span-1">
+                <div class="p-2 rounded-lg bg-rose-100/70 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 mt-0.5 shrink-0">
                   <UserCheck class="w-4 h-4" />
                 </div>
                 <div class="min-w-0 flex-1">
-                  <p class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Action By</p>
-                  <p class="font-bold text-slate-800 dark:text-slate-100 text-xs md:text-sm break-words leading-snug">
-                    {{ task.assignee ? task.assignee.split('@')[0] : 'Belum ditugaskan' }}
-                  </p>
+                  <div class="flex items-center justify-between gap-1">
+                    <p class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Action By / Delegasi</p>
+                    <button @click="openEditModal" class="inline-flex items-center gap-1 text-[10px] font-bold text-red-600 dark:text-red-400 hover:underline cursor-pointer">
+                      <Pencil class="w-2.5 h-2.5" /> Edit
+                    </button>
+                  </div>
+                  <div class="flex flex-wrap gap-1.5 pt-1">
+                    <span
+                      v-for="email in taskAssignees"
+                      :key="email"
+                      class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-[10px] font-bold border border-red-200 dark:border-red-800 truncate max-w-[160px]"
+                      :title="email"
+                    >
+                      <User class="w-3 h-3 text-red-600 dark:text-red-400 shrink-0" /> {{ email.split('@')[0] }}
+                    </span>
+                    <span v-if="taskAssignees.length === 0" class="text-xs font-bold text-slate-500">Belum ditugaskan</span>
+                  </div>
                 </div>
               </div>
 
               <!-- Deadline -->
               <div class="flex items-start gap-3 sm:col-span-2 md:col-span-1 min-w-0">
-                <div class="p-2 rounded-lg bg-rose-100/70 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400 mt-0.5 shrink-0">
+                <div class="p-2 rounded-lg bg-red-100/70 dark:bg-red-900/40 text-red-600 dark:text-red-400 mt-0.5 shrink-0">
                   <Calendar class="w-4 h-4" />
                 </div>
                 <div class="min-w-0 flex-1">
                   <p class="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Deadline</p>
-                  <p class="font-bold text-slate-800 dark:text-slate-100 text-xs md:text-sm break-words leading-snug">
+                  <p class="font-bold text-slate-800 dark:text-slate-100 text-xs md:text-sm break-words leading-snug" :class="{ 'text-red-600': isOverdue }">
                     {{ task.target_date ? formatDate(task.target_date) : '-' }}
                   </p>
                 </div>
@@ -722,84 +1051,120 @@ const getWorkDuration = computed(() => {
 
             <!-- Description -->
             <div class="space-y-2 min-w-0">
-              <h3 class="text-xs font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Deskripsi Tugas</h3>
-              <div class="prose prose-slate dark:prose-invert max-w-none text-sm whitespace-pre-wrap leading-relaxed bg-slate-50/50 dark:bg-slate-800/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800/80 break-words break-all [overflow-wrap:anywhere] overflow-hidden">
-                {{ task.description || 'Tidak ada deskripsi.' }}
+              <div class="flex items-center justify-between">
+                <h3 class="text-xs font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Deskripsi Tugas</h3>
+                <button @click="openEditModal" class="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 dark:text-red-400 hover:underline cursor-pointer">
+                  <Pencil class="w-3 h-3" /> Edit Deskripsi
+                </button>
+              </div>
+              <div
+                v-if="task.description"
+                class="rich-content-display prose prose-slate dark:prose-invert max-w-none text-sm leading-relaxed bg-slate-50/50 dark:bg-slate-800/20 p-4 rounded-xl border border-slate-100 dark:border-slate-800/80 overflow-hidden"
+                v-html="task.description"
+              />
+              <div v-else class="flex items-center justify-between p-4 rounded-xl bg-slate-50/50 dark:bg-slate-800/20 border border-slate-100 dark:border-slate-800/80 text-sm text-muted-foreground italic">
+                <span>Tidak ada deskripsi.</span>
+                <button @click="openEditModal" class="inline-flex items-center gap-1 not-italic font-bold text-red-600 dark:text-red-400 hover:underline cursor-pointer">
+                  <Plus class="w-3.5 h-3.5" /> Tambah Deskripsi
+                </button>
               </div>
             </div>
 
-            <!-- Attachment (If Available) -->
-            <div v-if="task.file_url || getFileLink" class="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-              <h3 class="text-xs font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Lampiran Dokumen</h3>
-              <a :href="getFileLink || task.file_url" target="_blank" class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700/80 hover:border-blue-400 dark:hover:border-blue-500 bg-slate-50 dark:bg-slate-800/40 hover:bg-blue-50/40 dark:hover:bg-blue-900/20 transition-all group">
-                <div class="w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm">
-                  <Paperclip class="w-4 h-4" />
+            <!-- Sub-tugas & Checklist -->
+            <div v-if="taskSubtasks.length > 0" class="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <div class="flex items-center justify-between">
+                <h3 class="text-xs font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Sub-tugas & Checklist</h3>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400 border border-red-200 dark:border-red-800">
+                  {{ doneSubtasksCount }}/{{ taskSubtasks.length }}
+                </span>
+              </div>
+              <div class="space-y-1.5">
+                <div
+                  v-for="sub in taskSubtasks"
+                  :key="sub.id || sub.title"
+                  class="flex items-center gap-2.5 p-2.5 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/80 text-xs transition-all"
+                >
+                  <button
+                    type="button"
+                    @click="toggleSubtask(sub)"
+                    class="shrink-0 w-4.5 h-4.5 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all cursor-pointer"
+                    :class="sub.completed
+                      ? 'bg-red-600 border-red-600 text-white'
+                      : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 hover:border-red-400'"
+                  >
+                    <Check v-if="sub.completed" class="w-3 h-3" stroke-width="3" />
+                  </button>
+                  <span :class="{ 'line-through text-slate-400': sub.completed }" class="font-medium text-slate-800 dark:text-slate-200 leading-snug break-words">
+                    {{ sub.title }}
+                  </span>
                 </div>
-                <div class="flex-1 min-w-0">
-                  <p class="text-xs font-bold text-slate-800 dark:text-slate-100 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400">
-                    {{ getFileLink ? 'Buka Link Dokumen' : (task.file_name || 'Lihat Dokumen Lampiran') }}
-                  </p>
-                  <p class="text-[11px] text-slate-400">Klik untuk membuka / mengunduh file</p>
-                </div>
-                <Download class="w-4 h-4 text-slate-400 group-hover:text-blue-500 shrink-0" />
-              </a>
+              </div>
+            </div>
+
+            <!-- Attachments -->
+            <div class="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <div class="flex items-center justify-between">
+                <h3 class="text-xs font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">
+                  Lampiran Dokumen ({{ taskAttachments.length }})
+                </h3>
+                <button @click="openEditModal" class="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 dark:text-red-400 hover:underline cursor-pointer">
+                  <Plus class="w-3 h-3" /> Tambah Lampiran
+                </button>
+              </div>
+
+              <div v-if="taskAttachments.length > 0" class="space-y-2">
+                <a
+                  v-for="att in taskAttachments"
+                  :key="att.id || att.url"
+                  :href="att.url"
+                  target="_blank"
+                  class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-700/80 hover:border-red-400 dark:hover:border-red-500 bg-slate-50 dark:bg-slate-800/40 hover:bg-red-50/40 dark:hover:bg-red-900/20 transition-all group"
+                >
+                  <div class="w-9 h-9 rounded-lg bg-red-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+                    <Paperclip v-if="att.type === 'file'" class="w-4 h-4" />
+                    <Link v-else class="w-4 h-4" />
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-xs font-bold text-slate-800 dark:text-slate-100 truncate group-hover:text-red-600 dark:group-hover:text-red-400">
+                      {{ att.type === 'link' ? (att.name || 'Buka Link Dokumen') : (att.name || 'Lihat Dokumen Lampiran') }}
+                    </p>
+                    <p class="text-[11px] text-slate-400">Klik untuk membuka / mengunduh {{ att.type === 'link' ? 'link' : 'file' }}</p>
+                  </div>
+                  <Download class="w-4 h-4 text-slate-400 group-hover:text-red-500 shrink-0" />
+                </a>
+              </div>
+
+              <div v-else class="flex items-center justify-between p-3.5 rounded-xl bg-slate-50/50 dark:bg-slate-800/20 border border-slate-100 dark:border-slate-800/80 text-xs text-slate-400">
+                <span>Belum ada lampiran berkas atau link dokumen.</span>
+                <button @click="openEditModal" class="inline-flex items-center gap-1 font-bold text-red-600 dark:text-red-400 hover:underline cursor-pointer">
+                  <Paperclip class="w-3.5 h-3.5" /> Tambah Berkas / Link
+                </button>
+              </div>
             </div>
 
           </div>
 
-          <!-- Compact Time Tracking Card -->
-          <div class="bg-white dark:bg-slate-900 rounded-2xl p-4 md:p-5 shadow-sm border border-slate-200 dark:border-slate-800 space-y-3">
-            <h3 class="text-xs font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Jejak Waktu</h3>
-            <div class="grid grid-cols-3 gap-2 text-center bg-slate-50/70 dark:bg-slate-800/40 p-3 rounded-xl border border-slate-100 dark:border-slate-800/80">
-              <div class="space-y-0.5">
-                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Didelegasikan</p>
-                <p class="text-xs font-bold text-slate-700 dark:text-slate-200">
-                  {{ task.delegated_at ? formatDate(task.delegated_at) : (task.created_at ? formatDate(task.created_at) : '-') }}
-                </p>
-              </div>
-              <div class="space-y-0.5 border-x border-slate-200 dark:border-slate-700/60 px-2">
-                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Mulai Dikerjakan</p>
-                <p class="text-xs font-bold text-slate-700 dark:text-slate-200">
-                  {{ task.in_progress_at ? formatDate(task.in_progress_at) : '-' }}
-                </p>
-              </div>
-              <div class="space-y-0.5">
-                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Selesai</p>
-                <p class="text-xs font-bold text-slate-700 dark:text-slate-200">
-                  {{ task.done_at ? formatDate(task.done_at) : '-' }}
-                </p>
-              </div>
-            </div>
-
-            <!-- Performa & Durasi Pengerjaan Bar (Hanya Muncul Jika Tugas Sudah Selesai) -->
-            <div 
-              v-if="task.status === 'DONE' && task.in_progress_at && task.done_at" 
-              class="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800/80"
-            >
-              <div class="flex items-center justify-between text-xs font-bold">
-                <div class="flex items-center gap-1.5 text-slate-700 dark:text-slate-200">
-                  <Zap class="w-3.5 h-3.5 text-amber-500" />
-                  <span>Durasi Pengerjaan</span>
+          <!-- Riwayat Perubahan Status -->
+          <div v-if="statusHistory.length > 0" class="bg-white dark:bg-slate-900 rounded-2xl p-4 md:p-5 shadow-sm border border-slate-200 dark:border-slate-800 space-y-3">
+            <h3 class="text-xs font-black uppercase text-slate-400 dark:text-slate-500 tracking-wider">Riwayat Perubahan Status ({{ statusHistory.length }})</h3>
+            <div class="space-y-2">
+              <div
+                v-for="(h, i) in statusHistory"
+                :key="i"
+                class="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50/70 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/80 text-xs"
+              >
+                <div class="p-1.5 rounded-lg bg-red-100/70 dark:bg-red-900/40 text-red-600 dark:text-red-400 shrink-0">
+                  <Clock class="w-3.5 h-3.5" />
                 </div>
-                <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
-                  Selesai
-                </span>
-              </div>
-
-              <!-- Visual Progress / Performance Bar Indicator -->
-              <div class="space-y-1.5">
-                <div class="w-full h-2.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden relative border border-slate-200/60 dark:border-slate-700/60">
-                  <div 
-                    class="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500" 
-                    style="width: 100%;"
-                  ></div>
-                </div>
-
-                <div class="flex items-center justify-between text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                  <span>Total Waktu Penyelesaian:</span>
-                  <span class="font-bold text-slate-800 dark:text-slate-100">
-                    {{ getWorkDuration }}
-                  </span>
+                <div class="flex-1 min-w-0">
+                  <p class="font-bold text-slate-800 dark:text-slate-100">
+                    {{ statusConfig[h.from]?.label || h.from }}
+                    <span class="text-slate-400 mx-1">&rarr;</span>
+                    {{ statusConfig[h.to]?.label || h.to }}
+                  </p>
+                  <p class="text-[10px] text-slate-400 mt-0.5">
+                    oleh {{ h.changed_by ? getUserDisplayName(h.changed_by) : 'Sistem' }} &bull; {{ formatDate(h.changed_at) }}
+                  </p>
                 </div>
               </div>
             </div>
@@ -809,67 +1174,70 @@ const getWorkDuration = computed(() => {
 
         <!-- Right Column: Comments -->
         <div class="lg:col-span-1">
-          <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col h-[560px] sticky top-6">
-            <div class="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
-              <MessageSquare class="w-4 h-4 text-slate-500" />
-              <h2 class="font-bold text-sm text-slate-900 dark:text-white">Komentar & Diskusi</h2>
+          <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-800 flex flex-col h-[600px] sticky top-6">
+            <div class="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center gap-3">
+              <MessageSquare class="w-5 h-5 text-red-600" />
+              <h2 class="font-bold text-base text-slate-900 dark:text-white">Komentar & Diskusi</h2>
+              <span v-if="comments.length > 0" class="ml-auto text-xs font-bold bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 px-2.5 py-1 rounded-full border border-red-200 dark:border-red-800">
+                {{ comments.length }}
+              </span>
             </div>
             
             <!-- Comments List -->
-            <div class="flex-1 overflow-y-auto p-4 space-y-4">
-              <div v-if="comments.length === 0" class="h-full flex flex-col items-center justify-center text-slate-400 text-xs text-center">
-                <MessageSquare class="w-8 h-8 mb-2 opacity-20" />
+            <div class="flex-1 overflow-y-auto p-5 space-y-5">
+              <div v-if="comments.length === 0" class="h-full flex flex-col items-center justify-center text-slate-400 text-xs text-center py-10">
+                <MessageSquare class="w-10 h-10 mb-3 opacity-20" />
                 <p>Belum ada diskusi.<br>Mulai percakapan pertama!</p>
               </div>
               
               <div 
                 v-for="comment in comments" 
                 :key="comment.id"
-                class="flex flex-col space-y-1"
+                class="flex flex-col space-y-2"
                 :class="comment.user_email === currentUserEmail ? 'items-end' : 'items-start'"
               >
-                <span class="text-[10px] text-slate-400 font-medium px-1">
+                <span class="text-xs text-slate-500 font-medium px-1">
                   {{ comment.user_email.split('@')[0] }} • {{ formatDate(comment.created_at) }}
                 </span>
                 <div 
-                  class="relative max-w-[85%] rounded-2xl px-3.5 py-2 text-xs md:text-sm group"
+                  class="relative max-w-[90%] rounded-2xl px-4 py-3 text-sm group shadow-sm"
                   :class="comment.user_email === currentUserEmail 
-                    ? 'bg-blue-600 text-white rounded-tr-sm' 
-                    : 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 rounded-tl-sm'"
+                    ? 'bg-red-600 text-white rounded-tr-sm' 
+                    : 'bg-slate-50 text-slate-800 dark:bg-slate-800 dark:text-slate-200 dark:border border-slate-200 rounded-tl-sm'"
                 >
                   <p class="whitespace-pre-wrap leading-relaxed">{{ comment.comment_text }}</p>
                   <button 
                     v-if="comment.user_email === currentUserEmail"
                     @click="deleteComment(comment.id)"
-                    class="absolute -left-7 top-2 p-1 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                    class="absolute -left-8 top-3 p-1 text-red-400/70 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
                     title="Hapus komentar"
                   >
-                    <Trash2 class="w-3.5 h-3.5" />
+                    <Trash2 class="w-4 h-4" />
                   </button>
                 </div>
               </div>
             </div>
 
             <!-- Input Area -->
-            <div class="p-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 rounded-b-2xl">
-              <form @submit.prevent="submitComment" class="flex gap-2 relative">
+            <div class="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/50 rounded-b-2xl">
+              <form @submit.prevent="submitComment" class="flex gap-3 relative">
                 <textarea
                   v-model="newComment"
-                  rows="1"
-                  placeholder="Tulis pesan..."
-                  class="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs md:text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none pr-11 shadow-sm"
+                  rows="2"
+                  placeholder="Tulis pesan atau diskusi..."
+                  class="w-full bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent focus:outline-none resize-none pr-14 shadow-sm transition-all"
                   @keydown.enter.exact.prevent="submitComment"
                 ></textarea>
                 <button 
                   type="submit" 
                   :disabled="isSubmittingComment || !newComment.trim()"
-                  class="absolute right-2 bottom-2 p-1.5 rounded-lg text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  class="absolute right-3 bottom-3 p-2 rounded-lg text-white bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-md"
                 >
-                  <Loader2 v-if="isSubmittingComment" class="w-3.5 h-3.5 animate-spin" />
-                  <Send v-else class="w-3.5 h-3.5" />
+                  <Loader2 v-if="isSubmittingComment" class="w-5 h-5 animate-spin" />
+                  <Send v-else class="w-5 h-5" />
                 </button>
               </form>
-              <p class="text-[10px] text-slate-400 mt-1.5 text-center">Tekan Enter untuk mengirim</p>
+              <p class="text-[10px] text-slate-400 mt-2 text-center">Enter untuk mengirim pesan</p>
             </div>
           </div>
         </div>
@@ -888,161 +1256,341 @@ const getWorkDuration = computed(() => {
         </div>
 
         <div class="p-6 space-y-4 text-sm max-h-[85vh] overflow-y-auto sidebar-thin text-left">
-          <!-- 1. Subject / Judul -->
+          <!-- 1. Judul -->
           <div>
-            <label class="block text-xs font-semibold text-muted-foreground mb-1.5">1. Subject / Judul <span class="text-rose-500">*</span></label>
-            <input v-model="editForm.title" type="text" placeholder="Contoh: Permintaan BOQ Panel GI Subang 150kV..." class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+            <label class="block text-xs font-bold text-foreground uppercase tracking-wider mb-1.5">Judul Tugas <span class="text-rose-500">*</span></label>
+            <input v-model="editForm.title" type="text" placeholder="Contoh: Permintaan BOQ Panel GI Subang 150kV..." class="w-full px-4 py-2.5 text-sm font-semibold border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-red-500 shadow-2xs" />
           </div>
 
-          <!-- 2. Project / Proyek & 3. Customer (2-Column Grid) -->
+          <!-- 2. Ditugaskan Untuk & Target Deadline -->
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <!-- 2. Project / Proyek -->
-            <div>
-              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">2. Project / Proyek <span class="text-rose-500">*</span></label>
-              <input v-model="editForm.project_name" type="text" placeholder="Nama proyek / pekerjaan..." class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+            <!-- Ditugaskan untuk (Multi-select) -->
+            <div class="space-y-1.5">
+              <label class="block text-xs font-bold text-foreground uppercase tracking-wider mb-1.5">
+                Ditugaskan untuk <span class="text-rose-500">*</span>
+              </label>
+              <div class="p-2.5 border border-input rounded-xl bg-background max-h-40 overflow-y-auto space-y-1 sidebar-thin">
+                <div
+                  v-for="u in users"
+                  :key="u.email"
+                  @click="toggleAssignee(u.email)"
+                  :class="[
+                    'flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors',
+                    editForm.assignees.includes(u.email)
+                      ? 'bg-red-500/10 text-red-600 dark:text-red-400 font-semibold'
+                      : 'hover:bg-muted text-muted-foreground'
+                  ]"
+                >
+                  <span class="truncate">👤 {{ getUserDisplayName(u.email) }}</span>
+                  <Check v-if="editForm.assignees.includes(u.email)" class="w-3.5 h-3.5 text-red-600 dark:text-red-400 shrink-0" />
+                </div>
+                <div v-if="users.length === 0" class="text-[11px] text-muted-foreground text-center py-1">
+                  Memuat daftar tim...
+                </div>
+              </div>
+              <p class="text-[10px] text-muted-foreground">Bisa pilih lebih dari satu penanggung jawab.</p>
             </div>
 
-            <!-- 3. Customer (Searchable Combobox) -->
-            <div ref="customerComboboxRef" class="relative">
-              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">3. Customer <span class="text-rose-500">*</span></label>
-              <div class="relative">
-                <input 
-                  type="text" 
-                  v-model="customerSearchQuery"
-                  @focus="isCustomerDropdownOpen = true"
-                  @input="editForm.customer_name = customerSearchQuery; isCustomerDropdownOpen = true"
-                  placeholder="Cari / ketik nama customer..." 
-                  class="w-full pl-9 pr-8 py-2 border border-input rounded-xl bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                />
-                <Search class="w-4 h-4 text-muted-foreground absolute left-3 top-2.5" />
-                <button 
-                  v-if="customerSearchQuery" 
-                  type="button"
-                  @click="customerSearchQuery = ''; editForm.customer_name = ''; isCustomerDropdownOpen = true" 
-                  class="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground p-0.5 rounded cursor-pointer"
-                >
+            <!-- Target Deadline & Quick Date Chips -->
+            <div class="space-y-1.5">
+              <label class="block text-xs font-bold text-foreground uppercase tracking-wider mb-1.5">Target Deadline <span class="text-rose-500">*</span></label>
+              <input
+                v-model="editForm.target_date"
+                type="date"
+                class="w-full px-3.5 py-2 text-xs font-medium border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-red-500 cursor-pointer"
+              />
+
+              <!-- Quick Date Chips -->
+              <div class="flex items-center gap-1.5 pt-1 flex-wrap">
+                <button type="button" @click="setQuickDate(0)" class="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 text-[10px] font-bold text-muted-foreground border border-border cursor-pointer transition-colors">Hari Ini</button>
+                <button type="button" @click="setQuickDate(1)" class="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 text-[10px] font-bold text-muted-foreground border border-border cursor-pointer transition-colors">Besok</button>
+                <button type="button" @click="setQuickDate(3)" class="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 text-[10px] font-bold text-muted-foreground border border-border cursor-pointer transition-colors">3 Hari</button>
+                <button type="button" @click="setQuickDate(7)" class="px-2 py-0.5 rounded-md bg-muted hover:bg-muted/80 text-[10px] font-bold text-muted-foreground border border-border cursor-pointer transition-colors">1 Minggu</button>
+              </div>
+
+              <!-- Tugas Rutin (Recurring) -->
+              <div class="pt-2.5 border-t border-border mt-2 space-y-2">
+                <label class="flex items-center gap-2 cursor-pointer select-none">
+                  <input type="checkbox" v-model="editForm.is_recurring" class="w-3.5 h-3.5 rounded text-indigo-600 focus:ring-indigo-500 border-input cursor-pointer" />
+                  <div class="flex items-center gap-1 text-xs font-bold text-foreground">
+                    <Repeat class="w-3.5 h-3.5 text-indigo-500" />
+                    <span>Tugas Rutin (Berulang)</span>
+                  </div>
+                </label>
+
+                <div v-if="editForm.is_recurring" class="p-2.5 rounded-xl border border-indigo-200 dark:border-indigo-900/50 bg-indigo-50/30 dark:bg-indigo-950/20 space-y-2 text-xs">
+                  <div>
+                    <label class="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Frekuensi Berulang</label>
+                    <select v-model="editForm.recurrence_type" class="w-full px-2.5 py-1.5 rounded-lg border border-input bg-background text-foreground text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                      <option value="MONTHLY">Bulanan (Monthly)</option>
+                      <option value="WEEKLY">Mingguan (Weekly)</option>
+                    </select>
+                  </div>
+
+                  <div v-if="editForm.recurrence_type === 'MONTHLY'">
+                    <label class="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Setiap Tanggal</label>
+                    <select v-model.number="editForm.recurrence_day" class="w-full px-2.5 py-1.5 rounded-lg border border-input bg-background text-foreground text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                      <option v-for="d in 31" :key="d" :value="d">Tanggal {{ d }} Setiap Bulan</option>
+                    </select>
+                  </div>
+
+                  <div v-else-if="editForm.recurrence_type === 'WEEKLY'">
+                    <label class="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Setiap Hari</label>
+                    <select v-model.number="editForm.recurrence_weekday" class="w-full px-2.5 py-1.5 rounded-lg border border-input bg-background text-foreground text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                      <option :value="1">Senin</option>
+                      <option :value="2">Selasa</option>
+                      <option :value="3">Rabu</option>
+                      <option :value="4">Kamis</option>
+                      <option :value="5">Jumat</option>
+                      <option :value="6">Sabtu</option>
+                      <option :value="0">Minggu</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Description / Catatan -->
+          <div>
+            <label class="block text-xs font-bold text-foreground uppercase tracking-wider mb-1.5">Detail Pekerjaan & Catatan</label>
+            <RichTextEditor
+              v-model="editForm.description"
+              placeholder="Tuliskan spesifikasi, catatan teknis, atau keterangan..."
+            />
+          </div>
+
+          <!-- 4. Sub-tugas & Checklist -->
+          <div class="p-3.5 bg-muted/20 border border-border rounded-xl space-y-2.5">
+            <div class="flex items-center justify-between">
+              <label class="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-1.5">
+                <CheckSquare class="w-3.5 h-3.5 text-red-500" /> Sub-tugas & Checklist ({{ editForm.subtasks.length }})
+              </label>
+            </div>
+
+            <div v-if="editForm.subtasks.length > 0" class="space-y-1.5">
+              <div
+                v-for="(sub, idx) in editForm.subtasks"
+                :key="sub.id || idx"
+                class="flex items-center justify-between p-2 rounded-lg bg-card border border-border text-xs"
+              >
+                <div class="flex items-center gap-2">
+                  <input type="checkbox" v-model="sub.completed" class="rounded text-red-600 focus:ring-red-500 cursor-pointer" />
+                  <span :class="{ 'line-through text-muted-foreground': sub.completed }" class="font-medium">{{ sub.title }}</span>
+                </div>
+                <button type="button" @click="removeModalSubtask(idx)" class="text-muted-foreground hover:text-rose-500 p-1 cursor-pointer">
                   <X class="w-3.5 h-3.5" />
                 </button>
               </div>
+            </div>
 
-              <!-- Searchable Popover Dropdown List -->
-              <div 
-                v-if="isCustomerDropdownOpen" 
-                class="absolute z-50 left-0 right-0 mt-1.5 max-h-52 overflow-y-auto rounded-xl border border-border bg-card shadow-lg p-1 text-xs space-y-0.5 sidebar-thin"
-              >
-                <!-- Registered Customers from Accurate -->
-                <div 
-                  v-for="cName in filteredAccurateCustomers" 
-                  :key="cName"
-                  @click="selectCustomer(cName)"
-                  class="px-3 py-2 rounded-lg hover:bg-muted font-medium text-foreground cursor-pointer flex items-center justify-between transition-colors"
+            <div class="flex items-center gap-2">
+              <input
+                type="text"
+                v-model="modalNewSubtask"
+                @keydown.enter.prevent="addModalSubtask"
+                placeholder="+ Tambah item sub-tugas (Tekan Enter)..."
+                class="flex-1 px-3 py-1.5 text-xs border border-input rounded-lg bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-red-500"
+              />
+              <button type="button" @click="addModalSubtask" class="px-3 py-1.5 text-xs font-semibold bg-muted hover:bg-muted/80 rounded-lg text-foreground border border-border cursor-pointer shrink-0">
+                Tambah
+              </button>
+            </div>
+          </div>
+
+          <!-- 5. Kaitan Proyek & Customer -->
+          <div class="space-y-3 pt-1 border-t border-border/60">
+            <label class="flex items-center gap-2 text-xs font-semibold text-foreground cursor-pointer select-none">
+              <input type="checkbox" v-model="editForm.has_project_ref" class="rounded text-red-600 focus:ring-red-500 w-4 h-4 cursor-pointer" />
+              <span>Ada kaitan dengan Proyek / Customer</span>
+            </label>
+
+            <div v-if="hasProjectRef" class="p-3.5 bg-muted/20 border border-border rounded-xl grid grid-cols-1 md:grid-cols-3 gap-3">
+              <!-- Proyek -->
+              <div>
+                <label class="block text-[11px] font-semibold text-muted-foreground mb-1">Nama Proyek</label>
+                <input v-model="editForm.project_name" type="text" placeholder="Nama proyek / lokasi..." class="w-full px-3 py-1.5 text-xs border border-input rounded-lg bg-background text-foreground outline-none focus:ring-1 focus:ring-red-500" />
+              </div>
+
+              <!-- Customer Combobox -->
+              <div ref="customerComboboxRef" class="relative">
+                <label class="block text-[11px] font-semibold text-muted-foreground mb-1">Customer / Klien</label>
+                <div class="relative">
+                  <input
+                    type="text"
+                    v-model="customerSearchQuery"
+                    @focus="isCustomerDropdownOpen = true"
+                    @input="editForm.customer_name = customerSearchQuery; isCustomerDropdownOpen = true"
+                    placeholder="Cari / ketik customer..."
+                    class="w-full pl-8 pr-7 py-1.5 text-xs border border-input rounded-lg bg-background text-foreground outline-none focus:ring-1 focus:ring-red-500"
+                  />
+                  <Search class="w-3.5 h-3.5 text-muted-foreground absolute left-2.5 top-2" />
+                  <button
+                    v-if="customerSearchQuery"
+                    type="button"
+                    @click="customerSearchQuery = ''; editForm.customer_name = ''; isCustomerDropdownOpen = true"
+                    class="absolute right-2 top-2 text-muted-foreground hover:text-foreground p-0.5 rounded cursor-pointer"
+                  >
+                    <X class="w-3 h-3" />
+                  </button>
+                </div>
+
+                <div
+                  v-if="isCustomerDropdownOpen"
+                  class="absolute z-50 left-0 right-0 mt-1 max-h-44 overflow-y-auto rounded-xl border border-border bg-card shadow-lg p-1 text-xs space-y-0.5 sidebar-thin"
                 >
-                  <div class="flex items-center gap-2 truncate">
-                    <Building2 class="w-3.5 h-3.5 text-primary shrink-0" />
+                  <div
+                    v-for="cName in filteredAccurateCustomers"
+                    :key="cName"
+                    @click="selectCustomer(cName)"
+                    class="px-2.5 py-1.5 rounded-lg hover:bg-muted font-medium text-foreground cursor-pointer flex items-center justify-between"
+                  >
                     <span class="truncate">{{ cName }}</span>
+                    <Check v-if="editForm.customer_name === cName" class="w-3.5 h-3.5 text-red-500 shrink-0" />
                   </div>
-                  <Check v-if="editForm.customer_name === cName" class="w-3.5 h-3.5 text-primary shrink-0" />
+                  <div
+                    v-if="customerSearchQuery && !accurateCustomers.includes(customerSearchQuery)"
+                    @click="selectCustomer(customerSearchQuery)"
+                    class="px-2.5 py-1.5 rounded-lg bg-red-50 dark:bg-red-950/40 text-red-600 font-semibold cursor-pointer flex items-center gap-1"
+                  >
+                    <Plus class="w-3 h-3" /> Use "{{ customerSearchQuery }}"
+                  </div>
                 </div>
+              </div>
 
-                <!-- Custom Input Selection -->
-                <div 
-                  v-if="customerSearchQuery && !accurateCustomers.includes(customerSearchQuery)"
-                  @click="selectCustomer(customerSearchQuery)"
-                  class="px-3 py-2 rounded-lg bg-primary/10 hover:bg-primary/20 font-semibold text-primary cursor-pointer flex items-center gap-2 border border-primary/20 transition-colors"
-                >
-                  <Plus class="w-3.5 h-3.5 shrink-0" />
-                  <span class="truncate">Gunakan Kustom: "{{ customerSearchQuery }}"</span>
-                </div>
-
-                <div v-if="filteredAccurateCustomers.length === 0 && !customerSearchQuery" class="px-3 py-3 text-center text-muted-foreground">
-                  Ketik nama customer untuk mencari...
-                </div>
+              <!-- PIC -->
+              <div>
+                <label class="block text-[11px] font-semibold text-muted-foreground mb-1">PIC Customer</label>
+                <input v-model="editForm.pic_name" type="text" placeholder="Nama PIC kontak..." class="w-full px-3 py-1.5 text-xs border border-input rounded-lg bg-background text-foreground outline-none focus:ring-1 focus:ring-red-500" />
               </div>
             </div>
           </div>
 
-          <!-- 4. PIC & 5. Action by (2-Column Grid) -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <!-- 4. PIC -->
-            <div>
-              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">4. PIC Customer <span class="text-rose-500">*</span></label>
-              <input v-model="editForm.pic_name" type="text" placeholder="Nama PIC / Kontak Person..." class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
+          <!-- 6. Lampiran Berkas & Link (Multiple) -->
+          <div class="space-y-2.5">
+            <label class="block text-xs font-bold text-foreground uppercase tracking-wider flex items-center justify-between">
+              <span>Lampiran Berkas & Link ({{ editForm.attachments.length }})</span>
+              <span class="text-[10px] font-normal text-muted-foreground">Bisa tambah banyak file & link</span>
+            </label>
+
+            <!-- Tab toggle -->
+            <div class="flex items-center gap-1 bg-muted/50 rounded-lg p-1">
+              <button
+                type="button"
+                @click="attachmentMode = 'file'"
+                :class="[
+                  'flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer',
+                  attachmentMode === 'file'
+                    ? 'bg-background text-foreground shadow-xs'
+                    : 'text-muted-foreground hover:text-foreground'
+                ]"
+              >
+                <Paperclip class="w-3.5 h-3.5" /> Upload Berkas
+              </button>
+              <button
+                type="button"
+                @click="attachmentMode = 'link'"
+                :class="[
+                  'flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer',
+                  attachmentMode === 'link'
+                    ? 'bg-background text-foreground shadow-xs'
+                    : 'text-muted-foreground hover:text-foreground'
+                ]"
+              >
+                <Link class="w-3.5 h-3.5" /> Tautan Link
+              </button>
             </div>
 
-            <!-- 5. Action by -->
-            <div>
-              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">5. Action by (Delegasi)</label>
-              <select v-model="editForm.assignee" class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer">
-                <option value="">-- Pilih Tim / User --</option>
-                <option v-for="u in users" :key="u.email" :value="u.email">{{ u.email }}</option>
-              </select>
+            <!-- Drag & Drop Upload Zone -->
+            <div
+              v-if="attachmentMode === 'file'"
+              @dragenter.prevent="isDraggingOver = true"
+              @dragover.prevent="isDraggingOver = true"
+              @dragleave.prevent="isDraggingOver = false"
+              @drop.prevent="e => { isDraggingOver = false; handleFilesUpload(e) }"
+              @click="fileInput.click()"
+              :class="[
+                'relative flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed cursor-pointer transition-all py-6 px-4',
+                isDraggingOver
+                  ? 'border-red-400 bg-red-50/60 dark:bg-red-950/30'
+                  : 'border-border hover:border-red-400/60 hover:bg-muted/40 bg-muted/20'
+              ]"
+            >
+              <input
+                type="file"
+                ref="fileInput"
+                multiple
+                @change="handleFilesUpload"
+                accept="*/*"
+                class="sr-only"
+              />
+              <div class="p-2.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400">
+                <Paperclip class="w-4 h-4" />
+              </div>
+              <div class="text-center">
+                <p class="text-xs font-bold text-foreground">
+                  <span v-if="isDraggingOver">Lepaskan untuk upload...</span>
+                  <span v-else>Drag & drop file di sini, atau <span class="text-red-600 underline">klik untuk pilih</span></span>
+                </p>
+                <p class="text-[10px] text-muted-foreground mt-0.5">Semua format • Bisa pilih lebih dari satu file</p>
+              </div>
+              <Loader2 v-if="isUploadingAttachment" class="absolute w-5 h-5 animate-spin text-red-500" />
             </div>
-          </div>
 
-          <!-- 6. Description / Catatan -->
-          <div>
-            <label class="block text-xs font-semibold text-muted-foreground mb-1.5">6. Description / Catatan</label>
-            <textarea v-model="editForm.description" rows="3" placeholder="Tuliskan spesifikasi, catatan teknis, atau keterangan..." class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring"></textarea>
-          </div>
-
-          <!-- 7. Deadline & File (2-Column Grid) -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <!-- 7. Deadline -->
-            <div>
-              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">7. Deadline (Target Selesai) <span class="text-rose-500">*</span></label>
-              <input v-model="editForm.target_date" type="date" class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring cursor-pointer" />
+            <!-- Link mode: URL only -->
+            <div v-if="attachmentMode === 'link'" class="flex flex-col sm:flex-row sm:items-center gap-2">
+              <div class="relative flex-1 min-w-0">
+                <Link class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                <input
+                  v-model="newLinkUrl"
+                  type="text"
+                  @keydown.enter.prevent="addLinkAttachment"
+                  placeholder="Tempel URL (https://drive.google.com/...)..."
+                  class="w-full pl-9 pr-3 py-2 text-xs border border-input rounded-lg bg-background text-foreground outline-none focus:ring-2 focus:ring-red-500"
+                />
+              </div>
+              <button
+                type="button"
+                @click="addLinkAttachment"
+                class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shrink-0"
+              >
+                + Tambah
+              </button>
             </div>
 
-            <!-- 8. File Attachment -->
-            <div>
-              <label class="block text-xs font-semibold text-muted-foreground mb-1.5">8. File Attachment</label>
-              <div class="flex items-center gap-2 mb-3">
-                <button 
-                  type="button"
-                  @click="fileOption = 'upload'"
-                  :class="[
-                    'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border cursor-pointer',
-                    fileOption === 'upload'
-                      ? 'bg-primary text-primary-foreground border-primary shadow-xs'
-                      : 'bg-muted text-muted-foreground border-border hover:bg-muted/80'
-                  ]"
-                >
-                  Upload File
-                </button>
-                <button 
-                  type="button"
-                  @click="fileOption = 'link'"
-                  :class="[
-                    'px-3 py-1.5 rounded-lg text-xs font-medium transition-all border cursor-pointer',
-                    fileOption === 'link'
-                      ? 'bg-primary text-primary-foreground border-primary shadow-xs'
-                      : 'bg-muted text-muted-foreground border-border hover:bg-muted/80'
-                  ]"
-                >
-                  Link Dokumen / URL
+            <!-- List Multi-Lampiran -->
+            <div v-if="editForm.attachments.length > 0" class="space-y-1.5">
+              <div
+                v-for="(att, idx) in editForm.attachments"
+                :key="att.id || idx"
+                class="flex items-center justify-between px-3 py-2 rounded-xl bg-card border border-border text-xs shadow-2xs"
+              >
+                <div class="flex items-center gap-2 min-w-0">
+                  <Paperclip v-if="att.type === 'file'" class="w-3.5 h-3.5 text-red-500 shrink-0" />
+                  <Link v-else class="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                  <a :href="att.url" target="_blank" class="font-semibold text-foreground hover:text-red-600 truncate max-w-[140px] sm:max-w-[240px]">
+                    {{ att.name }}
+                  </a>
+                  <span :class="[
+                    'text-[10px] px-1.5 py-0.5 rounded uppercase font-bold shrink-0',
+                    att.type === 'file' ? 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400'
+                  ]">
+                    {{ att.type }}
+                  </span>
+                </div>
+                <button type="button" @click="removeAttachment(idx)" class="p-1 text-muted-foreground hover:text-rose-500 rounded hover:bg-muted transition-colors cursor-pointer shrink-0">
+                  <X class="w-3.5 h-3.5" />
                 </button>
               </div>
-              <template v-if="fileOption === 'upload'">
-                <input type="file" ref="fileInput" @change="handleFileChange" accept=".pdf,.xls,.xlsx,.csv" class="block w-full text-xs text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-muted file:text-foreground hover:file:bg-muted/80 cursor-pointer" />
-                <p v-if="task?.file_url && !selectedFile && fileOption === 'upload'" class="text-xs text-muted-foreground mt-2 flex items-center gap-1">
-                  File tersimpan: <a :href="task.file_url" target="_blank" class="text-primary underline font-medium">{{ task.file_name || 'Lihat' }}</a>
-                </p>
-              </template>
-              <template v-else>
-                <input v-model="editForm.file_link" type="text" placeholder="Tempel link URL (Google Drive, Docs, Sheet, dll)..." class="w-full px-3 py-2 border border-input rounded-xl bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring" />
-                <p v-if="task?.file_link && !editForm.file_link" class="text-xs text-muted-foreground mt-2 flex items-center gap-1">
-                  Link tersimpan: <a :href="task.file_link" target="_blank" class="text-primary underline font-medium truncate max-w-[200px]">{{ task.file_link }}</a>
-                </p>
-              </template>
             </div>
           </div>
         </div>
 
         <div class="px-6 py-4 bg-muted/40 border-t border-border flex justify-end gap-2.5">
           <button @click="closeEditModal" class="px-4 py-2 text-xs font-semibold text-muted-foreground hover:bg-muted rounded-xl transition-colors cursor-pointer">Batal</button>
-          <button @click="saveEditTask" :disabled="isSavingEdit" class="px-4 py-2 text-xs font-semibold text-primary-foreground bg-primary hover:bg-primary/90 rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-xs">
+          <button @click="saveEditTask" :disabled="isSavingEdit || isUploadingAttachment" class="px-4 py-2 text-xs font-semibold text-primary-foreground bg-primary hover:bg-primary/90 rounded-xl transition-colors disabled:opacity-50 flex items-center gap-2 cursor-pointer shadow-xs">
             <Loader2 v-if="isSavingEdit" class="w-3.5 h-3.5 animate-spin" />
-            Simpan Perubahan
+            <span>{{ isSavingEdit ? 'Menyimpan...' : (isUploadingAttachment ? 'Mengunggah...' : 'Simpan Perubahan') }}</span>
           </button>
         </div>
       </div>

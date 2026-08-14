@@ -49,7 +49,7 @@ const getStatusText = (item, type) => {
 
 const getStatusColor = (status) => {
     if (['Completed', 'Already in Hokiindo Raya'].includes(status)) return 'text-green-600 bg-green-50 border-green-200'
-    if (['ETA Port JKT', 'Follow up with our forwarder'].includes(status)) return 'text-blue-600 bg-blue-50 border-blue-200'
+    if (['ETA Port JKT', 'Follow up with our forwarder'].includes(status)) return 'text-red-600 bg-red-50 border-red-200'
     if (['Already in siemens Warehouse'].includes(status)) return 'text-cyan-600 bg-cyan-50 border-cyan-200'
     if (['Follow up to factory'].includes(status)) return 'text-amber-600 bg-amber-50 border-amber-200'
     return 'text-slate-600 bg-slate-100 border-slate-200'
@@ -294,7 +294,7 @@ const exportToExcel = () => {
                 <!-- Card Dalam Proses -->
                  <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group">
                      <div class="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                        <Clock class="w-16 h-16 text-blue-600"/>
+                        <Clock class="w-16 h-16 text-red-600"/>
                     </div>
                     <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Barang Dalam Proses</p>
                     <p class="text-3xl font-bold text-slate-800 mt-1">{{ groupedData.countProcessing }} <span class="text-sm text-slate-400">Unit</span></p>
@@ -352,7 +352,7 @@ const exportToExcel = () => {
                     
                     <div @click="toggleSection('pending')" class="cursor-pointer bg-slate-50 p-4 flex justify-between items-center border-b border-slate-100 select-none">
                         <div class="flex items-center gap-3">
-                            <div class="bg-blue-100 p-2 rounded-lg text-blue-700">
+                            <div class="bg-red-100 p-2 rounded-lg text-red-700">
                                 <Clock class="w-5 h-5" />
                             </div>
                             <div>
@@ -370,7 +370,7 @@ const exportToExcel = () => {
                                 <div class="flex-1">
                                     <p class="font-bold text-sm text-slate-800">{{ item.name }}</p>
                                     <p class="text-xs text-slate-400 font-mono mt-0.5">{{ item.code }}</p>
-                                    <span class="inline-block mt-2 bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-xs font-bold">
+                                    <span class="inline-block mt-2 bg-red-50 text-red-700 px-2 py-0.5 rounded text-xs font-bold">
                                         Qty: {{ item.displayQty }} Unit
                                     </span>
                                 </div>
@@ -378,7 +378,7 @@ const exportToExcel = () => {
                                 <!-- Dates Timeline - Only show if date exists -->
                                 <div class="text-right text-xs space-y-1">
                                     <div v-if="item.is_ready" class="flex items-center justify-end gap-2 mb-2">
-                                        <span class="inline-block bg-blue-100 text-blue-700 border border-blue-200 px-2 py-1 rounded font-bold uppercase tracking-wider shadow-sm">Siap Dikirim</span>
+                                        <span class="inline-block bg-red-100 text-red-700 border border-red-200 px-2 py-1 rounded font-bold uppercase tracking-wider shadow-sm">Siap Dikirim</span>
                                     </div>
                                     <div v-if="item.exwork_date" class="flex items-center justify-end gap-2">
                                         <span class="text-slate-500">EXWORK</span>
@@ -386,7 +386,7 @@ const exportToExcel = () => {
                                     </div>
                                     <div v-if="item.eta_date" class="flex items-center justify-end gap-2">
                                         <span class="text-slate-500">ETA PORT JKT</span>
-                                        <span class="font-bold text-blue-700">{{ formatDate(item.eta_date) }}</span>
+                                        <span class="font-bold text-red-700">{{ formatDate(item.eta_date) }}</span>
                                     </div>
                                     <div v-if="item.dunex_date" class="flex items-center justify-end gap-2">
                                         <span class="text-slate-500">Tiba di DUNEX</span>

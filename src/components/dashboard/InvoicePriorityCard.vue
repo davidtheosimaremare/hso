@@ -455,7 +455,7 @@ const navigateToHso = (hsoNumber) => {
                     <span>•</span>
                     <button 
                       @click.stop="navigateToHso(getHsoRef(item))" 
-                      class="font-extrabold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 px-1.5 py-0.5 rounded border border-blue-200/60 dark:border-blue-900/60 transition-colors inline-flex items-center gap-1"
+                      class="font-extrabold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/60 px-1.5 py-0.5 rounded border border-red-200/60 dark:border-red-900/60 transition-colors inline-flex items-center gap-1"
                       :title="`Buka detail ${getHsoRef(item)}`"
                     >
                       <span>{{ getHsoRef(item) }}</span>

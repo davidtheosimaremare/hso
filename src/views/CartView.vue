@@ -127,7 +127,7 @@
                       <div class="flex items-center gap-2">
                         <router-link
                           :to="`/sales-orders/${group.so_number.replace(/\//g, '-')}`"
-                          class="inline-flex items-center gap-1.5 text-xs font-extrabold text-blue-600 dark:text-blue-400 hover:underline bg-blue-50 dark:bg-blue-950/20 px-2 py-0.5 rounded font-sans"
+                          class="inline-flex items-center gap-1.5 text-xs font-extrabold text-red-600 dark:text-red-400 hover:underline bg-red-50 dark:bg-red-950/20 px-2 py-0.5 rounded font-sans"
                         >
                           <FileText class="w-3.5 h-3.5" />
                           {{ group.so_number }}
@@ -206,10 +206,10 @@
                       <Button
                         size="sm"
                         variant="outline"
-                        class="h-8 px-2.5 rounded-lg border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-900/30 hover:bg-blue-50 dark:hover:bg-blue-950/20 transition-all text-xs font-semibold flex items-center gap-1.5 shadow-sm"
+                        class="h-8 px-2.5 rounded-lg border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-900/30 hover:bg-red-50 dark:hover:bg-red-950/20 transition-all text-xs font-semibold flex items-center gap-1.5 shadow-sm"
                         @click="checkStockAvailability(item.item_code)"
                       >
-                        <Boxes class="w-4 h-4 text-blue-500" />
+                        <Boxes class="w-4 h-4 text-red-500" />
                         <span>Cek Stok</span>
                       </Button>
 
@@ -240,7 +240,7 @@
               <div class="flex items-center gap-2 max-w-[80%]">
                 <component :is="isGroupCollapsed(group.so_number) ? ChevronRight : ChevronDown" class="w-4 h-4 text-slate-500 shrink-0" />
                 <div class="min-w-0">
-                  <span class="text-xs font-bold text-blue-600 dark:text-blue-400 block truncate">{{ group.so_number }}</span>
+                  <span class="text-xs font-bold text-red-600 dark:text-red-400 block truncate">{{ group.so_number }}</span>
                   <span class="text-[10px] text-slate-600 dark:text-slate-400 block truncate font-medium mt-0.5">{{ group.company_name }}</span>
                 </div>
               </div>
@@ -306,10 +306,10 @@
                    <Button
                      size="sm"
                      variant="outline"
-                     class="h-7 px-2.5 rounded-lg border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/20 text-[10px] font-bold flex items-center gap-1 shadow-sm"
+                     class="h-7 px-2.5 rounded-lg border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 text-[10px] font-bold flex items-center gap-1 shadow-sm"
                      @click="checkStockAvailability(item.item_code)"
                    >
-                     <Boxes class="w-3.5 h-3.5 text-blue-500" />
+                     <Boxes class="w-3.5 h-3.5 text-red-500" />
                      Cek Stok
                    </Button>
 
@@ -470,7 +470,7 @@
                   <div class="min-w-0">
                     <div class="flex items-center gap-2">
                       <span class="font-bold text-slate-900 dark:text-white block font-mono">{{ item.item_code }}</span>
-                      <span class="text-[9px] bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded font-extrabold font-sans shrink-0">{{ item.so_number }}</span>
+                      <span class="text-[9px] bg-red-50 dark:bg-red-950 text-red-600 dark:text-red-400 px-1.5 py-0.5 rounded font-extrabold font-sans shrink-0">{{ item.so_number }}</span>
                     </div>
                     <span class="text-[10px] text-slate-400 block truncate max-w-[280px]">{{ item.item_name }}</span>
                   </div>
@@ -534,7 +534,7 @@
 
       <!-- Loading State -->
       <div v-if="isFetchingStock" class="p-12 flex flex-col items-center justify-center gap-3">
-        <Loader2 class="w-8 h-8 text-blue-500 animate-spin" />
+        <Loader2 class="w-8 h-8 text-red-500 animate-spin" />
         <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Menghubungkan ke Accurate Online...</span>
       </div>
 
@@ -567,7 +567,7 @@
             </div>
             <div class="flex justify-between items-center">
               <span class="font-bold text-slate-500 text-[10px] uppercase">Dipesan (PO)</span>
-              <span class="font-black text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 px-2 py-0.5 rounded">+ {{ stockData.stock_ordered }}</span>
+              <span class="font-black text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 px-2 py-0.5 rounded">+ {{ stockData.stock_ordered }}</span>
             </div>
             <div class="flex justify-between items-center">
               <span class="font-bold text-slate-500 text-[10px] uppercase">Dijual (SO)</span>
@@ -604,7 +604,7 @@
                   <TableCell class="font-bold">
                     <span 
                       class="px-2 py-0.5 rounded font-mono font-extrabold text-[10px]"
-                      :class="ref.type === 'PO' ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-400' : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400'"
+                      :class="ref.type === 'PO' ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400' : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400'"
                     >
                       {{ ref.no_referensi }}
                     </span>
@@ -621,7 +621,7 @@
                   </TableCell>
                   
                   <!-- Dipesan -->
-                  <TableCell class="text-center font-extrabold" :class="ref.dipesan > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-slate-300 dark:text-slate-700'">
+                  <TableCell class="text-center font-extrabold" :class="ref.dipesan > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-300 dark:text-slate-700'">
                     {{ ref.dipesan }}
                   </TableCell>
                   
@@ -640,7 +640,7 @@
                 <!-- Totals Row -->
                 <TableRow v-if="stockData.references.length > 0" class="bg-slate-50/50 dark:bg-slate-900/20 font-bold border-t border-slate-200 dark:border-slate-800">
                   <TableCell colspan="3" class="text-right uppercase tracking-wider text-[10px] text-slate-500 pr-6">Total</TableCell>
-                  <TableCell class="text-center text-blue-600 dark:text-blue-400 font-black border-l border-slate-100 dark:border-slate-800/40">{{ stockData.stock_ordered }}</TableCell>
+                  <TableCell class="text-center text-red-600 dark:text-red-400 font-black border-l border-slate-100 dark:border-slate-800/40">{{ stockData.stock_ordered }}</TableCell>
                   <TableCell class="text-center text-rose-600 dark:text-rose-400 font-black border-l border-slate-100 dark:border-slate-800/40">{{ stockData.stock_sold }}</TableCell>
                 </TableRow>
               </TableBody>

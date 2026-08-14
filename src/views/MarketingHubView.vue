@@ -310,7 +310,7 @@ const editingEvent = ref(null)
 const newEvent = ref({ name: '', date_start: '', date_end: '', status: 'upcoming', kpis: [{ name: '', target: null, actual: null }] })
 const eventStatuses = [
   { key: 'upcoming', label: 'Akan Datang', color: 'bg-amber-100 text-amber-700' },
-  { key: 'ongoing', label: 'Sedang Berjalan', color: 'bg-blue-100 text-blue-700' },
+  { key: 'ongoing', label: 'Sedang Berjalan', color: 'bg-red-100 text-red-700' },
   { key: 'completed', label: 'Selesai', color: 'bg-emerald-100 text-emerald-700' },
 ]
 
@@ -699,7 +699,7 @@ const STATUS_FLOW = ['idea', 'planning', 'designing', 'scheduled', 'published', 
 
 const statusConfig = {
   idea:      { label: 'Ide Masuk',      emoji: '💡', cls: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800' },
-  planning:  { label: 'Direncanakan',   emoji: '📝', cls: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800' },
+  planning:  { label: 'Direncanakan',   emoji: '📝', cls: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-800' },
   designing: { label: 'Desain',         emoji: '🎨', cls: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/30 dark:text-purple-400 dark:border-purple-800' },
   scheduled: { label: 'Terjadwal',      emoji: '📅', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/30 dark:text-indigo-400 dark:border-indigo-800' },
   published: { label: 'Tayang',         emoji: '🚀', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800' },
@@ -708,15 +708,15 @@ const statusConfig = {
 
 const platformGradient = {
   instagram: 'from-pink-500 to-rose-500',
-  linkedin:  'from-blue-600 to-blue-700',
+  linkedin:  'from-red-600 to-red-700',
   tiktok:    'from-violet-600 to-pink-600',
-  facebook:  'from-blue-600 to-indigo-600',
+  facebook:  'from-red-600 to-indigo-600',
   email:     'from-amber-500 to-orange-500',
 }
 
 const platformBg = {
   instagram: 'bg-pink-100 text-pink-600 dark:bg-pink-950/40 dark:text-pink-400',
-  linkedin:  'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400',
+  linkedin:  'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400',
   tiktok:    'bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400',
   facebook:  'bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-400',
   email:     'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400',
@@ -743,7 +743,7 @@ const getInitials = (email) => {
 }
 
 const getAvatarColor = (email) => {
-  const colors = ['from-pink-500 to-rose-500','from-blue-500 to-indigo-600','from-violet-500 to-purple-600','from-emerald-500 to-teal-600','from-amber-500 to-orange-500','from-cyan-500 to-blue-500']
+  const colors = ['from-pink-500 to-rose-500','from-red-500 to-indigo-600','from-violet-500 to-purple-600','from-emerald-500 to-teal-600','from-amber-500 to-orange-500','from-cyan-500 to-red-500']
   let hash = 0
   for (let i = 0; i < (email||'').length; i++) hash = email.charCodeAt(i) + ((hash << 5) - hash)
   return colors[Math.abs(hash) % colors.length]
@@ -1933,7 +1933,7 @@ watch(selectedEventDetail, () => {
           <button @click="toggleLike(idea)"
             class="flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold transition-colors"
             :class="(idea.likes||[]).some(l=>l.user_email===currentUser)
-              ? 'text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/10'
+              ? 'text-red-600 dark:text-red-400 bg-red-50/50 dark:bg-red-950/10'
               : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50 hover:text-slate-700 dark:hover:text-slate-300'">
             <ThumbsUp class="w-4 h-4" :fill="(idea.likes||[]).some(l=>l.user_email===currentUser)?'currentColor':'none'" />
             Suka
@@ -2213,7 +2213,7 @@ watch(selectedEventDetail, () => {
                     <input type="url" v-model="selectedEventDetail.drive_link" placeholder="https://drive.google.com/..."
                       class="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs text-slate-900 dark:text-white focus:outline-none focus:border-red-500" />
                     <a v-if="selectedEventDetail.drive_link" :href="selectedEventDetail.drive_link" target="_blank"
-                      class="px-3 py-2 rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400 text-xs font-semibold hover:bg-blue-100 transition-colors inline-flex items-center gap-1">
+                      class="px-3 py-2 rounded-xl bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400 text-xs font-semibold hover:bg-red-100 transition-colors inline-flex items-center gap-1">
                       <ExternalLink class="w-3.5 h-3.5" />
                       <span>Buka Drive</span>
                     </a>
@@ -2231,7 +2231,7 @@ watch(selectedEventDetail, () => {
 
                   <input type="file" ref="eventMediaInputRef" class="hidden" @change="handleEventFileUpload" accept="image/*,video/*,application/pdf,.doc,.docx,.ppt,.pptx" />
                   <button @click="$refs.eventMediaInputRef.click()" :disabled="isUploadingEventMedia"
-                    class="px-3.5 py-2 bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400 rounded-xl text-xs font-semibold hover:bg-blue-100 dark:hover:bg-blue-500/20 transition-colors inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
+                    class="px-3.5 py-2 bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400 rounded-xl text-xs font-semibold hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50">
                     <Loader2 v-if="isUploadingEventMedia" class="w-4 h-4 animate-spin" />
                     <Upload class="w-4 h-4" v-else />
                     <span>Upload File</span>
@@ -2250,7 +2250,7 @@ watch(selectedEventDetail, () => {
                   <div v-for="(media, idx) in selectedEventDetail.media_files" :key="media.id || idx"
                     class="p-3 bg-slate-50/80 dark:bg-slate-900/60 rounded-xl border border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-3 group">
                     <div class="flex items-center gap-2.5 min-w-0">
-                      <div class="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                      <div class="w-8 h-8 rounded-lg bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 flex items-center justify-center shrink-0">
                         <FileText class="w-4 h-4" />
                       </div>
                       <div class="min-w-0">
@@ -2261,7 +2261,7 @@ watch(selectedEventDetail, () => {
 
                     <div class="flex items-center gap-1 shrink-0">
                       <a v-if="media.url" :href="media.url" target="_blank"
-                        class="p-1 text-slate-400 hover:text-blue-500 transition-colors" title="Buka File">
+                        class="p-1 text-slate-400 hover:text-red-500 transition-colors" title="Buka File">
                         <ExternalLink class="w-3.5 h-3.5" />
                       </a>
                       <button @click="removeEventMedia(idx)" class="p-1 text-slate-400 hover:text-red-500 transition-colors" title="Hapus File">
@@ -2279,14 +2279,14 @@ watch(selectedEventDetail, () => {
                     <h3 class="text-sm font-semibold text-slate-900 dark:text-white uppercase tracking-wider">Checklist Kebutuhan Acara</h3>
                     <p class="text-xs text-slate-400 mt-0.5">Tandai progress barang & sarana yang sudah siap</p>
                   </div>
-                  <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400">
+                  <span class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400">
                     {{ (selectedEventDetail.checklist || []).filter(c => c.completed).length }}/{{ (selectedEventDetail.checklist || []).length }} Terpenuhi
                   </span>
                 </div>
 
                 <!-- Progress Bar -->
                 <div v-if="selectedEventDetail.checklist && selectedEventDetail.checklist.length" class="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                  <div class="h-full bg-blue-500 rounded-full transition-all duration-300"
+                  <div class="h-full bg-red-500 rounded-full transition-all duration-300"
                     :style="`width: ${((selectedEventDetail.checklist.filter(c => c.completed).length / selectedEventDetail.checklist.length) * 100)}%`"></div>
                 </div>
 
@@ -2602,7 +2602,7 @@ watch(selectedEventDetail, () => {
                   <td class="py-3.5 px-4 font-semibold text-slate-900 dark:text-white">
                     <div class="flex items-center gap-2">
                       <span>{{ evt.name }}</span>
-                      <a v-if="evt.drive_link" :href="evt.drive_link" target="_blank" class="text-blue-500 hover:text-blue-600 inline-flex items-center" title="Link Asset Drive">
+                      <a v-if="evt.drive_link" :href="evt.drive_link" target="_blank" class="text-red-500 hover:text-red-600 inline-flex items-center" title="Link Asset Drive">
                         <ExternalLink class="w-3.5 h-3.5" />
                       </a>
                     </div>
@@ -2642,7 +2642,7 @@ watch(selectedEventDetail, () => {
                         <span>{{ evt.checklist.filter(c => c.completed).length }}/{{ evt.checklist.length }}</span>
                       </div>
                       <div class="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                        <div class="h-full bg-blue-500 rounded-full transition-all"
+                        <div class="h-full bg-red-500 rounded-full transition-all"
                           :style="`width: ${(evt.checklist.filter(c => c.completed).length / evt.checklist.length) * 100}%`"></div>
                       </div>
                     </div>
@@ -2944,7 +2944,7 @@ watch(selectedEventDetail, () => {
           </button>
           <button @click="openRevisionModal(selectedIdeaModal)"
             class="px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-100 border border-slate-200 dark:border-slate-700 transition-colors flex items-center gap-1.5">
-            <History class="w-3.5 h-3.5 text-blue-500" />
+            <History class="w-3.5 h-3.5 text-red-500" />
             <span>Riwayat Revisi</span>
           </button>
         </div>
@@ -3063,7 +3063,7 @@ watch(selectedEventDetail, () => {
       <!-- Modal Header -->
       <div class="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/30">
         <div class="flex items-center gap-2.5">
-          <div class="p-2 bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-xl">
+          <div class="p-2 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl">
             <History class="w-5 h-5" />
           </div>
           <div>
@@ -3080,7 +3080,7 @@ watch(selectedEventDetail, () => {
       <div class="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
         <!-- Loading state -->
         <div v-if="isLoadingRevisions" class="py-12 text-center text-slate-400 flex flex-col items-center gap-2">
-          <Loader2 class="w-6 h-6 animate-spin text-blue-500" />
+          <Loader2 class="w-6 h-6 animate-spin text-red-500" />
           <span class="text-xs">Memuat riwayat revisi...</span>
         </div>
 
@@ -3096,7 +3096,7 @@ watch(selectedEventDetail, () => {
           <div v-for="(rev, idx) in revisionsList" :key="rev.id || idx"
             class="relative pl-9 space-y-2 group">
             <!-- Timeline Dot -->
-            <div class="absolute left-2.5 top-1.5 w-3 h-3 rounded-full bg-blue-500 border-2 border-white dark:border-[#1e293b] ring-2 ring-blue-100 dark:ring-blue-900/30 shadow-xs"></div>
+            <div class="absolute left-2.5 top-1.5 w-3 h-3 rounded-full bg-red-500 border-2 border-white dark:border-[#1e293b] ring-2 ring-red-100 dark:ring-red-900/30 shadow-xs"></div>
 
             <!-- Card item -->
             <div class="bg-slate-50/80 dark:bg-slate-900/40 rounded-xl p-4 border border-slate-200/80 dark:border-slate-800 space-y-2">
@@ -3119,7 +3119,7 @@ watch(selectedEventDetail, () => {
 
                 <!-- Restore Button -->
                 <button @click="restoreRevision(rev)"
-                  class="px-2.5 py-1 rounded-lg text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 hover:bg-blue-100 transition-colors flex items-center gap-1 ml-auto">
+                  class="px-2.5 py-1 rounded-lg text-[10px] font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 hover:bg-red-100 transition-colors flex items-center gap-1 ml-auto">
                   <RotateCcw class="w-3 h-3" />
                   <span>Pulihkan Versi Ini</span>
                 </button>

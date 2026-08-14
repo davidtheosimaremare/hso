@@ -1,8 +1,22 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
-import {
-  Bold, Italic, Underline, Heading1, List, ListOrdered,
-  Quote, RemoveFormatting
+import { ref, watch, onMounted } from 'vue'
+import { 
+  Bold, 
+  Italic, 
+  Underline, 
+  Strikethrough, 
+  List, 
+  ListOrdered, 
+  Heading2, 
+  Heading3, 
+  Code, 
+  Quote, 
+  Link, 
+  Eraser, 
+  AlignLeft, 
+  AlignCenter, 
+  AlignRight,
+  Highlighter
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -12,287 +26,346 @@ const props = defineProps({
   },
   placeholder: {
     type: String,
-    default: 'Tulis detail/angle konten di sini...'
-  },
-  minHeight: {
-    type: String,
-    default: '100px'
+    default: 'Tuliskan detail pekerjaan, catatan teknis, instruksi...'
   }
 })
 
 const emit = defineEmits(['update:modelValue'])
 
 const editorRef = ref(null)
-const isFocused = ref(false)
-const activeStates = ref({
-  bold: false,
-  italic: false,
-  underline: false,
-  ul: false,
-  ol: false,
-  h3: false,
-  quote: false
-})
 
-const normalizeInitialContent = (text) => {
-  if (!text) return ''
-  if (/<[a-z][\s\S]*>/i.test(text)) return text
-
-  let html = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-
-  html = html.replace(/^### (.*$)/gim, '<h3>$1</h3>')
-  html = html.replace(/^## (.*$)/gim, '<h2>$1</h2>')
-  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-  html = html.replace(/\*(.*?)\*/g, '<em>$1</em>')
-  html = html.replace(/^&gt;\s?(.*$)/gim, '<blockquote>$1</blockquote>')
-  html = html.replace(/^[\-\*]\s+(.*$)/gim, '<li>$1</li>')
-  html = html.replace(/\n/g, '<br>')
-  return html
+const syncContentFromModel = () => {
+  if (editorRef.value && editorRef.value.innerHTML !== props.modelValue) {
+    editorRef.value.innerHTML = props.modelValue || ''
+  }
 }
 
 onMounted(() => {
-  if (editorRef.value) {
-    editorRef.value.innerHTML = normalizeInitialContent(props.modelValue)
-  }
+  syncContentFromModel()
 })
 
 watch(() => props.modelValue, (newVal) => {
-  if (editorRef.value && document.activeElement !== editorRef.value) {
-    editorRef.value.innerHTML = normalizeInitialContent(newVal)
+  if (editorRef.value && editorRef.value.innerHTML !== newVal) {
+    editorRef.value.innerHTML = newVal || ''
   }
 })
 
-const updateValue = () => {
-  if (!editorRef.value) return
-  const html = editorRef.value.innerHTML
-  if (html === '<br>' || html === '<p><br></p>' || html.trim() === '') {
-    emit('update:modelValue', '')
-  } else {
-    emit('update:modelValue', html)
+const handleInput = () => {
+  if (editorRef.value) {
+    emit('update:modelValue', editorRef.value.innerHTML)
   }
-  checkActiveStates()
 }
 
 const exec = (command, value = null) => {
-  if (!editorRef.value) return
-  editorRef.value.focus()
-  document.execCommand(command, false, value)
-  updateValue()
-}
-
-const checkActiveStates = () => {
+  if (editorRef.value) {
+    editorRef.value.focus()
+  }
   try {
-    activeStates.value.bold = document.queryCommandState('bold')
-    activeStates.value.italic = document.queryCommandState('italic')
-    activeStates.value.underline = document.queryCommandState('underline')
-    activeStates.value.ul = document.queryCommandState('insertUnorderedList')
-    activeStates.value.ol = document.queryCommandState('insertOrderedList')
-    
-    const block = document.queryCommandValue('formatBlock')
-    activeStates.value.h3 = block === 'h3' || block === 'H3' || block === 'h2' || block === 'H2'
-    activeStates.value.quote = block === 'blockquote' || block === 'BLOCKQUOTE'
-  } catch (e) {}
+    document.execCommand(command, false, value)
+  } catch (e) {
+    console.warn('execCommand notice:', e)
+  }
+  handleInput()
 }
 
-const handleKeydown = (e) => {
-  const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
-  const modifier = isMac ? e.metaKey : e.ctrlKey
+const toggleHighlight = () => {
+  if (editorRef.value) {
+    editorRef.value.focus()
+  }
 
-  if (modifier) {
-    const key = e.key.toLowerCase()
-    if (key === 'b') {
-      e.preventDefault()
-      exec('bold')
-    } else if (key === 'i') {
-      e.preventDefault()
-      exec('italic')
-    } else if (key === 'u') {
-      e.preventDefault()
-      exec('underline')
+  const selection = window.getSelection()
+  let isAlreadyHighlighted = false
+
+  if (selection && selection.rangeCount > 0) {
+    const range = selection.getRangeAt(0)
+    let parentEl = range.commonAncestorContainer
+    if (parentEl.nodeType === 3) parentEl = parentEl.parentElement
+
+    if (parentEl && editorRef.value.contains(parentEl)) {
+      const bg = window.getComputedStyle(parentEl).backgroundColor
+      if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent' && bg !== 'initial') {
+        isAlreadyHighlighted = true
+      }
     }
   }
+
+  const targetColor = isAlreadyHighlighted ? 'transparent' : '#fef08a'
+
+  try {
+    const ok = document.execCommand('hiliteColor', false, targetColor)
+    if (!ok) {
+      document.execCommand('backColor', false, targetColor)
+    }
+  } catch (e) {
+    document.execCommand('backColor', false, targetColor)
+  }
+
+  handleInput()
 }
 
-const formatHeading = () => {
-  if (activeStates.value.h3) {
-    exec('formatBlock', '<p>')
-  } else {
-    exec('formatBlock', '<h3>')
+const addLink = () => {
+  if (editorRef.value) editorRef.value.focus()
+  const url = prompt('Masukkan URL Link:')
+  if (url) {
+    exec('createLink', url)
   }
 }
 
-const formatQuote = () => {
-  if (activeStates.value.quote) {
-    exec('formatBlock', '<p>')
-  } else {
-    exec('formatBlock', '<blockquote>')
-  }
+const clearFormat = () => {
+  if (editorRef.value) editorRef.value.focus()
+  exec('removeFormat')
 }
 </script>
 
 <template>
-  <div class="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-[#1e293b] focus-within:border-red-500 dark:focus-within:border-red-500 transition-colors shadow-xs">
+  <div class="border border-input rounded-xl overflow-hidden bg-background focus-within:ring-2 focus-within:ring-red-500 focus-within:border-red-500 transition-all shadow-2xs">
     <!-- Toolbar -->
-    <div class="flex items-center gap-1 flex-wrap p-2 border-b border-slate-100 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/50">
-      <button
-        type="button"
-        @click="exec('bold')"
-        class="p-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1"
-        :class="activeStates.bold ? 'bg-red-500 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'"
-        title="Bold (Ctrl/Cmd + B)"
+    <div class="flex flex-wrap items-center gap-1 p-2 bg-muted/40 border-b border-border text-xs select-none">
+      <!-- Headings -->
+      <button 
+        type="button" 
+        @mousedown.prevent
+        @click="exec('formatBlock', '<h2>')" 
+        class="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        title="Judul Besar (H2)"
       >
-        <Bold class="w-3.5 h-3.5" />
+        <Heading2 class="w-4 h-4" />
+      </button>
+      <button 
+        type="button" 
+        @mousedown.prevent
+        @click="exec('formatBlock', '<h3>')" 
+        class="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        title="Sub-judul (H3)"
+      >
+        <Heading3 class="w-4 h-4" />
       </button>
 
-      <button
-        type="button"
-        @click="exec('italic')"
-        class="p-1.5 rounded-lg text-xs font-bold transition-all"
-        :class="activeStates.italic ? 'bg-red-500 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'"
-        title="Italic (Ctrl/Cmd + I)"
+      <div class="h-4 w-px bg-border my-auto mx-0.5"></div>
+
+      <!-- Basic Formatting -->
+      <button 
+        type="button" 
+        @mousedown.prevent
+        @click="exec('bold')" 
+        class="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground font-bold transition-colors cursor-pointer"
+        title="Teks Tebal (Bold)"
       >
-        <Italic class="w-3.5 h-3.5" />
+        <Bold class="w-4 h-4" />
+      </button>
+      <button 
+        type="button" 
+        @mousedown.prevent
+        @click="exec('italic')" 
+        class="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground italic transition-colors cursor-pointer"
+        title="Teks Miring (Italic)"
+      >
+        <Italic class="w-4 h-4" />
+      </button>
+      <button 
+        type="button" 
+        @mousedown.prevent
+        @click="exec('underline')" 
+        class="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground underline transition-colors cursor-pointer"
+        title="Garis Bawah (Underline)"
+      >
+        <Underline class="w-4 h-4" />
+      </button>
+      <button 
+        type="button" 
+        @mousedown.prevent
+        @click="exec('strikeThrough')" 
+        class="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground line-through transition-colors cursor-pointer"
+        title="Coretan (Strikethrough)"
+      >
+        <Strikethrough class="w-4 h-4" />
       </button>
 
-      <button
-        type="button"
-        @click="exec('underline')"
-        class="p-1.5 rounded-lg text-xs font-bold transition-all"
-        :class="activeStates.underline ? 'bg-red-500 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'"
-        title="Underline (Ctrl/Cmd + U)"
+      <!-- Highlight Yellow -->
+      <button 
+        type="button" 
+        @mousedown.prevent
+        @click="toggleHighlight" 
+        class="p-1.5 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/50 text-amber-600 dark:text-amber-400 transition-colors cursor-pointer"
+        title="Stabilo / Highlight Yellow"
       >
-        <Underline class="w-3.5 h-3.5" />
+        <Highlighter class="w-4 h-4" />
       </button>
 
-      <div class="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1"></div>
+      <div class="h-4 w-px bg-border my-auto mx-0.5"></div>
 
-      <button
-        type="button"
-        @click="formatHeading"
-        class="p-1.5 rounded-lg text-xs font-bold transition-all"
-        :class="activeStates.h3 ? 'bg-red-500 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'"
-        title="Heading / Judul Sub-Poin"
+      <!-- Lists -->
+      <button 
+        type="button" 
+        @mousedown.prevent
+        @click="exec('insertUnorderedList')" 
+        class="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        title="Bullet List (Poin)"
       >
-        <Heading1 class="w-3.5 h-3.5" />
+        <List class="w-4 h-4" />
+      </button>
+      <button 
+        type="button" 
+        @mousedown.prevent
+        @click="exec('insertOrderedList')" 
+        class="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        title="Numbered List (Angka)"
+      >
+        <ListOrdered class="w-4 h-4" />
       </button>
 
-      <button
-        type="button"
-        @click="exec('insertUnorderedList')"
-        class="p-1.5 rounded-lg text-xs font-bold transition-all"
-        :class="activeStates.ul ? 'bg-red-500 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'"
-        title="Bullet List (- Poin)"
+      <div class="h-4 w-px bg-border my-auto mx-0.5"></div>
+
+      <!-- Quote & Code -->
+      <button 
+        type="button" 
+        @mousedown.prevent
+        @click="exec('formatBlock', 'blockquote')" 
+        class="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        title="Kutipan (Quote)"
       >
-        <List class="w-3.5 h-3.5" />
+        <Quote class="w-4 h-4" />
+      </button>
+      <button 
+        type="button" 
+        @mousedown.prevent
+        @click="exec('formatBlock', 'pre')" 
+        class="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground font-mono transition-colors cursor-pointer"
+        title="Blok Kode / Highlight Code"
+      >
+        <Code class="w-4 h-4" />
       </button>
 
-      <button
-        type="button"
-        @click="exec('insertOrderedList')"
-        class="p-1.5 rounded-lg text-xs font-bold transition-all"
-        :class="activeStates.ol ? 'bg-red-500 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'"
-        title="Numbered List (1. Poin)"
+      <div class="h-4 w-px bg-border my-auto mx-0.5"></div>
+
+      <!-- Alignment -->
+      <button 
+        type="button" 
+        @mousedown.prevent
+        @click="exec('justifyLeft')" 
+        class="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        title="Rata Kiri"
       >
-        <ListOrdered class="w-3.5 h-3.5" />
+        <AlignLeft class="w-4 h-4" />
+      </button>
+      <button 
+        type="button" 
+        @mousedown.prevent
+        @click="exec('justifyCenter')" 
+        class="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        title="Rata Tengah"
+      >
+        <AlignCenter class="w-4 h-4" />
+      </button>
+      <button 
+        type="button" 
+        @mousedown.prevent
+        @click="exec('justifyRight')" 
+        class="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        title="Rata Kanan"
+      >
+        <AlignRight class="w-4 h-4" />
       </button>
 
-      <button
-        type="button"
-        @click="formatQuote"
-        class="p-1.5 rounded-lg text-xs font-bold transition-all"
-        :class="activeStates.quote ? 'bg-red-500 text-white shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800'"
-        title="Quote / Catatan Spesial"
+      <div class="h-4 w-px bg-border my-auto mx-0.5"></div>
+
+      <!-- Link & Eraser -->
+      <button 
+        type="button" 
+        @mousedown.prevent
+        @click="addLink" 
+        class="p-1.5 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        title="Sisipkan Link URL"
       >
-        <Quote class="w-3.5 h-3.5" />
+        <Link class="w-4 h-4" />
       </button>
-
-      <div class="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1"></div>
-
-      <button
-        type="button"
-        @click="exec('removeFormat')"
-        class="p-1.5 rounded-lg text-xs font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all"
+      <button 
+        type="button" 
+        @mousedown.prevent
+        @click="clearFormat" 
+        class="p-1.5 rounded-lg hover:bg-muted text-rose-500 hover:text-rose-600 transition-colors cursor-pointer"
         title="Hapus Format Teks"
       >
-        <RemoveFormatting class="w-3.5 h-3.5" />
+        <Eraser class="w-4 h-4" />
       </button>
-
-      <span class="ml-auto text-[10px] text-slate-400 hidden sm:inline font-mono">
-        Shortcut: Ctrl/Cmd + B, I, U
-      </span>
     </div>
 
-    <!-- Visual Editor Editable Container -->
-    <div class="relative p-3">
-      <div
-        ref="editorRef"
-        contenteditable="true"
-        @input="updateValue"
-        @keyup="checkActiveStates"
-        @mouseup="checkActiveStates"
-        @keydown="handleKeydown"
-        @focus="isFocused = true; checkActiveStates()"
-        @blur="isFocused = false"
-        class="rich-text-content outline-none text-xs text-slate-800 dark:text-slate-100 font-sans leading-relaxed overflow-y-auto"
-        :style="{ minHeight: minHeight }"
-      ></div>
-
-      <!-- Placeholder -->
-      <div
-        v-if="!modelValue || modelValue === '<br>' || modelValue.trim() === ''"
-        class="absolute top-3 left-3 pointer-events-none text-xs text-slate-400 dark:text-slate-500 font-sans"
-      >
-        {{ placeholder }}
-      </div>
-    </div>
+    <!-- Editable Content Area -->
+    <div
+      ref="editorRef"
+      contenteditable="true"
+      @input="handleInput"
+      @blur="handleInput"
+      class="rich-editor-content p-3.5 min-h-[140px] max-h-[300px] overflow-y-auto text-xs md:text-sm text-foreground focus:outline-none leading-relaxed prose prose-sm dark:prose-invert max-w-none sidebar-thin"
+      :data-placeholder="placeholder"
+    ></div>
   </div>
 </template>
 
 <style scoped>
-:deep(.rich-text-content) h3,
-:deep(.rich-text-content) h2 {
-  font-weight: 800;
-  font-size: 0.9rem;
-  margin-top: 0.5rem;
-  margin-bottom: 0.25rem;
-  color: inherit;
+[contenteditable="true"]:empty:before {
+  content: attr(data-placeholder);
+  color: var(--color-muted-foreground, #94a3b8);
+  pointer-events: none;
+  display: block;
 }
 
-:deep(.rich-text-content) strong {
-  font-weight: 700;
+/* Explicit CSS Styles for Contenteditable HTML lists, code & highlight */
+.rich-editor-content :deep(ul),
+.rich-editor-content ul {
+  list-style-type: disc !important;
+  padding-left: 1.5rem !important;
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.5rem !important;
 }
 
-:deep(.rich-text-content) em {
-  font-style: italic;
+.rich-editor-content :deep(ol),
+.rich-editor-content ol {
+  list-style-type: decimal !important;
+  padding-left: 1.5rem !important;
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.5rem !important;
 }
 
-:deep(.rich-text-content) u {
-  text-decoration: underline;
+.rich-editor-content :deep(li),
+.rich-editor-content li {
+  margin-bottom: 0.25rem !important;
+  display: list-item !important;
 }
 
-:deep(.rich-text-content) ul {
-  list-style-type: disc;
-  padding-left: 1.25rem;
-  margin-top: 0.25rem;
-  margin-bottom: 0.25rem;
+.rich-editor-content :deep(blockquote),
+.rich-editor-content blockquote {
+  border-left: 4px solid #3b82f6 !important;
+  padding-left: 1rem !important;
+  margin: 0.5rem 0 !important;
+  font-style: italic !important;
+  color: #64748b !important;
 }
 
-:deep(.rich-text-content) ol {
-  list-style-type: decimal;
-  padding-left: 1.25rem;
-  margin-top: 0.25rem;
-  margin-bottom: 0.25rem;
+.rich-editor-content :deep(pre),
+.rich-editor-content pre {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+  padding: 0.75rem !important;
+  border-radius: 0.5rem !important;
+  font-family: monospace !important;
+  white-space: pre-wrap !important;
+  margin: 0.5rem 0 !important;
 }
 
-:deep(.rich-text-content) blockquote {
-  border-left: 3px solid #ef4444;
-  padding-left: 0.75rem;
-  font-style: italic;
-  margin-top: 0.35rem;
-  margin-bottom: 0.35rem;
-  opacity: 0.9;
+.rich-editor-content :deep(h2),
+.rich-editor-content h2 {
+  font-size: 1.25rem !important;
+  font-weight: 800 !important;
+  margin-top: 0.75rem !important;
+  margin-bottom: 0.5rem !important;
+}
+
+.rich-editor-content :deep(h3),
+.rich-editor-content h3 {
+  font-size: 1.1rem !important;
+  font-weight: 700 !important;
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.25rem !important;
 }
 </style>

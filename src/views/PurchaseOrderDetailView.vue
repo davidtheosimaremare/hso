@@ -233,7 +233,7 @@ const formatDate = (dateStr) => {
 
 const getStatusColor = (status) => {
   switch (status) {
-    case 'Terproses': return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800'
+    case 'Terproses': return 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800'
     case 'Ditutup': return 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800'
     case 'Draf': return 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600'
     case 'Diajukan': return 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800'
@@ -307,16 +307,16 @@ const getCustomerName = (refNumber) => {
           <div class="flex items-center gap-2">
             <span class="flex items-center gap-1.5 text-[11px] font-medium select-none rounded-full px-2.5 py-1"
                   :class="realtimeUpdatePulse
-                    ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400'
+                    ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400'
                     : isRealtimeConnected
                       ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400'
                       : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500'">
               <span class="relative flex h-2 w-2">
                 <span v-if="isRealtimeConnected || realtimeUpdatePulse"
                       class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                      :class="realtimeUpdatePulse ? 'bg-blue-400' : 'bg-emerald-400'"></span>
+                      :class="realtimeUpdatePulse ? 'bg-red-400' : 'bg-emerald-400'"></span>
                 <span class="relative inline-flex rounded-full h-2 w-2"
-                      :class="realtimeUpdatePulse ? 'bg-blue-500' : isRealtimeConnected ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'"></span>
+                      :class="realtimeUpdatePulse ? 'bg-red-500' : isRealtimeConnected ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'"></span>
               </span>
               <span class="hidden sm:inline">{{ realtimeUpdatePulse ? 'Diperbarui!' : isRealtimeConnected ? 'Live' : 'Offline' }}</span>
             </span>
@@ -410,7 +410,7 @@ const getCustomerName = (refNumber) => {
                         <div class="flex items-center gap-1.5">
                           <template v-if="getReferenceLabel(item).type === 'HSO'">
                             <span class="font-mono text-xs font-bold text-slate-700 dark:text-slate-350">{{ getReferenceLabel(item).number }}</span>
-                            <span class="cursor-pointer text-[10px] text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline font-medium" @click.stop="router.push(`/sales-orders/${getReferenceLabel(item).number.replace(/\//g, '-')}?search=${item.item_code}&highlight=${item.item_code}`)">Lihat</span>
+                            <span class="cursor-pointer text-[10px] text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 underline font-medium" @click.stop="router.push(`/sales-orders/${getReferenceLabel(item).number.replace(/\//g, '-')}?search=${item.item_code}&highlight=${item.item_code}`)">Lihat</span>
                           </template>
                           <template v-else-if="getReferenceLabel(item).type === 'HSQ'">
                             <span class="font-mono text-xs font-semibold text-slate-700 dark:text-slate-350">{{ getReferenceLabel(item).number }}</span>

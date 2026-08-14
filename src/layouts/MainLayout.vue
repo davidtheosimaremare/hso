@@ -27,7 +27,9 @@ import {
   ChevronUp,
   BookOpen,
   Code,
-  ClipboardList
+  ClipboardList,
+  Wrench,
+  Building2
 } from 'lucide-vue-next'
 import {
   Sheet,
@@ -53,6 +55,7 @@ provide('allowedModules', allowedModules)
 
 const isPembelianOpen = ref(route.path.startsWith('/cart') || route.path.startsWith('/hpb') || route.path.startsWith('/purchase-orders'))
 const isLogistikOpen = ref(route.path.startsWith('/logistics-db') || route.path.startsWith('/delivery-orders') || route.path.startsWith('/receive-items'))
+const isToolsOpen = ref(route.path.startsWith('/tools'))
 const isSettingOpen = ref(route.path.startsWith('/settings'))
 const isSyncWidgetOpen = ref(false)
 const { isSyncing } = useAccurateSync()
@@ -78,6 +81,9 @@ watch(() => route.path, (newPath) => {
   }
   if (newPath.startsWith('/logistics-db') || newPath.startsWith('/delivery-orders') || newPath.startsWith('/receive-items')) {
     isLogistikOpen.value = true
+  }
+  if (newPath.startsWith('/tools')) {
+    isToolsOpen.value = true
   }
   if (newPath.startsWith('/settings')) {
     isSettingOpen.value = true
@@ -255,17 +261,28 @@ const menuGroups = [
     type: 'category',
     name: 'Overview',
     items: [
-      { type: 'item', name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, moduleKey: 'dashboard' }
+      { type: 'item', name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, moduleKey: 'dashboard' },
+      { type: 'item', name: 'TO-DO', path: '/collaborate', icon: ClipboardList, moduleKey: 'permintaan' }
     ]
   },
   {
     type: 'category',
     name: 'Sales',
     items: [
-      { type: 'item', name: 'Permintaan', path: '/permintaan', icon: ClipboardList, moduleKey: 'permintaan' },
       { type: 'item', name: 'Penawaran', path: '/hsq', icon: FileText, moduleKey: 'hsq' },
       { type: 'item', name: 'Penjualan', path: '/sales-orders', icon: FileText, moduleKey: 'sales-orders' },
-      { type: 'item', name: 'Marketing Hub', path: '/marketing-hub', icon: Megaphone, moduleKey: 'marketing-hub' }
+      { type: 'item', name: 'Database Leads', path: '/sales-leads', icon: Building2, moduleKey: 'hsq' },
+      { type: 'item', name: 'Marketing Hub', path: '/marketing-hub', icon: Megaphone, moduleKey: 'marketing-hub' },
+      {
+        type: 'group',
+        name: 'Tools Sales',
+        icon: Wrench,
+        isOpen: isToolsOpen,
+        children: [
+          { name: 'Component Converter', path: '/tools/converter', moduleKey: 'hsq', isComingSoon: true },
+          { name: 'Google Maps Lead Finder', path: '/tools/maps-lead', moduleKey: 'hsq', isComingSoon: true }
+        ]
+      }
     ]
   },
   {
@@ -508,7 +525,7 @@ const fetchNotifications = async () => {
       }))
 
     const allNotifs = [
-      ...normalize(boqData, '/permintaan'),
+      ...normalize(boqData, '/collaborate'),
       ...normalize(marketingData, '/marketing-hub'),
       ...normalize(nonEventIdeas, '/marketing-hub'),
       ...normalize(hpbData, '/hpb'),
@@ -607,7 +624,13 @@ const userInitials = computed(() => {
                 >
                   <span class="truncate">{{ child.name }}</span>
                   <span
-                    v-if="child.path === '/cart' && cartItemCount > 0"
+                    v-if="child.isComingSoon"
+                    class="ml-auto shrink-0 px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-800/80"
+                  >
+                    Soon
+                  </span>
+                  <span
+                    v-else-if="child.path === '/cart' && cartItemCount > 0"
                     class="ml-auto shrink-0 min-w-[18px] h-[18px] px-1.5 inline-flex items-center justify-center rounded-full text-[10px] font-bold bg-amber-500 text-white shadow-sm"
                   >
                     {{ cartItemCount }}
@@ -735,12 +758,12 @@ const userInitials = computed(() => {
                 <div v-if="searchResults.permintaan.length > 0">
                   <div class="px-4 pt-3 pb-1.5 flex items-center justify-between">
                     <span class="text-[10px] font-black uppercase tracking-widest text-slate-400">Antrian Permintaan</span>
-                    <button @click="navigateResult('/permintaan')" class="text-[10px] text-red-500 font-bold hover:underline">Lihat Semua →</button>
+                    <button @click="navigateResult('/collaborate')" class="text-[10px] text-red-500 font-bold hover:underline">Lihat Semua →</button>
                   </div>
                   <div
                     v-for="p in searchResults.permintaan"
                     :key="'p-' + p.id"
-                    @click="navigateResult('/permintaan')"
+                    @click="navigateResult('/collaborate')"
                     class="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
                   >
                     <div class="w-7 h-7 rounded-lg bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center shrink-0">
@@ -796,7 +819,7 @@ const userInitials = computed(() => {
                   <div class="w-2 h-2 rounded-full mt-1.5 shrink-0" :class="notif.read ? 'bg-slate-300' : 'bg-red-500'"></div>
                   <div class="flex-1 min-w-0">
                     <p class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">{{ notif.title }}</p>
-                    <p v-if="notif.path === '/permintaan'" class="text-[10px] text-slate-400 mt-0.5">Didelegasikan ke Anda · <span class="font-mono">{{ notif.status }}</span></p>
+                    <p v-if="notif.path === '/collaborate'" class="text-[10px] text-slate-400 mt-0.5">Didelegasikan ke Anda · <span class="font-mono">{{ notif.status }}</span></p>
                     <p v-else class="text-[10px] text-slate-400 mt-0.5"><span class="font-mono">{{ notif.status }}</span></p>
                   </div>
                 </div>

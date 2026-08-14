@@ -29,3 +29,5 @@ test*.js
 test.js
 check_access.js
 scratch/
+test-results/
+playwright-report/

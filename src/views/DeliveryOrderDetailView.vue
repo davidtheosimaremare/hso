@@ -71,7 +71,7 @@ const formatDate = (dateStr) => {
 
 const getStatusColor = (status) => {
   switch (status) {
-    case 'Terproses': return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800'
+    case 'Terproses': return 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800'
     case 'Ditutup': return 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800'
     case 'Draf': return 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600'
     case 'Diajukan': return 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800'
@@ -82,7 +82,7 @@ const getStatusColor = (status) => {
 
 <template>
   <div class="min-h-screen bg-gray-50/50 dark:bg-[#0f172a] pb-20 font-sans transition-colors duration-300">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 pt-8 space-y-8">
+    <div class="pt-6 space-y-6">
 
       <!-- ERROR STATE -->
       <div v-if="errorMessage" class="flex flex-col items-center justify-center p-12 text-center bg-white dark:bg-slate-800 rounded-xl border border-red-100 dark:border-red-900 shadow-sm animate-in zoom-in-95 duration-300">
@@ -181,7 +181,7 @@ const getStatusColor = (status) => {
                                         <div class="flex items-center gap-1">
                                             <span class="text-xs text-slate-400">Ref:</span>
                                             <span class="text-xs font-bold text-slate-700 dark:text-slate-200">{{ item.hso_number }}</span>
-                                            <span class="cursor-pointer text-[10px] text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium ml-1 underline" @click.stop="router.push(`/sales-orders/${item.hso_number.replace(/\//g, '-')}?search=${item.item_code}&highlight=${item.item_code}`)">
+                                            <span class="cursor-pointer text-[10px] text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 font-medium ml-1 underline" @click.stop="router.push(`/sales-orders/${item.hso_number.replace(/\//g, '-')}?search=${item.item_code}&highlight=${item.item_code}`)">
                                                 (Lihat HSO)
                                             </span>
                                         </div>

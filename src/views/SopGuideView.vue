@@ -149,7 +149,7 @@ const activeTab = ref('sop') // 'sop' or 'flow'
               <div class="bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-100 dark:border-slate-800/80">
                 <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <span>Submit HPB (Harga Pokok Barang) / Permintaan Barang</span>
-                  <Send class="w-3.5 h-3.5 text-blue-500" />
+                  <Send class="w-3.5 h-3.5 text-red-500" />
                 </h3>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   Setelah seluruh item di keranjang ditandai <em>Checked</em>, klik tombol <strong>"Kirim ke HPB"</strong>. Sistem akan membuat draf dokumen Permintaan Barang (Purchase Requisition/HPB) baru di database Accurate secara otomatis.
@@ -258,16 +258,16 @@ const activeTab = ref('sop') // 'sop' or 'flow'
     <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-6">
       
       <!-- Modul 1: Dashboard -->
-      <Card class="bg-gradient-to-br from-blue-50/70 to-white dark:from-blue-950/20 dark:to-slate-900 border-blue-200 dark:border-blue-900/40 rounded-xl shadow-sm hover:shadow-md transition-all duration-200 border-l-4">
+      <Card class="bg-gradient-to-br from-red-50/70 to-white dark:from-red-950/20 dark:to-slate-900 border-red-200 dark:border-red-900/40 rounded-xl shadow-sm hover:shadow-md transition-all duration-200 border-l-4">
         <CardContent class="p-6 space-y-3">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
-              <div class="p-2 bg-blue-500 text-white rounded-lg shadow-sm">
+              <div class="p-2 bg-red-500 text-white rounded-lg shadow-sm">
                 <RefreshCw class="w-5 h-5 animate-spin-slow" />
               </div>
               <h3 class="text-sm font-bold text-slate-900 dark:text-white">1. Dashboard & Analitik</h3>
             </div>
-            <Badge class="bg-blue-500 hover:bg-blue-600 text-white font-mono text-[10px] py-0.5 px-2 rounded-full">/dashboard</Badge>
+            <Badge class="bg-red-500 hover:bg-red-600 text-white font-mono text-[10px] py-0.5 px-2 rounded-full">/dashboard</Badge>
           </div>
           <p class="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
             Menyajikan visualisasi performa penjualan, grafik nilai transaksi SO, status SO saat ini, dan peringkat 20 customer teratas. Gunakan tombol <strong>"Refresh"</strong> untuk memperbarui data analitik langsung dari sistem Accurate Online.

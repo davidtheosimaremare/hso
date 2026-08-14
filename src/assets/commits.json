@@ -1,5 +1,13 @@
 [
   {
+    "hash": "00cf944b5f1edbb5af5d047bd153fe07b306d687",
+    "shortHash": "00cf944",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Aug 12 11:15:25 2026 +0700",
+    "message": "chore: final clean deploy for accurate attachment integration"
+  },
+  {
     "hash": "8ebcbac9456d4133ffc371734379a65111dcfb15",
     "shortHash": "8ebcbac",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Sun Jul 12 21:35:51 2026 +0700",
     "message": "feat: Adjust HPB Accurate integration to send all active items in cart as a single HPB instead of per HSO group"
-  },
-  {
-    "hash": "b51a6b1015fbe576b6f5c6e11ae3a2ae592e95c4",
-    "shortHash": "b51a6b1",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Sun Jul 12 21:31:56 2026 +0700",
-    "message": "feat: Add send to HPB Accurate integration, including proposed number calculator and dialog"
   }
 ]

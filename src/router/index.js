@@ -26,6 +26,8 @@ import PermintaanView from '@/views/PermintaanView.vue'
 import PermintaanDetailView from '@/views/PermintaanDetailView.vue'
 import MarketingHubView from '@/views/MarketingHubView.vue'
 import NotificationsView from '@/views/NotificationsView.vue'
+import ToolsView from '@/views/ToolsView.vue'
+import SalesLeadsView from '@/views/SalesLeadsView.vue'
 
 
 // Import Public
@@ -62,13 +64,18 @@ const router = createRouter({
         { path: '/hpb/:id', component: HpbDetailView },
         { path: '/hsq', component: HsqListView },
         { path: '/hsq/:id', component: HsqDetailView },
+        { path: '/sales-leads', component: SalesLeadsView },
         { path: '/settings', component: SettingsView },
         { path: '/sop-guide', component: SopGuideView },
         { path: '/development', component: DevUpdatesView },
-        { path: '/permintaan', component: PermintaanView },
-        { path: '/permintaan/:id', component: PermintaanDetailView },
+        { path: '/collaborate', component: PermintaanView },
+        { path: '/collaborate/:id', component: PermintaanDetailView },
+        { path: '/permintaan', redirect: '/collaborate' },
+        { path: '/permintaan/:id', redirect: to => `/collaborate/${to.params.id}` },
         { path: '/marketing-hub', component: MarketingHubView },
         { path: '/notifications', component: NotificationsView },
+        { path: '/tools/converter', component: ToolsView },
+        { path: '/tools/maps-lead', component: ToolsView },
       ]
     },
     {
@@ -100,14 +107,15 @@ let userAccess = null
 // Helper to map route paths to module keys
 function getRequiredModule(path) {
   if (path.startsWith('/dashboard')) return 'dashboard'
+  if (path.startsWith('/collaborate') || path.startsWith('/permintaan')) return 'permintaan'
   if (path.startsWith('/sales-orders')) return 'sales-orders'
-  if (path.startsWith('/hsq')) return 'hsq'
+  if (path.startsWith('/hsq') || path.startsWith('/tools') || path.startsWith('/sales-leads')) return 'hsq'
+  if (path.startsWith('/marketing-hub')) return 'marketing-hub'
   if (path.startsWith('/cart') || path.startsWith('/hpb')) return 'cart'
   if (path.startsWith('/purchase-orders')) return 'purchase-orders'
   if (path.startsWith('/receive-items')) return 'receive-items'
   if (path.startsWith('/delivery-orders')) return 'delivery-orders'
   if (path.startsWith('/logistics-db')) return 'logistics-db'
-  if (path.startsWith('/permintaan')) return 'permintaan'
   if (path.startsWith('/sop-guide')) return 'sop-guide'
   if (path.startsWith('/settings') || path.startsWith('/development')) return 'settings'
   return null
@@ -118,14 +126,15 @@ function getFirstAllowedPath(allowedModules) {
   if (!allowedModules || allowedModules.length === 0) return '/'
   const moduleToPath = {
     'dashboard:read': '/dashboard',
+    'permintaan:read': '/collaborate',
     'sales-orders:read': '/sales-orders',
     'hsq:read': '/hsq',
+    'marketing-hub:read': '/marketing-hub',
     'cart:read': '/cart',
     'purchase-orders:read': '/purchase-orders',
     'receive-items:read': '/receive-items',
     'delivery-orders:read': '/delivery-orders',
     'logistics-db:read': '/logistics-db',
-    'permintaan:read': '/permintaan',
     'sop-guide:read': '/sop-guide',
     'settings:read': '/settings'
   }
@@ -145,7 +154,15 @@ supabase.auth.onAuthStateChange((event, session) => {
 // --- LOGIC SATPAM (RBAC Enabled) ---
 router.beforeEach(async (to, from, next) => {
   // Cek apakah user sedang login
-  const { data: { session } } = await supabase.auth.getSession()
+  let session = null
+  if (typeof window !== 'undefined' && window.__E2E_TEST__) {
+    session = { user: { email: 'admin@hokiindo.co.id' } }
+  } else {
+    try {
+      const res = await supabase.auth.getSession()
+      session = res?.data?.session
+    } catch (e) {}
+  }
 
   // Skenario 1: Mau masuk ke halaman 'requiresAuth' tapi belum login
   if (to.matched.some(record => record.meta.requiresAuth) && !session) {
@@ -176,14 +193,15 @@ router.beforeEach(async (to, from, next) => {
             role: 'ADMIN',
             allowed_modules: [
               'dashboard:read', 'dashboard:write',
+              'permintaan:read', 'permintaan:write',
               'sales-orders:read', 'sales-orders:write',
               'hsq:read', 'hsq:write',
+              'marketing-hub:read', 'marketing-hub:write',
               'cart:read', 'cart:write',
               'purchase-orders:read', 'purchase-orders:write',
               'receive-items:read', 'receive-items:write',
               'delivery-orders:read', 'delivery-orders:write',
               'logistics-db:read', 'logistics-db:write',
-              'permintaan:read', 'permintaan:write',
               'sop-guide:read', 'sop-guide:write',
               'settings:read', 'settings:write'
             ]

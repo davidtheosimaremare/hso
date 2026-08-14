@@ -582,7 +582,7 @@ const openDetail = (soNumber, itemCode) => {
                             <TableRow class="border-b border-slate-200 dark:border-slate-700">
                                 <TableHead class="text-xs h-8 font-bold">No. HSO / Customer</TableHead>
                                 <TableHead class="text-xs h-8 font-bold text-center">Status</TableHead>
-                                <TableHead class="text-xs h-8 font-bold text-center bg-blue-50 dark:bg-blue-900/20 text-blue-700">Order</TableHead>
+                                <TableHead class="text-xs h-8 font-bold text-center bg-red-50 dark:bg-red-900/20 text-red-700">Order</TableHead>
                                 <TableHead class="text-xs h-8 font-bold text-center bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700">Stock</TableHead>
                                 <TableHead class="text-xs h-8 font-bold text-center bg-red-50 dark:bg-red-900/20 text-red-700">Saran Order</TableHead>
                                 <TableHead class="text-xs h-8 w-[50px]"></TableHead>
@@ -593,7 +593,7 @@ const openDetail = (soNumber, itemCode) => {
                                 <TableCell class="py-3">
                                     <div class="font-bold text-slate-700 dark:text-slate-300 text-xs">{{ hso.so_number }}</div>
                                     <div class="text-[10px] text-slate-500">{{ hso.customer }}</div>
-                                    <div class="text-[9px] text-blue-500 font-medium mt-0.5">📅 {{ hso.date }}</div>
+                                    <div class="text-[9px] text-red-500 font-medium mt-0.5">📅 {{ hso.date }}</div>
                                 </TableCell>
                                 
                                 <TableCell class="text-center">
@@ -603,10 +603,10 @@ const openDetail = (soNumber, itemCode) => {
                                             'bg-gray-100 text-gray-600 border-gray-300': hso.logistics_status === 'Pending Process',
                                             'bg-amber-100 text-amber-700 border-amber-300': hso.logistics_status === 'Follow up to factory',
                                             'bg-orange-100 text-orange-700 border-orange-300': hso.logistics_status === 'Follow up with our forwarder',
-                                            'bg-blue-100 text-blue-700 border-blue-300': hso.logistics_status === 'ETA Port JKT',
+                                            'bg-red-100 text-red-700 border-red-300': hso.logistics_status === 'ETA Port JKT',
                                             'bg-cyan-100 text-cyan-700 border-cyan-300': hso.logistics_status === 'Already in siemens Warehouse',
                                             'bg-indigo-100 text-indigo-700 border-indigo-300': hso.logistics_status === 'Already in Hokiindo Raya',
-                                            'bg-blue-200 text-blue-800 border-blue-400': hso.logistics_status === 'On Delivery',
+                                            'bg-red-200 text-red-800 border-red-400': hso.logistics_status === 'On Delivery',
                                             'bg-emerald-100 text-emerald-700 border-emerald-300': hso.logistics_status === 'Completed',
                                             'bg-purple-100 text-purple-700 border-purple-300': hso.logistics_status === 'Hold by Customer'
                                         }"
@@ -632,7 +632,7 @@ const openDetail = (soNumber, itemCode) => {
                                 </TableCell>
                                 
                                 <!-- Order (Qty Pesanan Client) -->
-                                <TableCell class="text-center text-xs font-bold text-blue-700 bg-blue-50/30 dark:bg-blue-900/10">
+                                <TableCell class="text-center text-xs font-bold text-red-700 bg-red-50/30 dark:bg-red-900/10">
                                     {{ hso.qty_sisa }}
                                 </TableCell>
                                 
@@ -650,7 +650,7 @@ const openDetail = (soNumber, itemCode) => {
                                 </TableCell>
 
                                 <TableCell>
-                                    <Button variant="ghost" size="icon" class="h-6 w-6 text-slate-400 hover:text-blue-600" @click.stop="openDetail(hso.so_number, group.code)">
+                                    <Button variant="ghost" size="icon" class="h-6 w-6 text-slate-400 hover:text-red-600" @click.stop="openDetail(hso.so_number, group.code)">
                                         <ExternalLink class="w-3 h-3" />
                                     </Button>
                                 </TableCell>

@@ -782,7 +782,7 @@ const getStatusClass = (status) => {
   const name = (status || '').toLowerCase()
   if (name.includes('closed') || name.includes('selesai') || name.includes('ditutup') || name.includes('terproses')) {
     if (name.includes('sebagian')) {
-      return 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/20 dark:text-blue-400 dark:border-blue-900/60'
+      return 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400 dark:border-red-900/60'
     }
     return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-900/60'
   }
@@ -880,7 +880,7 @@ onMounted(() => {
               </span>
               <span
                 v-else-if="hsqProgress?.stage?.includes('Negosiasi')"
-                class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-black uppercase tracking-wider border border-blue-300 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900"
+                class="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-black uppercase tracking-wider border border-red-300 bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300 dark:border-red-900"
               >
                 {{ hsqProgress.stage }}
               </span>
@@ -983,7 +983,7 @@ onMounted(() => {
             </div>
             <div class="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-700/60">
               <div 
-                class="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-amber-500 via-blue-500 to-emerald-500" 
+                class="h-full rounded-full transition-all duration-500 bg-gradient-to-r from-amber-500 via-red-500 to-emerald-500" 
                 :style="`width: ${Math.min(100, Math.max(5, hsqProgress.probability || 0))}%`"
               ></div>
             </div>

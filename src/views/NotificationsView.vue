@@ -17,7 +17,7 @@ const pageSize = 10
 const readKey = (id) => `notif_read_${id}`
 
 const moduleMeta = {
-  '/permintaan':   { label: 'Permintaan',  emoji: '📋', variant: 'secondary' },
+  '/collaborate':  { label: 'Kolaborasi', emoji: '🤝', variant: 'secondary' },
   '/marketing-hub':{ label: 'Marketing',   emoji: '📣', variant: 'secondary' },
   '/hpb':          { label: 'HPB',         emoji: '🛒', variant: 'secondary' },
   '/hsq':          { label: 'Penawaran',   emoji: '📑', variant: 'secondary' }
@@ -51,7 +51,7 @@ const fetchAll = async () => {
     )
 
     notifications.value = [
-      ...normalize(boq.data, '/permintaan'),
+      ...normalize(boq.data, '/collaborate'),
       ...normalize(mkt.data, '/marketing-hub'),
       ...normalize(nonEventIdeas, '/marketing-hub'),
       ...normalize(hpb.data, '/hpb'),

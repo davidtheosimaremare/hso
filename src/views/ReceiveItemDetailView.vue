@@ -162,7 +162,7 @@ const formatDate = (dateStr) => {
 
 const getStatusColor = (status) => {
   switch (status) {
-    case 'Terproses': return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800'
+    case 'Terproses': return 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800'
     case 'Ditutup': return 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800'
     case 'Draf': return 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600'
     case 'Diajukan': return 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800'
@@ -202,17 +202,17 @@ const getStatusColor = (status) => {
                 <div class="flex items-center gap-3">
                     <div class="flex items-center gap-1.5 text-[11px] font-medium select-none"
                          :class="realtimeUpdatePulse 
-                           ? 'text-blue-600 dark:text-blue-400' 
+                           ? 'text-red-600 dark:text-red-400' 
                            : isRealtimeConnected 
                              ? 'text-emerald-600 dark:text-emerald-400' 
                              : 'text-slate-400 dark:text-slate-600'">
                         <span class="relative flex h-2 w-2">
                             <span v-if="isRealtimeConnected || realtimeUpdatePulse" 
                                   class="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
-                                  :class="realtimeUpdatePulse ? 'bg-blue-400' : 'bg-emerald-400'">
+                                  :class="realtimeUpdatePulse ? 'bg-red-400' : 'bg-emerald-400'">
                             </span>
                             <span class="relative inline-flex rounded-full h-2 w-2 transition-colors duration-300"
-                                  :class="realtimeUpdatePulse ? 'bg-blue-500' : isRealtimeConnected ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'">
+                                  :class="realtimeUpdatePulse ? 'bg-red-500' : isRealtimeConnected ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'">
                             </span>
                         </span>
                         <span class="hidden sm:inline">
@@ -337,7 +337,7 @@ const getStatusColor = (status) => {
             </TableCell>
 
             <TableCell class="py-4 align-top font-medium text-slate-600 dark:text-slate-300 hidden sm:table-cell">
-               <Badge v-if="item.hso_number" variant="secondary" class="bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800">
+               <Badge v-if="item.hso_number" variant="secondary" class="bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800">
                   {{ item.hso_number }}
                </Badge>
                <span v-else class="text-slate-400 italic text-xs">Tidak ada</span>

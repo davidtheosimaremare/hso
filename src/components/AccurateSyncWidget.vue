@@ -42,7 +42,7 @@ const syncLogColor = (type) => {
   if (type === 'success') return 'text-emerald-500'
   if (type === 'error') return 'text-red-500'
   if (type === 'warn') return 'text-amber-500'
-  return 'text-blue-400'
+  return 'text-red-400'
 }
 </script>
 
@@ -107,7 +107,7 @@ const syncLogColor = (type) => {
               <PackageCheck class="w-4 h-4"/>
               <span class="text-[10px] font-semibold">HRI</span>
             </button>
-            <button @click="syncHpo()" :disabled="isSyncing" class="flex flex-col items-center justify-center gap-1 p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-blue-50 dark:bg-slate-800/50 dark:hover:bg-blue-900/20 text-slate-600 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-800 transition-all disabled:opacity-50">
+            <button @click="syncHpo()" :disabled="isSyncing" class="flex flex-col items-center justify-center gap-1 p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-red-50 dark:bg-slate-800/50 dark:hover:bg-red-900/20 text-slate-600 hover:text-red-700 dark:text-slate-400 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-800 transition-all disabled:opacity-50">
               <ShoppingBag class="w-4 h-4"/>
               <span class="text-[10px] font-semibold">HPO</span>
             </button>
