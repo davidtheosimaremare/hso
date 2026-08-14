@@ -276,19 +276,38 @@ const setQuickDate = (daysToAdd) => {
 const getUserDisplayName = (email) => {
   if (!email) return ''
   const trimmed = email.trim()
+  let notifEmail = ''
+  let fullName = ''
+
+  if (users.value && Array.isArray(users.value)) {
+    const userObj = users.value.find(u => u.email?.toLowerCase() === trimmed.toLowerCase())
+    if (userObj?.notification_email && userObj.notification_email.includes('@')) {
+      notifEmail = userObj.notification_email
+    }
+  }
+
   try {
     const raw = localStorage.getItem('hir_team_contacts')
     if (raw) {
       const contacts = JSON.parse(raw)
       const contact = contacts[trimmed.toLowerCase()]
-      if (contact && contact.full_name && contact.full_name.trim()) {
-        return `${contact.full_name.trim()} (${trimmed})`
+      if (contact) {
+        if (contact.full_name && contact.full_name.trim()) fullName = contact.full_name.trim()
+        if (!notifEmail && contact.notification_email && contact.notification_email.includes('@')) {
+          notifEmail = contact.notification_email
+        }
       }
     }
   } catch (e) {}
+
+  if (!notifEmail) notifEmail = trimmed
+
+  if (fullName) {
+    return `${fullName} (${notifEmail})`
+  }
   const prefix = trimmed.split('@')[0] || trimmed
   const formatted = prefix.split('.').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
-  return `${formatted} (${trimmed})`
+  return `${formatted} (${notifEmail})`
 }
 
 const filteredAccurateCustomers = computed(() => {
@@ -385,7 +404,7 @@ const handleFilesUpload = async (event) => {
 
 const fetchUsers = async () => {
   try {
-    const { data } = await supabase.from('user_access').select('email').order('email')
+    const { data } = await supabase.from('user_access').select('id, email, notification_email').order('email')
     users.value = data || []
   } catch (e) {}
 }
