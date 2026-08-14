@@ -15,7 +15,7 @@ serve(async (req) => {
     const smtpPort = parseInt(Deno.env.get('SMTP_PORT') || '587')
     const smtpUser = Deno.env.get('SMTP_USER') || ''
     const smtpPass = Deno.env.get('SMTP_PASSWORD') || ''
-    const smtpFrom = Deno.env.get('SMTP_FROM') || 'HSO Workspace <workspace@hokiindo.co.id>'
+    const smtpFrom = Deno.env.get('SMTP_FROM') || 'HIR Workspace Notification <workspace@hokiindo.co.id>'
     const fallbackEmail = Deno.env.get('FALLBACK_NOTIFICATION_EMAIL') || smtpUser
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
@@ -33,7 +33,7 @@ serve(async (req) => {
 
     let finalFrom = smtpFrom
     if (from_email && from_email.includes('@')) {
-      const name = from_name || 'HSO Workspace Notification'
+      const name = from_name || 'HIR Workspace Notification'
       finalFrom = `"${name}" <${from_email}>`
     }
 
