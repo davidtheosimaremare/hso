@@ -1,5 +1,13 @@
 [
   {
+    "hash": "2b321bcb2c8ee058d145b74731c82854e8c5e29b",
+    "shortHash": "2b321bc",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 18 12:16:05 2026 +0700",
+    "message": "fix(sales-orders): include stock items and arrived-at-Hokiindo items in Menunggu Pengiriman filter"
+  },
+  {
     "hash": "f39b17dedf7c34c1764a1701925e85fa1de249a1",
     "shortHash": "f39b17d",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Jul 21 16:30:32 2026 +0700",
     "message": "fix: add Dashboard menu item to sidebar"
-  },
-  {
-    "hash": "ee69dfb202c4140d02ad867b60b2fd976be76484",
-    "shortHash": "ee69dfb",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Jul 21 16:28:42 2026 +0700",
-    "message": "feat: add Accurate sync panel to Dashboard with background auto-sync"
   }
 ]

@@ -1955,6 +1955,7 @@ const isItemArrivedAtHokiindo = (item) => {
 
 const getItemPoDiscrepancy = (item) => {
   if (item.qty_to_order <= 0) return null
+  if (getDisplayedQtyRemaining(item) <= 0 || isDisplayedFullyShipped(item) || getDisplayedQtyShipped(item) >= (item.qty_order || 0)) return null
   const entries = getHpoEntries(item)
   if (entries.length === 0) return null
   const totalPo = entries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
