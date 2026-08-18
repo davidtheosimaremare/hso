@@ -1518,6 +1518,28 @@ const fetchLinkedHpb = async () => {
   }
 }
 
+const invokeEdgeFunctionWithRetry = async (functionName, options, maxRetries = 2) => {
+  let attempt = 0
+  while (attempt <= maxRetries) {
+    try {
+      const res = await supabase.functions.invoke(functionName, options)
+      if (res.error && (res.error.name === 'FunctionsFetchError' || res.error.message?.includes('Failed to send')) && attempt < maxRetries) {
+        attempt++
+        await new Promise(r => setTimeout(r, 600 * attempt))
+        continue
+      }
+      return res
+    } catch (err) {
+      if (attempt < maxRetries) {
+        attempt++
+        await new Promise(r => setTimeout(r, 600 * attempt))
+        continue
+      }
+      throw err
+    }
+  }
+}
+
 // --- 2. DATA FETCHING ---
 const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
   errorMessage.value = null
@@ -1540,7 +1562,7 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
         const targetNumber = routeId.replace(/-/g, '/')
         loadingMessage.value = `Mencari ID untuk ${targetNumber}...`
         
-        const { data: listData, error: listError } = await supabase.functions.invoke('accurate-list-so', {
+        const { data: listData, error: listError } = await invokeEdgeFunctionWithRetry('accurate-list-so', {
           body: { 
             filterNumber: targetNumber,
             fields: 'id,number'
@@ -1561,7 +1583,7 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
     loadingProgress.value = 20
     loadingMessage.value = 'Mengambil data HSO...'
     
-    const { data: accData, error: accError } = await supabase.functions.invoke('accurate-detail-so', {
+    const { data: accData, error: accError } = await invokeEdgeFunctionWithRetry('accurate-detail-so', {
       body: { id: targetId, type: 'sales-order' }
     })
     

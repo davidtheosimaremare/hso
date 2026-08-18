@@ -1,5 +1,13 @@
 [
   {
+    "hash": "393be0bd1b07f035455ffb476bd5027bd3325688",
+    "shortHash": "393be0b",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 18 12:35:00 2026 +0700",
+    "message": "fix(sales-orders): suppress Kekurangan dipesan warning when item has been shipped for full requested quantity"
+  },
+  {
     "hash": "2b321bcb2c8ee058d145b74731c82854e8c5e29b",
     "shortHash": "2b321bc",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Jul 21 16:33:56 2026 +0700",
     "message": "fix: Dashboard sidebar active state — use exact match for '/' path"
-  },
-  {
-    "hash": "e4eefa40ab6a0ccea93f4a7715b6e965d408e041",
-    "shortHash": "e4eefa4",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Jul 21 16:30:32 2026 +0700",
-    "message": "fix: add Dashboard menu item to sidebar"
   }
 ]

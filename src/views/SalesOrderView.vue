@@ -155,14 +155,36 @@ const extractProjectFromItem = (item) => {
   return null
 }
 
+const invokeEdgeFunctionWithRetry = async (functionName, options, maxRetries = 2) => {
+  let attempt = 0
+  while (attempt <= maxRetries) {
+    try {
+      const res = await supabase.functions.invoke(functionName, options)
+      if (res.error && (res.error.name === 'FunctionsFetchError' || res.error.message?.includes('Failed to send')) && attempt < maxRetries) {
+        attempt++
+        await new Promise(r => setTimeout(r, 600 * attempt))
+        continue
+      }
+      return res
+    } catch (err) {
+      if (attempt < maxRetries) {
+        attempt++
+        await new Promise(r => setTimeout(r, 600 * attempt))
+        continue
+      }
+      throw err
+    }
+  }
+}
+
 const fetchOrders = async () => {
   isLoading.value = true
   try {
       const [soRes, sqRes] = await Promise.all([
-      supabase.functions.invoke('accurate-list-so', {
+      invokeEdgeFunctionWithRetry('accurate-list-so', {
         body: { fields: 'id,number,transDate,customer,totalAmount,statusName,percentShipped,description,detailItem,poNumber' }
       }),
-      supabase.functions.invoke('accurate-list-sq', {
+      invokeEdgeFunctionWithRetry('accurate-list-sq', {
         body: { fields: 'id,number,transDate,customer,totalAmount,statusName,description,detailItem' }
       }).catch(() => null)
     ])
