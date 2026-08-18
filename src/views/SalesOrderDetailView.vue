@@ -304,7 +304,10 @@ const filteredItems = computed(() => {
       return isOrdered || (isFullyOrdered && isPartial)
     }
     if (itemStatusFilter.value === 'READY') {
-      return statusText === 'MENUNGGU PENGIRIMAN' || statusText === 'SIAP DIKIRIM'
+      if (getDisplayedQtyRemaining(item) <= 0) return false
+      const isStock = item.qty_to_order === 0 || getNoteType(item.admin_note) === 'stock'
+      const isArrivedHokiindo = isItemArrivedAtHokiindo(item) || hasAnyShipmentStatus(item, 'Already in Hokiindo Raya') || item.logistics_status === 'Already in Hokiindo Raya'
+      return isStock || isArrivedHokiindo || statusText === 'MENUNGGU PENGIRIMAN' || statusText === 'SIAP DIKIRIM'
     }
     if (itemStatusFilter.value === 'PARTIAL') {
       return statusText.includes('DIKIRIM SEBAGIAN')
