@@ -1,5 +1,13 @@
 [
   {
+    "hash": "953510c49ed2e290937ee36a14b5f2e265943435",
+    "shortHash": "953510c",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 18 18:11:13 2026 +0700",
+    "message": "perf(edge-functions): optimize accurate-detail-so with batch item stock fetches to prevent Accurate API rate limits"
+  },
+  {
     "hash": "b45bf37ebfe67582446f4521e1401089cfe0d439",
     "shortHash": "b45bf37",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Jul 21 16:53:38 2026 +0700",
     "message": "feat: webhook HPO/HDO/HRI fully operational"
-  },
-  {
-    "hash": "b1b12cdb7fafd78ff816474483bf32aa00c1ef37",
-    "shortHash": "b1b12cd",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Jul 21 16:35:48 2026 +0700",
-    "message": "fix: correct Dashboard menu path to /dashboard and restore active state logic"
   }
 ]

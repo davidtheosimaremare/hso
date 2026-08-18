@@ -27,21 +27,17 @@ serve(async (req) => {
 
     if (!accessToken) throw new Error('Token Accurate belum disetting!')
 
-    // 1. BACA BODY DARI FRONTEND (Agar fields dinamis)
     const { fields, limit, sort, filterNumber } = await req.json().catch(() => ({}))
 
-    // Default fields jika frontend tidak kirim
     const fieldsParam = fields || 'id,number,transDate,customer,totalAmount,statusName,description'
-    const limitParam = limit || 10000 // Default 10000 - ambil semua SQ
+    const limitParam = limit || 2000
     const sortParam = sort || 'transDate|desc'
 
-    // SETUP LOOPING VARIABLES
-    let allData = []
+    let allData: any[] = []
     let page = 1
     const pageSize = 100
     let hasMoreData = true
 
-    // Generate Signature
     const timestamp = new Date().toISOString()
     let signatureHeader = {}
     if (signatureSecret) {
@@ -51,7 +47,6 @@ serve(async (req) => {
 
     console.log(`Fetching Data SQ. Fields: ${fieldsParam.substring(0, 50)}... FilterNumber: ${filterNumber || 'none'}`)
 
-    // LOOPING FETCH
     while (hasMoreData) {
       let url = `${LIST_SQ_ENDPOINT}?fields=${fieldsParam}&sp.page=${page}&sp.pageSize=${pageSize}&sp.sort=${sortParam}`
       
@@ -59,38 +54,45 @@ serve(async (req) => {
         url += `&filter.number.op=EQUAL&filter.number.val=${encodeURIComponent(filterNumber)}`
       }
 
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          ...signatureHeader
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 12000)
+
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            ...signatureHeader
+          },
+          signal: controller.signal
+        })
+        clearTimeout(timeoutId)
+
+        if (!response.ok) {
+          const errText = await response.text()
+          throw new Error(`Gagal pada Page ${page}: ${errText}`)
         }
-      })
 
-      if (!response.ok) {
-        const errText = await response.text()
-        throw new Error(`Gagal pada Page ${page}: ${errText}`)
-      }
+        const json = await response.json()
 
-      const json = await response.json()
+        if (json.d && Array.isArray(json.d)) {
+          allData = allData.concat(json.d)
 
-      if (json.d && Array.isArray(json.d)) {
-        allData = allData.concat(json.d)
-
-        // Stop jika data sudah mencapai limit yang diminta frontend
-        if (allData.length >= limitParam) {
-          hasMoreData = false;
-          // Potong array sesuai limit
-          allData = allData.slice(0, limitParam);
-        }
-        // Stop jika data habis dari Accurate
-        else if (json.d.length < pageSize) {
-          hasMoreData = false
+          if (filterNumber || allData.length >= limitParam || json.d.length < pageSize || page >= 20) {
+            hasMoreData = false
+            if (allData.length > limitParam) {
+              allData = allData.slice(0, limitParam)
+            }
+          } else {
+            page++
+          }
         } else {
-          page++
+          hasMoreData = false
         }
-      } else {
+      } catch (fetchErr: any) {
+        clearTimeout(timeoutId)
+        console.warn(`Fetch SQ notice on page ${page}:`, fetchErr.message)
         hasMoreData = false
       }
     }
@@ -101,10 +103,10 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Function Error SQ:", error.message)
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
+    return new Response(JSON.stringify({ s: false, error: error.message }), {
+      status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     })
   }
