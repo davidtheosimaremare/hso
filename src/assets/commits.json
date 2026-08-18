@@ -1,5 +1,13 @@
 [
   {
+    "hash": "a07c04caa544f1ffcb46ce2eba0edcef0fce7e23",
+    "shortHash": "a07c04c",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 14 16:50:18 2026 +0700",
+    "message": "fix(delegation): display target notification_email in delegation chips and selection dropdowns"
+  },
+  {
     "hash": "92a0d0d8a9201176c295a74dfad3eb533b8cc909",
     "shortHash": "92a0d0d",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Jul 21 10:23:19 2026 +0700",
     "message": "feat: add HSQ progress tracking, dev updates view, and support partial shipments in logistics db"
-  },
-  {
-    "hash": "30d954485f8b71ccbe035455192929601da70836",
-    "shortHash": "30d9544",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Jul 15 14:33:22 2026 +0700",
-    "message": "feat: update order views, send-daily-reminder function, and add quantity column to raw_forwarder_tracking migration"
   }
 ]

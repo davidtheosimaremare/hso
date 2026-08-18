@@ -1919,40 +1919,15 @@ const isDisplayedFullyShipped = (item) => {
 }
 
 const getHpoDisplayStatus = (item, hpoShipment) => {
-  const shippedQty = getDisplayedQtyShipped(item)
-  if (shippedQty > 0) {
-    const hdos = getHdosForItem(item)
-    const doNumbers = hdos.map(h => h.no).join(', ')
-    
-    let statusText = 'Sudah Dikirim'
-    if (shippedQty < (item.qty_order || 0)) {
-      statusText = 'Dikirim Sebagian'
-    }
-    
-    if (doNumbers) {
-      return `${statusText} (${doNumbers})`
-    }
-    return statusText
-  }
-  
   const baseStatus = getVisualStatus(hpoShipment)
+  if (!baseStatus || baseStatus === 'Pending Process') return ''
+
   return baseStatus === 'Follow up with our forwarder' ? 'Ex-Works' : 
          baseStatus === 'Already in siemens Warehouse' ? 'Tiba Dunex' : 
          baseStatus === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : baseStatus
 }
 
 const getHpoDisplayDate = (item, hpoShipment) => {
-  const shippedQty = getDisplayedQtyShipped(item)
-  if (shippedQty > 0) {
-    const hdos = getHdosForItem(item)
-    if (hdos && hdos.length > 0) {
-      const dates = hdos.map(h => formatDateSimple(h.date)).filter(d => d && d !== '-')
-      if (dates.length > 0) {
-        return [...new Set(dates)].join(', ')
-      }
-    }
-    return '-'
-  }
   return getVisualStatusDate(hpoShipment) || '-'
 }
 
@@ -2014,18 +1989,18 @@ const getRowStatus = (item) => {
     return { text: 'PRODUK SUDAH DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
   }
 
+  // Jika sudah ada pengiriman sebagian (masih ada sisa) -> Status utama = DIKIRIM SEBAGIAN (Global Main Status)
+  if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) > 0) {
+    return { text: `DIKIRIM SEBAGIAN (SISA ${getDisplayedQtyRemaining(item)} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: Truck }
+  }
+
   // Jika item sudah tiba di Gudang Hokiindo -> Status utama: SIAP DIKIRIM
   if (isItemArrivedAtHokiindo(item)) {
     return { text: 'SIAP DIKIRIM', class: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800', icon: Package }
   }
   
   // Item STOCK (qty_to_order === 0): tidak perlu dipesan, cek status pengiriman saja
-  // Harus dicek SEBELUM pengecekan HPO agar HPO lama dari DB tidak salah memicu "SUDAH DIPESAN"
   if (item.qty_to_order === 0) {
-    if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) > 0) {
-      return { text: `DIKIRIM SEBAGIAN (SISA ${getDisplayedQtyRemaining(item)} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: Truck }
-    }
-    // Belum ada pengiriman sama sekali → siap dikirim
     return { text: 'SIAP DIKIRIM', class: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800', icon: Package }
   }
 
@@ -2033,13 +2008,12 @@ const getRowStatus = (item) => {
   const hpoEntries = getHpoEntries(item)
   const hasHpoInDb = item.logistics_hpo && item.logistics_hpo.trim().length > 0
 
-  // Jika belum/kurang dipesan (Prioritas di atas pengiriman sebagian agar masuk logika order)
+  // Jika belum/kurang dipesan
   if (item.qty_to_order > 0) {
     if (hpoEntries.length > 0) {
       const totalPo = hpoEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
       if (totalPo < item.qty_to_order) {
         const shortage = item.qty_to_order - totalPo
-        // Prioritaskan badge HPB jika sudah ada (meskipun sudah punya HPO)
         const matchedHpb = linkedHpbs.value.find(h => h.itemCode === item.code)
         if (matchedHpb) {
           return { text: `HPB: ${matchedHpb.hpbNumber}`, class: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-850', icon: FileText, hpbId: matchedHpb.hpbId }
@@ -2066,11 +2040,6 @@ const getRowStatus = (item) => {
     }
   }
 
-  // Jika sudah ada pengiriman sebagian (masih ada sisa), status = DIKIRIM SEBAGIAN
-  if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) > 0) {
-    return { text: `DIKIRIM SEBAGIAN (SISA ${getDisplayedQtyRemaining(item)} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: Truck }
-  }
-  
   // Jika ada HPO dari Accurate (dan sudah terpenuhi penuh)
   if (hpoEntries.length > 0) {
     const totalPo = hpoEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
