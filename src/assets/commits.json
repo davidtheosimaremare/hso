@@ -1,5 +1,13 @@
 [
   {
+    "hash": "b45bf37ebfe67582446f4521e1401089cfe0d439",
+    "shortHash": "b45bf37",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 18 13:45:50 2026 +0700",
+    "message": "fix(resilience): add invokeEdgeFunctionWithRetry helper to transparently retry network errors caused by browser extensions"
+  },
+  {
     "hash": "393be0bd1b07f035455ffb476bd5027bd3325688",
     "shortHash": "393be0b",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Jul 21 16:35:48 2026 +0700",
     "message": "fix: correct Dashboard menu path to /dashboard and restore active state logic"
-  },
-  {
-    "hash": "3a00f331b90b6b18eef531ebffe8f8aa67231512",
-    "shortHash": "3a00f33",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Jul 21 16:33:56 2026 +0700",
-    "message": "fix: Dashboard sidebar active state — use exact match for '/' path"
   }
 ]
