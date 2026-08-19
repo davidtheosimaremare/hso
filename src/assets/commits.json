@@ -1,5 +1,13 @@
 [
   {
+    "hash": "b91c0723dbdfd85c4334fb4cc7baf8ae07f21a60",
+    "shortHash": "b91c072",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Aug 18 18:14:19 2026 +0700",
+    "message": "perf(edge-functions): optimize accurate-list-sq with timeout handling and single-page break on filterNumber"
+  },
+  {
     "hash": "953510c49ed2e290937ee36a14b5f2e265943435",
     "shortHash": "953510c",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Thu Jul 30 09:24:15 2026 +0700",
     "message": "feat: add Permintaan kanban board, Marketing Hub, share link, & fix BOQ status trigger"
-  },
-  {
-    "hash": "5f2d4a9a9f6e4963cdefceceac166fb2f64c0c7d",
-    "shortHash": "5f2d4a9",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Jul 21 16:53:38 2026 +0700",
-    "message": "feat: webhook HPO/HDO/HRI fully operational"
   }
 ]

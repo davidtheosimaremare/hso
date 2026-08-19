@@ -313,7 +313,7 @@ const filteredItems = computed(() => {
       return statusText.includes('DIKIRIM SEBAGIAN')
     }
     if (itemStatusFilter.value === 'SHIPPED') {
-      return statusText === 'PRODUK SUDAH DIKIRIM'
+      return statusText === 'TERKIRIM' || statusText === 'PRODUK SUDAH DIKIRIM'
     }
     if (itemStatusFilter.value === 'EXWORK') {
       return hasAnyShipmentStatus(item, 'Follow up with our forwarder')
@@ -1736,6 +1736,24 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
     }
     await fetchCartItems()
     fetchLinkedHpb()
+
+    // 1. Sync HDO items if shipments exist in soDetail before closing loader
+    if (soDetail.value?.shipments && soDetail.value.shipments.length > 0) {
+      const doList = soDetail.value.shipments.map(s => s.no).filter(Boolean)
+      if (doList.length > 0) {
+        loadingMessage.value = 'Sinkronisasi data HDO & Resi dari Accurate...'
+        await fetchHdoInBackground(doList)
+      }
+    }
+
+    // 2. Sync HPOs
+    if (!skipHpoSync && soDetail.value?.number) {
+      loadingMessage.value = 'Sinkronisasi data HPO dari Accurate...'
+      await fetchHpoInBackground(soDetail.value.number)
+    } else if (skipHpoSync && soDetail.value?.number) {
+      fetchHpoInBackground(soDetail.value.number)
+    }
+
   } catch (err) {
     console.error("Fetch Error:", err)
     errorMessage.value = err.message || "Terjadi kesalahan tidak diketahui."
@@ -1743,37 +1761,6 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
   } finally {
     loadingProgress.value = 100
     isLoading.value = false
-    
-    // Trigger HPO sync first, then HDO sync if applicable
-    // Skip if explicitly requested (e.g., after status update)
-    if (!skipHpoSync && soDetail.value?.number) {
-      // Start HPO Sync
-      fetchHpoInBackground(soDetail.value.number).then(() => {
-         // After HPO sync finishes, check for HDOs
-         if (soDetail.value?.shipments) {
-            // Check processHistory for DOs
-            // soDetail.value.shipments is already filtered for DOs
-            const doList = soDetail.value.shipments.map(s => s.no)
-            if (doList.length > 0) {
-               fetchHdoInBackground(doList)
-            }
-         }
-      })
-    } else if (skipHpoSync) {
-      // Meski skip HPO sync penuh, tetap jalankan HDO sync dan HPO sync secara background
-      // agar dokumen terkait (HDO, HPO) ter-load dengan benar setelah status update
-      console.log('⏭️ Skipping full HPO sync loader, but running HDO + HPO background sync...')
-      if (soDetail.value?.number) {
-        fetchHpoInBackground(soDetail.value.number).then(() => {
-          if (soDetail.value?.shipments) {
-            const doList = soDetail.value.shipments.map(s => s.no)
-            if (doList.length > 0) {
-              fetchHdoInBackground(doList)
-            }
-          }
-        })
-      }
-    }
     
     // Auto scroll if highlight param exists
     if (route.query.highlight) {
@@ -1841,11 +1828,10 @@ const fulfillmentPercentage = (items) => {
   return total === 0 ? 0 : Math.round((shipped / total) * 100)
 }
 
-// Helper: Get HDOs that match this SO item using note-type matching
 // Step 1: strict note match (STOCK→STOCK, NO STOCK→NO STOCK)
 // Step 2: fallback to any HDO containing this item IF Accurate says it's shipped
 const getHdosForItem = (item) => {
-  if (!soDetail.value?.shipments) return []
+  if (!soDetail.value?.shipments || soDetail.value.shipments.length === 0) return []
   
   const itemNoteType = getNoteType(item.admin_note)
   const sameCodeSoItems = soDetail.value?.items
@@ -1872,14 +1858,17 @@ const getHdosForItem = (item) => {
   })
   
   if (strictMatches.length > 0) return strictMatches
+
+  // Step 2: Fallback — Code match across shipments
+  const codeMatches = soDetail.value.shipments.filter(shipment => {
+    if (!shipment.items || shipment.items.length === 0) return false
+    return shipment.items.some(i => i.code === item.code)
+  })
+  if (codeMatches.length > 0) return codeMatches
   
-  // Step 2: Fallback — Accurate says item was shipped but no strict note match found.
-  // ONLY ALLOW FALLBACK IF IT'S A SINGLE ROW. 
-  // If hasMultipleRows, we strictly rely on the DO note (STOCK/NO STOCK) to avoid duplication.
-  if (!hasMultipleRows && (item.qty_shipped || 0) > 0) {
-    return soDetail.value.shipments.filter(s =>
-      s.items && s.items.some(i => i.code === item.code)
-    )
+  // Step 3: Fallback — If Accurate says item is shipped and shipments exist for this SO
+  if ((item.qty_shipped || 0) > 0 && soDetail.value.shipments.length > 0) {
+    return soDetail.value.shipments
   }
   
   return []
@@ -1887,7 +1876,10 @@ const getHdosForItem = (item) => {
 
 // Helper: Get quantity shipped from a specific HDO for this item, respecting note type
 const getSingleHdoQty = (hdo, item) => {
-  if (!hdo || !hdo.items) return 0
+  if (!hdo) return 0
+  if (!hdo.items || hdo.items.length === 0) {
+    return Number(item.qty_shipped || 0)
+  }
   const itemNoteType = getNoteType(item.admin_note)
   const sameCodeSoItems = soDetail.value?.items
     ? soDetail.value.items.filter(i => i.code === item.code)
@@ -1907,12 +1899,12 @@ const getSingleHdoQty = (hdo, item) => {
     return true
   })
   
-  // Fallback only if single row
-  if (!doItem && !hasMultipleRows) {
+  // Fallback if not found by strict note
+  if (!doItem) {
     doItem = hdo.items.find(i => i.code === item.code)
   }
   
-  return doItem ? Number(doItem.qty_shipped || 0) : 0
+  return doItem ? Number(doItem.qty_shipped || 0) : Number(item.qty_shipped || 0)
 }
 
 const getDisplayedQtyShipped = (item) => {
@@ -2008,11 +2000,11 @@ const getRowStatus = (item) => {
   }
   
   // Jika fully shipped (semua terkirim dan dikonfirmasi selesai)
-  if (isDisplayedFullyShipped(item)) return { text: 'PRODUK SUDAH DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
+  if (isDisplayedFullyShipped(item)) return { text: 'TERKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
   
   // Jika sudah dikirim semua (tidak ada sisa tapi belum dikonfirmasi fully_shipped)
   if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) === 0) {
-    return { text: 'PRODUK SUDAH DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
+    return { text: 'TERKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
   }
 
   // Jika sudah ada pengiriman sebagian (masih ada sisa) -> Status utama = DIKIRIM SEBAGIAN (Global Main Status)
@@ -3051,7 +3043,7 @@ const downloadAttachment = async (att) => {
                     <option value="ORDERED">Sudah PO</option>
                     <option value="READY">Menunggu Pengiriman</option>
                     <option value="PARTIAL">Dikirim Sebagian</option>
-                    <option value="SHIPPED">Sudah Dikirim</option>
+                    <option value="SHIPPED">Terkirim</option>
                     <option value="HOLD">Hold by Customer</option>
                     <option value="EXWORK">Ex-Works (Forwarder)</option>
                     <option value="ETA_PORT">ETA Port JKT</option>

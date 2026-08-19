@@ -646,9 +646,9 @@ const bulkDownloadSaranOrder = async () => {
                 if (logistics_status === 'Hold by Customer') {
                     statusText = 'HOLD BY CUSTOMER'
                 } else if (is_fully_shipped) {
-                    statusText = 'PRODUK SUDAH DIKIRIM'
+                    statusText = 'TERKIRIM'
                 } else if (qty_shipped > 0 && qty_remaining === 0) {
-                    statusText = 'PRODUK SUDAH DIKIRIM'
+                    statusText = 'TERKIRIM'
                 } else if (qty_to_order > 0) {
                     // Cek kekurangan pemesanan (Prioritas di atas pengiriman sebagian agar masuk logika order)
                     if (hpoEntries.length > 0) {
