@@ -1,5 +1,13 @@
 [
   {
+    "hash": "3a720da037f66fce4af21ad862805da2ca5206e6",
+    "shortHash": "3a720da",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Aug 19 14:08:00 2026 +0700",
+    "message": "feat: add universal in-app file viewer supporting PDF, images, CSV, text, code, audio, video and office docs"
+  },
+  {
     "hash": "fc024f21fefc9a2cb64ef1172cdd0bfa49be82bb",
     "shortHash": "fc024f2",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 4 10:41:05 2026 +0700",
     "message": "feat: Redesign Delivery Orders and Receive Items views, align invoice priority card progress bar labels, and optimize dashboard KPI pagination"
-  },
-  {
-    "hash": "f9b05fc71f862f158a8ff5c1abfd6b7a7972a0db",
-    "shortHash": "f9b05fc",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Mon Aug 3 11:47:26 2026 +0700",
-    "message": "feat: overhaul HSQ Detail UI with Geist font, single device login, Google Drive integration, and notification popovers"
   }
 ]

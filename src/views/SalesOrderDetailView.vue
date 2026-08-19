@@ -2910,33 +2910,53 @@ const openAttachmentPreview = async (att) => {
     const fileName = att.fileName || att.name || att.title || 'dokumen_transaksi'
     const ext = getFileExt(att)
     const category = getFileCategory(att)
-    const mimeType = getMimeType(ext)
 
     const { data, error } = await supabase.functions.invoke('accurate-print-doc', {
       body: {
         attachmentId: att.id || att.attachmentId,
         url: att.tempPath || att.url || att.downloadUrl || att.path,
-        filename: fileName
+        filename: fileName,
+        returnBase64: true
       }
     })
     if (error) throw error
     if (!data) throw new Error('File tidak ditemukan dari Accurate')
 
-    const blob = new Blob([data], { type: mimeType })
-    if (previewDocUrl.value) {
+    if (previewDocUrl.value && previewDocUrl.value.startsWith('blob:')) {
       window.URL.revokeObjectURL(previewDocUrl.value)
     }
-    previewDocUrl.value = window.URL.createObjectURL(blob)
 
-    // For text or CSV files, read string content
-    if (category === 'text') {
-      const text = await blob.text()
-      previewTextContent.value = text
-      if (ext === 'csv') {
-        const { headers, rows } = parseCsv(text)
-        previewCsvHeaders.value = headers
-        previewCsvRows.value = rows
+    if (data.base64) {
+      const byteCharacters = atob(data.base64)
+      const byteNumbers = new Uint8Array(byteCharacters.length)
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i)
       }
+
+      if (category === 'image') {
+        // Direct base64 dataUrl for images guarantees 100% crisp render with zero blob issues
+        previewDocUrl.value = data.dataUrl || `data:${data.contentType || 'image/jpeg'};base64,${data.base64}`
+      } else if (category === 'pdf') {
+        const blob = new Blob([byteNumbers], { type: 'application/pdf' })
+        previewDocUrl.value = window.URL.createObjectURL(blob)
+      } else if (category === 'text') {
+        const decodedText = new TextDecoder('utf-8').decode(byteNumbers)
+        previewTextContent.value = decodedText
+        if (ext === 'csv') {
+          const { headers, rows } = parseCsv(decodedText)
+          previewCsvHeaders.value = headers
+          previewCsvRows.value = rows
+        }
+        const blob = new Blob([byteNumbers], { type: data.contentType || 'text/plain' })
+        previewDocUrl.value = window.URL.createObjectURL(blob)
+      } else {
+        const blob = new Blob([byteNumbers], { type: data.contentType || 'application/octet-stream' })
+        previewDocUrl.value = window.URL.createObjectURL(blob)
+      }
+    } else if (data.dataUrl) {
+      previewDocUrl.value = data.dataUrl
+    } else {
+      throw new Error('Data dokumen tidak valid')
     }
 
     previewModalOpen.value = true
@@ -2951,10 +2971,10 @@ const openAttachmentPreview = async (att) => {
 
 const closeAttachmentPreview = () => {
   previewModalOpen.value = false
-  if (previewDocUrl.value) {
+  if (previewDocUrl.value && previewDocUrl.value.startsWith('blob:')) {
     window.URL.revokeObjectURL(previewDocUrl.value)
-    previewDocUrl.value = ''
   }
+  previewDocUrl.value = ''
   previewTextContent.value = ''
   previewCsvHeaders.value = []
   previewCsvRows.value = []
@@ -2971,13 +2991,19 @@ const downloadAttachment = async (att) => {
       body: {
         attachmentId: att.id || att.attachmentId,
         url: att.tempPath || att.url || att.downloadUrl || att.path,
-        filename: fileName
+        filename: fileName,
+        returnBase64: true
       }
     })
     if (error) throw error
-    if (!data) throw new Error('File tidak ditemukan')
+    if (!data || !data.base64) throw new Error('File tidak ditemukan')
 
-    const blob = new Blob([data], { type: att.fileType || 'application/octet-stream' })
+    const byteCharacters = atob(data.base64)
+    const byteNumbers = new Uint8Array(byteCharacters.length)
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i)
+    }
+    const blob = new Blob([byteNumbers], { type: data.contentType || 'application/octet-stream' })
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url

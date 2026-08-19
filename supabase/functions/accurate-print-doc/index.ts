@@ -65,6 +65,28 @@ serve(async (req) => {
     const fileBuffer = await response.arrayBuffer()
     const outFilename = filename || `dokumen-${id || attachmentId || 'accurate'}`
 
+    if (body.returnBase64) {
+      const bytes = new Uint8Array(fileBuffer)
+      let binary = ''
+      const chunkSize = 8192
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, Math.min(i + chunkSize, bytes.length))))
+      }
+      const base64 = btoa(binary)
+      const dataUrl = `data:${contentType};base64,${base64}`
+
+      return new Response(JSON.stringify({
+        s: true,
+        contentType,
+        base64,
+        dataUrl,
+        filename: outFilename,
+        size: bytes.length
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
     return new Response(fileBuffer, {
       headers: { 
         ...corsHeaders,
