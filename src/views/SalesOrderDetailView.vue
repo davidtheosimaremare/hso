@@ -2969,6 +2969,34 @@ const openAttachmentPreview = async (att) => {
   }
 }
 
+const openInNewTab = () => {
+  if (!previewDocUrl.value) return
+
+  // Modern browsers block direct navigation to data: URLs in top frames.
+  // Convert data: URL to a Blob URL so the browser opens it natively in the new tab.
+  if (previewDocUrl.value.startsWith('data:')) {
+    try {
+      const parts = previewDocUrl.value.split(',')
+      const mimeMatch = parts[0].match(/:(.*?);/)
+      const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg'
+      const bstr = atob(parts[1])
+      let n = bstr.length
+      const u8arr = new Uint8Array(n)
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n)
+      }
+      const blob = new Blob([u8arr], { type: mime })
+      const blobUrl = window.URL.createObjectURL(blob)
+      window.open(blobUrl, '_blank')
+      return
+    } catch (e) {
+      console.warn('Fallback opening tab from data URL:', e)
+    }
+  }
+
+  window.open(previewDocUrl.value, '_blank')
+}
+
 const closeAttachmentPreview = () => {
   previewModalOpen.value = false
   if (previewDocUrl.value && previewDocUrl.value.startsWith('blob:')) {
@@ -4639,16 +4667,15 @@ const downloadAttachment = async (att) => {
           </div>
 
           <div class="flex items-center gap-1.5 shrink-0">
-            <a 
+            <button 
               v-if="previewDocUrl" 
-              :href="previewDocUrl" 
-              target="_blank" 
-              class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+              @click="openInNewTab" 
+              class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               title="Buka di Tab Baru"
             >
               <ExternalLink class="w-3.5 h-3.5" />
               <span class="hidden sm:inline">Tab Baru</span>
-            </a>
+            </button>
 
             <button 
               @click="downloadAttachment(previewDoc)" 
@@ -4817,14 +4844,13 @@ const downloadAttachment = async (att) => {
               <Button @click="downloadAttachment(previewDoc)" class="bg-red-600 hover:bg-red-700 text-white gap-1.5 shadow-sm">
                 <Download class="w-4 h-4" /> Download Dokumen
               </Button>
-              <a 
+              <button 
                 v-if="previewDocUrl" 
-                :href="previewDocUrl" 
-                target="_blank" 
-                class="inline-flex items-center gap-1 text-xs font-semibold px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                @click="openInNewTab" 
+                class="inline-flex items-center gap-1 text-xs font-semibold px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 <ExternalLink class="w-3.5 h-3.5" /> Buka di Tab Baru
-              </a>
+              </button>
             </div>
           </div>
 

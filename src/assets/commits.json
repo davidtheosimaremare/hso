@@ -1,5 +1,13 @@
 [
   {
+    "hash": "3ea361b4a6f86ab5ac10982028b630c76eb87563",
+    "shortHash": "3ea361b",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Aug 19 14:11:28 2026 +0700",
+    "message": "fix: resolve image preview rendering with base64 dataUrl in document viewer"
+  },
+  {
     "hash": "3a720da037f66fce4af21ad862805da2ca5206e6",
     "shortHash": "3a720da",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 4 10:49:42 2026 +0700",
     "message": "chore: trigger vercel deployment build"
-  },
-  {
-    "hash": "8b5dbae6cdd2c5471caf844591a172c99e4aa5e0",
-    "shortHash": "8b5dbae",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 4 10:41:05 2026 +0700",
-    "message": "feat: Redesign Delivery Orders and Receive Items views, align invoice priority card progress bar labels, and optimize dashboard KPI pagination"
   }
 ]
