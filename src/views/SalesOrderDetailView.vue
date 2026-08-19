@@ -27,7 +27,8 @@ import {
   Edit, CheckCircle2, Clock, Anchor, Factory, FileText, 
   PackageCheck, Share2, Info, ExternalLink, Package, Hourglass, 
   Layers, AlertCircle, Download, AlertTriangle, ShoppingCart, Paperclip,
-  ChevronDown, ChevronUp, Plane, Box, Copy, Search, UploadCloud, FileSpreadsheet, Mail, Bell, RefreshCw, Eye, X, Maximize2
+  ChevronDown, ChevronUp, Plane, Box, Copy, Search, UploadCloud, FileSpreadsheet, Mail, Bell, RefreshCw, Eye, X, Maximize2,
+  Film, Music, FileCode, Check
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -2775,24 +2776,122 @@ const formatFileSize = (bytes) => {
   return (num / 1024).toFixed(0) + ' KB'
 }
 
-// --- ATTACHMENT PREVIEW STATE & ACTIONS ---
+// --- UNIVERSAL ATTACHMENT PREVIEW STATE & ACTIONS ---
 const previewModalOpen = ref(false)
 const previewDoc = ref(null)
 const previewDocUrl = ref('')
+const previewTextContent = ref('')
+const previewCsvHeaders = ref([])
+const previewCsvRows = ref([])
+const csvViewMode = ref('table') // 'table' | 'raw'
+const csvSearchQuery = ref('')
+const isTextCopied = ref(false)
 const isLoadingPreview = ref(false)
 const previewAttKey = ref(null)
 
-const isPdfDoc = (doc) => {
-  if (!doc) return false
+const getFileExt = (doc) => {
+  if (!doc) return ''
   const name = (doc.fileName || doc.name || doc.title || '').toLowerCase()
-  const ext = (doc.extension || doc.fileExtension || '').toLowerCase()
-  return name.endsWith('.pdf') || ext.includes('pdf')
+  const ext = (doc.extension || doc.fileExtension || '').toLowerCase().replace(/^\./, '')
+  if (ext && ext !== 'file') return ext
+  const parts = name.split('.')
+  return parts.length > 1 ? parts.pop() : ''
 }
 
-const isImageDoc = (doc) => {
-  if (!doc) return false
-  const name = (doc.fileName || doc.name || doc.title || '').toLowerCase()
-  return /\.(jpe?g|png|webp|gif|svg)$/i.test(name)
+const getFileCategory = (doc) => {
+  const ext = getFileExt(doc)
+  if (['pdf'].includes(ext)) return 'pdf'
+  if (['jpg', 'jpeg', 'png', 'webp', 'gif', 'svg', 'bmp', 'ico', 'tiff', 'jfif', 'avif'].includes(ext)) return 'image'
+  if (['txt', 'csv', 'json', 'log', 'xml', 'md', 'html', 'css', 'js', 'ts', 'sql', 'yaml', 'yml', 'env', 'sh'].includes(ext)) return 'text'
+  if (['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'rtf'].includes(ext)) return 'office'
+  if (['mp4', 'webm', 'ogg', 'mov', 'm4v', 'avi', 'mkv'].includes(ext)) return 'video'
+  if (['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'wma'].includes(ext)) return 'audio'
+  return 'other'
+}
+
+const isPdfDoc = (doc) => getFileCategory(doc) === 'pdf'
+const isImageDoc = (doc) => getFileCategory(doc) === 'image'
+const isTextDoc = (doc) => getFileCategory(doc) === 'text'
+const isOfficeDoc = (doc) => getFileCategory(doc) === 'office'
+const isVideoDoc = (doc) => getFileCategory(doc) === 'video'
+const isAudioDoc = (doc) => getFileCategory(doc) === 'audio'
+
+const getMimeType = (ext) => {
+  const map = {
+    pdf: 'application/pdf',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp',
+    gif: 'image/gif',
+    svg: 'image/svg+xml',
+    bmp: 'image/bmp',
+    txt: 'text/plain',
+    csv: 'text/csv',
+    json: 'application/json',
+    html: 'text/html',
+    xml: 'text/xml',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls: 'application/vnd.ms-excel',
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ppt: 'application/vnd.ms-powerpoint',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    mp4: 'video/mp4',
+    webm: 'video/webm',
+    mov: 'video/quicktime',
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+  }
+  return map[ext] || 'application/octet-stream'
+}
+
+// Simple CSV parser for in-app table preview
+const parseCsv = (text) => {
+  if (!text) return { headers: [], rows: [] }
+  const lines = text.split(/\r?\n/).filter(line => line.trim().length > 0)
+  if (lines.length === 0) return { headers: [], rows: [] }
+  
+  const parseLine = (line) => {
+    const result = []
+    let cur = ''
+    let inQuotes = false
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i]
+      if (char === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          cur += '"'
+          i++
+        } else {
+          inQuotes = !inQuotes
+        }
+      } else if ((char === ',' || char === ';') && !inQuotes) {
+        result.push(cur.trim())
+        cur = ''
+      } else {
+        cur += char
+      }
+    }
+    result.push(cur.trim())
+    return result
+  }
+
+  const headers = parseLine(lines[0])
+  const rows = lines.slice(1).map(parseLine)
+  return { headers, rows }
+}
+
+const filteredCsvRows = computed(() => {
+  if (!csvSearchQuery.value || !csvSearchQuery.value.trim()) return previewCsvRows.value
+  const q = csvSearchQuery.value.toLowerCase().trim()
+  return previewCsvRows.value.filter(row => row.some(cell => String(cell).toLowerCase().includes(q)))
+})
+
+const copyPreviewText = () => {
+  if (!previewTextContent.value) return
+  navigator.clipboard.writeText(previewTextContent.value)
+  isTextCopied.value = true
+  setTimeout(() => { isTextCopied.value = false }, 2500)
 }
 
 const openAttachmentPreview = async (att) => {
@@ -2801,15 +2900,17 @@ const openAttachmentPreview = async (att) => {
   previewAttKey.value = attKey
   isLoadingPreview.value = true
   previewDoc.value = att
+  previewTextContent.value = ''
+  previewCsvHeaders.value = []
+  previewCsvRows.value = []
+  csvSearchQuery.value = ''
+  csvViewMode.value = 'table'
 
   try {
     const fileName = att.fileName || att.name || att.title || 'dokumen_transaksi'
-    const isPdf = isPdfDoc(att)
-    const isImg = isImageDoc(att)
-
-    const mimeType = isPdf 
-      ? 'application/pdf' 
-      : (isImg ? `image/${fileName.split('.').pop().toLowerCase() === 'jpg' ? 'jpeg' : fileName.split('.').pop().toLowerCase()}` : 'application/octet-stream')
+    const ext = getFileExt(att)
+    const category = getFileCategory(att)
+    const mimeType = getMimeType(ext)
 
     const { data, error } = await supabase.functions.invoke('accurate-print-doc', {
       body: {
@@ -2826,6 +2927,18 @@ const openAttachmentPreview = async (att) => {
       window.URL.revokeObjectURL(previewDocUrl.value)
     }
     previewDocUrl.value = window.URL.createObjectURL(blob)
+
+    // For text or CSV files, read string content
+    if (category === 'text') {
+      const text = await blob.text()
+      previewTextContent.value = text
+      if (ext === 'csv') {
+        const { headers, rows } = parseCsv(text)
+        previewCsvHeaders.value = headers
+        previewCsvRows.value = rows
+      }
+    }
+
     previewModalOpen.value = true
   } catch (err) {
     console.error('Preview attachment error:', err)
@@ -2842,6 +2955,9 @@ const closeAttachmentPreview = () => {
     window.URL.revokeObjectURL(previewDocUrl.value)
     previewDocUrl.value = ''
   }
+  previewTextContent.value = ''
+  previewCsvHeaders.value = []
+  previewCsvRows.value = []
   previewDoc.value = null
 }
 
@@ -3048,8 +3164,13 @@ const downloadAttachment = async (att) => {
               @click="openAttachmentPreview(att)"
             >
               <div class="flex items-center gap-3 min-w-0">
-                <div class="w-8 h-8 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/50 flex items-center justify-center shrink-0 group-hover:bg-red-100 transition-colors">
+                <div class="w-8 h-8 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/50 flex items-center justify-center shrink-0 group-hover:bg-red-100 dark:group-hover:bg-red-900/50 transition-colors">
                   <FileText v-if="isPdfDoc(att)" class="w-4 h-4 text-red-500" />
+                  <FileSpreadsheet v-else-if="getFileExt(att) === 'csv' || getFileExt(att) === 'xlsx' || getFileExt(att) === 'xls'" class="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  <FileText v-else-if="isOfficeDoc(att)" class="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  <FileCode v-else-if="isTextDoc(att)" class="w-4 h-4 text-indigo-500" />
+                  <Film v-else-if="isVideoDoc(att)" class="w-4 h-4 text-purple-500" />
+                  <Music v-else-if="isAudioDoc(att)" class="w-4 h-4 text-amber-500" />
                   <Paperclip v-else class="w-4 h-4 text-red-500" />
                 </div>
                 <div class="min-w-0">
@@ -4523,32 +4644,181 @@ const downloadAttachment = async (att) => {
         </div>
 
         <!-- Body Content -->
-        <div class="flex-1 overflow-auto p-2 bg-slate-100 dark:bg-slate-950/80 flex items-center justify-center min-h-[450px]">
-          <!-- PDF Viewer -->
+        <div class="flex-1 overflow-auto p-2 sm:p-3 bg-slate-100/80 dark:bg-slate-950/80 flex flex-col items-center justify-center min-h-[460px]">
+          
+          <!-- 1. PDF Viewer -->
           <iframe 
             v-if="isPdfDoc(previewDoc)" 
             :src="previewDocUrl" 
-            class="w-full h-[78vh] rounded-xl border border-slate-200 dark:border-slate-800 bg-white" 
+            class="w-full h-[80vh] rounded-xl border border-slate-200 dark:border-slate-800 bg-white" 
             title="PDF Document Preview"
           />
 
-          <!-- Image Viewer -->
-          <div v-else-if="isImageDoc(previewDoc)" class="flex items-center justify-center p-4 w-full h-full">
+          <!-- 2. Image Viewer -->
+          <div v-else-if="isImageDoc(previewDoc)" class="flex items-center justify-center p-3 w-full h-full">
             <img 
               :src="previewDocUrl" 
               :alt="previewDoc?.name" 
-              class="max-h-[78vh] max-w-full rounded-xl object-contain shadow-md"
+              class="max-h-[78vh] max-w-full rounded-xl object-contain shadow-md border border-slate-200/50 dark:border-slate-800"
             />
           </div>
 
-          <!-- Fallback Viewer -->
-          <div v-else class="text-center p-8 space-y-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 max-w-md">
-            <FileText class="w-12 h-12 text-slate-400 mx-auto" />
-            <p class="text-sm font-semibold text-slate-700 dark:text-slate-300">Format file ini tidak mendukung preview langsung di browser.</p>
-            <Button @click="downloadAttachment(previewDoc)" class="bg-red-600 hover:bg-red-700 text-white gap-2">
+          <!-- 3. CSV Spreadsheet Viewer -->
+          <div v-else-if="getFileExt(previewDoc) === 'csv'" class="w-full h-[80vh] flex flex-col bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-xs">
+            <!-- CSV Toolbar -->
+            <div class="px-4 py-2.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/70 dark:bg-slate-950/50 shrink-0">
+              <div class="flex items-center gap-2">
+                <FileSpreadsheet class="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span class="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  {{ filteredCsvRows.length }} Baris &bull; {{ previewCsvHeaders.length }} Kolom
+                </span>
+              </div>
+              <div class="flex items-center gap-2">
+                <div class="relative">
+                  <Search class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input 
+                    v-model="csvSearchQuery" 
+                    type="text" 
+                    placeholder="Cari di spreadsheet..." 
+                    class="h-7 pl-8 pr-3 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-red-500 w-44 sm:w-60"
+                  />
+                </div>
+                <div class="flex items-center rounded-lg border border-slate-200 dark:border-slate-700 p-0.5 bg-slate-100 dark:bg-slate-800 text-[11px] font-semibold">
+                  <button 
+                    @click="csvViewMode = 'table'" 
+                    class="px-2 py-0.5 rounded-md transition-colors"
+                    :class="csvViewMode === 'table' ? 'bg-white dark:bg-slate-900 shadow-2xs text-slate-900 dark:text-white font-bold' : 'text-slate-500 hover:text-slate-800'"
+                  >Tabel</button>
+                  <button 
+                    @click="csvViewMode = 'raw'" 
+                    class="px-2 py-0.5 rounded-md transition-colors"
+                    :class="csvViewMode === 'raw' ? 'bg-white dark:bg-slate-900 shadow-2xs text-slate-900 dark:text-white font-bold' : 'text-slate-500 hover:text-slate-800'"
+                  >Raw</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- CSV Table Mode -->
+            <div v-if="csvViewMode === 'table'" class="flex-1 overflow-auto">
+              <table class="w-full text-left border-collapse text-xs">
+                <thead class="bg-slate-50 dark:bg-slate-950/80 text-slate-700 dark:text-slate-300 sticky top-0 border-b border-slate-200 dark:border-slate-800 z-10">
+                  <tr>
+                    <th class="p-2.5 font-bold border-r border-slate-200 dark:border-slate-800 w-10 text-center text-slate-400">#</th>
+                    <th v-for="(h, hi) in previewCsvHeaders" :key="hi" class="p-2.5 font-bold border-r border-slate-200 dark:border-slate-800 last:border-r-0 whitespace-nowrap">
+                      {{ h }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                  <tr v-for="(r, ri) in filteredCsvRows" :key="ri" class="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
+                    <td class="p-2 text-center text-slate-400 border-r border-slate-100 dark:border-slate-800 font-mono text-[10px]">{{ ri + 1 }}</td>
+                    <td v-for="(cell, ci) in r" :key="ci" class="p-2 text-slate-800 dark:text-slate-200 border-r border-slate-100 dark:border-slate-800 last:border-r-0 whitespace-nowrap">
+                      {{ cell }}
+                    </td>
+                  </tr>
+                  <tr v-if="filteredCsvRows.length === 0">
+                    <td :colspan="previewCsvHeaders.length + 1" class="p-8 text-center text-slate-400 italic">
+                      Tidak ada data yang cocok dengan pencarian.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- CSV Raw Mode -->
+            <div v-else class="flex-1 overflow-auto p-4 bg-slate-900 text-slate-100 font-mono text-xs leading-relaxed whitespace-pre select-text">
+              {{ previewTextContent }}
+            </div>
+          </div>
+
+          <!-- 4. Text & Code Viewer (TXT, JSON, LOG, XML, SQL, HTML) -->
+          <div v-else-if="isTextDoc(previewDoc)" class="w-full h-[80vh] flex flex-col bg-slate-900 text-slate-100 rounded-xl border border-slate-800 overflow-hidden shadow-xs">
+            <div class="px-4 py-2 border-b border-slate-800 flex items-center justify-between shrink-0 bg-slate-950/60">
+              <div class="flex items-center gap-2">
+                <FileCode class="w-4 h-4 text-indigo-400" />
+                <span class="text-xs font-mono text-slate-300">{{ getFileExt(previewDoc).toUpperCase() }} Document</span>
+              </div>
+              <button 
+                @click="copyPreviewText" 
+                class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+              >
+                <Check v-if="isTextCopied" class="w-3.5 h-3.5 text-emerald-400" />
+                <Copy v-else class="w-3.5 h-3.5" />
+                <span>{{ isTextCopied ? 'Tersalin!' : 'Salin Teks' }}</span>
+              </button>
+            </div>
+            <pre class="flex-1 overflow-auto p-4 text-xs font-mono leading-relaxed whitespace-pre-wrap select-text text-slate-200">{{ previewTextContent }}</pre>
+          </div>
+
+          <!-- 5. Video Player (MP4, WEBM, MOV) -->
+          <div v-else-if="isVideoDoc(previewDoc)" class="flex flex-col items-center justify-center p-3 w-full max-w-4xl">
+            <video 
+              controls 
+              autoplay 
+              class="max-h-[76vh] max-w-full rounded-xl shadow-lg border border-slate-800 bg-black" 
+              :src="previewDocUrl"
+            >
+              Browser Anda tidak mendukung pemutar video HTML5.
+            </video>
+          </div>
+
+          <!-- 6. Audio Player (MP3, WAV, M4A) -->
+          <div v-else-if="isAudioDoc(previewDoc)" class="p-8 text-center space-y-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-md max-w-md w-full">
+            <div class="w-16 h-16 rounded-full bg-amber-50 dark:bg-amber-950/50 flex items-center justify-center mx-auto text-amber-600">
+              <Music class="w-8 h-8" />
+            </div>
+            <div>
+              <h4 class="text-sm font-bold text-slate-900 dark:text-white">{{ previewDoc?.name }}</h4>
+              <p class="text-xs text-slate-400 mt-0.5">Pemutar Audio</p>
+            </div>
+            <audio controls class="w-full" :src="previewDocUrl"></audio>
+          </div>
+
+          <!-- 7. Office Documents (Word / Excel / PowerPoint) -->
+          <div v-else-if="isOfficeDoc(previewDoc)" class="text-center p-8 space-y-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 max-w-md shadow-md">
+            <div class="w-16 h-16 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50 flex items-center justify-center mx-auto text-blue-600">
+              <FileSpreadsheet v-if="getFileExt(previewDoc).includes('xls')" class="w-8 h-8 text-emerald-600" />
+              <FileText v-else class="w-8 h-8 text-blue-600" />
+            </div>
+            <div>
+              <h4 class="text-sm font-bold text-slate-900 dark:text-white">{{ previewDoc?.name }}</h4>
+              <p class="text-xs text-slate-400 mt-1">Dokumen Microsoft Office ({{ getFileExt(previewDoc).toUpperCase() }})</p>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              Dokumen ini dapat dibuka langsung di aplikasi Office/Excel Anda atau diunduh ke komputer.
+            </p>
+            <div class="flex items-center justify-center gap-2 pt-2">
+              <Button @click="downloadAttachment(previewDoc)" class="bg-red-600 hover:bg-red-700 text-white gap-1.5 shadow-sm">
+                <Download class="w-4 h-4" /> Download Dokumen
+              </Button>
+              <a 
+                v-if="previewDocUrl" 
+                :href="previewDocUrl" 
+                target="_blank" 
+                class="inline-flex items-center gap-1 text-xs font-semibold px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <ExternalLink class="w-3.5 h-3.5" /> Buka di Tab Baru
+              </a>
+            </div>
+          </div>
+
+          <!-- 8. Fallback for Other Files -->
+          <div v-else class="text-center p-8 space-y-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 max-w-md shadow-md">
+            <div class="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto text-slate-500">
+              <Paperclip class="w-8 h-8" />
+            </div>
+            <div>
+              <h4 class="text-sm font-bold text-slate-900 dark:text-white">{{ previewDoc?.name }}</h4>
+              <p class="text-xs text-slate-400 mt-1">{{ getFileExt(previewDoc).toUpperCase() || 'Berkas' }} &bull; {{ previewDoc?.filesizeInMega || formatFileSize(previewDoc?.fileSize || previewDoc?.size) }}</p>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400">
+              Klik tombol di bawah untuk mengunduh dan melihat berkas ini di perangkat Anda.
+            </p>
+            <Button @click="downloadAttachment(previewDoc)" class="bg-red-600 hover:bg-red-700 text-white gap-2 shadow-sm">
               <Download class="w-4 h-4" /> Download File
             </Button>
           </div>
+
         </div>
       </div>
     </div>

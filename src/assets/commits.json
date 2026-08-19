@@ -1,5 +1,13 @@
 [
   {
+    "hash": "fc024f21fefc9a2cb64ef1172cdd0bfa49be82bb",
+    "shortHash": "fc024f2",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Aug 19 14:01:36 2026 +0700",
+    "message": "feat: add 2-way Marketing Hub to-do sync & in-app Accurate transaction document preview"
+  },
+  {
     "hash": "180978f1742c8441576fd3c4c6b177d3b09d2926",
     "shortHash": "180978f",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Mon Aug 3 11:47:26 2026 +0700",
     "message": "feat: overhaul HSQ Detail UI with Geist font, single device login, Google Drive integration, and notification popovers"
-  },
-  {
-    "hash": "6afde0238feadc396586df705163dc798cc44d8b",
-    "shortHash": "6afde02",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Jul 30 16:47:04 2026 +0700",
-    "message": "feat: add Export Detail HSO (Lengkap) to Excel with 3 sheets"
   }
 ]
