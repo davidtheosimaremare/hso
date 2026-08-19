@@ -129,12 +129,12 @@ serve(async (req) => {
     }
 
     // 3. FETCH ATTACHMENTS
-    if (docData.attachmentExist || (docData.attachmentCount && docData.attachmentCount > 0)) {
+    if (docData.id) {
       try {
         const controller = new AbortController()
         const tId = setTimeout(() => controller.abort(), 6000)
 
-        const url = `${BASE_API}/attachment/list.do?id=${docData.id}&transactionType=SALES_ORDER`
+        const url = `${BASE_API}/attachment/list.do?transactionId=${docData.id}&transactionType=SO`
         const attRes = await fetch(url, {
           headers: { 'Authorization': `Bearer ${accessToken}`, ...signatureHeader },
           signal: controller.signal

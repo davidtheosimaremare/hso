@@ -685,10 +685,10 @@ const userInitials = computed(() => {
     </aside>
 
     <!-- Main Content Area -->
-    <main class="flex-1 overflow-y-auto bg-gray-50/50 dark:bg-[#0f172a] text-black dark:text-gray-200 transition-colors duration-300 flex flex-col">
+    <main class="flex-1 min-w-0 bg-gray-50/50 dark:bg-[#0f172a] text-black dark:text-gray-200 transition-colors duration-300 flex flex-col">
 
       <!-- Desktop Top Bar -->
-      <header class="hidden md:flex sticky top-0 z-30 items-center justify-between px-6 py-3 bg-white/80 dark:bg-[#1e293b]/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
+      <header class="hidden md:flex sticky top-0 z-40 items-center justify-between px-6 py-3 bg-white dark:bg-[#1e293b] border-b border-slate-200 dark:border-slate-800">
         
         <!-- Left: Global Search -->
         <div class="flex items-center gap-3 flex-1">

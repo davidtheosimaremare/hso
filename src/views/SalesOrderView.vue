@@ -1176,9 +1176,9 @@ const getStatusColor = (status) => {
     </div>
 
     <!-- Table Container (Shadcn UI Style) -->
-    <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-2xs overflow-x-auto font-sans">
-      <Table>
-        <TableHeader class="bg-slate-50/80 dark:bg-slate-900/80 border-b border-slate-200/80 dark:border-slate-800">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-2xs overflow-visible font-sans">
+      <Table wrapperClass="overflow-visible">
+        <TableHeader class="bg-slate-50 dark:bg-slate-900 sticky top-[57px] z-20 shadow-xs border-b border-slate-200/80 dark:border-slate-800 [&_th]:sticky [&_th]:top-[57px] [&_th]:bg-slate-50 [&_th]:dark:bg-slate-900 [&_th]:z-20">
           <TableRow class="hover:bg-transparent border-none">
             <TableHead v-if="isBulkMode" class="w-12 px-4 text-center py-3.5">
               <div class="flex items-center justify-center">

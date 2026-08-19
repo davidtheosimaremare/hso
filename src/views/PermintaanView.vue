@@ -1824,6 +1824,9 @@ const deleteTask = async (taskId) => {
               <div class="flex items-center justify-between gap-1">
                 <div class="flex items-center gap-1.5 flex-wrap">
                   <span v-if="task.task_number" class="text-[9px] font-black text-muted-foreground">TASK-{{ task.task_number }}</span>
+                  <span v-if="task.marketing_idea_id || parseMeta(task.metadata).marketing_idea_id" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 text-[9px] font-bold border border-purple-200 dark:border-purple-800">
+                    🎨 Marketing
+                  </span>
                   <span v-if="getDisplayAssignees(task).includes(currentUserEmail)" class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-red-600 text-white text-[9px] font-black shadow-2xs">
                     ✦ TUGAS ANDA
                   </span>
@@ -1920,6 +1923,9 @@ const deleteTask = async (taskId) => {
               <div class="flex items-center justify-between gap-1">
                 <div class="flex items-center gap-1.5 flex-wrap">
                   <span v-if="task.task_number" class="text-[9px] font-black text-muted-foreground">TASK-{{ task.task_number }}</span>
+                  <span v-if="task.marketing_idea_id || parseMeta(task.metadata).marketing_idea_id" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 text-[9px] font-bold border border-purple-200 dark:border-purple-800">
+                    🎨 Marketing
+                  </span>
                   <span v-if="getDisplayAssignees(task).includes(currentUserEmail)" class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-red-600 text-white text-[9px] font-black shadow-2xs">
                     ✦ TUGAS ANDA
                   </span>
@@ -2010,6 +2016,9 @@ const deleteTask = async (taskId) => {
               <div class="flex items-center justify-between gap-1">
                 <div class="flex items-center gap-1.5 flex-wrap">
                   <span v-if="task.task_number" class="text-[9px] font-black text-muted-foreground">TASK-{{ task.task_number }}</span>
+                  <span v-if="task.marketing_idea_id || parseMeta(task.metadata).marketing_idea_id" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 text-[9px] font-bold border border-purple-200 dark:border-purple-800">
+                    🎨 Marketing
+                  </span>
                   <span v-if="getDisplayAssignees(task).includes(currentUserEmail)" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-sky-100/70 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 text-[9px] font-black border border-sky-200/60 dark:border-sky-700/40">
                     ✦ Tugasmu
                   </span>

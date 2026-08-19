@@ -1093,9 +1093,18 @@ const getWorkDuration = computed(() => {
             <!-- Title & Status Header -->
             <div class="space-y-3 pb-4 border-b border-slate-100 dark:border-slate-800 min-w-0">
               <div class="flex items-center justify-between flex-wrap gap-2">
-                <span v-if="task.task_number" class="px-2.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-xs font-black text-slate-600 dark:text-slate-400 tracking-wider">
-                  TASK-{{ task.task_number }}
-                </span>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span v-if="task.task_number" class="px-2.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-xs font-black text-slate-600 dark:text-slate-400 tracking-wider">
+                    TASK-{{ task.task_number }}
+                  </span>
+                  <router-link 
+                    v-if="task.marketing_idea_id || parseMeta(task.metadata).marketing_idea_id" 
+                    to="/marketing-hub"
+                    class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/50 text-xs font-bold text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-200 dark:hover:bg-purple-900 transition-all cursor-pointer"
+                  >
+                    🎨 Terhubung dengan Marketing Hub ➔
+                  </router-link>
+                </div>
                 
                 <div class="flex items-center gap-2">
                   <select 

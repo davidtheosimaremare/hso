@@ -27,7 +27,13 @@ serve(async (req) => {
 
     let endpointUrl = ''
     if (url) {
-      endpointUrl = url.startsWith('http') ? url : `https://zeus.accurate.id/accurate/api${url.startsWith('/') ? '' : '/'}${url}`
+      if (url.startsWith('http')) {
+        endpointUrl = url
+      } else if (url.startsWith('/accurate/')) {
+        endpointUrl = `https://zeus.accurate.id${url}`
+      } else {
+        endpointUrl = `https://zeus.accurate.id/accurate/api${url.startsWith('/') ? '' : '/'}${url}`
+      }
     } else if (attachmentId) {
       endpointUrl = `https://zeus.accurate.id/accurate/api/attachment/download.do?id=${attachmentId}`
     } else if (id && type) {

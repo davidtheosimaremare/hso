@@ -27,7 +27,7 @@ import {
   Edit, CheckCircle2, Clock, Anchor, Factory, FileText, 
   PackageCheck, Share2, Info, ExternalLink, Package, Hourglass, 
   Layers, AlertCircle, Download, AlertTriangle, ShoppingCart, Paperclip,
-  ChevronDown, ChevronUp, Plane, Box, Copy, Search, UploadCloud, FileSpreadsheet, Mail, Bell, RefreshCw
+  ChevronDown, ChevronUp, Plane, Box, Copy, Search, UploadCloud, FileSpreadsheet, Mail, Bell, RefreshCw, Eye, X, Maximize2
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -279,29 +279,20 @@ const filteredItems = computed(() => {
     const statusText = getRowStatus(item).text || ''
     
     if (itemStatusFilter.value === 'HOLD') {
-      return item.logistics_status === 'Hold by Customer'
+      return item.logistics_status === 'Hold by Customer' || statusText === 'HOLD BY CUSTOMER'
     }
     if (itemStatusFilter.value === 'NEED_ORDER') {
-      return needsOrdering(item) || statusText.includes('HPB:') || statusText.includes('DI KERANJANG')
+      return needsOrdering(item) || statusText.includes('HPB:') || statusText.includes('DI KERANJANG') || statusText.includes('PERLU DIPESAN') || statusText.includes('KURANG DIPESAN')
     }
     if (itemStatusFilter.value === 'ORDERED') {
-      const isOrdered = statusText === 'SUDAH DIPESAN' || statusText === 'KELEBIHAN DIPESAN' || (isItemArrivedAtHokiindo(item) && getHpoEntries(item).length > 0)
-      const hpos = getHpoEntries(item)
-      const hasHpoInDb = item.logistics_hpo && item.logistics_hpo.trim().length > 0
-      
-      let isFullyOrdered = false
-      if (hpos.length > 0) {
-        const totalPo = hpos.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
-        if (totalPo >= item.qty_to_order) {
-          isFullyOrdered = true
-        }
-      } else if (hasHpoInDb) {
-        isFullyOrdered = true
-      }
-      
-      const isPartial = statusText.includes('DIKIRIM SEBAGIAN')
-      
-      return isOrdered || (isFullyOrdered && isPartial)
+      const isOrdered = statusText === 'SUDAH DIPESAN' || statusText === 'KELEBIHAN DIPESAN' || getHpoEntries(item).length > 0 || !!item.logistics_hpo
+      return isOrdered
+    }
+    if (itemStatusFilter.value === 'IN_TRANSIT') {
+      return hasAnyShipmentStatus(item, 'Follow up with our forwarder') || 
+             hasAnyShipmentStatus(item, 'ETA Port JKT') || 
+             hasAnyShipmentStatus(item, 'Already in siemens Warehouse') ||
+             ['Follow up with our forwarder', 'ETA Port JKT', 'Already in siemens Warehouse'].includes(item.logistics_status)
     }
     if (itemStatusFilter.value === 'READY') {
       if (getDisplayedQtyRemaining(item) <= 0) return false
@@ -310,22 +301,10 @@ const filteredItems = computed(() => {
       return isStock || isArrivedHokiindo || statusText === 'MENUNGGU PENGIRIMAN' || statusText === 'SIAP DIKIRIM'
     }
     if (itemStatusFilter.value === 'PARTIAL') {
-      return statusText.includes('DIKIRIM SEBAGIAN')
+      return getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) > 0
     }
     if (itemStatusFilter.value === 'SHIPPED') {
-      return statusText === 'TERKIRIM' || statusText === 'PRODUK SUDAH DIKIRIM'
-    }
-    if (itemStatusFilter.value === 'EXWORK') {
-      return hasAnyShipmentStatus(item, 'Follow up with our forwarder')
-    }
-    if (itemStatusFilter.value === 'ETA_PORT') {
-      return hasAnyShipmentStatus(item, 'ETA Port JKT')
-    }
-    if (itemStatusFilter.value === 'TIBA_DUNEX') {
-      return hasAnyShipmentStatus(item, 'Already in siemens Warehouse')
-    }
-    if (itemStatusFilter.value === 'TIBA_HOKIINDO') {
-      return hasAnyShipmentStatus(item, 'Already in Hokiindo Raya')
+      return isDisplayedFullyShipped(item) || (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) === 0)
     }
     
     return true
@@ -1935,6 +1914,12 @@ const isDisplayedFullyShipped = (item) => {
   return getDisplayedQtyRemaining(item) <= 0
 }
 
+const expandedHdoMap = ref({})
+const isHdoExpanded = (itemCode) => !!expandedHdoMap.value[itemCode]
+const toggleHdoExpanded = (itemCode) => {
+  expandedHdoMap.value[itemCode] = !expandedHdoMap.value[itemCode]
+}
+
 const getHpoDisplayStatus = (item, hpoShipment) => {
   const baseStatus = getVisualStatus(hpoShipment)
   if (!baseStatus || baseStatus === 'Pending Process') return ''
@@ -1946,6 +1931,23 @@ const getHpoDisplayStatus = (item, hpoShipment) => {
 
 const getHpoDisplayDate = (item, hpoShipment) => {
   return getVisualStatusDate(hpoShipment) || '-'
+}
+
+const getLogisticsBadgeClass = (statusStr) => {
+  const s = String(statusStr || '').toLowerCase()
+  if (s.includes('forwarder') || s.includes('exwork') || s.includes('ex-work')) {
+    return 'bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+  }
+  if (s.includes('eta') || s.includes('port')) {
+    return 'bg-blue-100 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 border-blue-300 dark:border-blue-800'
+  }
+  if (s.includes('dunex') || s.includes('warehouse')) {
+    return 'bg-purple-100 dark:bg-purple-950/40 text-purple-800 dark:text-purple-300 border-purple-300 dark:border-purple-800'
+  }
+  if (s.includes('hokiindo') || s.includes('siap') || s.includes('ready')) {
+    return 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+  }
+  return 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
 }
 
 const isItemArrivedAtHokiindo = (item) => {
@@ -1977,17 +1979,15 @@ const getItemPoDiscrepancy = (item) => {
   if (diff > 0) {
     return {
       type: 'excess',
-      text: `Kelebihan dipesan (+${diff} ${item.unit || 'Pcs'})`,
-      detail: `Total PO: ${totalPo} ${item.unit || 'Pcs'} (Kebutuhan: ${item.qty_to_order} ${item.unit || 'Pcs'})`,
-      qty: diff
+      text: 'Kelebihan Dipesan di PO Siemens',
+      detail: `Barang ini dipesan ${totalPo} ${item.unit} (${diff} ${item.unit} lebih banyak dari kebutuhan pesanan ${item.qty_to_order} ${item.unit}).`
     }
   } else if (diff < 0) {
     const shortage = Math.abs(diff)
     return {
       type: 'shortage',
-      text: `Kekurangan dipesan (-${shortage} ${item.unit || 'Pcs'})`,
-      detail: `Total PO: ${totalPo} ${item.unit || 'Pcs'} (Kebutuhan: ${item.qty_to_order} ${item.unit || 'Pcs'})`,
-      qty: shortage
+      text: 'Kekurangan Dipesan di PO Siemens',
+      detail: `Barang ini baru dipesan ${totalPo} ${item.unit} (masih kurang ${shortage} ${item.unit} dari kebutuhan pesanan ${item.qty_to_order} ${item.unit}).`
     }
   }
   return null
@@ -1999,10 +1999,10 @@ const getRowStatus = (item) => {
     return { text: 'HOLD BY CUSTOMER', class: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800', icon: Clock }
   }
   
-  // Jika fully shipped (semua terkirim dan dikonfirmasi selesai)
+  // Jika fully shipped (semua terkirim dan dikonfirmasi selesai) -> HIJAU
   if (isDisplayedFullyShipped(item)) return { text: 'TERKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
   
-  // Jika sudah dikirim semua (tidak ada sisa tapi belum dikonfirmasi fully_shipped)
+  // Jika sudah dikirim semua (tidak ada sisa tapi belum dikonfirmasi fully_shipped) -> HIJAU
   if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) === 0) {
     return { text: 'TERKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
   }
@@ -2012,21 +2012,21 @@ const getRowStatus = (item) => {
     return { text: `DIKIRIM SEBAGIAN (SISA ${getDisplayedQtyRemaining(item)} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: Truck }
   }
 
-  // Jika item sudah tiba di Gudang Hokiindo -> Status utama: SIAP DIKIRIM
+  // Jika item sudah tiba di Gudang Hokiindo -> Status utama: SIAP DIKIRIM -> HIJAU
   if (isItemArrivedAtHokiindo(item)) {
-    return { text: 'SIAP DIKIRIM', class: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800', icon: Package }
+    return { text: 'SIAP DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: Package }
   }
   
-  // Item STOCK (qty_to_order === 0): tidak perlu dipesan, cek status pengiriman saja
+  // Item STOCK (qty_to_order === 0): tidak perlu dipesan, cek status pengiriman saja -> HIJAU
   if (item.qty_to_order === 0) {
-    return { text: 'SIAP DIKIRIM', class: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800', icon: Package }
+    return { text: 'SIAP DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: Package }
   }
 
   // Cek HPO dari Accurate atau dari DB (hanya untuk item NO STOCK / qty_to_order > 0)
   const hpoEntries = getHpoEntries(item)
   const hasHpoInDb = item.logistics_hpo && item.logistics_hpo.trim().length > 0
 
-  // Jika belum/kurang dipesan
+  // Jika belum/kurang dipesan -> MERAH
   if (item.qty_to_order > 0) {
     if (hpoEntries.length > 0) {
       const totalPo = hpoEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
@@ -2054,7 +2054,7 @@ const getRowStatus = (item) => {
       if (isInCart(item.code)) {
         return { text: `DI KERANJANG (PERLU ${item.qty_to_order} ${item.unit})`, class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: ShoppingCart }
       }
-      return { text: `PERLU DIPESAN (${item.qty_to_order} ${item.unit})`, class: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-emerald-800', icon: AlertCircle }
+      return { text: `PERLU DIPESAN (${item.qty_to_order} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: AlertCircle }
     }
   }
 
@@ -2072,9 +2072,9 @@ const getRowStatus = (item) => {
     return { text: 'SUDAH DIPESAN', class: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800', icon: CheckCircle2 }
   }
   
-  // Fallback: stock belum dikirim (seharusnya sudah ditangani di atas)
+  // Fallback: stock belum dikirim (seharusnya sudah ditangani di atas) -> HIJAU
   if (item.qty_shipped === 0) {
-    return { text: 'MENUNGGU PENGIRIMAN', class: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/30 dark:text-cyan-400 dark:border-cyan-800', icon: Package }
+    return { text: 'SIAP DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: Package }
   }
   
   // Default
@@ -2775,6 +2775,76 @@ const formatFileSize = (bytes) => {
   return (num / 1024).toFixed(0) + ' KB'
 }
 
+// --- ATTACHMENT PREVIEW STATE & ACTIONS ---
+const previewModalOpen = ref(false)
+const previewDoc = ref(null)
+const previewDocUrl = ref('')
+const isLoadingPreview = ref(false)
+const previewAttKey = ref(null)
+
+const isPdfDoc = (doc) => {
+  if (!doc) return false
+  const name = (doc.fileName || doc.name || doc.title || '').toLowerCase()
+  const ext = (doc.extension || doc.fileExtension || '').toLowerCase()
+  return name.endsWith('.pdf') || ext.includes('pdf')
+}
+
+const isImageDoc = (doc) => {
+  if (!doc) return false
+  const name = (doc.fileName || doc.name || doc.title || '').toLowerCase()
+  return /\.(jpe?g|png|webp|gif|svg)$/i.test(name)
+}
+
+const openAttachmentPreview = async (att) => {
+  if (!att) return
+  const attKey = att.id || att.attachmentId || att.name || att.fileName
+  previewAttKey.value = attKey
+  isLoadingPreview.value = true
+  previewDoc.value = att
+
+  try {
+    const fileName = att.fileName || att.name || att.title || 'dokumen_transaksi'
+    const isPdf = isPdfDoc(att)
+    const isImg = isImageDoc(att)
+
+    const mimeType = isPdf 
+      ? 'application/pdf' 
+      : (isImg ? `image/${fileName.split('.').pop().toLowerCase() === 'jpg' ? 'jpeg' : fileName.split('.').pop().toLowerCase()}` : 'application/octet-stream')
+
+    const { data, error } = await supabase.functions.invoke('accurate-print-doc', {
+      body: {
+        attachmentId: att.id || att.attachmentId,
+        url: att.tempPath || att.url || att.downloadUrl || att.path,
+        filename: fileName
+      }
+    })
+    if (error) throw error
+    if (!data) throw new Error('File tidak ditemukan dari Accurate')
+
+    const blob = new Blob([data], { type: mimeType })
+    if (previewDocUrl.value) {
+      window.URL.revokeObjectURL(previewDocUrl.value)
+    }
+    previewDocUrl.value = window.URL.createObjectURL(blob)
+    previewModalOpen.value = true
+  } catch (err) {
+    console.error('Preview attachment error:', err)
+    alert('Gagal memuat preview dokumen: ' + (err.message || 'Error'))
+  } finally {
+    isLoadingPreview.value = false
+    previewAttKey.value = null
+  }
+}
+
+const closeAttachmentPreview = () => {
+  previewModalOpen.value = false
+  if (previewDocUrl.value) {
+    window.URL.revokeObjectURL(previewDocUrl.value)
+    previewDocUrl.value = ''
+  }
+  previewDoc.value = null
+}
+
 const downloadAttachment = async (att) => {
   if (!att) return
   const attKey = att.id || att.attachmentId || att.name || att.fileName
@@ -2784,7 +2854,7 @@ const downloadAttachment = async (att) => {
     const { data, error } = await supabase.functions.invoke('accurate-print-doc', {
       body: {
         attachmentId: att.id || att.attachmentId,
-        url: att.url || att.downloadUrl || att.path,
+        url: att.tempPath || att.url || att.downloadUrl || att.path,
         filename: fileName
       }
     })
@@ -2847,7 +2917,7 @@ const downloadAttachment = async (att) => {
         </div>
       </div>
 
-      <div v-else-if="soDetail" class="animate-in fade-in slide-in-from-bottom-3 duration-300 space-y-5 font-sans">
+      <div v-else-if="soDetail" class="space-y-5 font-sans">
 
         <!-- TOP BAR: BREADCRUMB & COMPACT ACTIONS -->
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -2974,36 +3044,52 @@ const downloadAttachment = async (att) => {
             <div 
               v-for="(att, idx) in soDetail.attachments" 
               :key="att.id || idx" 
-              class="py-2.5 flex items-center justify-between gap-3 hover:bg-slate-50/60 dark:hover:bg-slate-800/40 px-2 rounded-lg transition-colors"
+              class="py-2.5 flex items-center justify-between gap-3 hover:bg-slate-50/80 dark:hover:bg-slate-800/50 px-2.5 rounded-lg transition-colors group cursor-pointer"
+              @click="openAttachmentPreview(att)"
             >
               <div class="flex items-center gap-3 min-w-0">
-                <div class="w-8 h-8 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/50 flex items-center justify-center shrink-0">
-                  <FileText v-if="(att.fileName || att.name || '').toLowerCase().endsWith('.pdf')" class="w-4 h-4 text-red-500" />
+                <div class="w-8 h-8 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-100 dark:border-red-900/50 flex items-center justify-center shrink-0 group-hover:bg-red-100 transition-colors">
+                  <FileText v-if="isPdfDoc(att)" class="w-4 h-4 text-red-500" />
                   <Paperclip v-else class="w-4 h-4 text-red-500" />
                 </div>
                 <div class="min-w-0">
-                  <p class="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                  <p class="text-xs font-semibold text-slate-800 dark:text-slate-200 group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors truncate">
                     {{ att.fileName || att.name || att.title || `Dokumen ${idx + 1}` }}
                   </p>
                   <p class="text-[11px] text-slate-400 dark:text-slate-500 flex items-center gap-2 mt-0.5">
-                    <span v-if="att.uploadDate || att.date || att.createdDate">{{ att.uploadDate || att.date || att.createdDate }}</span>
-                    <span v-if="(att.uploadDate || att.date) && (att.fileSize || att.size)">&bull;</span>
-                    <span v-if="att.fileSize || att.size">{{ formatFileSize(att.fileSize || att.size) }} {{ att.fileType || '' }}</span>
+                    <span v-if="att.timeView || att.uploadDate || att.date || att.createdDate">{{ att.timeView || att.uploadDate || att.date || att.createdDate }}</span>
+                    <span v-if="(att.timeView || att.uploadDate || att.date) && (att.filesizeInMega || att.fileSize || att.size || att.filesize)">&bull;</span>
+                    <span>{{ att.filesizeInMega || formatFileSize(att.fileSize || att.size || att.filesize) }} {{ att.fileExtension || att.fileType || '' }}</span>
                   </p>
                 </div>
               </div>
 
-              <Button 
-                size="sm" 
-                variant="ghost" 
-                class="h-8 w-8 p-0 text-slate-600 dark:text-slate-300 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg cursor-pointer shrink-0" 
-                @click="downloadAttachment(att)" 
-                :disabled="downloadingAttId === (att.id || att.attachmentId || att.name)"
-                title="Download Dokumen"
-              >
-                <Loader2 v-if="downloadingAttId === (att.id || att.attachmentId || att.name)" class="w-4 h-4 animate-spin text-red-600" />
-                <Download v-else class="w-4 h-4" />
-              </Button>
+              <div class="flex items-center gap-1 shrink-0" @click.stop>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  class="h-8 px-2.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer flex items-center gap-1.5 shadow-2xs" 
+                  @click="openAttachmentPreview(att)" 
+                  :disabled="isLoadingPreview && previewAttKey === (att.id || att.attachmentId || att.name)"
+                  title="Lihat / Preview Dokumen"
+                >
+                  <Loader2 v-if="isLoadingPreview && previewAttKey === (att.id || att.attachmentId || att.name)" class="w-3.5 h-3.5 animate-spin text-red-600" />
+                  <Eye v-else class="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                  <span class="text-[11px]">Lihat</span>
+                </Button>
+
+                <Button 
+                  size="sm" 
+                  variant="ghost" 
+                  class="h-8 w-8 p-0 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer" 
+                  @click="downloadAttachment(att)" 
+                  :disabled="downloadingAttId === (att.id || att.attachmentId || att.name)"
+                  title="Download File"
+                >
+                  <Loader2 v-if="downloadingAttId === (att.id || att.attachmentId || att.name)" class="w-3.5 h-3.5 animate-spin text-slate-600" />
+                  <Download v-else class="w-3.5 h-3.5" />
+                </Button>
+              </div>
             </div>
           </div>
 
@@ -3014,8 +3100,8 @@ const downloadAttachment = async (att) => {
           </div>
         </div>
 
-        <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-2xs overflow-hidden flex flex-col font-sans">
-          <div class="border-b border-slate-200/80 dark:border-slate-800 px-4 py-3 bg-slate-50/50 dark:bg-slate-900/50 shrink-0">
+        <div class="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-xl shadow-2xs overflow-visible flex flex-col font-sans">
+          <div class="sticky top-[57px] z-30 border-b border-slate-200 dark:border-slate-800 px-4 py-3 bg-white dark:bg-slate-900 shrink-0 rounded-t-xl shadow-xs">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div class="flex items-center gap-2">
                 <span class="text-sm font-bold text-slate-900 dark:text-white">Detail Produk &amp; Logistik</span>
@@ -3041,14 +3127,11 @@ const downloadAttachment = async (att) => {
                     <option value="ALL">Semua Status</option>
                     <option value="NEED_ORDER">Perlu / Kurang PO</option>
                     <option value="ORDERED">Sudah PO</option>
-                    <option value="READY">Menunggu Pengiriman</option>
+                    <option value="IN_TRANSIT">Proses Forwarder / Dunex</option>
+                    <option value="READY">Siap Kirim (Stok / Hokiindo)</option>
                     <option value="PARTIAL">Dikirim Sebagian</option>
                     <option value="SHIPPED">Terkirim</option>
                     <option value="HOLD">Hold by Customer</option>
-                    <option value="EXWORK">Ex-Works (Forwarder)</option>
-                    <option value="ETA_PORT">ETA Port JKT</option>
-                    <option value="TIBA_DUNEX">Tiba di Gudang Dunex</option>
-                    <option value="TIBA_HOKIINDO">Tiba di Gudang Hokiindo</option>
                   </select>
                 </div>
               </div>
@@ -3060,28 +3143,28 @@ const downloadAttachment = async (att) => {
             </div>
           </div>
           <!-- Desktop/Tablet View (Table Layout) -->
-          <div class="hidden md:block w-full overflow-hidden flex-1">
+          <div class="hidden md:block w-full overflow-visible flex-1">
             <div class="w-full">
-              <Table class="w-full text-xs">
-                <TableHeader class="bg-slate-50/80 dark:bg-slate-900/80 sticky top-0 z-20 shadow-2xs border-b border-slate-200/80 dark:border-slate-800">
+              <Table wrapperClass="overflow-visible" class="w-full text-xs">
+                <TableHeader class="bg-slate-50 dark:bg-slate-900 sticky top-[113px] z-20 shadow-xs border-b border-slate-200/80 dark:border-slate-800">
                   <TableRow class="hover:bg-transparent border-none">
-                  <TableHead class="w-10 text-center py-2.5 px-1.5">
+                  <TableHead class="sticky top-[113px] z-20 bg-slate-50 dark:bg-slate-900 w-10 text-center py-2.5 px-1.5 border-b border-slate-200/80 dark:border-slate-800">
                      <div class="flex items-center justify-center">
                         <input type="checkbox" class="w-4 h-4 rounded accent-red-600 cursor-pointer" :checked="isAllSelected" @change="toggleSelectAll"/>
                      </div>
                   </TableHead>
-                  <TableHead class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-2.5 px-2.5">Nama Produk</TableHead>
-                  <TableHead class="text-center text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-16 py-2.5 px-1">Order</TableHead>
-                  <TableHead class="text-center text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-16 py-2.5 px-1">Stok</TableHead>
-                  <TableHead class="text-center text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-16 py-2.5 px-1">Terkirim</TableHead>
-                  <TableHead class="text-center text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider w-16 py-2.5 px-1">Sisa</TableHead>
+                  <TableHead class="sticky top-[113px] z-20 bg-slate-50 dark:bg-slate-900 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-2.5 px-2.5 border-b border-slate-200/80 dark:border-slate-800">Nama Produk</TableHead>
+                  <TableHead class="sticky top-[113px] z-20 bg-slate-50 dark:bg-slate-900 text-center text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-16 py-2.5 px-1 border-b border-slate-200/80 dark:border-slate-800">Order</TableHead>
+                  <TableHead class="sticky top-[113px] z-20 bg-slate-50 dark:bg-slate-900 text-center text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-16 py-2.5 px-1 border-b border-slate-200/80 dark:border-slate-800">Stok</TableHead>
+                  <TableHead class="sticky top-[113px] z-20 bg-slate-50 dark:bg-slate-900 text-center text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-16 py-2.5 px-1 border-b border-slate-200/80 dark:border-slate-800">Terkirim</TableHead>
+                  <TableHead class="sticky top-[113px] z-20 bg-slate-50 dark:bg-slate-900 text-center text-xs font-bold text-red-600 dark:text-red-400 uppercase tracking-wider w-16 py-2.5 px-1 border-b border-slate-200/80 dark:border-slate-800">Sisa</TableHead>
                   
-                  <TableHead class="pl-2 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-56 lg:w-64 py-2.5 px-2">Status</TableHead>
-                  <TableHead class="text-right pr-3 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-20 py-2.5 px-2">Aksi</TableHead>
+                  <TableHead class="sticky top-[113px] z-20 bg-slate-50 dark:bg-slate-900 pl-2 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-56 lg:w-64 py-2.5 px-2 border-b border-slate-200/80 dark:border-slate-800">Status</TableHead>
+                  <TableHead class="sticky top-[113px] z-20 bg-slate-50 dark:bg-slate-900 text-right pr-3 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-20 py-2.5 px-2 border-b border-slate-200/80 dark:border-slate-800">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <TableRow 
+<TableRow 
                     v-for="(item, idx) in filteredItems" 
                     v-show="!isPurchaseExpanded || item.qty_to_order > 0"
                     :key="idx" 
@@ -3092,6 +3175,7 @@ const downloadAttachment = async (att) => {
                   <TableCell class="text-center align-top py-2.5 px-1.5">
                     <input v-if="!isDisplayedFullyShipped(item)" type="checkbox" class="w-4 h-4 rounded accent-red-600 cursor-pointer" :checked="selectedItemCodes.includes(item.code)" @change="toggleSelection(item.code)"/>
                   </TableCell>
+                  
                   <TableCell class="py-2.5 px-2.5 align-top">
                     <div class="flex items-center gap-1.5">
                         <span class="font-bold text-slate-900 dark:text-slate-100 text-base font-mono tracking-tight">
@@ -3142,39 +3226,56 @@ const downloadAttachment = async (att) => {
                             <component :is="getRowStatus(item).icon" class="w-3.5 h-3.5" />
                             {{ getRowStatus(item).text }}
                         </div>
+                        
+                        <!-- Status TERKIRIM: Click badge to toggle HDO details (default collapsed) -->
+                        <div v-else-if="isDisplayedFullyShipped(item) && (getHdosForItem(item).length > 0 || item.logistics_hdo)"
+                             @click="toggleHdoExpanded(item.code)"
+                             class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-semibold shadow-sm cursor-pointer hover:opacity-85 transition-all select-none"
+                             :class="getRowStatus(item).class"
+                             :title="isHdoExpanded(item.code) ? 'Klik untuk sembunyikan nomor HDO' : 'Klik untuk lihat nomor HDO'"
+                        >
+                            <component :is="getRowStatus(item).icon" class="w-3.5 h-3.5" />
+                            <span>{{ getRowStatus(item).text }}</span>
+                            <ChevronDown class="w-3 h-3 transition-transform duration-200 opacity-70 ml-0.5" 
+                                         :class="{ 'rotate-180': isHdoExpanded(item.code) }" />
+                        </div>
+
+                        <!-- General Status Badge Lainnya -->
                         <div v-else class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-semibold shadow-sm" :class="getRowStatus(item).class">
                             <component :is="getRowStatus(item).icon" class="w-3.5 h-3.5" />
                             {{ getRowStatus(item).text }}
                         </div>
                         
-                        <!-- HDO (Resi Pengiriman) Info -->
-                        <!-- Case 1: HDO sudah di-sync dan ditemukan -->
-                        <div v-if="getHdosForItem(item).length > 0" class="mt-1 space-y-1">
-                            <div v-for="hdo in getHdosForItem(item)" :key="hdo.no" class="bg-red-50/60 dark:bg-red-950/40 border border-dashed border-red-300/80 dark:border-red-800/80 rounded-md p-1.5 px-2 flex items-center justify-between text-xs font-sans">
+                        <!-- HDO (Resi Pengiriman) Info: Langsung tampil jika DIKIRIM SEBAGIAN, atau jika TERKIRIM di-expand -->
+                        <template v-if="(!isDisplayedFullyShipped(item) && getDisplayedQtyShipped(item) > 0) || (isDisplayedFullyShipped(item) && isHdoExpanded(item.code))">
+                            <!-- Case 1: HDO sudah di-sync dan ditemukan -->
+                            <div v-if="getHdosForItem(item).length > 0" class="mt-1 space-y-1">
+                                <div v-for="hdo in getHdosForItem(item)" :key="hdo.no" class="bg-red-50/60 dark:bg-red-950/40 border border-dashed border-red-300/80 dark:border-red-800/80 rounded-md p-1.5 px-2 flex items-center justify-between text-xs font-sans">
+                                    <div class="flex items-center gap-1.5 min-w-0">
+                                        <Truck class="w-3.5 h-3.5 text-red-600 dark:text-red-400 shrink-0" />
+                                        <span class="font-bold text-red-700 dark:text-red-300 truncate">{{ hdo.no }}</span>
+                                    </div>
+                                    <span class="font-bold text-red-800 dark:text-red-200 bg-red-100 dark:bg-red-900/80 px-1.5 py-0.5 rounded text-[11px] shrink-0">
+                                        {{ getSingleHdoQty(hdo, item) }} {{ item.unit }}
+                                    </span>
+                                </div>
+                            </div>
+                            <!-- Case 2: HDO sedang di-sync (loading) -->
+                            <div v-else-if="isHdoSyncing && getDisplayedQtyShipped(item) > 0" class="mt-1 bg-red-50/50 dark:bg-red-950/30 border border-dashed border-red-300/60 dark:border-red-800/60 rounded-md p-1.5 px-2 flex items-center gap-1.5 text-xs text-red-600 font-medium">
+                                <Loader2 class="w-3.5 h-3.5 text-red-500 animate-spin shrink-0" />
+                                <span>Memuat HDO...</span>
+                            </div>
+                            <!-- Case 3: Fallback dari DB -->
+                            <div v-else-if="getDisplayedQtyShipped(item) > 0 && item.logistics_hdo" class="mt-1 bg-red-50/60 dark:bg-red-950/40 border border-dashed border-red-300/80 dark:border-red-800/80 rounded-md p-1.5 px-2 flex items-center justify-between text-xs font-sans">
                                 <div class="flex items-center gap-1.5 min-w-0">
                                     <Truck class="w-3.5 h-3.5 text-red-600 dark:text-red-400 shrink-0" />
-                                    <span class="font-bold text-red-700 dark:text-red-300 truncate">{{ hdo.no }}</span>
+                                    <span class="font-bold text-red-700 dark:text-red-300 truncate">{{ item.logistics_hdo }}</span>
                                 </div>
                                 <span class="font-bold text-red-800 dark:text-red-200 bg-red-100 dark:bg-red-900/80 px-1.5 py-0.5 rounded text-[11px] shrink-0">
-                                    {{ getSingleHdoQty(hdo, item) }} {{ item.unit }}
+                                    {{ item.qty_shipped }} {{ item.unit }}
                                 </span>
                             </div>
-                        </div>
-                        <!-- Case 2: HDO sedang di-sync (loading) -->
-                        <div v-else-if="isHdoSyncing && getDisplayedQtyShipped(item) > 0" class="mt-1 bg-red-50/50 dark:bg-red-950/30 border border-dashed border-red-300/60 dark:border-red-800/60 rounded-md p-1.5 px-2 flex items-center gap-1.5 text-xs text-red-600 font-medium">
-                            <Loader2 class="w-3.5 h-3.5 text-red-500 animate-spin shrink-0" />
-                            <span>Memuat HDO...</span>
-                        </div>
-                        <!-- Case 3: Fallback dari DB -->
-                        <div v-else-if="getDisplayedQtyShipped(item) > 0 && item.logistics_hdo" class="mt-1 bg-red-50/60 dark:bg-red-950/40 border border-dashed border-red-300/80 dark:border-red-800/80 rounded-md p-1.5 px-2 flex items-center justify-between text-xs font-sans">
-                            <div class="flex items-center gap-1.5 min-w-0">
-                                <Truck class="w-3.5 h-3.5 text-red-600 dark:text-red-400 shrink-0" />
-                                <span class="font-bold text-red-700 dark:text-red-300 truncate">{{ item.logistics_hdo }}</span>
-                            </div>
-                            <span class="font-bold text-red-800 dark:text-red-200 bg-red-100 dark:bg-red-900/80 px-1.5 py-0.5 rounded text-[11px] shrink-0">
-                                {{ item.qty_shipped }} {{ item.unit }}
-                            </span>
-                        </div>
+                        </template>
                         
                         <!-- HPO Number + Logistics Status Combined -->
                         <div v-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && getHpoEntries(item).length > 0" class="mt-1 space-y-1">
@@ -3192,15 +3293,16 @@ const downloadAttachment = async (att) => {
                                 </div>
 
                                 <!-- Vendor & Logistics Status Row -->
-                                <div class="flex flex-wrap items-center gap-1 text-[11px]">
-                                    <span v-if="hpo.vendorName" class="font-medium text-slate-500 dark:text-slate-400 truncate max-w-[140px]">
+                                <div class="flex items-center gap-1.5 text-[11px] flex-wrap">
+                                    <span v-if="hpo.vendorName" class="font-medium text-slate-500 dark:text-slate-400 truncate max-w-[130px] shrink-0 text-[10px]">
                                         🏢 {{ hpo.vendorName }}
                                     </span>
                                     <template v-for="hpoShipment in [getHpoShipment(item, hpo.poNumber)]" :key="hpoShipment.id || hpo.poNumber">
-                                        <span v-if="hpoShipment.current_status && hpoShipment.current_status !== 'Pending Process'" class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-red-100 dark:bg-red-950/30 text-red-800 dark:text-red-300 font-semibold border border-red-200 dark:border-red-900 text-xs">
-                                            <Truck class="w-3 h-3 text-red-600 dark:text-red-400 shrink-0" />
-                                            <span>{{ getHpoDisplayStatus(item, hpoShipment) }}</span>
-                                            <span v-if="getHpoDisplayDate(item, hpoShipment) && getHpoDisplayDate(item, hpoShipment) !== '-'" class="opacity-80 font-medium text-[11px]">
+                                        <span v-if="hpoShipment.current_status && hpoShipment.current_status !== 'Pending Process'" 
+                                              class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold border text-[10px] whitespace-nowrap shrink-0"
+                                              :class="getLogisticsBadgeClass(getHpoDisplayStatus(item, hpoShipment))">
+                                            <span class="whitespace-nowrap">{{ getHpoDisplayStatus(item, hpoShipment) }}</span>
+                                            <span v-if="getHpoDisplayDate(item, hpoShipment) && getHpoDisplayDate(item, hpoShipment) !== '-'" class="opacity-85 font-medium text-[9.5px] whitespace-nowrap">
                                                 ({{ getHpoDisplayDate(item, hpoShipment) }})
                                             </span>
                                         </span>
@@ -3221,10 +3323,11 @@ const downloadAttachment = async (att) => {
                                     {{ item.qty_order }} {{ item.unit }}
                                 </span>
                             </div>
-                            <div v-if="item.logistics_status && item.logistics_status !== 'Pending Process'" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-50/90 dark:bg-red-950/70 text-red-700 dark:text-red-300 font-semibold border border-red-100 dark:border-red-900/60 text-[10px]">
-                                <Truck class="w-3 h-3 text-red-600 shrink-0" />
-                                <span>{{ item.logistics_status === 'Follow up with our forwarder' ? 'Ex-Works' : item.logistics_status === 'ETA Port JKT' ? 'ETA JKT' : item.logistics_status === 'Already in siemens Warehouse' ? 'Tiba Dunex' : item.logistics_status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : item.logistics_status }}</span>
-                                <span v-if="formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date)" class="opacity-75 font-normal">
+                            <div v-if="item.logistics_status && item.logistics_status !== 'Pending Process'" 
+                                 class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold border text-[10px] whitespace-nowrap shrink-0"
+                                 :class="getLogisticsBadgeClass(item.logistics_status)">
+                                <span class="whitespace-nowrap">{{ item.logistics_status === 'Follow up with our forwarder' ? 'Ex-Works' : item.logistics_status === 'ETA Port JKT' ? 'ETA JKT' : item.logistics_status === 'Already in siemens Warehouse' ? 'Tiba Dunex' : item.logistics_status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : item.logistics_status }}</span>
+                                <span v-if="formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date)" class="opacity-80 font-normal text-[9.5px] whitespace-nowrap">
                                     ({{ formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date) }})
                                 </span>
                             </div>
@@ -3448,42 +3551,55 @@ const downloadAttachment = async (att) => {
                       <component :is="getRowStatus(item).icon" class="w-4 h-4" />
                       {{ getRowStatus(item).text }}
                     </div>
+                    <!-- Status TERKIRIM: Click badge to toggle HDO details (default collapsed) -->
+                    <div v-else-if="isDisplayedFullyShipped(item) && (getHdosForItem(item).length > 0 || item.logistics_hdo)"
+                         @click="toggleHdoExpanded(item.code)"
+                         class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold shadow-sm cursor-pointer hover:opacity-85 transition-all select-none" 
+                         :class="getRowStatus(item).class"
+                    >
+                      <component :is="getRowStatus(item).icon" class="w-4 h-4" />
+                      <span>{{ getRowStatus(item).text }}</span>
+                      <ChevronDown class="w-3.5 h-3.5 transition-transform duration-200 opacity-70 ml-0.5" 
+                                   :class="{ 'rotate-180': isHdoExpanded(item.code) }" />
+                    </div>
+                    <!-- General Status Badge Lainnya -->
                     <div v-else class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold shadow-sm" :class="getRowStatus(item).class">
                       <component :is="getRowStatus(item).icon" class="w-4 h-4" />
                       {{ getRowStatus(item).text }}
                     </div>
                   </div>
 
-                  <!-- HDO List -->
-                  <div v-if="getHdosForItem(item).length > 0" class="space-y-2">
-                    <div v-for="hdo in getHdosForItem(item)" :key="hdo.no" class="bg-red-50/50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-xl p-3">
+                  <!-- HDO List: Langsung tampil jika DIKIRIM SEBAGIAN, atau jika TERKIRIM di-expand -->
+                  <template v-if="(!isDisplayedFullyShipped(item) && getDisplayedQtyShipped(item) > 0) || (isDisplayedFullyShipped(item) && isHdoExpanded(item.code))">
+                    <div v-if="getHdosForItem(item).length > 0" class="space-y-2">
+                      <div v-for="hdo in getHdosForItem(item)" :key="hdo.no" class="bg-red-50/50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-xl p-3">
+                        <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-red-100 dark:border-red-900/60">
+                          <Truck class="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                          <span class="text-[10px] font-bold text-red-500 uppercase tracking-wider">HDO Pengiriman</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                          <span class="text-xs font-mono font-bold text-red-700 dark:text-red-300">{{ hdo.no }}</span>
+                          <span class="text-xs font-bold text-red-800 dark:text-red-200 bg-red-100 dark:bg-red-900/60 px-2 py-0.5 rounded-lg border border-red-200/50 dark:border-red-800">{{ getSingleHdoQty(hdo, item) }} {{ item.unit }}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div v-else-if="isHdoSyncing && getDisplayedQtyShipped(item) > 0" class="bg-red-50/50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-xl p-3 flex items-center gap-2">
+                      <Loader2 class="w-4 h-4 text-red-400 animate-spin" />
+                      <span class="text-xs text-red-500 font-medium">Memuat data HDO...</span>
+                    </div>
+                    
+                    <div v-else-if="getDisplayedQtyShipped(item) > 0 && item.logistics_hdo" class="bg-red-50/50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-xl p-3">
                       <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-red-100 dark:border-red-900/60">
                         <Truck class="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
                         <span class="text-[10px] font-bold text-red-500 uppercase tracking-wider">HDO Pengiriman</span>
                       </div>
                       <div class="flex items-center justify-between">
-                        <span class="text-xs font-mono font-bold text-red-700 dark:text-red-300">{{ hdo.no }}</span>
-                        <span class="text-xs font-bold text-red-800 dark:text-red-200 bg-red-100 dark:bg-red-900/60 px-2 py-0.5 rounded-lg border border-red-200/50 dark:border-red-800">{{ getSingleHdoQty(hdo, item) }} {{ item.unit }}</span>
+                        <span class="text-xs font-mono font-bold text-red-700 dark:text-red-300">{{ item.logistics_hdo }}</span>
+                        <span class="text-xs font-bold text-red-800 dark:text-red-200 bg-red-100 dark:bg-red-900/60 px-2 py-0.5 rounded-lg border border-red-200/50 dark:border-red-800">{{ item.qty_shipped }} {{ item.unit }}</span>
                       </div>
-
                     </div>
-                  </div>
-                  
-                  <div v-else-if="isHdoSyncing && getDisplayedQtyShipped(item) > 0" class="bg-red-50/50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-xl p-3 flex items-center gap-2">
-                    <Loader2 class="w-4 h-4 text-red-400 animate-spin" />
-                    <span class="text-xs text-red-500 font-medium">Memuat data HDO...</span>
-                  </div>
-                  
-                  <div v-else-if="getDisplayedQtyShipped(item) > 0 && item.logistics_hdo" class="bg-red-50/50 dark:bg-red-950/20 border border-red-200 dark:border-red-900 rounded-xl p-3">
-                    <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-red-100 dark:border-red-900/60">
-                      <Truck class="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
-                      <span class="text-[10px] font-bold text-red-500 uppercase tracking-wider">HDO Pengiriman</span>
-                    </div>
-                    <div class="flex items-center justify-between">
-                      <span class="text-xs font-mono font-bold text-red-700 dark:text-red-300">{{ item.logistics_hdo }}</span>
-                      <span class="text-xs font-bold text-red-800 dark:text-red-200 bg-red-100 dark:bg-red-900/60 px-2 py-0.5 rounded-lg border border-red-200/50 dark:border-red-800">{{ item.qty_shipped }} {{ item.unit }}</span>
-                    </div>
-                  </div>
+                  </template>
 
                   <!-- HPO List -->
                   <!-- Only show HPO list if item has remaining qty to ship -->
@@ -3506,22 +3622,20 @@ const downloadAttachment = async (att) => {
 
                       <!-- Logistics status tree inside HPO -->
                       <template v-for="hpoShipment in [getHpoShipment(item, hpo.poNumber)]" :key="hpoShipment.id || hpo.poNumber">
-                        <div v-if="hpoShipment.current_status && hpoShipment.current_status !== 'Pending Process'" class="mt-2.5">
-                          <div class="flex flex-col gap-1 bg-red-50/50 dark:bg-red-950/20 px-2.5 py-1.5 rounded-lg border border-red-100 dark:border-red-900">
-                            <div class="flex items-center justify-between">
-                              <div class="flex items-center gap-1.5 min-w-0">
-                                <Truck class="w-3.5 h-3.5 text-red-600 dark:text-red-400 flex-shrink-0" />
-                                <span class="text-[11px] font-bold text-red-700 dark:text-red-300 truncate">
-                                  {{ getHpoDisplayStatus(item, hpoShipment) }}
-                                </span>
-                              </div>
-                              <span v-if="hpoShipment.exwork_waiting && getVisualStatus(hpoShipment) === 'Follow up with our forwarder'"
-                                    class="text-[10px] font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap ml-2">
-                                ⏳ Waiting
+                        <div v-if="hpoShipment.current_status && hpoShipment.current_status !== 'Pending Process'" class="mt-2">
+                          <div class="flex items-center justify-between gap-1.5 px-2 py-1 rounded-lg border text-[10px] whitespace-nowrap"
+                               :class="getLogisticsBadgeClass(getHpoDisplayStatus(item, hpoShipment))">
+                            <div class="flex items-center gap-1 min-w-0">
+                              <span class="font-bold whitespace-nowrap">
+                                {{ getHpoDisplayStatus(item, hpoShipment) }}
+                              </span>
+                              <span v-if="getHpoDisplayDate(item, hpoShipment) && getHpoDisplayDate(item, hpoShipment) !== '-'" class="opacity-85 font-medium text-[9.5px] whitespace-nowrap">
+                                ({{ getHpoDisplayDate(item, hpoShipment) }})
                               </span>
                             </div>
-                            <span v-if="getHpoDisplayDate(item, hpoShipment) && getHpoDisplayDate(item, hpoShipment) !== '-'" class="text-[10px] font-mono font-bold text-red-600 dark:text-red-400 pl-5 truncate">
-                              {{ getHpoDisplayDate(item, hpoShipment) }}
+                            <span v-if="hpoShipment.exwork_waiting && getVisualStatus(hpoShipment) === 'Follow up with our forwarder'"
+                                  class="text-[9.5px] font-semibold text-amber-700 dark:text-amber-300 whitespace-nowrap shrink-0">
+                              ⏳ Waiting
                             </span>
                           </div>
                         </div>
@@ -3544,20 +3658,20 @@ const downloadAttachment = async (att) => {
                     </div>
 
                     <!-- Logistics status if exists -->
-                    <div v-if="item.logistics_status && item.logistics_status !== 'Pending Process'" class="mt-2.5">
-                      <div class="flex items-center justify-between gap-2 bg-red-50/50 dark:bg-red-950/20 px-2.5 py-1.5 rounded-lg border border-red-100 dark:border-red-900">
-                        <div class="flex items-center gap-1.5 min-w-0">
-                          <Truck class="w-3.5 h-3.5 text-red-600 dark:text-red-400 flex-shrink-0" />
-                          <span class="text-[11px] font-bold text-red-700 dark:text-red-300 truncate">
+                    <div v-if="item.logistics_status && item.logistics_status !== 'Pending Process'" class="mt-2">
+                      <div class="flex items-center justify-between gap-1.5 px-2 py-1 rounded-lg border text-[10px] whitespace-nowrap"
+                           :class="getLogisticsBadgeClass(item.logistics_status)">
+                        <div class="flex items-center gap-1 min-w-0">
+                          <span class="font-bold whitespace-nowrap">
                             {{ item.logistics_status === 'Follow up with our forwarder' ? 'Ex-Works' : item.logistics_status === 'ETA Port JKT' ? 'ETA JKT' : item.logistics_status === 'Already in siemens Warehouse' ? 'Tiba Dunex' : item.logistics_status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : item.logistics_status }}
+                          </span>
+                          <span v-if="formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date)" class="opacity-85 font-medium text-[9.5px] whitespace-nowrap">
+                            ({{ formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date) }})
                           </span>
                         </div>
                         <span v-if="item.exwork_waiting && item.logistics_status === 'Follow up with our forwarder'"
-                              class="text-[10px] font-semibold text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                              class="text-[9.5px] font-semibold text-amber-700 dark:text-amber-300 whitespace-nowrap shrink-0">
                           ⏳ Waiting
-                        </span>
-                        <span v-else class="text-[10px] font-mono font-bold text-red-600 dark:text-red-400 whitespace-nowrap">
-                          {{ formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date) || '-' }}
                         </span>
                       </div>
                     </div>
@@ -4347,6 +4461,92 @@ const downloadAttachment = async (att) => {
               <Loader2 v-if="isSendingEmail" class="w-4 h-4 animate-spin"/>
               <Mail v-else class="w-4 h-4"/>
               <span>{{ isSendingEmail ? 'MENGIRIM...' : 'KIRIM EMAIL' }}</span>
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ATTACHMENT PREVIEW MODAL -->
+    <div 
+      v-if="previewModalOpen" 
+      class="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6 bg-black/70 backdrop-blur-xs animate-in fade-in duration-200"
+      @click.self="closeAttachmentPreview"
+    >
+      <div class="bg-white dark:bg-slate-900 w-full max-w-5xl rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col max-h-[94vh] overflow-hidden animate-in zoom-in-95 duration-150">
+        <!-- Header -->
+        <div class="px-5 py-3.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 bg-slate-50/80 dark:bg-slate-950/50 shrink-0">
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="w-8 h-8 rounded-lg bg-red-100 dark:bg-red-950/50 flex items-center justify-center shrink-0">
+              <FileText v-if="isPdfDoc(previewDoc)" class="w-4 h-4 text-red-600 dark:text-red-400" />
+              <Paperclip v-else class="w-4 h-4 text-red-600 dark:text-red-400" />
+            </div>
+            <div class="min-w-0">
+              <h3 class="text-sm font-bold text-slate-900 dark:text-white truncate">
+                {{ previewDoc?.fileName || previewDoc?.name || previewDoc?.title || 'Preview Dokumen' }}
+              </h3>
+              <p class="text-[11px] text-slate-400 dark:text-slate-500">
+                {{ previewDoc?.filesizeInMega || formatFileSize(previewDoc?.fileSize || previewDoc?.size || previewDoc?.filesize) }} &bull; Lampiran Accurate Online
+              </p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-1.5 shrink-0">
+            <a 
+              v-if="previewDocUrl" 
+              :href="previewDocUrl" 
+              target="_blank" 
+              class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+              title="Buka di Tab Baru"
+            >
+              <ExternalLink class="w-3.5 h-3.5" />
+              <span class="hidden sm:inline">Tab Baru</span>
+            </a>
+
+            <button 
+              @click="downloadAttachment(previewDoc)" 
+              class="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50 border border-red-200 dark:border-red-800 transition-colors cursor-pointer"
+              title="Download File"
+            >
+              <Download class="w-3.5 h-3.5" />
+              <span class="hidden sm:inline">Download</span>
+            </button>
+
+            <button 
+              @click="closeAttachmentPreview" 
+              class="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Tutup Preview"
+            >
+              <X class="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        <!-- Body Content -->
+        <div class="flex-1 overflow-auto p-2 bg-slate-100 dark:bg-slate-950/80 flex items-center justify-center min-h-[450px]">
+          <!-- PDF Viewer -->
+          <iframe 
+            v-if="isPdfDoc(previewDoc)" 
+            :src="previewDocUrl" 
+            class="w-full h-[78vh] rounded-xl border border-slate-200 dark:border-slate-800 bg-white" 
+            title="PDF Document Preview"
+          />
+
+          <!-- Image Viewer -->
+          <div v-else-if="isImageDoc(previewDoc)" class="flex items-center justify-center p-4 w-full h-full">
+            <img 
+              :src="previewDocUrl" 
+              :alt="previewDoc?.name" 
+              class="max-h-[78vh] max-w-full rounded-xl object-contain shadow-md"
+            />
+          </div>
+
+          <!-- Fallback Viewer -->
+          <div v-else class="text-center p-8 space-y-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 max-w-md">
+            <FileText class="w-12 h-12 text-slate-400 mx-auto" />
+            <p class="text-sm font-semibold text-slate-700 dark:text-slate-300">Format file ini tidak mendukung preview langsung di browser.</p>
+            <Button @click="downloadAttachment(previewDoc)" class="bg-red-600 hover:bg-red-700 text-white gap-2">
+              <Download class="w-4 h-4" /> Download File
             </Button>
           </div>
         </div>
