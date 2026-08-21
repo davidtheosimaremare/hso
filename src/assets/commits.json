@@ -1,5 +1,13 @@
 [
   {
+    "hash": "38f9c8f16b05f343fa34ba9f9b470c6c08658b42",
+    "shortHash": "38f9c8f",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 12:04:44 2026 +0700",
+    "message": "feat: integrate Google Gemini AI with Google Search Grounding and add Saran AI row buttons"
+  },
+  {
     "hash": "5b6c5ca4a57e10357fa028dc5b1e2267d7675ea5",
     "shortHash": "5b6c5ca",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 11 12:09:25 2026 +0700",
     "message": "fix: add default fallback for computed helper values in detail view"
-  },
-  {
-    "hash": "29d03a691e6f7c1ecbdecca2ab63291f41dff583",
-    "shortHash": "29d03a6",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 11 12:08:19 2026 +0700",
-    "message": "fix: add null check in computed helpers for detail view"
   }
 ]

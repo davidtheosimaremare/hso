@@ -4,7 +4,7 @@ import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 import { useAccurateItems, CATEGORY_PRIORITY, categorizeMLFB } from '@/composables/useAccurateItems'
 import { formatRupiah, cleanPartNumber } from '@/utils/componentConverter'
-import { fetchAISuggestion, getAIConfig, saveAIConfig } from '@/utils/aiSuggester'
+import { fetchAISuggestion, getAIConfig, saveAIConfig, fetchRemoteAIConfig } from '@/utils/aiSuggester'
 import { 
   Search, 
   Download, 
@@ -119,7 +119,7 @@ watch(customRules, () => {
 }, { immediate: true, deep: true })
 
 onMounted(async () => {
-  await Promise.all([fetchItems(), fetchCustomRules()])
+  await Promise.all([fetchItems(), fetchCustomRules(), loadAIConfig()])
   syncInlineInputsFromRules()
 })
 
@@ -171,18 +171,21 @@ const aiConfigForm = reactive({
   webSearch: true
 })
 
-const loadAIConfig = () => {
-  const cfg = getAIConfig()
+const loadAIConfig = async () => {
+  let cfg = getAIConfig()
+  if (!cfg.apiKey) {
+    cfg = await fetchRemoteAIConfig()
+  }
   aiConfigForm.apiKey = cfg.apiKey || ''
   aiConfigForm.baseUrl = cfg.baseUrl || 'https://generativelanguage.googleapis.com/v1beta'
   aiConfigForm.model = cfg.model || 'gemini-2.5-flash'
   aiConfigForm.webSearch = cfg.webSearch !== false
 }
 
-const handleSaveAIConfig = () => {
-  saveAIConfig(aiConfigForm)
+const handleSaveAIConfig = async () => {
+  await saveAIConfig(aiConfigForm)
   isAiConfigModalOpen.value = false
-  showToast('Pengaturan Google Gemini AI berhasil disimpan!', 'success')
+  showToast('Pengaturan Google Gemini AI berhasil disimpan secara permanen!', 'success')
 }
 
 const applyAISuggestionForRow = async (item) => {

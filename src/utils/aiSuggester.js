@@ -1,10 +1,4 @@
-/**
- * ==============================================================================
- * Cross-Brand Engineering Equivalency Engine
- * Translates Siemens switchgear & automation items into exact Schneider & ABB equivalents
- * Supports Google Gemini AI (with Google Search Grounding), DeepSeek, OpenCode Go, OpenRouter.
- * ==============================================================================
- */
+import { supabase } from '@/lib/supabase'
 
 export function getAIConfig() {
   const isBrowser = typeof localStorage !== 'undefined'
@@ -16,12 +10,62 @@ export function getAIConfig() {
   }
 }
 
-export function saveAIConfig({ apiKey, baseUrl, model, webSearch }) {
-  if (typeof localStorage === 'undefined') return
-  if (apiKey !== undefined) localStorage.setItem('hso_ai_api_key', apiKey.trim())
-  if (baseUrl !== undefined) localStorage.setItem('hso_ai_base_url', baseUrl.trim())
-  if (model !== undefined) localStorage.setItem('hso_ai_model', model.trim())
-  if (webSearch !== undefined) localStorage.setItem('hso_ai_web_search', String(webSearch))
+/**
+ * Fetch remote AI configuration from Supabase system_settings with fallback to localStorage
+ */
+export async function fetchRemoteAIConfig() {
+  try {
+    const { data, error } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'gemini_ai_config')
+      .maybeSingle()
+
+    if (!error && data?.value) {
+      const val = data.value
+      if (typeof localStorage !== 'undefined') {
+        if (val.apiKey) localStorage.setItem('hso_ai_api_key', val.apiKey)
+        if (val.baseUrl) localStorage.setItem('hso_ai_base_url', val.baseUrl)
+        if (val.model) localStorage.setItem('hso_ai_model', val.model)
+        if (val.webSearch !== undefined) localStorage.setItem('hso_ai_web_search', String(val.webSearch))
+      }
+      return getAIConfig()
+    }
+  } catch (err) {
+    console.warn('Could not fetch remote AI config from database:', err)
+  }
+  return getAIConfig()
+}
+
+export async function saveAIConfig({ apiKey, baseUrl, model, webSearch }) {
+  const cleanKey = (apiKey || '').trim()
+  const cleanBaseUrl = (baseUrl || 'https://generativelanguage.googleapis.com/v1beta').trim()
+  const cleanModel = (model || 'gemini-2.5-flash').trim()
+  const cleanWebSearch = webSearch !== false
+
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('hso_ai_api_key', cleanKey)
+    localStorage.setItem('hso_ai_base_url', cleanBaseUrl)
+    localStorage.setItem('hso_ai_model', cleanModel)
+    localStorage.setItem('hso_ai_web_search', String(cleanWebSearch))
+  }
+
+  // Persist to Supabase database so all team members and future sessions stay configured
+  try {
+    const payload = {
+      key: 'gemini_ai_config',
+      value: {
+        apiKey: cleanKey,
+        baseUrl: cleanBaseUrl,
+        model: cleanModel,
+        webSearch: cleanWebSearch
+      },
+      updated_at: new Date().toISOString()
+    }
+    await supabase.from('system_settings').upsert(payload, { onConflict: 'key' })
+  } catch (err) {
+    console.warn('Could not save AI config to remote database:', err)
+  }
 }
 
 /**
@@ -110,7 +154,10 @@ Search official catalogs and return the exact single best Schneider & ABB equiva
  * @returns {Promise<{ schneider_model: string, schneider_desc: string, abb_model: string, abb_desc: string }>}
  */
 export async function fetchAISuggestion(item) {
-  const config = getAIConfig()
+  let config = getAIConfig()
+  if (!config.apiKey) {
+    config = await fetchRemoteAIConfig()
+  }
   const sku = (item.item_no || '').trim()
   const name = (item.item_name || '').trim()
   const category = (item.category || '').trim()
