@@ -1,5 +1,13 @@
 [
   {
+    "hash": "eed7a032ada5a97aa9497e254bd61b8ff32b9782",
+    "shortHash": "eed7a03",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 11:19:43 2026 +0700",
+    "message": "feat: show Siemens equivalent result exclusively on converter tool"
+  },
+  {
     "hash": "a962e46c6968f0030bc3f5ddae8c25c49c1f9831",
     "shortHash": "a962e46",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 7 04:58:04 2026 +0700",
     "message": "feat: update target penjualan 2026 dari 24M menjadi 35M"
-  },
-  {
-    "hash": "7a093c9570b04d71b8925d0056229ecfd1c533b3",
-    "shortHash": "7a093c9",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Aug 6 12:35:40 2026 +0700",
-    "message": "fix: tambah bulkModeType & executeBulkAction di SalesOrderView"
   }
 ]

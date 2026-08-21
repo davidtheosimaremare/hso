@@ -164,6 +164,33 @@ const getBrandLogo = (brand) => {
   return null
 }
 
+const siemensProductDesc = computed(() => {
+  if (!singleResult.value || !singleResult.value.success) return ''
+  const item = singleResult.value.accurateItem
+  
+  // 1. Primary: description / long_description from Accurate Item
+  const accurateDesc = (item?.long_description || item?.description || '').trim()
+  const siemensName = (singleResult.value.siemensName || item?.item_name || '').trim()
+  
+  if (accurateDesc && accurateDesc.toLowerCase() !== siemensName.toLowerCase()) {
+    return accurateDesc
+  }
+  
+  // 2. Secondary: Valid Siemens specs summary (ensure it is not competitor description text)
+  const specs = (singleResult.value.specsSummary || '').trim()
+  const schDesc = (singleResult.value.schneiderDesc || '').trim()
+  const abbDesc = (singleResult.value.abbDesc || '').trim()
+  
+  if (specs && 
+      specs.toLowerCase() !== siemensName.toLowerCase() && 
+      (!schDesc || specs.toLowerCase() !== schDesc.toLowerCase()) && 
+      (!abbDesc || specs.toLowerCase() !== abbDesc.toLowerCase())) {
+    return specs
+  }
+  
+  return ''
+})
+
 const handleSingleConvert = () => {
   if (!singleInput.value.trim()) {
     singleResult.value = null
@@ -638,18 +665,18 @@ const handleDirectSyncSiemens = async () => {
                     </button>
                   </div>
 
-                  <!-- Siemens Description -->
+                  <!-- Siemens Item Name -->
                   <div class="text-xs text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
-                    {{ singleResult.siemensName || singleResult.accurateItem?.item_name || singleResult.accurateItem?.description }}
+                    {{ singleResult.siemensName || singleResult.accurateItem?.item_name || `Siemens ${singleResult.siemensMLFB}` }}
                   </div>
 
-                  <!-- Specifications Summary (if available) -->
+                  <!-- Specifications / Product Description (from Accurate item description if available) -->
                   <div 
-                    v-if="singleResult.specsSummary && singleResult.specsSummary !== singleResult.siemensName" 
+                    v-if="siemensProductDesc" 
                     class="text-[11px] text-slate-600 dark:text-slate-300 bg-white/80 dark:bg-zinc-900/70 p-2.5 rounded-lg border border-slate-200/60 dark:border-zinc-800/60 leading-relaxed"
                   >
-                    <span class="font-bold text-slate-500 dark:text-slate-400 uppercase text-[10px] block mb-0.5">Spesifikasi:</span>
-                    {{ singleResult.specsSummary }}
+                    <span class="font-bold text-slate-500 dark:text-slate-400 uppercase text-[10px] block mb-0.5">Deskripsi / Spesifikasi Produk:</span>
+                    {{ siemensProductDesc }}
                   </div>
 
                   <!-- Siemens Price (if available) -->
