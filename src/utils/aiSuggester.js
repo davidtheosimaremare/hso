@@ -194,14 +194,20 @@ IMPORTANT:
 - The "schneider_model" and "abb_model" MUST be the concise commercial Order SKU / Part Number (e.g. "LV847144", "1SDA072122R1").
 - NEVER put long descriptions like "MTZ1 06 H1 4P DRAWOUT MICROLOGIC 5.0 X" into the model/SKU field; put the full descriptive text into "schneider_desc" and "abb_desc".`
 
-  const userContent = `Siemens Product to match:
-- SKU / MLFB: ${sku}
-- Item Name: ${name}
+  const userContent = `You MUST use the Google Search tool to search for real-world catalog equivalents on Schneider Electric (se.com) and ABB (abb.com) for:
+- Siemens Part Number / SKU: ${sku}
+- Product Title: ${name}
 - Category: ${category}
-- Description: ${desc}
-- Long Description: ${longDesc}
+- Technical Specs: ${desc} ${longDesc}
 
-Search official catalogs (se.com & abb.com) and return the exact single best Schneider & ABB commercial SKU and technical description in raw JSON.`
+Search queries to run:
+- "site:se.com ${sku} equivalent"
+- "site:abb.com ${sku} equivalent"
+- "${sku} Schneider replacement part number"
+- "${sku} ABB replacement part number"
+
+Find the authentic commercial Order Codes / Part Numbers (SKU) and technical descriptions directly from official datasheets and catalog web pages.
+Output ONLY raw JSON format: {"schneider_model":"...","schneider_desc":"...","abb_model":"...","abb_desc":"..."}`
 
   const candidateModels = Array.from(new Set([
     config.model || 'gemini-2.0-flash',
@@ -275,7 +281,7 @@ Search official catalogs (se.com & abb.com) and return the exact single best Sch
   }
 
   if (lastError) throw lastError
-  throw new Error('No candidate Gemini model succeeded')
+  throw new Error('Semua model Gemini gagal melakukan pencarian web live.')
 }
 
 /**
@@ -361,11 +367,12 @@ Output JSON only: {"schneider_model":"...","schneider_desc":"...","abb_model":".
         }
       }
     } catch (e) {
-      console.warn('AI API query error, falling back to comprehensive rule base:', e)
+      console.error('AI Live Web Search error:', e)
+      throw new Error(`Pencarian Web Live Gagal: ${e.message}`)
     }
   }
 
-  // Comprehensive rule-based knowledge engine fallback
+  // Fallback if no API key is provided
   return generateOfflineRuleSuggestion(sku, name, category, { ...item, description: desc, long_description: longDesc })
 }
 

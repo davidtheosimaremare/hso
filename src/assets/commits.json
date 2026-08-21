@@ -1,5 +1,13 @@
 [
   {
+    "hash": "3b211e660a403b4da9efe206bb08f7caddb17edc",
+    "shortHash": "3b211e6",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 14:35:23 2026 +0700",
+    "message": "fix: resolve Google Search Grounding model compatibility and show live search queries in toast feedback"
+  },
+  {
     "hash": "c676f4e47c0a7c1cf60ef227cafb9e453cab7db4",
     "shortHash": "c676f4e",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 11 17:41:10 2026 +0700",
     "message": "feat(permintaan): sync status, 4-stage fallback, accurate customer combobox & duration indicator"
-  },
-  {
-    "hash": "d3e880cfe07210870edf1a59330a7e016144a5de",
-    "shortHash": "d3e880c",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 11 17:15:17 2026 +0700",
-    "message": "fix: ensure project_name, customer_name, pic_name, file_link, and metadata are saved and parsed cleanly, add edit modal to detail view"
   }
 ]
