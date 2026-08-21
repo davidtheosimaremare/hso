@@ -135,6 +135,31 @@ CRITICAL ANTI-HALLUCINATION & STRICT SEARCH DIRECTIVES:
 4. Level 2 - Legitimate Technical Alternative: If an exact spec does not exist in the brand's catalog (e.g. niche Siemens accessory or legacy configuration), provide the closest legitimate technical alternative (e.g. standard higher kA rating, wide-range electronic coil, or standard frame size) and state the difference clearly in the description.
 5. Level 3 - Nonexistent / No Match: If NO legitimate equivalent or alternative exists in Schneider or ABB catalog, output "-" for that brand model. DO NOT invent fictitious part numbers or mix product series names!
 
+============================================================
+MANDATORY TRIPPING CURVE & PROTECTION CHARACTERISTIC MATCHING:
+============================================================
+For all circuit breakers (MCB, MCCB, ACB), the tripping curve, protection characteristics, and trip units MUST be strictly extracted from Siemens and matched 100% identically:
+
+1. MCB TRIPPING CURVES (STRICT 1-TO-1 MATCHING):
+   - Extract curve from Siemens MLFB suffix or description:
+     * Siemens suffix '-6' (or Curve B / B-Char / B-Type in name/desc) -> MUST match Curve B:
+       - Schneider: Acti9 Curve B: iC60N (A9F73...), iC60H (A9F83...), iC60L (A9F93...)
+       - ABB: Curve B: S200 (S20...-B...), S200M (S20...M-B...), S200P (S20...P-B...)
+     * Siemens suffix '-7' (or Curve C / C-Char / C-Type in name/desc) -> MUST match Curve C:
+       - Schneider: Acti9 Curve C: iC60N (A9F74...), iC60H (A9F84...), iC60L (A9F94...), Domae (EZ9F56...)
+       - ABB: Curve C: SH200 (SH20...-C...), S200 (S20...-C...), S200M (S20...M-C...)
+     * Siemens suffix '-8' (or Curve D / D-Char / D-Type in name/desc) -> MUST match Curve D:
+       - Schneider: Acti9 Curve D: iC60N (A9F75...), iC60H (A9F85...), iC60L (A9F95...)
+       - ABB: Curve D: S200 (S20...-D...), S200M (S20...M-D...), S200P (S20...P-D...)
+   - STRICT PROHIBITION: NEVER convert Curve B into Curve C/D, and NEVER convert Curve D into Curve B/C!
+
+2. MCCB & ACB PROTECTION CHARACTERISTICS / TRIP UNITS:
+   - Thermal-Magnetic (TMD/TMA) -> Schneider ComPacT TMD / ABB Tmax XT TMD/TMA
+   - Electronic LI (e.g. Siemens ETU320 / ETU330 LI) -> Schneider MicroLogic 2.x (LI) / ABB Ekip Dip LI
+   - Electronic LSI (e.g. Siemens ETU350 LSI) -> Schneider MicroLogic 5.x (LSI) / ABB Ekip Dip LSI / Ekip Touch LSI
+   - Electronic LSIG (e.g. Siemens ETU360/ETU600/ETU850/ETU860 LSIG with Ground Fault) -> Schneider MicroLogic 6.x (LSIG) / ABB Ekip Dip LSIG / Ekip Touch LSIG
+   - NEVER downgrade protection curves (LI != LSI != LSIG).
+
 OUTPUT FORMAT:
 Return ONLY a valid JSON object matching this schema:
 {
@@ -151,7 +176,7 @@ Return ONLY a valid JSON object matching this schema:
 - Description: ${desc}
 - Long Description: ${longDesc}
 
-Search official catalogs and return the exact single best Schneider & ABB equivalents in JSON.`
+Search official catalogs and return the exact single best Schneider & ABB equivalents with matching tripping curve (Kurva B/C/D) and protection unit in JSON.`
 
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
 
@@ -564,7 +589,23 @@ export function generateOfflineRuleSuggestion(sku, name, category, item = {}) {
   if (/^5[ST][LJYP](\d)/i.test(code) || /\bMCB\b/i.test(text)) {
     const pMatch = code.match(/5[ST][LJYP](\d)(\d{2})-(\d)/i)
     const poles = pMatch ? pMatch[1] : (text.match(/\b([1234])\s*P\b/)?.[1] || '1')
-    const curve = pMatch ? (pMatch[3] === '7' ? 'C' : pMatch[3] === '6' ? 'B' : pMatch[3] === '8' ? 'D' : 'C') : (text.match(/\bCURVE\s*([BCD])\b/i)?.[1] || 'C')
+    
+    // Strict curve detection from MLFB suffix (-6 = Curve B, -7 = Curve C, -8 = Curve D) or title/desc
+    let curve = 'C'
+    if (pMatch) {
+      curve = pMatch[3] === '6' ? 'B' : pMatch[3] === '8' ? 'D' : 'C'
+    } else if (/\b(KURVA|CURVE|TYPE|CHAR(ACTERISTIC)?)\s*B\b|\bB\d+\b/i.test(text)) {
+      curve = 'B'
+    } else if (/\b(KURVA|CURVE|TYPE|CHAR(ACTERISTIC)?)\s*D\b|\bD\d+\b/i.test(text)) {
+      curve = 'D'
+    } else if (/\b(KURVA|CURVE|TYPE|CHAR(ACTERISTIC)?)\s*C\b|\bC\d+\b/i.test(text)) {
+      curve = 'C'
+    }
+
+    // Schneider Curve Digit in Part Number: 3 = Curve B, 4 = Curve C, 5 = Curve D
+    const schCurveDigit = curve === 'B' ? '3' : curve === 'D' ? '5' : '4'
+    const abbCurveChar = curve
+
     const aMatch = text.match(/\b(\d{1,3})\s*A\b/)
     const amp = aMatch ? aMatch[1] : (pMatch ? String(parseInt(pMatch[2])) : '6')
     const paddedAmp = String(amp).padStart(2, '0')
@@ -574,12 +615,12 @@ export function generateOfflineRuleSuggestion(sku, name, category, item = {}) {
     const is10kA = /^5S[YP]4/i.test(code) || /^5SJ4/i.test(code) || /10\s*KA/i.test(text)
     const is15kA = /^5SY7/i.test(code) || /^5SJ7/i.test(code) || /15\s*KA/i.test(text)
 
-    // 4.5 kA Exact Matching (Schneider EasyPact Domae / Resi9, ABB SH200L)
+    // 4.5 kA Exact Matching (Schneider EasyPact Domae, ABB SH200L)
     if (is4_5kA) {
       return {
         schneider_model: `EZ9F54${poles}${paddedAmp}`,
         schneider_desc: `Schneider Electric EasyPact Domae MCB ${poles}P ${amp}A Curve ${curve} 4.5kA 230/400V`,
-        abb_model: `SH20${poles}L-C${amp}`,
+        abb_model: `SH20${poles}L-${abbCurveChar}${amp}`,
         abb_desc: `ABB Compact Home MCB SH200L ${poles}P ${amp}A Curve ${curve} 4.5kA 230/400VAC`
       }
     }
@@ -587,9 +628,9 @@ export function generateOfflineRuleSuggestion(sku, name, category, item = {}) {
     // 10 kA Matching (Schneider Acti9 iC60H, ABB S200M)
     if (is10kA) {
       return {
-        schneider_model: `A9F84${poles}${paddedAmp}`,
+        schneider_model: `A9F8${schCurveDigit}${poles}${paddedAmp}`,
         schneider_desc: `Schneider Electric Acti9 iC60H Miniature Circuit Breaker ${poles}P ${amp}A Curve ${curve} 10kA 230/400V`,
-        abb_model: `S20${poles}M-C${amp}`,
+        abb_model: `S20${poles}M-${abbCurveChar}${amp}`,
         abb_desc: `ABB System pro M compact MCB S200M ${poles}P ${amp}A Curve ${curve} 10kA 230/400VAC`
       }
     }
@@ -597,19 +638,23 @@ export function generateOfflineRuleSuggestion(sku, name, category, item = {}) {
     // 15 kA Matching (Schneider Acti9 iC60L, ABB S200P)
     if (is15kA) {
       return {
-        schneider_model: `A9F94${poles}${paddedAmp}`,
+        schneider_model: `A9F9${schCurveDigit}${poles}${paddedAmp}`,
         schneider_desc: `Schneider Electric Acti9 iC60L Miniature Circuit Breaker ${poles}P ${amp}A Curve ${curve} 15kA 230/400V`,
-        abb_model: `S20${poles}P-C${amp}`,
+        abb_model: `S20${poles}P-${abbCurveChar}${amp}`,
         abb_desc: `ABB System pro M compact MCB S200P ${poles}P ${amp}A Curve ${curve} 15kA 230/400VAC`
       }
     }
 
-    // Standard 6 kA Matching (Schneider Acti9 iC60N, ABB SH200 / S200)
+    // Standard 6 kA Matching (Schneider Acti9 iC60N, ABB S200 / SH200)
+    const abb6kAModel = (curve === 'C' && poles === '1' && ['2','4','6','10','16','20','25','32','40'].includes(String(amp)))
+      ? `SH20${poles}-C${amp}`
+      : `S20${poles}-${abbCurveChar}${amp}`
+
     return {
-      schneider_model: `A9F74${poles}${paddedAmp}`,
+      schneider_model: `A9F7${schCurveDigit}${poles}${paddedAmp}`,
       schneider_desc: `Schneider Electric Acti9 iC60N Miniature Circuit Breaker ${poles}P ${amp}A Curve ${curve} 6kA 230/400V`,
-      abb_model: `SH20${poles}-C${amp}`,
-      abb_desc: `ABB Compact Home MCB SH200 ${poles}P ${amp}A Curve ${curve} 6kA 230/400VAC`
+      abb_model: abb6kAModel,
+      abb_desc: `ABB System pro M compact MCB S200 ${poles}P ${amp}A Curve ${curve} 6kA 230/400VAC`
     }
   }
 

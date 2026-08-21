@@ -1,5 +1,13 @@
 [
   {
+    "hash": "d28296e454ae40b846a831031fcab58336dcb635",
+    "shortHash": "d28296e",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 12:24:19 2026 +0700",
+    "message": "fix: store and sync team-wide Gemini API key in database so all users share the same key"
+  },
+  {
     "hash": "f8b6574a9948d94fea52915e9e20476015e14d8f",
     "shortHash": "f8b6574",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 11 12:13:04 2026 +0700",
     "message": "fix: improve computed helpers to properly handle metadata fallbacks"
-  },
-  {
-    "hash": "86d7d523a47062359648fc2fc7c179c7ca375d2d",
-    "shortHash": "86d7d52",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 11 12:11:13 2026 +0700",
-    "message": "fix: remove duplicate closing tags in PermintaanDetailView"
   }
 ]
