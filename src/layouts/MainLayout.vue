@@ -231,10 +231,6 @@ onMounted(async () => {
     document.documentElement.classList.add('dark')
   }
 
-  // Background sync: trigger HRI silently after a short delay (let UI render first)
-  const { triggerBackgroundSync } = useAccurateSync()
-  setTimeout(() => triggerBackgroundSync(), 3000)
-
   // Fetch cart count badge & keep it in sync (items added from SO Detail)
   fetchCartItemCount()
   supabase

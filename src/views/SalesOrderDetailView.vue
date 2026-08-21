@@ -395,25 +395,24 @@ const formatDateSimple = (dateStr) => {
 const getVisualStatus = (shipment) => {
     if (!shipment || Object.keys(shipment).length === 0) return 'Pending Process'
     if (shipment.current_status === 'Hold by Customer') return 'Hold by Customer'
-    if (shipment.hokiindo_date) return 'Already in Hokiindo Raya'
-    if (shipment.dunex_date) return 'Already in siemens Warehouse'
-    if (shipment.eta_date) return 'ETA Port JKT'
-    if (shipment.exwork_date || shipment.exwork_waiting) return 'Follow up with our forwarder'
-    if (shipment.current_status === 'Follow up with our forwarder') return 'Follow up with our forwarder'
+    if (shipment.current_status === 'Already in Hokiindo Raya' || shipment.hokiindo_date) return 'Already in Hokiindo Raya'
+    if (shipment.current_status === 'Already in siemens Warehouse' || shipment.dunex_date) return 'Already in siemens Warehouse'
+    if (shipment.current_status === 'ETA Port JKT' || shipment.eta_date) return 'ETA Port JKT'
+    if (shipment.current_status === 'Follow up with our forwarder' || shipment.exwork_date || shipment.exwork_waiting) return 'Follow up with our forwarder'
     return shipment.current_status || 'Pending Process'
 }
 
 const getVisualStatusDate = (shipment) => {
     if (!shipment) return ''
     const status = getVisualStatus(shipment)
-    if (status === 'Already in Hokiindo Raya') return formatDateSimple(shipment.hokiindo_date)
-    if (status === 'Already in siemens Warehouse') return formatDateSimple(shipment.dunex_date)
-    if (status === 'ETA Port JKT') return formatDateSimple(shipment.eta_date)
+    if (status === 'Already in Hokiindo Raya') return formatDateSimple(shipment.hokiindo_date || shipment.status_date)
+    if (status === 'Already in siemens Warehouse') return formatDateSimple(shipment.dunex_date || shipment.status_date)
+    if (status === 'ETA Port JKT') return formatDateSimple(shipment.eta_date || shipment.status_date)
     if (status === 'Follow up with our forwarder') {
       if (shipment.exwork_waiting) return 'Waiting for confirmation'
-      return formatDateSimple(shipment.exwork_date)
+      return formatDateSimple(shipment.exwork_date || shipment.status_date)
     }
-    return ''
+    return formatDateSimple(shipment.status_date) || ''
 }
 
 import * as XLSX from 'xlsx'
@@ -777,26 +776,12 @@ const fetchHpoInBackground = async (soNumber) => {
   try {
     isSyncing.value = true
     isHpoSyncing.value = true
-    syncMessage.value = 'Sinkronisasi status PO dari Accurate...'
-    syncProgress.value = 0
+    syncMessage.value = 'Memuat status PO...'
+    syncProgress.value = 30
     console.log(`Background: Fetching HPO for ${soNumber}...`)
     
-    // Phase 1: Invoke Edge Function to query Accurate API and update/upsert POs into Supabase DB in real-time
-    syncProgress.value = 20
-    try {
-      await supabase.functions.invoke('accurate-sync-hpo', {
-        body: { 
-          soId: resolvedSoId.value, 
-          soNumber: soNumber, 
-          items: soDetail.value?.items?.map(i => i.code) || [] 
-        }
-      })
-    } catch (err) {
-      console.warn('Real-time HPO sync via Edge Function failed, using existing DB data:', err)
-    }
-
-    // Phase 2: Query the updated database using paginated search
-    syncProgress.value = 40
+    // Query Supabase database using paginated search
+    syncProgress.value = 50
     let dbItems = []
     let page = 0
     const pageSize = 1000
@@ -1052,34 +1037,6 @@ const fetchHdoInBackground = async (doNumbers) => {
     isHdoSyncing.value = false
     isSyncing.value = false
     syncProgress.value = 0
-  }
-}
-
-// --- EXPLICIT MANUAL SYNC TRIGGERS (SEPARATED HPO, HDO, HRI) ---
-const isAnySyncing = computed(() => isHpoSyncing.value || isHdoSyncing.value || isExcelParsing.value)
-
-const triggerSyncHpo = async () => {
-  if (!soDetail.value?.number) return
-  try {
-    await fetchHpoInBackground(soDetail.value.number)
-    await fetchDetail(true, false)
-    alert('Sinkronisasi HPO dari Accurate berhasil diperbarui!')
-  } catch (err) {
-    alert('Gagal sinkronisasi HPO: ' + err.message)
-  }
-}
-
-const triggerSyncHdo = async () => {
-  const doList = soDetail.value?.shipments?.map(s => s.no).filter(Boolean) || []
-  if (doList.length === 0) {
-    return alert('Tidak ada Surat Jalan (HDO) untuk Sales Order ini di Accurate.')
-  }
-  try {
-    await fetchHdoInBackground(doList)
-    await fetchDetail(true, false)
-    alert('Sinkronisasi HDO & Resi dari Accurate berhasil diperbarui!')
-  } catch (err) {
-    alert('Gagal sinkronisasi HDO: ' + err.message)
   }
 }
 
@@ -1664,9 +1621,95 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
     loadingMessage.value = 'Memuat data pengiriman...'
 
     const { data: shipData } = await supabase.from('shipments').select('*').eq('so_id', String(resolvedSoId.value))
-    shipmentList.value = shipData || []
+    let currentShips = shipData || []
 
-    // Directly initialize hpoMapping from Supabase shipments (instant & clean)
+    // Enrich shipments with existing known tracking data in Supabase for items in this SO
+    try {
+      const itemCodes = sortedItems.map(i => i.item?.no).filter(Boolean)
+      if (itemCodes.length > 0) {
+        const { data: knownTracking } = await supabase
+          .from('shipments')
+          .select('item_code, hpo_number, current_status, exwork_date, eta_date, dunex_date, hokiindo_date, ready_date, exwork_waiting, status_date, updated_at')
+          .in('item_code', itemCodes)
+          .neq('current_status', 'Follow up with our forwarder')
+          .order('updated_at', { ascending: false })
+
+        if (knownTracking && knownTracking.length > 0) {
+          const trackingMap = new Map()
+          knownTracking.forEach(t => {
+            const keyExact = `${(t.item_code || '').trim().toUpperCase()}||${(t.hpo_number || '').trim().toUpperCase()}`
+            if (!trackingMap.has(keyExact)) trackingMap.set(keyExact, t)
+
+            const keyItem = (t.item_code || '').trim().toUpperCase()
+            if (!trackingMap.has(keyItem)) trackingMap.set(keyItem, t)
+          })
+
+          currentShips = currentShips.map(s => {
+            const hasDates = !!(s.hokiindo_date || s.dunex_date || s.eta_date || s.exwork_date)
+            if (!hasDates && s.current_status === 'Follow up with our forwarder') {
+              const keyExact = `${(s.item_code || '').trim().toUpperCase()}||${(s.hpo_number || '').trim().toUpperCase()}`
+              const keyItem = (s.item_code || '').trim().toUpperCase()
+              const match = trackingMap.get(keyExact) || trackingMap.get(keyItem)
+              if (match) {
+                return {
+                  ...s,
+                  current_status: match.current_status,
+                  exwork_date: match.exwork_date,
+                  eta_date: match.eta_date,
+                  dunex_date: match.dunex_date,
+                  hokiindo_date: match.hokiindo_date,
+                  ready_date: match.ready_date,
+                  exwork_waiting: match.exwork_waiting,
+                  status_date: match.status_date || match.hokiindo_date || match.dunex_date || match.eta_date || match.exwork_date
+                }
+              }
+            }
+            return s
+          })
+        }
+      }
+    } catch (enrichErr) {
+      console.warn('Error enriching shipments from Supabase:', enrichErr)
+    }
+
+    shipmentList.value = currentShips
+
+    // Load accurate PO items already in Supabase for this SO
+    try {
+      const soNum = d.number || ''
+      const searchVariants = [soNum, soNum.replace(/\//g, '-'), soNum.replace(/-/g, '/')]
+      const orClauses = []
+      searchVariants.filter(Boolean).forEach(v => {
+        orClauses.push(`detail_notes.ilike.%${v}%`)
+        orClauses.push(`hso_number.ilike.%${v}%`)
+      })
+      if (orClauses.length > 0) {
+        const { data: poItemsData } = await supabase
+          .from('accurate_purchase_order_items')
+          .select('*, header:accurate_purchase_orders(id, number, trans_date, status_name, vendor_name)')
+          .or(orClauses.join(','))
+
+        if (poItemsData && poItemsData.length > 0) {
+          hpoDetails.value = poItemsData.map(item => ({
+            poId: item.header?.id,
+            poNumber: item.header?.number,
+            poDate: item.header?.trans_date,
+            poStatus: item.header?.status_name || 'Open',
+            itemCode: item.item_code,
+            itemName: item.item_name,
+            quantity: item.quantity,
+            description: item.detail_notes,
+            hsoNumber: item.hso_number,
+            vendorName: item.header?.vendor_name,
+            isFromAccurate: true
+          }))
+        }
+      }
+    } catch (poErr) {
+      console.warn('Error loading accurate PO items from Supabase:', poErr)
+    }
+
+    // Initialize hpoMapping directly from Supabase shipments & PO items
     const directMapping = {}
     ;(shipData || []).forEach(s => {
       if (s.item_code && s.hpo_number) {
@@ -1674,6 +1717,15 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
           directMapping[s.item_code] += `, ${s.hpo_number}`
         } else if (!directMapping[s.item_code]) {
           directMapping[s.item_code] = s.hpo_number
+        }
+      }
+    })
+    ;(hpoDetails.value || []).forEach(p => {
+      if (p.itemCode && p.poNumber) {
+        if (directMapping[p.itemCode] && !directMapping[p.itemCode].includes(p.poNumber)) {
+          directMapping[p.itemCode] += `, ${p.poNumber}`
+        } else if (!directMapping[p.itemCode]) {
+          directMapping[p.itemCode] = p.poNumber
         }
       }
     })
@@ -1725,7 +1777,11 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
         const code = item.item?.no || '-'
         const seq = item.seq || 0
         // Find by code AND sequence to avoid split row overlap
-        const myShipments = shipmentList.value.filter(s => s.item_code === code && (s.item_seq === seq || s.item_seq == null))
+        const myShipments = shipmentList.value.filter(s => {
+          const sCode = (s.item_code || '').trim().toUpperCase()
+          const targetCode = (code || '').trim().toUpperCase()
+          return sCode === targetCode && (s.item_seq === seq || s.item_seq == null)
+        })
         
         // Sort myShipments to prioritize shipments with a non-null HPO number, then by updated_at descending
         const sortedMyShipments = [...myShipments].sort((a, b) => {
@@ -1814,8 +1870,18 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
     await fetchCartItems()
     fetchLinkedHpb()
 
-    // Note: Automatic background sync was removed per user instruction.
-    // Sync HPO, HDO, and HRI are now explicitly triggered on demand via the Sync Data menu.
+    // 1. Sync HDO items if shipments exist in soDetail
+    if (soDetail.value?.shipments && soDetail.value.shipments.length > 0) {
+      const doList = soDetail.value.shipments.map(s => s.no).filter(Boolean)
+      if (doList.length > 0) {
+        fetchHdoInBackground(doList)
+      }
+    }
+
+    // 2. Fetch HPOs from Accurate in background
+    if (soDetail.value?.number) {
+      fetchHpoInBackground(soDetail.value.number)
+    }
 
   } catch (err) {
     console.error("Fetch Error:", err)
@@ -2006,14 +2072,30 @@ const isItemArrivedAtHokiindo = (item) => {
   // It MUST have active HPOs, and the total arrived quantity across all HPOs MUST meet or exceed qty_to_order!
   const hpos = getHpoEntries(item)
   if (hpos.length > 0) {
-    const arrivedQty = hpos.reduce((sum, hpo) => {
+    const hasArrived = hpos.some(hpo => {
       const shipment = getHpoShipment(item, hpo.poNumber)
-      if (shipment && getVisualStatus(shipment) === 'Already in Hokiindo Raya') {
-        return sum + (hpo.quantity || 0)
-      }
-      return sum
-    }, 0)
-    return arrivedQty >= item.qty_to_order
+      return shipment && getVisualStatus(shipment) === 'Already in Hokiindo Raya'
+    })
+    if (!hasArrived) return false
+
+    // If quantities are known from Accurate:
+    const accurateEntries = hpos.filter(h => h.isFromAccurate)
+    if (accurateEntries.length > 0) {
+      const arrivedQty = accurateEntries.reduce((sum, hpo) => {
+        const shipment = getHpoShipment(item, hpo.poNumber)
+        if (shipment && getVisualStatus(shipment) === 'Already in Hokiindo Raya') {
+          return sum + (hpo.quantity || 0)
+        }
+        return sum
+      }, 0)
+      return arrivedQty >= item.qty_to_order
+    }
+
+    // If from shipments fallback: all linked HPO shipments must be arrived
+    return hpos.every(hpo => {
+      const shipment = getHpoShipment(item, hpo.poNumber)
+      return shipment && getVisualStatus(shipment) === 'Already in Hokiindo Raya'
+    })
   }
 
   // If item requires ordering (qty_to_order > 0) or note is NOT pure stock, and has NO active HPO:
@@ -2034,7 +2116,11 @@ const getItemPoDiscrepancy = (item) => {
   if (getDisplayedQtyRemaining(item) <= 0 || isDisplayedFullyShipped(item) || getDisplayedQtyShipped(item) >= (item.qty_order || 0)) return null
   const entries = getHpoEntries(item)
   if (entries.length === 0) return null
-  const totalPo = entries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
+  // Only calculate discrepancy if we have verified PO quantities from Accurate
+  const accurateEntries = entries.filter(e => e.isFromAccurate)
+  if (accurateEntries.length === 0) return null
+
+  const totalPo = accurateEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
   const diff = totalPo - item.qty_to_order
   if (diff > 0) {
     return {
@@ -2199,7 +2285,8 @@ const getHpoEntries = (item) => {
         quantity: p.quantity,
         description: p.description,
         hsoNumber: p.hsoNumber,
-        vendorName: p.vendorName
+        vendorName: p.vendorName,
+        isFromAccurate: true
       }))
     }
   }
@@ -2208,13 +2295,15 @@ const getHpoEntries = (item) => {
   if (item.shipments_data && item.shipments_data.length > 0) {
     const validShips = item.shipments_data.filter(s => s.hpo_number && s.hpo_number.trim())
     if (validShips.length > 0) {
+      const shipCount = validShips.length
       return validShips.map(s => ({
         poNumber: s.hpo_number,
         poDate: s.status_date || s.hokiindo_date || s.exwork_date || s.updated_at,
-        quantity: item.qty_order || item.qty_to_order || 0,
+        quantity: shipCount === 1 ? (item.qty_order || item.qty_to_order || 0) : null,
         description: s.admin_notes || '',
         hsoNumber: soDetail.value?.number || '',
-        vendorName: s.hpo_number.includes('SIEMENS') ? 'PT. SIEMENS INDONESIA' : ''
+        vendorName: s.hpo_number.includes('SIEMENS') ? 'PT. SIEMENS INDONESIA' : '',
+        isFromAccurate: false
       }))
     }
   }
@@ -2276,12 +2365,15 @@ const getHpoBreakdown = (item) => {
 
 // Helper: Get specific shipment record for an HPO
 const getHpoShipment = (item, hpoNumber) => {
-  if (!item.shipments_data) return {}
+  if (!item.shipments_data || item.shipments_data.length === 0) return {}
   const target = String(hpoNumber || '').trim().replace(/HP0/gi, 'HPO').toLowerCase()
+  const cleanTarget = target.split(/\s+/)[0]
+
   return item.shipments_data.find(s => {
     const sPo = String(s.hpo_number || '').trim().replace(/HP0/gi, 'HPO').toLowerCase()
-    return sPo === target
-  }) || {}
+    const cleanSPo = sPo.split(/\s+/)[0]
+    return sPo === target || cleanSPo === cleanTarget || sPo.includes(cleanTarget) || target.includes(cleanSPo)
+  }) || item.shipments_data[0] || {}
 }
 
 // Helper: Calculate HPO discrepancy
@@ -3210,38 +3302,10 @@ const downloadAttachment = async (att) => {
               <Layers class="w-3.5 h-3.5 mr-1.5"/> Update ({{ selectedItemCodes.length }})
             </Button>
 
-            <DropdownMenu v-if="canWrite">
-              <DropdownMenuTrigger as-child>
-                <Button size="sm" variant="outline" class="h-8 px-3 text-xs font-semibold border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" :disabled="isAnySyncing || isLoading">
-                  <RefreshCw class="w-3.5 h-3.5 mr-1.5 text-indigo-600 dark:text-indigo-400 shrink-0" :class="isAnySyncing ? 'animate-spin' : ''"/>
-                  <span>{{ isAnySyncing ? 'Syncing...' : 'Sync Data' }}</span>
-                  <ChevronDown class="w-3 h-3 ml-1 opacity-60" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" class="dark:bg-slate-900 dark:border-slate-800 rounded-xl w-64 p-1.5 shadow-lg border border-slate-200 font-sans space-y-1">
-                <DropdownMenuItem @click="triggerSyncHpo" class="dark:hover:bg-slate-800 rounded-lg cursor-pointer py-2 px-2.5 flex items-center gap-2.5">
-                  <ShoppingCart class="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <div class="flex flex-col">
-                    <span class="font-bold text-xs text-slate-800 dark:text-slate-200">Sync HPO (Purchase Order)</span>
-                    <span class="text-[10px] text-slate-500 dark:text-slate-400">Tarik data PO Accurate</span>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem @click="triggerSyncHdo" class="dark:hover:bg-slate-800 rounded-lg cursor-pointer py-2 px-2.5 flex items-center gap-2.5">
-                  <Truck class="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
-                  <div class="flex flex-col">
-                    <span class="font-bold text-xs text-slate-800 dark:text-slate-200">Sync HDO (Delivery Order)</span>
-                    <span class="text-[10px] text-slate-500 dark:text-slate-400">Tarik No. Resi & Surat Jalan</span>
-                  </div>
-                </DropdownMenuItem>
-                <DropdownMenuItem @click="triggerSyncHri" class="dark:hover:bg-slate-800 rounded-lg cursor-pointer py-2 px-2.5 flex items-center gap-2.5">
-                  <Package class="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                  <div class="flex flex-col">
-                    <span class="font-bold text-xs text-slate-800 dark:text-slate-200">Sync HRI (Database Logistik)</span>
-                    <span class="text-[10px] text-slate-500 dark:text-slate-400">Status Ex-Work / ETA / Dunex</span>
-                  </div>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button v-if="canWrite" size="sm" variant="outline" class="h-8 px-3 text-xs font-semibold border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" @click="syncFromLogisticsDb" :disabled="isExcelParsing || isLoading">
+              <RefreshCw class="w-4 h-4 mr-1.5 text-indigo-600 dark:text-indigo-400 shrink-0" :class="isExcelParsing ? 'animate-spin' : ''"/>
+              <span>{{ isExcelParsing ? 'Syncing...' : 'Sync Logistik' }}</span>
+            </Button>
 
             <DropdownMenu>
               <DropdownMenuTrigger as-child>
@@ -3591,7 +3655,7 @@ const downloadAttachment = async (att) => {
                                         <ShoppingCart class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                                         <span class="font-bold text-emerald-700 dark:text-emerald-300 truncate">{{ hpo.poNumber }}</span>
                                     </div>
-                                    <span class="font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-1.5 py-0.5 rounded text-[11px] shrink-0">
+                                    <span v-if="hpo.quantity" class="font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-1.5 py-0.5 rounded text-[11px] shrink-0">
                                         {{ hpo.quantity }} {{ item.unit }}
                                     </span>
                                 </div>

@@ -1,5 +1,13 @@
 [
   {
+    "hash": "3217c4bd1e5463e825889f81ec9b08da1306d544",
+    "shortHash": "3217c4b",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 22:35:23 2026 +0700",
+    "message": "feat: eliminate auto background sync, separate manual sync into HPO, HDO, and HRI on demand"
+  },
+  {
     "hash": "fc63f310a26136e83fe5ea949d8b27cabae7b4dd",
     "shortHash": "fc63f31",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 14 15:50:13 2026 +0700",
     "message": "fix(notifications): resolve multi-assignee email truncation and live user_access notification_email lookup for task dispatches"
-  },
-  {
-    "hash": "f890bb1c7db916dbbfb5bd142bdf08527b5e1b4d",
-    "shortHash": "f890bb1",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 14 14:31:45 2026 +0700",
-    "message": "feat(collaborate): hide empty metadata fields (Proyek, Customer, PIC) and add inline description & attachment editing without modal popup"
   }
 ]

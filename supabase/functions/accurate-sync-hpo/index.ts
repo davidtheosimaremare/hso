@@ -84,14 +84,11 @@ serve(async (req) => {
 
         console.log(`Searching POs with keyword: ${searchKeyword}`)
 
-        // Fetch PO list with filter by description
+        // Fetch PO list using keywords parameter in Accurate API
         const listUrl = new URL(`${BASE_API}/purchase-order/list.do`)
         listUrl.searchParams.append('fields', 'id,number,transDate,statusName')
-        listUrl.searchParams.append('filter.statusName.op', 'NOT_IN')
-        listUrl.searchParams.append('filter.statusName.val', 'Closed,Dibatalkan')
-        listUrl.searchParams.append('filter.keywords.op', 'CONTAIN')
-        listUrl.searchParams.append('filter.keywords.val', searchKeyword)
-        listUrl.searchParams.append('sp.pageSize', '50')
+        listUrl.searchParams.append('keywords', searchKeyword)
+        listUrl.searchParams.append('sp.pageSize', '100')
         listUrl.searchParams.append('sp.sort', 'transDate|desc')
 
         const listResponse = await fetch(listUrl.toString(), {
@@ -106,8 +103,6 @@ serve(async (req) => {
         if (!listResponse.ok) {
             const errText = await listResponse.text()
             console.error(`PO Search failed: ${errText}`)
-            // If filter.keywords doesn't work, fallback to description filter
-            // Try alternative approach
         }
 
         const listJson = await listResponse.json()
@@ -116,26 +111,10 @@ serve(async (req) => {
         console.log(`Found ${poList.length} POs matching "${searchKeyword}"`)
 
         if (poList.length === 0) {
-            // Even when no POs found (e.g. Keterangan cleared), purge any existing HPO shipments for this SO
-            // so items revert to PERLU DIPESAN status
-            const { data: existingHpoShipments } = await supabase
-                .from('shipments')
-                .select('id, item_code, hpo_number')
-                .eq('so_id', String(soId))
-                .not('hpo_number', 'is', null)
-
-            let purgedCount = 0
-            if (existingHpoShipments && existingHpoShipments.length > 0) {
-                const orphanIds = existingHpoShipments.map((s: any) => s.id)
-                console.log(`No POs found - purging ${orphanIds.length} orphan HPO shipments for SO ${soNumber}`)
-                const { error: delErr } = await supabase.from('shipments').delete().in('id', orphanIds)
-                if (!delErr) purgedCount = orphanIds.length
-            }
-
             return new Response(JSON.stringify({
                 s: true,
-                message: `Tidak ada PO ditemukan untuk ${soNumber}`,
-                stats: { totalPOsFound: 0, matchingItems: 0, updated: 0, created: 0, purged: purgedCount },
+                message: `Tidak ada PO baru ditemukan untuk ${soNumber}`,
+                stats: { totalPOsFound: 0, matchingItems: 0, updated: 0, created: 0, purged: 0 },
                 items: []
             }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -233,32 +212,7 @@ serve(async (req) => {
         // Build a set of active (itemCode, poNumber) pairs found in real Accurate POs
         const activePairs = new Set(matchingItems.map(i => `${i.itemCode.trim().toUpperCase()}||${i.poNumber.trim().toUpperCase()}`))
 
-        // --- PURGE ORPHAN SHIPMENTS ---
-        // Delete any shipment records for this SO where (item_code, hpo_number) is NO LONGER in active POs
-        const { data: existingShipments } = await supabase
-            .from('shipments')
-            .select('id, item_code, hpo_number')
-            .eq('so_id', String(soId))
-            .not('hpo_number', 'is', null)
-
-        if (existingShipments && existingShipments.length > 0) {
-            const orphanIds: string[] = []
-            existingShipments.forEach((s: any) => {
-                const pairKey = `${(s.item_code || '').trim().toUpperCase()}||${(s.hpo_number || '').trim().toUpperCase()}`
-                if (!activePairs.has(pairKey)) {
-                    orphanIds.push(s.id)
-                    console.log(`Orphan: deleting shipment for item=${s.item_code} hpo=${s.hpo_number} (removed from PO)`)
-                }
-            })
-            if (orphanIds.length > 0) {
-                const { error: delErr } = await supabase.from('shipments').delete().in('id', orphanIds)
-                if (delErr) {
-                    console.error(`Failed to purge orphan shipments: ${delErr.message}`)
-                } else {
-                    console.log(`Purged ${orphanIds.length} orphan shipments`)
-                }
-            }
-        }
+        // Note: Orphan purging disabled to protect user shipment records and edits.
 
         // Update shipments table for matching items
         let updatedCount = 0
