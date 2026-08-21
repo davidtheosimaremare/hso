@@ -1,5 +1,13 @@
 [
   {
+    "hash": "2186da004815127a7c45de735e707a47fe7e7ccd",
+    "shortHash": "2186da0",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 15:46:17 2026 +0700",
+    "message": "fix: resolve sales orders list loading issue by isolating accurate-list-so and correcting PO items table query"
+  },
+  {
     "hash": "abafa3e5155a972ddcd5c25f307944d60ef60bc6",
     "shortHash": "abafa3e",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Wed Aug 12 10:00:08 2026 +0700",
     "message": "fix: correct Supabase PostgREST column alias syntax for notification queries"
-  },
-  {
-    "hash": "83cfda74f27fd9cab79412a1df9a50b712fed4e0",
-    "shortHash": "83cfda7",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Aug 12 09:55:32 2026 +0700",
-    "message": "fix: handle active_session_id error in MainLayout safely"
   }
 ]

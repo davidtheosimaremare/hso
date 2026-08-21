@@ -104,12 +104,11 @@ const needsOrdering = (item) => {
   if (isDisplayedFullyShipped(item)) return false
   if (item.qty_to_order > 0) {
     const hpoEntries = getHpoEntries(item)
-    const hasHpoInDb = item.logistics_hpo && item.logistics_hpo.trim().length > 0
     if (hpoEntries.length > 0) {
       const totalPo = hpoEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
       return totalPo < item.qty_to_order
     }
-    return !hasHpoInDb
+    return true
   }
   return false
 }
@@ -929,6 +928,31 @@ const fetchHpoInBackground = async (soNumber) => {
             console.warn('Healing error:', insertErr)
           }
         }
+
+        // Re-sync items with cleaned shipmentList
+        soDetail.value.items.forEach(item => {
+          const myShipments = shipmentList.value.filter(s => s.item_code === item.code && (s.item_seq === item.seq || s.item_seq == null))
+          const sortedMyShipments = [...myShipments].sort((a, b) => {
+            const aHasHpo = a.hpo_number ? 1 : 0
+            const bHasHpo = b.hpo_number ? 1 : 0
+            if (aHasHpo !== bHasHpo) return bHasHpo - aHasHpo
+            const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0
+            const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0
+            return bTime - aTime
+          })
+          const myShipment = sortedMyShipments[0] || {}
+          item.shipments_data = myShipments
+          item.logistics_status = myShipment.current_status || 'Pending Process'
+          item.logistics_hpo = myShipment.hpo_number || null
+          item.logistics_date = myShipment.status_date || myShipment.updated_at || null
+          item.logistics_id = myShipment.id || null
+          item.exwork_date = myShipment.exwork_date || null
+          item.eta_date = myShipment.eta_date || null
+          item.dunex_date = myShipment.dunex_date || null
+          item.hokiindo_date = myShipment.hokiindo_date || null
+          item.ready_date = myShipment.ready_date || null
+          item.exwork_waiting = myShipment.exwork_waiting || false
+        })
       }
       }
       
