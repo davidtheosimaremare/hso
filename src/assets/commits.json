@@ -1,5 +1,13 @@
 [
   {
+    "hash": "c676f4e47c0a7c1cf60ef227cafb9e453cab7db4",
+    "shortHash": "c676f4e",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 14:31:52 2026 +0700",
+    "message": "fix: enforce Google Search Grounding without schema conflict and return authentic commercial SKU order codes"
+  },
+  {
     "hash": "04a1cd43481af6601b55cb75e0507f09e01b6709",
     "shortHash": "04a1cd4",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 11 17:15:17 2026 +0700",
     "message": "fix: ensure project_name, customer_name, pic_name, file_link, and metadata are saved and parsed cleanly, add edit modal to detail view"
-  },
-  {
-    "hash": "3c3c8b7176fa4e92ffe3bd3ed664314b8e370218",
-    "shortHash": "3c3c8b7",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 11 17:10:55 2026 +0700",
-    "message": "feat: implement task email notifications, deadline reminder cron, and user_access notification_email mapping"
   }
 ]

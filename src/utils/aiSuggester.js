@@ -5,7 +5,7 @@ export function getAIConfig() {
   return {
     apiKey: (isBrowser ? localStorage.getItem('hso_ai_api_key') : '') || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_AI_API_KEY) || '',
     baseUrl: (isBrowser ? localStorage.getItem('hso_ai_base_url') : '') || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_AI_BASE_URL) || 'https://generativelanguage.googleapis.com/v1beta',
-    model: (isBrowser ? localStorage.getItem('hso_ai_model') : '') || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_AI_MODEL) || 'gemini-2.5-flash',
+    model: (isBrowser ? localStorage.getItem('hso_ai_model') : '') || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_AI_MODEL) || 'gemini-2.0-flash',
     webSearch: isBrowser ? (localStorage.getItem('hso_ai_web_search') !== 'false') : true
   }
 }
@@ -203,53 +203,79 @@ IMPORTANT:
 
 Search official catalogs (se.com & abb.com) and return the exact single best Schneider & ABB commercial SKU and technical description in raw JSON.`
 
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+  const candidateModels = Array.from(new Set([
+    config.model || 'gemini-2.0-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-pro',
+    'gemini-1.5-flash'
+  ]))
 
-  const requestBody = {
-    contents: [
-      {
-        role: 'user',
-        parts: [{ text: `${systemInstruction}\n\n${userContent}` }]
+  let lastError = null
+
+  for (const m of candidateModels) {
+    try {
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent?key=${apiKey}`
+
+      const requestBody = {
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: `${systemInstruction}\n\n${userContent}` }]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.1
+        }
       }
-    ],
-    generationConfig: {
-      temperature: 0.1
+
+      if (config.webSearch !== false) {
+        requestBody.tools = [{ googleSearch: {} }]
+      }
+
+      let response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      })
+
+      // If tools parameter returns 400 (unsupported), retry without tools
+      if (!response.ok && response.status === 400 && requestBody.tools) {
+        delete requestBody.tools
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        })
+      }
+
+      if (!response.ok) {
+        const errText = await response.text()
+        lastError = new Error(`Gemini API [${m}] Error (${response.status}): ${errText}`)
+        continue // Try next model candidate
+      }
+
+      const data = await response.json()
+      const candidate = data.candidates?.[0]
+      const text = candidate?.content?.parts?.[0]?.text || ''
+      const parsed = extractJson(text)
+
+      if (parsed) {
+        const searchQueries = candidate?.groundingMetadata?.webSearchQueries || []
+        const sources = (candidate?.groundingMetadata?.groundingChunks || []).map(c => c.web?.title || c.web?.uri).filter(Boolean)
+        return {
+          ...parsed,
+          _searchQueries: searchQueries,
+          _sources: sources,
+          _model: m
+        }
+      }
+    } catch (e) {
+      lastError = e
     }
   }
 
-  // Google Search Grounding tool parameter
-  if (config.webSearch !== false) {
-    requestBody.tools = [{ googleSearch: {} }]
-  }
-
-  let response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestBody)
-  })
-
-  // If googleSearch tool is not supported on certain models/regions, retry cleanly without tools
-  if (!response.ok && requestBody.tools) {
-    delete requestBody.tools
-    response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody)
-    })
-  }
-
-  if (!response.ok) {
-    const errText = await response.text()
-    throw new Error(`Gemini API Error (${response.status}): ${errText}`)
-  }
-
-  const data = await response.json()
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
-  const parsed = extractJson(text)
-  if (!parsed) {
-    throw new Error(`Failed to parse valid JSON from Gemini output: ${text.substring(0, 100)}`)
-  }
-  return parsed
+  if (lastError) throw lastError
+  throw new Error('No candidate Gemini model succeeded')
 }
 
 /**
@@ -328,7 +354,10 @@ Output JSON only: {"schneider_model":"...","schneider_desc":"...","abb_model":".
           schneider_model: (parsed.schneider_model || '-').toUpperCase().trim(),
           schneider_desc: cleanDescText(parsed.schneider_desc, 'Schneider', sku, name),
           abb_model: (parsed.abb_model || '-').toUpperCase().trim(),
-          abb_desc: cleanDescText(parsed.abb_desc, 'ABB', sku, name)
+          abb_desc: cleanDescText(parsed.abb_desc, 'ABB', sku, name),
+          _searchQueries: parsed._searchQueries || [],
+          _sources: parsed._sources || [],
+          _model: parsed._model || config.model
         }
       }
     } catch (e) {

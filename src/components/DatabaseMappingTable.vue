@@ -215,7 +215,11 @@ const applyAISuggestionForRow = async (item) => {
       if (suggestion.abb_desc) setCellValue(mlfb, 'abb_desc', suggestion.abb_desc)
 
       await saveRowInline(item)
-      showToast(`Saran AI untuk ${mlfb} berhasil diterapkan & disimpan!`, 'success')
+      if (suggestion._searchQueries && suggestion._searchQueries.length > 0) {
+        showToast(`✅ Saran AI untuk ${mlfb} diverifikasi via Google Search: "${suggestion._searchQueries[0]}"`, 'success')
+      } else {
+        showToast(`Saran AI untuk ${mlfb} berhasil diterapkan & disimpan!`, 'success')
+      }
     }
   } catch (err) {
     console.error('Error applying AI suggestion:', err)
@@ -909,9 +913,11 @@ const importFromExcel = async (e) => {
               v-model="aiConfigForm.model"
               class="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:border-violet-500 cursor-pointer"
             >
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash (Sangat Cepat, Cerdas & Hemat Kuota)</option>
-              <option value="gemini-2.5-pro">Gemini 2.5 Pro (Deep Reasoning & Paling Akurat)</option>
-              <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+              <option value="gemini-2.0-flash">Gemini 2.0 Flash (Rekomendasi - Live Search Tercepat & Cerdas)</option>
+              <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deep Reasoning & Analisis Multi-parameter)</option>
+              <option value="gemini-1.5-flash">Gemini 1.5 Flash (Hemat Kuota & Cepat)</option>
+              <option value="gemini-2.5-pro">Gemini 2.5 Pro (Preview)</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash (Preview)</option>
             </select>
           </div>
 
