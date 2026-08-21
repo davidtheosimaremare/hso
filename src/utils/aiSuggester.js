@@ -119,6 +119,27 @@ export async function saveAIConfig({ apiKey, baseUrl, model, webSearch }) {
 }
 
 /**
+ * Robust JSON Parser for Gemini text outputs
+ */
+function extractJson(text) {
+  if (!text) return null
+  const cleaned = text.replace(/```json\s*|```\s*/gi, '').trim()
+  const firstBrace = cleaned.indexOf('{')
+  const lastBrace = cleaned.lastIndexOf('}')
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      return JSON.parse(cleaned.substring(firstBrace, lastBrace + 1))
+    } catch (e) {
+      console.warn('JSON parse error from Gemini text:', e)
+    }
+  }
+  try {
+    return JSON.parse(cleaned)
+  } catch {}
+  return null
+}
+
+/**
  * Query Google Gemini API with Google Search Grounding & Strict Anti-Hallucination
  */
 async function queryGeminiAPI(config, { sku, name, category, desc, longDesc }) {
@@ -161,13 +182,17 @@ For all circuit breakers (MCB, MCCB, ACB), the tripping curve, protection charac
    - NEVER downgrade protection curves (LI != LSI != LSIG).
 
 OUTPUT FORMAT:
-Return ONLY a valid JSON object matching this schema:
+Return ONLY a valid JSON object starting with { and ending with } without surrounding markdown fences:
 {
-  "schneider_model": "EXACT_OR_CLOSEST_MODEL_OR_HYPHEN",
+  "schneider_model": "SHORT_COMMERCIAL_SKU_ONLY (e.g. LV847144, A9F74106, LC1D25M7, LV429630)",
   "schneider_desc": "Schneider [Family] [Type] [Poles] [Current/kW] [Breaking Capacity] [Trip/Curve] [Coil/Voltage] [Notes if alternative]",
-  "abb_model": "EXACT_OR_CLOSEST_MODEL_OR_HYPHEN",
+  "abb_model": "SHORT_COMMERCIAL_SKU_ONLY (e.g. 1SDA072122R1, S201-C6, AF26-30-00-13)",
   "abb_desc": "ABB [Family] [Type] [Poles] [Current/kW] [Breaking Capacity] [Trip/Curve] [Coil/Voltage] [Notes if alternative]"
-}`
+}
+
+IMPORTANT:
+- The "schneider_model" and "abb_model" MUST be the concise commercial Order SKU / Part Number (e.g. "LV847144", "1SDA072122R1").
+- NEVER put long descriptions like "MTZ1 06 H1 4P DRAWOUT MICROLOGIC 5.0 X" into the model/SKU field; put the full descriptive text into "schneider_desc" and "abb_desc".`
 
   const userContent = `Siemens Product to match:
 - SKU / MLFB: ${sku}
@@ -176,7 +201,7 @@ Return ONLY a valid JSON object matching this schema:
 - Description: ${desc}
 - Long Description: ${longDesc}
 
-Search official catalogs and return the exact single best Schneider & ABB equivalents with matching tripping curve (Kurva B/C/D) and protection unit in JSON.`
+Search official catalogs (se.com & abb.com) and return the exact single best Schneider & ABB commercial SKU and technical description in raw JSON.`
 
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
 
@@ -188,13 +213,13 @@ Search official catalogs and return the exact single best Schneider & ABB equiva
       }
     ],
     generationConfig: {
-      temperature: 0.1,
-      responseMimeType: 'application/json'
+      temperature: 0.1
     }
   }
 
+  // Google Search Grounding tool parameter
   if (config.webSearch !== false) {
-    requestBody.tools = [{ google_search: {} }]
+    requestBody.tools = [{ googleSearch: {} }]
   }
 
   let response = await fetch(endpoint, {
@@ -203,7 +228,7 @@ Search official catalogs and return the exact single best Schneider & ABB equiva
     body: JSON.stringify(requestBody)
   })
 
-  // If google_search tool is not supported on certain models/regions, retry cleanly without tools
+  // If googleSearch tool is not supported on certain models/regions, retry cleanly without tools
   if (!response.ok && requestBody.tools) {
     delete requestBody.tools
     response = await fetch(endpoint, {
@@ -219,8 +244,12 @@ Search official catalogs and return the exact single best Schneider & ABB equiva
   }
 
   const data = await response.json()
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
-  return JSON.parse(text.replace(/```json|```/gi, '').trim())
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || ''
+  const parsed = extractJson(text)
+  if (!parsed) {
+    throw new Error(`Failed to parse valid JSON from Gemini output: ${text.substring(0, 100)}`)
+  }
+  return parsed
 }
 
 /**
@@ -489,9 +518,20 @@ export function generateOfflineRuleSuggestion(sku, name, category, item = {}) {
     else if (amp <= 3200) { mtzFrame = '2'; ratingCode = '32' }
     else if (amp <= 4000) { mtzFrame = '2'; ratingCode = '40' }
     else if (amp <= 5000) { mtzFrame = '3'; ratingCode = '50' }
-    else { mtzFrame = '3'; ratingCode = '63' }
-
-    const schneiderModel = `MTZ${mtzFrame} ${ratingCode} ${breakingCodeSchneider} ${poles}P ${mountTypeSchneider} MicroLogic ${microLogicCode}`
+    // Commercial Order SKU Map for MasterPact MTZ basic unit / breaker
+    const mtzSkuMap = {
+      '1_06_3_Fix': 'LV847113', '1_06_4_Fix': 'LV847114', '1_06_3_Drawout': 'LV847143', '1_06_4_Drawout': 'LV847144',
+      '1_08_3_Fix': 'LV847115', '1_08_4_Fix': 'LV847116', '1_08_3_Drawout': 'LV847145', '1_08_4_Drawout': 'LV847146',
+      '1_10_3_Fix': 'LV847117', '1_10_4_Fix': 'LV847118', '1_10_3_Drawout': 'LV847147', '1_10_4_Drawout': 'LV847148',
+      '1_12_3_Fix': 'LV847119', '1_12_4_Fix': 'LV847120', '1_12_3_Drawout': 'LV847149', '1_12_4_Drawout': 'LV847150',
+      '1_16_3_Fix': 'LV847121', '1_16_4_Fix': 'LV847122', '1_16_3_Drawout': 'LV847151', '1_16_4_Drawout': 'LV847152',
+      '2_20_3_Fix': 'LV847153', '2_20_4_Fix': 'LV847154', '2_20_3_Drawout': 'LV847173', '2_20_4_Drawout': 'LV847174',
+      '2_25_3_Fix': 'LV847155', '2_25_4_Fix': 'LV847156', '2_25_3_Drawout': 'LV847175', '2_25_4_Drawout': 'LV847176',
+      '2_32_3_Fix': 'LV847157', '2_32_4_Fix': 'LV847158', '2_32_3_Drawout': 'LV847177', '2_32_4_Drawout': 'LV847178',
+      '2_40_3_Fix': 'LV847159', '2_40_4_Fix': 'LV847160', '2_40_3_Drawout': 'LV847179', '2_40_4_Drawout': 'LV847180'
+    }
+    const mtzKey = `${mtzFrame}_${ratingCode}_${poles}_${mountTypeSchneider}`
+    const schneiderModel = mtzSkuMap[mtzKey] || (isDrawout ? 'LV847144' : 'LV847114')
     const schneiderDesc = `Schneider Electric MasterPact MTZ${mtzFrame} ${ratingCode} ${breakingCodeSchneider} ${amp}A ${poles}P ${kaVal}kA ${mountTypeSchneiderDesc} Air Circuit Breaker with ${schneiderTripDesc} Control Unit`
 
     // 1G. ABB Emax 2 Exact 1SDA Code Generation

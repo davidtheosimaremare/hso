@@ -1,5 +1,13 @@
 [
   {
+    "hash": "04a1cd43481af6601b55cb75e0507f09e01b6709",
+    "shortHash": "04a1cd4",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 14:25:58 2026 +0700",
+    "message": "feat: enforce strict tripping curve (Curve B, C, D) and trip unit matching for circuit breakers"
+  },
+  {
     "hash": "d28296e454ae40b846a831031fcab58336dcb635",
     "shortHash": "d28296e",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 11 17:10:55 2026 +0700",
     "message": "feat: implement task email notifications, deadline reminder cron, and user_access notification_email mapping"
-  },
-  {
-    "hash": "db6698cd36a3e88128cb67341adb455069d3071a",
-    "shortHash": "db6698c",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 11 12:13:04 2026 +0700",
-    "message": "fix: improve computed helpers to properly handle metadata fallbacks"
   }
 ]
