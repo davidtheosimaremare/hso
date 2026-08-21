@@ -125,42 +125,69 @@ const singleResult = ref(null)
 const isCopied = ref(false)
 
 const detectedSourceBrand = computed(() => {
-  if (sourceBrand.value !== 'AUTO') return sourceBrand.value
-  if (!singleInput.value.trim()) return 'AUTO'
+  if (!singleInput.value.trim()) return null
   const det = singleResult.value?.sourceBrand || converterEngine.detectBrand(singleInput.value)
   return det || 'SCHNEIDER'
 })
 
 const sourceItemDesc = computed(() => {
   if (!singleResult.value || !singleResult.value.success) return ''
-  const brand = detectedSourceBrand.value
-  if (brand === 'SIEMENS') {
-    return singleResult.value.siemensName || ''
-  } else if (brand === 'SCHNEIDER') {
-    return singleResult.value.schneiderDesc || singleResult.value.specsSummary || ''
-  } else if (brand === 'ABB') {
-    return singleResult.value.abbDesc || singleResult.value.specsSummary || ''
+  const brand = (detectedSourceBrand.value || '').toUpperCase()
+  
+  if (brand.includes('SIEMENS')) {
+    const item = singleResult.value.accurateItem
+    return item?.item_name || singleResult.value.siemensName || ''
+  } else if (brand.includes('SCHNEIDER')) {
+    if (singleResult.value.schneiderDesc) return singleResult.value.schneiderDesc
+    if (singleResult.value.sourceSpecs) {
+      const sp = singleResult.value.sourceSpecs
+      const parts = [
+        singleResult.value.category ? `Schneider ${singleResult.value.category}` : 'Schneider',
+        singleResult.value.sourceModel,
+        sp.poles,
+        sp.ampere,
+        sp.breakingCapacity || sp.power || sp.coilVoltage || sp.thermalRange
+      ].filter(Boolean)
+      return parts.join(', ')
+    }
+    return singleResult.value.sourceModel ? `Schneider Electric ${singleResult.value.sourceModel}` : ''
+  } else if (brand.includes('ABB')) {
+    if (singleResult.value.abbDesc) return singleResult.value.abbDesc
+    if (singleResult.value.sourceSpecs) {
+      const sp = singleResult.value.sourceSpecs
+      const parts = [
+        singleResult.value.category ? `ABB ${singleResult.value.category}` : 'ABB',
+        singleResult.value.sourceModel,
+        sp.poles,
+        sp.ampere,
+        sp.breakingCapacity || sp.power || sp.coilVoltage || sp.thermalRange
+      ].filter(Boolean)
+      return parts.join(', ')
+    }
+    return singleResult.value.sourceModel ? `ABB ${singleResult.value.sourceModel}` : ''
   }
-  return singleResult.value.specsSummary || ''
+  return singleResult.value.schneiderDesc || singleResult.value.abbDesc || ''
 })
 
 const sourceItemPrice = computed(() => {
   if (!singleResult.value || !singleResult.value.success) return null
-  const brand = detectedSourceBrand.value
-  if (brand === 'SIEMENS') {
+  const brand = (detectedSourceBrand.value || '').toUpperCase()
+  if (brand.includes('SIEMENS')) {
     return singleResult.value.accurateItem?.unit_price || null
-  } else if (brand === 'SCHNEIDER') {
+  } else if (brand.includes('SCHNEIDER')) {
     return singleResult.value.schneiderPrice || null
-  } else if (brand === 'ABB') {
+  } else if (brand.includes('ABB')) {
     return singleResult.value.abbPrice || null
   }
   return null
 })
 
 const getBrandLogo = (brand) => {
-  if (brand === 'SIEMENS') return '/logosiemens.webp'
-  if (brand === 'SCHNEIDER') return '/logoschneider.png'
-  if (brand === 'ABB') return '/logoabb.png'
+  if (!brand) return null
+  const b = brand.toUpperCase()
+  if (b.includes('SIEMENS')) return '/logosiemens.webp'
+  if (b.includes('SCHNEIDER')) return '/logoschneider.png'
+  if (b.includes('ABB')) return '/logoabb.png'
   return null
 }
 
@@ -574,16 +601,19 @@ const handleDirectSyncSiemens = async () => {
 
                 <!-- Auto-Detected Brand Indicator -->
                 <div
-                  v-if="singleInput.trim() && detectedSourceBrand !== 'AUTO'"
-                  class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 shadow-2xs"
+                  v-if="singleInput.trim() && detectedSourceBrand"
+                  class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 shadow-2xs"
                 >
-                  <span class="text-[10px] text-slate-400 font-medium">Terdeteksi:</span>
+                  <span class="text-[11px] text-slate-400 font-semibold">Terdeteksi:</span>
                   <img
                     v-if="getBrandLogo(detectedSourceBrand)"
                     :src="getBrandLogo(detectedSourceBrand)"
                     :alt="detectedSourceBrand"
-                    class="h-5 max-w-[85px] object-contain"
+                    class="h-7 max-w-[130px] object-contain transition-all"
                   />
+                  <span v-else class="text-xs font-bold text-slate-700 dark:text-slate-200 font-mono">
+                    {{ detectedSourceBrand }}
+                  </span>
                 </div>
               </div>
 

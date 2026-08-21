@@ -1,5 +1,13 @@
 [
   {
+    "hash": "9f25eae6331cf86bdc5dd28ddf5bc48ee798b545",
+    "shortHash": "9f25eae",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 11:25:59 2026 +0700",
+    "message": "feat: change status to Stock/Indent and update price label to Pricelist"
+  },
+  {
     "hash": "b5fdf2a305be174e868fad09df80f4c1f62e7ef9",
     "shortHash": "b5fdf2a",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 11 11:50:16 2026 +0700",
     "message": "chore: add debug log for task data in detail view"
-  },
-  {
-    "hash": "10824dcd7373a78419c83984cddd0d4845b032bb",
-    "shortHash": "10824dc",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 11 10:09:18 2026 +0700",
-    "message": "feat: update sales orders with PO number display, permintaan BOQ with tabs and required fields, and fix 2026 target sales with PPn deduction"
   }
 ]
