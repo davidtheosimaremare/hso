@@ -1,5 +1,13 @@
 [
   {
+    "hash": "5b6c5ca4a57e10357fa028dc5b1e2267d7675ea5",
+    "shortHash": "5b6c5ca",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 11:54:29 2026 +0700",
+    "message": "feat: sort database mapping table by ACB, MCB, MCCB, RCCB, RCBO, CONTACTOR, CONTACTOR RELAY, and Industrial Control priority"
+  },
+  {
     "hash": "d90e66e1087ffd716868beecc1958113f688bea0",
     "shortHash": "d90e66e",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 11 12:08:19 2026 +0700",
     "message": "fix: add null check in computed helpers for detail view"
-  },
-  {
-    "hash": "c2f25f12a440d66e494eddc3de68174f2992c4d6",
-    "shortHash": "c2f25f1",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 11 11:54:02 2026 +0700",
-    "message": "fix: add computed helpers to get project/customer/pic from metadata in detail view"
   }
 ]

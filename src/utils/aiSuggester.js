@@ -2,7 +2,7 @@
  * ==============================================================================
  * Cross-Brand Engineering Equivalency Engine
  * Translates Siemens switchgear & automation items into exact Schneider & ABB equivalents
- * Supports OpenCode Go, DeepSeek, OpenRouter, or OpenAI-compatible APIs + Comprehensive Offline Rule Base.
+ * Supports Google Gemini AI (with Google Search Grounding), DeepSeek, OpenCode Go, OpenRouter.
  * ==============================================================================
  */
 
@@ -10,8 +10,8 @@ export function getAIConfig() {
   const isBrowser = typeof localStorage !== 'undefined'
   return {
     apiKey: (isBrowser ? localStorage.getItem('hso_ai_api_key') : '') || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_AI_API_KEY) || '',
-    baseUrl: (isBrowser ? localStorage.getItem('hso_ai_base_url') : '') || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_AI_BASE_URL) || 'https://api.deepseek.com/v1',
-    model: (isBrowser ? localStorage.getItem('hso_ai_model') : '') || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_AI_MODEL) || 'deepseek-chat',
+    baseUrl: (isBrowser ? localStorage.getItem('hso_ai_base_url') : '') || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_AI_BASE_URL) || 'https://generativelanguage.googleapis.com/v1beta',
+    model: (isBrowser ? localStorage.getItem('hso_ai_model') : '') || (typeof import.meta !== 'undefined' && import.meta.env?.VITE_AI_MODEL) || 'gemini-2.5-flash',
     webSearch: isBrowser ? (localStorage.getItem('hso_ai_web_search') !== 'false') : true
   }
 }
@@ -25,7 +25,87 @@ export function saveAIConfig({ apiKey, baseUrl, model, webSearch }) {
 }
 
 /**
- * Request AI suggestion for Siemens item using the Cross-Brand Engineering Equivalency Engine with Web Search
+ * Query Google Gemini API with Google Search Grounding & Strict Anti-Hallucination
+ */
+async function queryGeminiAPI(config, { sku, name, category, desc, longDesc }) {
+  const model = config.model || 'gemini-2.5-flash'
+  const apiKey = config.apiKey.trim()
+
+  const systemInstruction = `You are the authoritative "Cross-Brand Engineering Equivalency Engine" for industrial switchgear and electrical automation.
+Your task: Find the authentic Schneider Electric and ABB equivalent products for a given Siemens product.
+
+CRITICAL ANTI-HALLUCINATION & STRICT SEARCH DIRECTIVES:
+1. Use Google Search to search official Schneider Electric (se.com) and ABB (abb.com) product catalog pages and datasheets in real time to verify part numbers and order codes.
+2. Authenticity: Every returned part number MUST be an authentic, legitimate catalog order code.
+3. Level 1 - Exact Equivalent: If an identical 1-to-1 spec exists, return it.
+4. Level 2 - Legitimate Technical Alternative: If an exact spec does not exist in the brand's catalog (e.g. niche Siemens accessory or legacy configuration), provide the closest legitimate technical alternative (e.g. standard higher kA rating, wide-range electronic coil, or standard frame size) and state the difference clearly in the description.
+5. Level 3 - Nonexistent / No Match: If NO legitimate equivalent or alternative exists in Schneider or ABB catalog, output "-" for that brand model. DO NOT invent fictitious part numbers or mix product series names!
+
+OUTPUT FORMAT:
+Return ONLY a valid JSON object matching this schema:
+{
+  "schneider_model": "EXACT_OR_CLOSEST_MODEL_OR_HYPHEN",
+  "schneider_desc": "Schneider [Family] [Type] [Poles] [Current/kW] [Breaking Capacity] [Trip/Curve] [Coil/Voltage] [Notes if alternative]",
+  "abb_model": "EXACT_OR_CLOSEST_MODEL_OR_HYPHEN",
+  "abb_desc": "ABB [Family] [Type] [Poles] [Current/kW] [Breaking Capacity] [Trip/Curve] [Coil/Voltage] [Notes if alternative]"
+}`
+
+  const userContent = `Siemens Product to match:
+- SKU / MLFB: ${sku}
+- Item Name: ${name}
+- Category: ${category}
+- Description: ${desc}
+- Long Description: ${longDesc}
+
+Search official catalogs and return the exact single best Schneider & ABB equivalents in JSON.`
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+
+  const requestBody = {
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: `${systemInstruction}\n\n${userContent}` }]
+      }
+    ],
+    generationConfig: {
+      temperature: 0.1,
+      responseMimeType: 'application/json'
+    }
+  }
+
+  if (config.webSearch !== false) {
+    requestBody.tools = [{ google_search: {} }]
+  }
+
+  let response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody)
+  })
+
+  // If google_search tool is not supported on certain models/regions, retry cleanly without tools
+  if (!response.ok && requestBody.tools) {
+    delete requestBody.tools
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody)
+    })
+  }
+
+  if (!response.ok) {
+    const errText = await response.text()
+    throw new Error(`Gemini API Error (${response.status}): ${errText}`)
+  }
+
+  const data = await response.json()
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}'
+  return JSON.parse(text.replace(/```json|```/gi, '').trim())
+}
+
+/**
+ * Request AI suggestion for Siemens item using Google Gemini Pro/Flash or OpenAI/DeepSeek API with Web Search
  * @param {Object} item - { item_no, item_name, category, description, long_description }
  * @returns {Promise<{ schneider_model: string, schneider_desc: string, abb_model: string, abb_desc: string }>}
  */
@@ -37,84 +117,29 @@ export async function fetchAISuggestion(item) {
   const desc = (item.description || '').trim()
   const longDesc = (item.long_description || '').trim()
 
-  // If API key is provided, query DeepSeek / OpenCode Go API with the Engineering Equivalency Engine prompt + Web Search
   if (config.apiKey) {
     try {
-      const requestPayload = {
-        model: config.model || 'deepseek-chat',
-        messages: [
-          {
-            role: 'system',
-            content: `You are the "Cross-Brand Engineering Equivalency Engine" — an industrial-grade electrical switchgear & automation system architect with authoritative expertise across Siemens, Schneider Electric, and ABB.
+      const isGemini = config.apiKey.startsWith('AIza') || 
+                       config.baseUrl.includes('googleapis') || 
+                       config.model.toLowerCase().includes('gemini')
 
-Your objective: Perform deep multi-parameter electrical engineering matching to translate any Siemens product into its exact single best Schneider Electric and ABB equivalent.
+      let parsed = null
 
-${config.webSearch ? `LIVE WEB SEARCH DIRECTIVE:
-You have live web search enabled. Search official Schneider Electric (se.com) and ABB (abb.com) product catalog pages and datasheets in real time to verify part numbers and order codes.` : ''}
-
-============================================================
-1. MULTI-PARAMETER EXTRACTION & MATCHING:
-============================================================
-Analyze all parameters:
-- Current: Rated current In (A), Frame rating, Thermal setting range (A), AC-3 motor kW.
-- Voltage: Operating voltage Ue, Insulation voltage Ui.
-- Poles: 1P, 2P, 3P, 4P, 3P+N (Strict: 1P != 2P != 3P != 4P; 3P+N != 4P).
-- Breaking Capacity: Icn (IEC 60898-1) / Icu, Ics, Icw, Icm (IEC 60947-2).
-- Tripping Curve: Curve B, C, D for MCB.
-- Trip Unit: Thermal-Magnetic (TMD/TMA), Electronic (LI, LSI, LSIG). Never downgrade protection functions (LI != LSI != LSIG).
-- Control / Coil Voltage: 24VDC, 24VAC, 110VAC, 220-240VAC, 380-415VAC. (Strict: 24VDC != 230VAC; Coil AC != Coil DC).
-- Mounting & Configuration: Fixed, Plug-in, Withdrawable / Drawout (Non-interchangeable).
-- Accessory Parent Compatibility: Shunt release (MX/YO), Undervoltage release (MN/YU), Motor mechanism (MCH/M), Auxiliary switch (OF/AUX), Commissioning tool (TD400/TD500 -> TRV00910/Ekip T&P) MUST match the parent breaker family!
-
-============================================================
-2. 3-LEVEL MATCHING PRINCIPLE:
-============================================================
-- Level 1: EXACT EQUIVALENT -> Identical specifications & ratings.
-- Level 2: FUNCTIONAL EQUIVALENT -> Identical function, acceptable minor upgrade (e.g., upward kA upgrade 4.5kA -> 6kA, wide-range electronic coil 100-250V AC/DC).
-- Level 3: CLOSEST TECHNICAL ALTERNATIVE -> Nearest legitimate product in the manufacturer's lineup. NEVER return NOT_FOUND if a sensible candidate exists.
-
-============================================================
-3. BREAKING CAPACITY INTELLIGENCE (NO DOWNGRADES!):
-============================================================
-- 4.5 kA -> 4.5 kA ideal; 6 kA acceptable as functional upgrade.
-- 6 kA -> 6 kA ideal; 10 kA acceptable.
-- 10 kA -> 10 kA ideal (STRICT: Never downgrade 10 kA -> 6 kA).
-- 15 kA / 25 kA / 36 kA / 50 kA / 65 kA / 100 kA -> Must meet or exceed rating.
-
-============================================================
-4. PRODUCT FAMILY INTELLIGENCE MAPPING:
-============================================================
-- MCB 4.5kA: Siemens 5TJ / 5SL3 / 5SJ3 -> Schneider EasyPact Domae (EZ9F54...) / ABB Compact Home SH200L (SH20...L-C...)
-- MCB 6kA: Siemens 5SL6 / 5SY6 / 5SL4 -> Schneider Acti9 iC60N (A9F74...) / ABB Compact Home SH200 (SH20...-C...) or S200
-- MCB 10kA: Siemens 5SY4 / 5SJ4 / 5SP4 -> Schneider Acti9 iC60H (A9F84...) / ABB System pro M compact S200M (S20...M-C...)
-- MCB 15kA: Siemens 5SY7 / 5SJ7 -> Schneider Acti9 iC60L (A9F94...) / ABB S200P (S20...P-C...)
-- RCCB / RCD: Siemens 5SV / 5SM / 5SU -> Schneider Acti9 iID (A9R...) / ABB F200 (F20...) (Match Poles, In A, Sensitivity mA, Type AC/A/F/B)
-- Contactors: Siemens 3RT20 / 3RT10 / 3TF -> Schneider TeSys Deca / Giga (LC1D... / LC1F...) / ABB AF Series (AF...-30-00-...)
-- Thermal Overload Relays (TOR): Siemens 3RU21 / 3RB30 -> Schneider TeSys LRD / LR9 / ABB TF42 / EF
-- Motor Circuit Breakers (MPCB): Siemens 3RV20 / 3RV10 -> Schneider TeSys GV2 / GV3 / ABB MS116 / MS132 / MS165
-- MCCB Breakers: Siemens 3VA1 / 3VA2 / 3VJ / 3VM -> Schneider ComPacT NSX / EasyPact CVS / ABB Tmax XT / Formula A1/A2
-- ACB Breakers: Siemens 3WA1 / 3WL1 / 3WT1 ->
-  * Schneider: MasterPact MTZ. MTZ1 (06, 08, 10, 12, 16 for In <= 1600A), MTZ2 (20, 25, 32, 40 for 2000-4000A), MTZ3 (50, 63 for 5000-6300A). Breaking capacities: H1 (50/55kA), H2 (66kA), H10 (100kA). Control units: MicroLogic 2.0 X (LI), MicroLogic 5.0 X (LSI), MicroLogic 6.0 X (LSIG). Format: "MTZ1 06 H2 3P Fix MicroLogic 6.0 X" or "MTZ1 08 H1 4P Drawout MicroLogic 5.0 X".
-  * ABB: Emax 2. E1.2 (In <= 1600A), E2.2 (2000-2500A), E4.2 (3200-4000A), E6.2 (5000-6300A). Trip units: Ekip Dip LSI, Ekip Touch LSI, Ekip Touch LSIG. Use exact official 1SDA... ordering code.
-- Breaker vs Accessory Distinction:
-  * Part numbers starting with 3WA1..., 3WL1..., 3WT1..., 3VA1..., 3VA2... are COMPLETE CIRCUIT BREAKERS, even if the technical description mentions excluded/omitted accessories (e.g. "without shunt trip", "without motor"). Match them to full MasterPact MTZ or Emax 2 Breakers!
-  * Standalone accessories (Shunt trip, UVR, Aux contact, Motor) have part numbers starting with 3WA9..., 3WL9..., 3VA9... or explicit "ACC" titles.
-- STRICT ANTI-HALLUCINATION & MODEL INTEGRITY:
-  * NEVER invent mixed codes (e.g. NEVER combine Schneider MTZ or NW with Siemens "ETU", and NEVER combine ABB Emax with Schneider "MicroLogic").
-  * 3WA1106 (630A) must strictly map to 630A rating (Schneider MTZ1 06, ABB E1.2N 800 630A). Do NOT map 630A to 800A NW08!
-- Soft Starters: Siemens 3RW30 / 3RW40 / 3RW52 -> Schneider Altistart ATS22 / ATS480 / ABB PSR / PSE / PSTX
-- Power Supply: Siemens SITOP 6EP -> Schneider Modicon ABLS / Phaseo / ABB CP-E / CP-S
-- Commissioning & Test Tools: Siemens TD400 / TD500 / BBD -> Schneider TRV00910 / LV434206 / ABB 1SDA066989R1 (Ekip T&P)
-
-============================================================
-5. OUTPUT CONSTRAINTS:
-============================================================
-- Exactly 1 Schneider + 1 ABB part number (Single Best Result).
-- Never hallucinate non-existent part numbers.
-- Technical Description Format:
-  [Brand] + [Family] + [Type/Product] + [Poles] + [Current A/kW] + [Breaking Capacity kA] + [Curve/Trip Unit] + [Voltage/Coil] + [Key Configuration].
-- Return ONLY a single minified JSON object:
-  {"schneider_model":"...","schneider_desc":"...","abb_model":"...","abb_desc":"..."}`
+      if (isGemini) {
+        parsed = await queryGeminiAPI(config, { sku, name, category, desc, longDesc })
+      } else {
+        // OpenAI / DeepSeek / OpenRouter compatible endpoint
+        const requestPayload = {
+          model: config.model || 'deepseek-chat',
+          messages: [
+            {
+              role: 'system',
+              content: `You are the "Cross-Brand Engineering Equivalency Engine" — an industrial electrical switchgear architect.
+Translate the Siemens product into its authentic single best Schneider Electric and ABB equivalent.
+- Always search online or check manufacturer datasheets for authentic order codes.
+- If exact is unavailable, provide the closest legitimate technical alternative.
+- If no match exists, return "-". NEVER invent fake numbers.
+Output JSON only: {"schneider_model":"...","schneider_desc":"...","abb_model":"...","abb_desc":"..."}`
             },
             {
               role: 'user',
@@ -125,12 +150,10 @@ Analyze all parameters:
           response_format: { type: 'json_object' }
         }
 
-        // Add web search parameters for supported providers (OpenCode Go, OpenRouter, Qwen, DeepSeek proxy, etc.)
         if (config.webSearch) {
           requestPayload.web_search = true
           requestPayload.enable_search = true
           requestPayload.search = true
-          requestPayload.tools = [{ type: 'web_search' }]
         }
 
         const response = await fetch(`${config.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
@@ -142,18 +165,19 @@ Analyze all parameters:
           body: JSON.stringify(requestPayload)
         })
 
-      if (response.ok) {
-        const resData = await response.json()
-        const rawContent = resData.choices?.[0]?.message?.content || '{}'
-        const parsed = JSON.parse(rawContent.replace(/```json|```/gi, '').trim())
-        
-        if (parsed.schneider_model || parsed.abb_model) {
-          return {
-            schneider_model: (parsed.schneider_model || '').toUpperCase().trim(),
-            schneider_desc: cleanDescText(parsed.schneider_desc, 'Schneider', sku, name),
-            abb_model: (parsed.abb_model || '').toUpperCase().trim(),
-            abb_desc: cleanDescText(parsed.abb_desc, 'ABB', sku, name)
-          }
+        if (response.ok) {
+          const resData = await response.json()
+          const rawContent = resData.choices?.[0]?.message?.content || '{}'
+          parsed = JSON.parse(rawContent.replace(/```json|```/gi, '').trim())
+        }
+      }
+
+      if (parsed && (parsed.schneider_model || parsed.abb_model)) {
+        return {
+          schneider_model: (parsed.schneider_model || '-').toUpperCase().trim(),
+          schneider_desc: cleanDescText(parsed.schneider_desc, 'Schneider', sku, name),
+          abb_model: (parsed.abb_model || '-').toUpperCase().trim(),
+          abb_desc: cleanDescText(parsed.abb_desc, 'ABB', sku, name)
         }
       }
     } catch (e) {
@@ -161,7 +185,7 @@ Analyze all parameters:
     }
   }
 
-  // Comprehensive rule-based knowledge engine
+  // Comprehensive rule-based knowledge engine fallback
   return generateOfflineRuleSuggestion(sku, name, category, { ...item, description: desc, long_description: longDesc })
 }
 

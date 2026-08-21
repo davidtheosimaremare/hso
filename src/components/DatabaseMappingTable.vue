@@ -4,6 +4,7 @@ import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 import { useAccurateItems, CATEGORY_PRIORITY, categorizeMLFB } from '@/composables/useAccurateItems'
 import { formatRupiah, cleanPartNumber } from '@/utils/componentConverter'
+import { fetchAISuggestion, getAIConfig, saveAIConfig } from '@/utils/aiSuggester'
 import { 
   Search, 
   Download, 
@@ -14,7 +15,11 @@ import {
   AlertCircle,
   Shield,
   Info,
-  Lock
+  Lock,
+  Sparkles,
+  Settings,
+  Bot,
+  X
 } from 'lucide-vue-next'
 
 const emit = defineEmits(['test-product'])
@@ -153,6 +158,68 @@ const handleCellInput = (item, field, value) => {
 
 const handleCellBlur = async (item) => {
   await saveRowInline(item)
+}
+
+// AI Suggestion State & Handlers
+const aiLoadingRows = ref({})
+const isAiConfigModalOpen = ref(false)
+const showApiKey = ref(false)
+const aiConfigForm = reactive({
+  apiKey: '',
+  baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+  model: 'gemini-2.5-flash',
+  webSearch: true
+})
+
+const loadAIConfig = () => {
+  const cfg = getAIConfig()
+  aiConfigForm.apiKey = cfg.apiKey || ''
+  aiConfigForm.baseUrl = cfg.baseUrl || 'https://generativelanguage.googleapis.com/v1beta'
+  aiConfigForm.model = cfg.model || 'gemini-2.5-flash'
+  aiConfigForm.webSearch = cfg.webSearch !== false
+}
+
+const handleSaveAIConfig = () => {
+  saveAIConfig(aiConfigForm)
+  isAiConfigModalOpen.value = false
+  showToast('Pengaturan Google Gemini AI berhasil disimpan!', 'success')
+}
+
+const applyAISuggestionForRow = async (item) => {
+  const mlfb = (item.item_no || '').toUpperCase()
+  if (!mlfb) return
+
+  const cfg = getAIConfig()
+  if (!cfg.apiKey) {
+    loadAIConfig()
+    isAiConfigModalOpen.value = true
+    showToast('Silakan masukkan Google Gemini API Key Anda terlebih dahulu.', 'error')
+    return
+  }
+
+  aiLoadingRows.value[mlfb] = true
+  showToast(`Mencari saran padanan AI untuk ${mlfb}...`, 'info')
+
+  try {
+    const suggestion = await fetchAISuggestion(item)
+    if (suggestion) {
+      const schModel = suggestion.schneider_model && suggestion.schneider_model !== '-' ? suggestion.schneider_model : ''
+      const abbModel = suggestion.abb_model && suggestion.abb_model !== '-' ? suggestion.abb_model : ''
+
+      if (schModel) setCellValue(mlfb, 'schneider', schModel)
+      if (suggestion.schneider_desc) setCellValue(mlfb, 'schneider_desc', suggestion.schneider_desc)
+      if (abbModel) setCellValue(mlfb, 'abb', abbModel)
+      if (suggestion.abb_desc) setCellValue(mlfb, 'abb_desc', suggestion.abb_desc)
+
+      await saveRowInline(item)
+      showToast(`Saran AI untuk ${mlfb} berhasil diterapkan & disimpan!`, 'success')
+    }
+  } catch (err) {
+    console.error('Error applying AI suggestion:', err)
+    showToast(`Gagal mendapatkan saran AI: ${err.message}`, 'error')
+  } finally {
+    aiLoadingRows.value[mlfb] = false
+  }
 }
 
 const isItemMapped = (mlfb) => {
@@ -476,6 +543,16 @@ const importFromExcel = async (e) => {
 
           <button
             v-if="canEdit"
+            @click="loadAIConfig(); isAiConfigModalOpen = true"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
+            title="Pengaturan Google Gemini AI (API Key & Model)"
+          >
+            <Sparkles class="w-3.5 h-3.5 text-violet-200" />
+            <span>Pengaturan AI</span>
+          </button>
+
+          <button
+            v-if="canEdit"
             @click="handleDirectSyncSiemens"
             :disabled="isCatalogSyncing"
             class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
@@ -604,15 +681,27 @@ const importFromExcel = async (e) => {
                 </span>
               </td>
 
-              <!-- Siemens Product (MLFB + Name + Price) -->
-              <td class="p-2.5 align-top">
-                <div class="font-mono font-bold text-slate-900 dark:text-white text-xs">
-                  {{ item.item_no }}
+              <!-- Siemens Product (MLFB + Name + Price + Saran AI Button) -->
+              <td class="p-2.5 align-top space-y-1.5 min-w-[220px]">
+                <div class="flex items-center justify-between gap-1.5 flex-wrap">
+                  <div class="font-mono font-bold text-slate-900 dark:text-white text-xs">
+                    {{ item.item_no }}
+                  </div>
+                  <button
+                    v-if="canEdit"
+                    @click="applyAISuggestionForRow(item)"
+                    :disabled="aiLoadingRows[item.item_no]"
+                    class="px-2 py-0.5 rounded text-[10px] font-semibold bg-violet-50 hover:bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:hover:bg-violet-900/80 dark:text-violet-300 border border-violet-200 dark:border-violet-800 flex items-center gap-1 cursor-pointer transition-all shadow-2xs disabled:opacity-50"
+                    title="Minta Saran Padanan Schneider & ABB Otomatis Menggunakan AI Gemini (Google Search)"
+                  >
+                    <Sparkles class="w-3 h-3 text-violet-600 dark:text-violet-400" :class="{ 'animate-spin': aiLoadingRows[item.item_no] }" />
+                    <span>{{ aiLoadingRows[item.item_no] ? 'Mencari...' : 'Saran AI' }}</span>
+                  </button>
                 </div>
-                <div class="text-[11px] text-slate-500 line-clamp-2 font-normal mt-0.5" :title="item.item_name">
+                <div class="text-[11px] text-slate-500 line-clamp-2 font-normal" :title="item.item_name">
                   {{ item.item_name }}
                 </div>
-                <div v-if="item.unit_price" class="text-[11px] font-mono text-red-600 dark:text-red-400 font-bold mt-1">
+                <div v-if="item.unit_price" class="text-[11px] font-mono text-red-600 dark:text-red-400 font-bold">
                   {{ formatRupiah(item.unit_price) }}
                 </div>
               </td>
@@ -747,5 +836,131 @@ const importFromExcel = async (e) => {
       </div>
 
     </div>
+
+    <!-- AI CONFIGURATION MODAL (Google Gemini AI Pro) -->
+    <div
+      v-if="isAiConfigModalOpen"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200"
+    >
+      <div class="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5">
+        
+        <!-- Header -->
+        <div class="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800 pb-3">
+          <div class="flex items-center gap-2.5">
+            <div class="p-2 rounded-xl bg-violet-100 dark:bg-violet-950/60 text-violet-600 dark:text-violet-400">
+              <Sparkles class="w-5 h-5" />
+            </div>
+            <div>
+              <h3 class="text-sm font-bold text-slate-900 dark:text-white">Pengaturan Google Gemini AI</h3>
+              <p class="text-[11px] text-slate-500">Cross-Brand Equivalent Suggester with Google Search</p>
+            </div>
+          </div>
+          <button
+            @click="isAiConfigModalOpen = false"
+            class="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
+          >
+            <X class="w-4 h-4" />
+          </button>
+        </div>
+
+        <!-- Form Body -->
+        <div class="space-y-4 text-xs">
+          
+          <!-- API Key Input -->
+          <div class="space-y-1.5">
+            <label class="font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
+              <span>Google Gemini API Key:</span>
+              <a
+                href="https://aistudio.google.com/app/apikey"
+                target="_blank"
+                rel="noopener"
+                class="text-[11px] text-violet-600 dark:text-violet-400 hover:underline font-semibold"
+              >
+                Dapatkan API Key &rarr;
+              </a>
+            </label>
+            <div class="relative">
+              <input
+                :type="showApiKey ? 'text' : 'password'"
+                v-model="aiConfigForm.apiKey"
+                placeholder="Paste API Key Anda (misal: AIzaSy...)"
+                class="w-full pl-3 pr-14 py-2 rounded-lg bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 text-xs font-mono font-medium text-slate-900 dark:text-white focus:outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
+              />
+              <button
+                type="button"
+                @click="showApiKey = !showApiKey"
+                class="absolute right-2.5 top-2 text-[10px] font-bold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+              >
+                {{ showApiKey ? 'Hide' : 'Show' }}
+              </button>
+            </div>
+            <p class="text-[10px] text-slate-400">
+              API key disimpan secara aman di browser lokal Anda.
+            </p>
+          </div>
+
+          <!-- Model Selection -->
+          <div class="space-y-1.5">
+            <label class="font-bold text-slate-700 dark:text-slate-300">Pilihan Model Gemini:</label>
+            <select
+              v-model="aiConfigForm.model"
+              class="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:border-violet-500 cursor-pointer"
+            >
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash (Sangat Cepat, Cerdas & Hemat Kuota)</option>
+              <option value="gemini-2.5-pro">Gemini 2.5 Pro (Deep Reasoning & Paling Akurat)</option>
+              <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+            </select>
+          </div>
+
+          <!-- Google Search Grounding Toggle -->
+          <div class="p-3 rounded-xl bg-violet-50/60 dark:bg-violet-950/30 border border-violet-200/60 dark:border-violet-800/40 space-y-2">
+            <label class="flex items-center gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                v-model="aiConfigForm.webSearch"
+                class="w-4 h-4 rounded text-violet-600 border-slate-300 focus:ring-violet-500 cursor-pointer"
+              />
+              <span class="font-bold text-slate-800 dark:text-slate-200 text-xs">
+                Aktifkan Google Search Grounding (Live Web Search)
+              </span>
+            </label>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed pl-6.5">
+              Gemini akan menelusuri katalog online resmi Schneider (se.com) dan ABB (abb.com) secara langsung untuk memverifikasi SKU otentik dan mencegah part number fiktif.
+            </p>
+          </div>
+
+          <!-- Info Box on Rules -->
+          <div class="p-3 rounded-xl bg-slate-50 dark:bg-zinc-800/50 border border-slate-200/60 dark:border-zinc-700/60 text-[11px] text-slate-500 dark:text-slate-400 space-y-1">
+            <div class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <Shield class="w-3.5 h-3.5 text-emerald-600" />
+              <span>Standar Anti-Halusinasi HSO:</span>
+            </div>
+            <ul class="list-disc list-inside space-y-0.5 pl-1">
+              <li>Jika tidak ada spesifikasi yang identik 1-to-1, AI akan memberikan alternatif teknis terdekat yang sah.</li>
+              <li>Jika produk memang tidak ada di katalog merek terkait, AI tidak akan mengarang kode palsu.</li>
+            </ul>
+          </div>
+
+        </div>
+
+        <!-- Footer Actions -->
+        <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-zinc-800">
+          <button
+            @click="isAiConfigModalOpen = false"
+            class="px-3.5 py-1.5 rounded-lg border border-slate-200 dark:border-zinc-700 text-slate-600 dark:text-slate-400 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
+          >
+            Batal
+          </button>
+          <button
+            @click="handleSaveAIConfig"
+            class="px-4 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-sm cursor-pointer transition-colors"
+          >
+            Simpan Pengaturan
+          </button>
+        </div>
+
+      </div>
+    </div>
+
   </div>
 </template>
