@@ -34,7 +34,7 @@ watch(selectedYear, () => {
   currentPageUnshipped.value = 1
 })
 
-const availableYears = [2024, 2025, 2026]
+const availableYears = [2026, 2025, 2024]
 const CLOSED_STATUSES = ['ditutup', 'closed', 'selesai']
 
 const formatCurrency = (val) => {

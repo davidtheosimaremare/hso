@@ -122,8 +122,9 @@ const fetchLeads = async () => {
 
     if (error) throw error
     if (data) {
-      leads.value = data
-      localStorage.setItem('sales_leads_cache', JSON.stringify(data))
+      const localTemp = leads.value.filter(l => String(l.id).startsWith('temp_'))
+      leads.value = [...localTemp, ...data.filter(d => !localTemp.some(t => t.lead_code === d.lead_code))]
+      localStorage.setItem('sales_leads_cache', JSON.stringify(leads.value))
     }
   } catch (err) {
     console.warn('Fallback to local storage cache for sales_leads:', err.message)
@@ -167,6 +168,7 @@ const stats = computed(() => {
 
 // Open Add / Edit Modal
 const openAddModal = () => {
+  isSavingLead.value = false
   editingLeadId.value = null
   leadForm.value = {
     company_name: '',
@@ -183,6 +185,7 @@ const openAddModal = () => {
 }
 
 const openEditModal = (lead) => {
+  isSavingLead.value = false
   editingLeadId.value = lead.id
   leadForm.value = {
     company_name: lead.company_name || '',
@@ -265,7 +268,7 @@ const saveLead = async () => {
       isLeadModalOpen.value = false
       localStorage.setItem('sales_leads_cache', JSON.stringify(leads.value))
 
-      supabase
+      const { data, error } = await supabase
         .from('sales_leads')
         .insert({
           lead_code: nextCode,
@@ -284,16 +287,13 @@ const saveLead = async () => {
         })
         .select()
         .single()
-        .then(({ data }) => {
-          if (data) {
-            const idx = leads.value.findIndex(l => l.id === tempId || l.lead_code === nextCode)
-            if (idx > -1) {
-              leads.value[idx] = data
-              localStorage.setItem('sales_leads_cache', JSON.stringify(leads.value))
-            }
-          }
-        })
-        .catch(e => console.warn('Supabase insert notice:', e))
+
+      if (!error && data) {
+        const idx = leads.value.findIndex(l => l.id === tempId || l.lead_code === nextCode)
+        if (idx > -1) {
+          leads.value[idx] = data
+        }
+      }
     }
 
     localStorage.setItem('sales_leads_cache', JSON.stringify(leads.value))

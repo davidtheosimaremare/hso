@@ -201,6 +201,7 @@ const modulesList = [
   { key: 'delivery-orders', label: 'Pengiriman Barang (Delivery Orders)' },
   { key: 'receive-items', label: 'Penerimaan Barang (Receiving)' },
   { key: 'sop-guide', label: 'SOP & Panduan' },
+  { key: 'database-mapping', label: 'Database Mapping Converter' },
   { key: 'settings', label: 'Pengaturan Akun & Hak Akses (Settings)' }
 ]
 
@@ -963,6 +964,6 @@ const deleteUser = async (user) => {
        </DialogContent>
      </Dialog>
 
-    </div>
-  </div>
-</template>
+     </div>
+   </div>
+ </template>

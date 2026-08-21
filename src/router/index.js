@@ -75,7 +75,7 @@ const router = createRouter({
         { path: '/marketing-hub', component: MarketingHubView },
         { path: '/notifications', component: NotificationsView },
         { path: '/tools/converter', component: ToolsView },
-        { path: '/tools/maps-lead', component: ToolsView },
+        { path: '/tools/maps-lead', redirect: '/tools/converter' },
       ]
     },
     {
@@ -203,6 +203,7 @@ router.beforeEach(async (to, from, next) => {
               'delivery-orders:read', 'delivery-orders:write',
               'logistics-db:read', 'logistics-db:write',
               'sop-guide:read', 'sop-guide:write',
+              'database-mapping:read', 'database-mapping:write',
               'settings:read', 'settings:write'
             ]
           }

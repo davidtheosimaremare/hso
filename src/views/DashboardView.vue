@@ -605,11 +605,11 @@ onUnmounted(() => {
         <div class="flex flex-wrap items-center gap-2">
           <div class="inline-flex items-center rounded-lg border border-border bg-muted p-1 text-muted-foreground">
             <button v-for="f in [
-              { v: 'all', l: 'Semua Periode' },
               { v: 'month', l: 'Bulan Ini' },
               { v: 'lastMonth', l: 'Bulan Lalu' },
               { v: 'year', l: 'Tahun Ini' },
               { v: 'lastYear', l: 'Tahun Lalu' },
+              { v: 'all', l: 'Semua Periode' },
               { v: 'custom', l: 'Range Tanggal' }
             ]" :key="f.v"
               @click="summaryDateFilter = f.v"
@@ -786,9 +786,9 @@ onUnmounted(() => {
             <div class="flex items-center gap-1.5">
               <span class="text-sm text-muted-foreground">Tahun:</span>
               <select v-model="targetYear" class="h-8 rounded-md border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer">
-                <option :value="2024">2024</option>
-                <option :value="2025">2025</option>
                 <option :value="2026">2026</option>
+                <option :value="2025">2025</option>
+                <option :value="2024">2024</option>
               </select>
             </div>
 

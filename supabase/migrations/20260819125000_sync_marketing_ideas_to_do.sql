@@ -1,6 +1,9 @@
 -- Migration: 2-Way Sync between Marketing Hub (marketing_ideas) and To Do Tasks (boq_requests)
 
--- 1. Add marketing_idea_id column to boq_requests if not exists
+-- 1. Ensure required columns exist
+ALTER TABLE public.marketing_ideas 
+ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT now();
+
 ALTER TABLE public.boq_requests 
 ADD COLUMN IF NOT EXISTS marketing_idea_id UUID REFERENCES public.marketing_ideas(id) ON DELETE SET NULL;
 
@@ -31,12 +34,12 @@ BEGIN
         IF v_task_id IS NOT NULL THEN
             UPDATE public.boq_requests
             SET status = 'TODO',
-                title = '[Marketing] ' || NEW.title,
+                title = CASE WHEN NEW.title LIKE '[Marketing]%' THEN NEW.title ELSE '[Marketing] ' || NEW.title END,
                 description = COALESCE(NEW.description, description),
                 target_date = COALESCE(NEW.target_date, target_date),
                 marketing_idea_id = NEW.id,
                 updated_at = v_now
-            WHERE id = v_task_id AND (status != 'TODO' OR title != ('[Marketing] ' || NEW.title));
+            WHERE id = v_task_id AND (status != 'TODO' OR title != (CASE WHEN NEW.title LIKE '[Marketing]%' THEN NEW.title ELSE '[Marketing] ' || NEW.title END));
         ELSE
             INSERT INTO public.boq_requests (
                 title,
@@ -52,7 +55,7 @@ BEGIN
                 created_at,
                 updated_at
             ) VALUES (
-                '[Marketing] ' || NEW.title,
+                CASE WHEN NEW.title LIKE '[Marketing]%' THEN NEW.title ELSE '[Marketing] ' || NEW.title END,
                 COALESCE(NEW.description, ''),
                 'TODO',
                 'davidtheo@hokiindo.co.id',

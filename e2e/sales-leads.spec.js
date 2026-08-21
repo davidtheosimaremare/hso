@@ -35,22 +35,28 @@ test.describe('HIR Workspace Real Login & Sales Leads E2E Suite', () => {
     // Step 2: Navigate to Sales Leads
     await page.goto('/sales-leads');
     await expect(page.locator('h1:has-text("Database Lead Sales")')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('text=Memuat database lead...')).not.toBeVisible({ timeout: 10000 });
 
     // --- CREATE ---
     const addBtn = page.getByRole('button', { name: 'Tambah Data Lead' });
     await expect(addBtn).toBeVisible();
     await addBtn.click();
 
+    // Wait for modal form
+    const form = page.locator('form');
+    await expect(form).toBeVisible();
+
     const testCompanyName = `PT E2E Live Test ${Date.now()}`;
-    await page.fill('input[placeholder*="PT. Elektrika"]', testCompanyName);
-    await page.fill('input[placeholder*="Pak Budi"]', 'Pak David (Procurement)');
-    await page.fill('input[placeholder*="081234567890"]', '081234567890');
-    await page.fill('input[placeholder*="budi@elektrika.co.id"]', 'david.e2e@hokiindo.co.id');
-    await page.fill('input[placeholder*="Cikarang"]', 'Jakarta Barat');
-    await page.fill('input[placeholder*="Jl. Industri"]', 'Jl. Daan Mogot No. 100');
+    await form.locator('input[placeholder*="Elektrika"]').fill(testCompanyName);
+    await form.locator('input[placeholder*="Budi"]').fill('Pak David (Procurement)');
+    await form.locator('input[placeholder*="081234567890"]').fill('081234567890');
+    await form.locator('input[placeholder*="budi@elektrika"]').fill('david.e2e@hokiindo.co.id');
+    await form.locator('input[placeholder*="Surabaya"]').fill('Jakarta Barat');
+    await form.locator('input[placeholder*="Industri Raya"]').fill('Jl. Daan Mogot No. 100');
 
     // Click Submit in form
-    await page.locator('form').getByRole('button', { name: 'Tambah Data Lead' }).click();
+    await form.locator('button[type="submit"]').click();
+    await expect(page.locator('form')).not.toBeVisible({ timeout: 10000 });
 
     // --- READ ---
     await expect(page.locator('table')).toContainText(testCompanyName, { timeout: 10000 });
@@ -60,8 +66,11 @@ test.describe('HIR Workspace Real Login & Sales Leads E2E Suite', () => {
     await row.locator('button[title="Edit Lead"]').click();
 
     const updatedCompanyName = `${testCompanyName} (VERIFIED)`;
-    await page.fill('input[placeholder*="PT. Elektrika"]', updatedCompanyName);
-    await page.getByRole('button', { name: 'Simpan Perubahan' }).click();
+    const editForm = page.locator('form');
+    await expect(editForm).toBeVisible();
+    await editForm.locator('input[placeholder*="Elektrika"]').fill(updatedCompanyName);
+    await editForm.locator('button[type="submit"]').click();
+    await expect(editForm).not.toBeVisible({ timeout: 10000 });
 
     // Verify update in table
     await expect(page.locator('table')).toContainText(updatedCompanyName, { timeout: 10000 });

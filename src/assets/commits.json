@@ -1,5 +1,13 @@
 [
   {
+    "hash": "ef40f212e8012893bd4f046e3106cb037cf54f81",
+    "shortHash": "ef40f21",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Aug 19 14:12:53 2026 +0700",
+    "message": "fix: resolve new tab document opening for dataUrl and blob attachments"
+  },
+  {
     "hash": "3ea361b4a6f86ab5ac10982028b630c76eb87563",
     "shortHash": "3ea361b",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 4 16:11:04 2026 +0700",
     "message": "fix(logistics-db): Redesign HPO sync button styling, fix undefined template variables, and optimize raw tracking wipe query"
-  },
-  {
-    "hash": "296f98dea7dc014ff7ba127fca99875e6b620075",
-    "shortHash": "296f98d",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 4 10:49:42 2026 +0700",
-    "message": "chore: trigger vercel deployment build"
   }
 ]

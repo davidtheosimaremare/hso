@@ -1,3 +1,4 @@
+
 <script setup>
 import { onMounted, ref, watch, computed, provide } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
@@ -29,7 +30,8 @@ import {
   Code,
   ClipboardList,
   Wrench,
-  Building2
+  Building2,
+  ArrowRightLeft
 } from 'lucide-vue-next'
 import {
   Sheet,
@@ -39,8 +41,6 @@ import {
   SheetTrigger
 } from '@/components/ui/sheet'
 import AccurateSyncWidget from '@/components/AccurateSyncWidget.vue'
-
-
 
 const route = useRoute()
 const router = useRouter()
@@ -55,7 +55,6 @@ provide('allowedModules', allowedModules)
 
 const isPembelianOpen = ref(route.path.startsWith('/cart') || route.path.startsWith('/hpb') || route.path.startsWith('/purchase-orders'))
 const isLogistikOpen = ref(route.path.startsWith('/logistics-db') || route.path.startsWith('/delivery-orders') || route.path.startsWith('/receive-items'))
-const isToolsOpen = ref(route.path.startsWith('/tools'))
 const isSettingOpen = ref(route.path.startsWith('/settings'))
 const isSyncWidgetOpen = ref(false)
 const { isSyncing } = useAccurateSync()
@@ -81,9 +80,6 @@ watch(() => route.path, (newPath) => {
   }
   if (newPath.startsWith('/logistics-db') || newPath.startsWith('/delivery-orders') || newPath.startsWith('/receive-items')) {
     isLogistikOpen.value = true
-  }
-  if (newPath.startsWith('/tools')) {
-    isToolsOpen.value = true
   }
   if (newPath.startsWith('/settings')) {
     isSettingOpen.value = true
@@ -215,6 +211,7 @@ onMounted(async () => {
           'delivery-orders:read', 'delivery-orders:write',
           'logistics-db:read', 'logistics-db:write',
           'sop-guide:read', 'sop-guide:write',
+          'database-mapping:read', 'database-mapping:write',
           'settings:read', 'settings:write'
         ]
       }
@@ -301,16 +298,7 @@ const menuGroups = [
       { type: 'item', name: 'Penjualan', path: '/sales-orders', icon: FileText, moduleKey: 'sales-orders' },
       { type: 'item', name: 'Database Leads', path: '/sales-leads', icon: Building2, moduleKey: 'hsq' },
       { type: 'item', name: 'Marketing Hub', path: '/marketing-hub', icon: Megaphone, moduleKey: 'marketing-hub' },
-      {
-        type: 'group',
-        name: 'Tools Sales',
-        icon: Wrench,
-        isOpen: isToolsOpen,
-        children: [
-          { name: 'Component Converter', path: '/tools/converter', moduleKey: 'hsq', isComingSoon: true },
-          { name: 'Google Maps Lead Finder', path: '/tools/maps-lead', moduleKey: 'hsq', isComingSoon: true }
-        ]
-      }
+      { type: 'item', name: 'Component Converter', path: '/tools/converter', icon: ArrowRightLeft, moduleKey: 'hsq' }
     ]
   },
   {
