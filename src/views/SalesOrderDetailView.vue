@@ -899,30 +899,12 @@ const fetchHpoInBackground = async (soNumber) => {
     hpoDetails.value = items
     console.log(`Background: Found ${Object.keys(mapping).length} HPO mappings, ${items.length} active PO items`)
 
-    // Database healing & cleanup:
-    // 1. Auto-delete orphan shipment records whose HPO was deleted or no longer exists in Accurate POs
-    // 2. Auto-create missing shipment records for active POs
     if (soDetail.value && soDetail.value.items) {
-      const orphanShipments = shipmentList.value.filter(s => {
-        if (!s.hpo_number) return false
-        const hpoNum = s.hpo_number.trim().toUpperCase()
-        const itemCode = (s.item_code || '').trim().toUpperCase()
-        // Check if this specific item_code and HPO pair exists in active PO items
-        const existsInActivePo = items.some(p => 
-          (p.poNumber || '').trim().toUpperCase() === hpoNum && 
-          (p.itemCode || '').trim().toUpperCase() === itemCode
-        )
-        return !existsInActivePo
-      })
-
-      if (orphanShipments.length > 0) {
-        const orphanIds = orphanShipments.map(s => s.id)
-        console.log(`Auto-cleanup: Purging ${orphanIds.length} orphan shipments from deleted HPOs:`, orphanShipments)
-        const { error: delErr } = await supabase.from('shipments').delete().in('id', orphanIds)
-        if (!delErr) {
-          shipmentList.value = shipmentList.value.filter(s => !orphanIds.includes(s.id))
+        // Fetch fresh shipment list from DB to ensure local state is 100% up to date with any recent saves
+        const { data: freshShips } = await supabase.from('shipments').select('*').eq('so_id', String(resolvedSoId.value || soDetail.value.id))
+        if (freshShips) {
+          shipmentList.value = freshShips
         }
-      }
 
         const missingShipments = []
         soDetail.value.items.forEach(item => {
@@ -2519,17 +2501,7 @@ const saveUpdate = async () => {
                     shipmentId = item.logistics_id
                 }
                 
-                // Skip if: no existing DB row AND status/dates unchanged from original
-                // This prevents accidentally creating a new row that overwrites another HPO's status
-                if (!shipmentId && !statusData._hasShipmentRow) {
-                    const statusUnchanged = statusData.status === statusData._originalStatus
-                    const noDatesSet = !statusData.exwork_date && !statusData.eta_date && !statusData.dunex_date && !statusData.hokiindo_date
-                    const noNotesSet = !statusData.admin_notes
-                    if (statusUnchanged && noDatesSet && noNotesSet) {
-                        console.log(`⏭️ Skipping HPO ${key} - no shipment row and nothing changed`)
-                        continue
-                    }
-                }
+
 
                 
                 if (!shipmentId) { 

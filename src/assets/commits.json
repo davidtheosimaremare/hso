@@ -1,5 +1,13 @@
 [
   {
+    "hash": "16974abd3c6ef4f46f582f32b8b2ec61fdc18bdc",
+    "shortHash": "16974ab",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 17:14:19 2026 +0700",
+    "message": "fix: skip saving HPO shipment rows that have no DB record and were not modified by user, preventing status overwrite on multi-HPO items"
+  },
+  {
     "hash": "993abb43f3d272847b9e214d757d093cf831ae3c",
     "shortHash": "993abb4",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 14 12:38:08 2026 +0700",
     "message": "feat(auth): display interactive security modal when login from different IP is detected"
-  },
-  {
-    "hash": "65e5fb2d8bb904cfdab2fe98aec3e37ce13aaabe",
-    "shortHash": "65e5fb2",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 14 12:29:47 2026 +0700",
-    "message": "feat(auth): upgrade single active session check to IP-based location security"
   }
 ]
