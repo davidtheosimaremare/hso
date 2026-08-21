@@ -1,5 +1,13 @@
 [
   {
+    "hash": "18fb47d005b4efa6dac3867bfa84d7f0d0118c01",
+    "shortHash": "18fb47d",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 11:13:34 2026 +0700",
+    "message": "fix: sanitize mapping count to match exact catalog items"
+  },
+  {
     "hash": "f93824592c13fde95a72b17b0930f0c2f1d68263",
     "shortHash": "f938245",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Thu Aug 6 10:10:13 2026 +0700",
     "message": "feat: reorder & recolor dashboard invoice priority card"
-  },
-  {
-    "hash": "e4205895549c04cad4bec36d21fc4433d7b55d44",
-    "shortHash": "e420589",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Aug 5 11:56:04 2026 +0700",
-    "message": "feat: add Marketing Hub Rich Editor, team editing, revision history, and global task pinning sync"
   }
 ]

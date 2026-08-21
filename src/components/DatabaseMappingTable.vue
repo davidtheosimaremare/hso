@@ -234,7 +234,7 @@ const saveRowInline = async (item) => {
   const mlfb = (item.item_no || '').toUpperCase()
   if (!mlfb) return
 
-  const rowData = inlineInputs.value[mlfb] || {}
+  const rowData = inlineInputs.value[mlfb] || inlineInputs.value[cleanPartNumber(mlfb)] || {}
   const schneiderModel = (rowData.schneider || '').trim()
   const schneiderDesc = (rowData.schneider_desc || '').trim()
   const schneiderPrice = rowData.schneider_price ? Number(rowData.schneider_price) : null
@@ -245,26 +245,16 @@ const saveRowInline = async (item) => {
   inlineSaveStatus.value[mlfb] = 'saving'
 
   try {
-    const ruleObj = {
-      siemens_mlfb: mlfb,
-      target_siemens_mlfb: mlfb,
+    await upsertRuleBySiemensMlfb(mlfb, {
       siemens_name: item.item_name || `Siemens ${mlfb}`,
       category: item.category || 'OTHER',
-      schneider_model: schneiderModel || '-',
+      schneider_model: schneiderModel,
       schneider_desc: schneiderDesc,
       schneider_price: schneiderPrice,
-      abb_model: abbModel || '-',
+      abb_model: abbModel,
       abb_desc: abbDesc,
-      abb_price: abbPrice,
-      notes: 'Mapping Inline Autosave',
-      updated_at: new Date().toISOString()
-    }
-
-    const { error } = await supabase
-      .from('siemens_product_mappings')
-      .upsert(ruleObj, { onConflict: 'siemens_mlfb' })
-
-    if (error) throw error
+      abb_price: abbPrice
+    })
 
     inlineSaveStatus.value[mlfb] = 'saved'
     setTimeout(() => {
@@ -272,13 +262,6 @@ const saveRowInline = async (item) => {
         delete inlineSaveStatus.value[mlfb]
       }
     }, 2000)
-
-    const existingIdx = customRules.value.findIndex(r => (r.siemens_mlfb || r.target_siemens_mlfb || '').toUpperCase() === mlfb)
-    if (existingIdx >= 0) {
-      customRules.value[existingIdx] = { ...customRules.value[existingIdx], ...ruleObj }
-    } else {
-      customRules.value.push(ruleObj)
-    }
   } catch (err) {
     console.error('Error saving row inline:', err)
     inlineSaveStatus.value[mlfb] = 'error'
@@ -378,13 +361,16 @@ const importFromExcel = async (e) => {
             target_siemens_mlfb: mlfb,
             siemens_name,
             category,
-            schneider_model: schneider || '-',
+            schneider_model: schneider,
             schneider_desc,
             schneider_price,
-            abb_model: abb || '-',
+            abb_model: abb,
             abb_desc,
             abb_price,
-            notes: 'Imported from Excel',
+            source_brand: schneider ? 'SCHNEIDER' : abb ? 'ABB' : 'CUSTOM',
+            source_model: schneider || abb || mlfb,
+            match_confidence: 100,
+            is_active: true,
             updated_at: new Date().toISOString()
           })
           importedCount++
@@ -393,7 +379,7 @@ const importFromExcel = async (e) => {
 
       if (upsertPayload.length > 0) {
         const { error } = await supabase
-          .from('siemens_product_mappings')
+          .from('converter_custom_rules')
           .upsert(upsertPayload, { onConflict: 'siemens_mlfb' })
 
         if (error) throw error
