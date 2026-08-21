@@ -1,5 +1,13 @@
 [
   {
+    "hash": "3b510a5f1e50b0410cc667a5abaa135562f0dd13",
+    "shortHash": "3b510a5",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 14:43:28 2026 +0700",
+    "message": "feat: enforce pure live web search queries with Google Search tool and eliminate silent offline fallback"
+  },
+  {
     "hash": "3b211e660a403b4da9efe206bb08f7caddb17edc",
     "shortHash": "3b211e6",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Wed Aug 12 08:18:22 2026 +0700",
     "message": "feat(sales-order): set item status to SIAP DIKIRIM when arrived at Hokiindo and display surplus/shortage note at bottom"
-  },
-  {
-    "hash": "b0ed510fcf947084330c70e9100012f3cb20a0ae",
-    "shortHash": "b0ed510",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 11 17:41:10 2026 +0700",
-    "message": "feat(permintaan): sync status, 4-stage fallback, accurate customer combobox & duration indicator"
   }
 ]

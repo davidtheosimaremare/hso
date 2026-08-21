@@ -2231,6 +2231,55 @@ const getHpoShortage = (item) => {
   return item.qty_to_order - totalPo
 }
 
+// Computed: All unique HPOs associated with this Sales Order
+const allLinkedHpos = computed(() => {
+  const hpos = new Set()
+  
+  // 1. From hpoDetails (Accurate PO items matching items of this HSO)
+  if (hpoDetails.value && hpoDetails.value.length > 0) {
+    hpoDetails.value.forEach(p => {
+      if (p.poNumber && p.poNumber.trim()) {
+        hpos.add(p.poNumber.trim())
+      }
+    })
+  }
+  
+  // 2. From hpoMapping
+  if (hpoMapping.value) {
+    Object.values(hpoMapping.value).forEach(str => {
+      if (str) {
+        str.split(',').forEach(n => {
+          if (n.trim()) hpos.add(n.trim())
+        })
+      }
+    })
+  }
+  
+  // 3. From shipmentList (database shipments)
+  if (shipmentList.value && shipmentList.value.length > 0) {
+    shipmentList.value.forEach(s => {
+      if (s.hpo_number) {
+        s.hpo_number.split(',').forEach(n => {
+          if (n.trim()) hpos.add(n.trim())
+        })
+      }
+    })
+  }
+  
+  // 4. From soDetail.items
+  if (soDetail.value?.items) {
+    soDetail.value.items.forEach(item => {
+      if (item.logistics_hpo) {
+        item.logistics_hpo.split(',').forEach(n => {
+          if (n.trim()) hpos.add(n.trim())
+        })
+      }
+    })
+  }
+  
+  return Array.from(hpos).filter(Boolean).sort()
+})
+
 const groupedShipments = computed(() => {
     if (!soDetail.value) return [];
     const shipmentsMap = new Map(); // For DO (HDO)
@@ -3160,8 +3209,28 @@ const downloadAttachment = async (att) => {
                 {{ soDetail.number }}
               </h1>
               <span v-if="soDetail.po_number && soDetail.po_number !== '-'" class="text-xs font-medium text-slate-500 dark:text-slate-400 mt-1.5">
-                PO: {{ soDetail.po_number }}
+                PO Customer: {{ soDetail.po_number }}
               </span>
+
+              <!-- LINKED HPO (PURCHASE ORDERS) LIST -->
+              <div v-if="allLinkedHpos.length > 0" class="flex items-center gap-2 mt-2 flex-wrap">
+                <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  HPO Terikat ({{ allLinkedHpos.length }}):
+                </span>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span 
+                    v-for="hpoNum in allLinkedHpos" 
+                    :key="hpoNum"
+                    @click="router.push(`/purchase-orders/${hpoNum.replace(/\//g, '-')}`)"
+                    class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 cursor-pointer transition-colors shadow-2xs group"
+                    :title="`Klik untuk membuka detail Purchase Order: ${hpoNum}`"
+                  >
+                    <ShoppingCart class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
+                    <span>{{ hpoNum }}</span>
+                  </span>
+                </div>
+              </div>
+
               <p class="text-sm font-medium text-slate-500 dark:text-slate-400 mt-1.5 font-sans">
                 {{ soDetail.client }}
               </p>
@@ -3488,23 +3557,25 @@ const downloadAttachment = async (att) => {
                         </div>
                         
                         <!-- Fallback HPO from DB -->
-                        <div v-else-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && item.logistics_hpo" class="mt-1 bg-white dark:bg-slate-800/80 border border-dashed border-slate-300 dark:border-slate-700 rounded-md p-1.5 px-2 space-y-1 font-sans">
-                            <div class="flex items-center justify-between gap-1 text-xs">
-                                <div class="flex items-center gap-1 min-w-0">
-                                    <ShoppingCart class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                                    <span class="font-bold text-emerald-700 dark:text-emerald-300 truncate">{{ item.logistics_hpo }}</span>
+                        <div v-else-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && item.logistics_hpo" class="mt-1 space-y-1">
+                            <div v-for="hpoStr in item.logistics_hpo.split(',').map(s => s.trim()).filter(Boolean)" :key="hpoStr" class="bg-white dark:bg-slate-800/80 border border-dashed border-slate-300 dark:border-slate-700 rounded-md p-1.5 px-2 space-y-1 font-sans">
+                                <div class="flex items-center justify-between gap-1 text-xs">
+                                    <div class="flex items-center gap-1 min-w-0">
+                                        <ShoppingCart class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                        <span class="font-bold text-emerald-700 dark:text-emerald-300 truncate">{{ hpoStr }}</span>
+                                    </div>
+                                    <span class="font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-1.5 py-0.5 rounded text-[11px] shrink-0">
+                                        {{ item.qty_order }} {{ item.unit }}
+                                    </span>
                                 </div>
-                                <span class="font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-1.5 py-0.5 rounded text-[11px] shrink-0">
-                                    {{ item.qty_order }} {{ item.unit }}
-                                </span>
-                            </div>
-                            <div v-if="item.logistics_status && item.logistics_status !== 'Pending Process'" 
-                                 class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold border text-[10px] whitespace-nowrap shrink-0"
-                                 :class="getLogisticsBadgeClass(item.logistics_status)">
-                                <span class="whitespace-nowrap">{{ item.logistics_status === 'Follow up with our forwarder' ? 'Ex-Works' : item.logistics_status === 'ETA Port JKT' ? 'ETA JKT' : item.logistics_status === 'Already in siemens Warehouse' ? 'Tiba Dunex' : item.logistics_status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : item.logistics_status }}</span>
-                                <span v-if="formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date)" class="opacity-80 font-normal text-[9.5px] whitespace-nowrap">
-                                    ({{ formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date) }})
-                                </span>
+                                <div v-if="item.logistics_status && item.logistics_status !== 'Pending Process'" 
+                                     class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold border text-[10px] whitespace-nowrap shrink-0"
+                                     :class="getLogisticsBadgeClass(item.logistics_status)">
+                                    <span class="whitespace-nowrap">{{ item.logistics_status === 'Follow up with our forwarder' ? 'Ex-Works' : item.logistics_status === 'ETA Port JKT' ? 'ETA JKT' : item.logistics_status === 'Already in siemens Warehouse' ? 'Tiba Dunex' : item.logistics_status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : item.logistics_status }}</span>
+                                    <span v-if="formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date)" class="opacity-80 font-normal text-[9.5px] whitespace-nowrap">
+                                        ({{ formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date) }})
+                                    </span>
+                                </div>
                             </div>
                         </div>
                         
@@ -3822,32 +3893,34 @@ const downloadAttachment = async (att) => {
 
                   <!-- Fallback HPO from DB (imported status/manual PO) -->
                   <!-- Only show if item has remaining qty to ship -->
-                  <div v-else-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && item.logistics_hpo" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
-                    <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-slate-100 dark:border-slate-700">
-                      <ShoppingCart class="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
-                      <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">PO Siemens</span>
-                    </div>
-                    <div class="flex items-center justify-between gap-2">
-                      <span class="text-xs font-mono font-bold text-slate-800 dark:text-slate-200 truncate">{{ item.logistics_hpo }}</span>
-                      <span class="text-xs font-extrabold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 px-2 py-0.5 rounded-lg border border-red-100 dark:border-red-950/60">{{ item.qty_order }} {{ item.unit }}</span>
-                    </div>
+                  <div v-else-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && item.logistics_hpo" class="space-y-2">
+                    <div v-for="hpoStr in item.logistics_hpo.split(',').map(s => s.trim()).filter(Boolean)" :key="hpoStr" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
+                      <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-slate-100 dark:border-slate-700">
+                        <ShoppingCart class="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
+                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">PO Siemens</span>
+                      </div>
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="text-xs font-mono font-bold text-slate-800 dark:text-slate-200 truncate">{{ hpoStr }}</span>
+                        <span class="text-xs font-extrabold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20 px-2 py-0.5 rounded-lg border border-red-100 dark:border-red-950/60">{{ item.qty_order }} {{ item.unit }}</span>
+                      </div>
 
-                    <!-- Logistics status if exists -->
-                    <div v-if="item.logistics_status && item.logistics_status !== 'Pending Process'" class="mt-2">
-                      <div class="flex items-center justify-between gap-1.5 px-2 py-1 rounded-lg border text-[10px] whitespace-nowrap"
-                           :class="getLogisticsBadgeClass(item.logistics_status)">
-                        <div class="flex items-center gap-1 min-w-0">
-                          <span class="font-bold whitespace-nowrap">
-                            {{ item.logistics_status === 'Follow up with our forwarder' ? 'Ex-Works' : item.logistics_status === 'ETA Port JKT' ? 'ETA JKT' : item.logistics_status === 'Already in siemens Warehouse' ? 'Tiba Dunex' : item.logistics_status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : item.logistics_status }}
-                          </span>
-                          <span v-if="formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date)" class="opacity-85 font-medium text-[9.5px] whitespace-nowrap">
-                            ({{ formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date) }})
+                      <!-- Logistics status if exists -->
+                      <div v-if="item.logistics_status && item.logistics_status !== 'Pending Process'" class="mt-2">
+                        <div class="flex items-center justify-between gap-1.5 px-2 py-1 rounded-lg border text-[10px] whitespace-nowrap"
+                             :class="getLogisticsBadgeClass(item.logistics_status)">
+                          <div class="flex items-center gap-1 min-w-0">
+                            <span class="font-bold whitespace-nowrap">
+                              {{ item.logistics_status === 'Follow up with our forwarder' ? 'Ex-Works' : item.logistics_status === 'ETA Port JKT' ? 'ETA JKT' : item.logistics_status === 'Already in siemens Warehouse' ? 'Tiba Dunex' : item.logistics_status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : item.logistics_status }}
+                            </span>
+                            <span v-if="formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date)" class="opacity-85 font-medium text-[9.5px] whitespace-nowrap">
+                              ({{ formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date) }})
+                            </span>
+                          </div>
+                          <span v-if="item.exwork_waiting && item.logistics_status === 'Follow up with our forwarder'"
+                                class="text-[9.5px] font-semibold text-amber-700 dark:text-amber-300 whitespace-nowrap shrink-0">
+                            ⏳ Waiting
                           </span>
                         </div>
-                        <span v-if="item.exwork_waiting && item.logistics_status === 'Follow up with our forwarder'"
-                              class="text-[9.5px] font-semibold text-amber-700 dark:text-amber-300 whitespace-nowrap shrink-0">
-                          ⏳ Waiting
-                        </span>
                       </div>
                     </div>
                   </div>
@@ -4170,10 +4243,20 @@ const downloadAttachment = async (att) => {
                   <div v-if="selectedItem && !isBulkMode" class="p-5 rounded-lg" :class="hpoMapping[selectedItem.code] ? 'bg-green-50 dark:bg-green-900/20 border-2 border-green-300' : selectedItem.qty_to_order > 0 ? 'bg-red-50 dark:bg-red-900/20 border-2 border-red-300' : 'bg-red-50 dark:bg-red-900/20 border-2 border-red-300'">
                       <!-- Jika ada HPO - BIGGER TEXT -->
                       <div v-if="hpoMapping[selectedItem.code]" class="flex items-center gap-3">
-                          <CheckCircle2 class="w-7 h-7 text-green-600" />
-                          <div class="flex-1">
-                              <p class="text-sm font-bold text-green-700 mb-1">PURCHASE ORDER</p>
-                              <p class="text-2xl font-mono font-bold text-green-800 dark:text-green-200">{{ hpoMapping[selectedItem.code] }}</p>
+                          <CheckCircle2 class="w-7 h-7 text-green-600 shrink-0" />
+                          <div class="flex-1 min-w-0">
+                              <p class="text-xs font-bold text-green-700 dark:text-green-400 uppercase tracking-wider mb-1">
+                                Purchase Order Terikat ({{ hpoMapping[selectedItem.code].split(',').map(s => s.trim()).filter(Boolean).length }})
+                              </p>
+                              <div class="flex flex-wrap gap-2">
+                                <span 
+                                  v-for="hpoNum in hpoMapping[selectedItem.code].split(',').map(s => s.trim()).filter(Boolean)" 
+                                  :key="hpoNum"
+                                  class="text-lg font-mono font-bold text-green-800 dark:text-green-200 bg-white/80 dark:bg-green-950/60 px-2.5 py-0.5 rounded-lg border border-green-300 dark:border-green-800 shadow-2xs"
+                                >
+                                  {{ hpoNum }}
+                                </span>
+                              </div>
                           </div>
                       </div>
                       <!-- Jika perlu PO tapi belum ada -->

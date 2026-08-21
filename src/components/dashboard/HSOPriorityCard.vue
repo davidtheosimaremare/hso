@@ -580,6 +580,17 @@ const priorityList = computed(() => {
       actionNeeded = 'Barang diproses di supplier/forwarder (Ex-Work).'
     }
 
+    // Extract all unique HPOs linked to this HSO
+    const hposSet = new Set()
+    soShipments.forEach(s => {
+      if (s.hpo_number) {
+        s.hpo_number.split(',').forEach(n => {
+          if (n.trim()) hposSet.add(n.trim())
+        })
+      }
+    })
+    const linkedHpos = Array.from(hposSet).filter(Boolean).sort()
+
     return {
       ...so,
       hasNoPo,
@@ -587,6 +598,7 @@ const priorityList = computed(() => {
       stuckExWork,
       stuckPO,
       actionNeeded,
+      linkedHpos,
       countNoPo,
       countExwork,
       countEta,
@@ -732,6 +744,19 @@ const nextPage = () => {
             </div>
             <p class="text-xs font-medium text-foreground truncate" :title="item.customer">{{ item.customer }}</p>
             <p v-if="item.salesmanName && item.salesmanName !== '-'" class="text-[11px] text-muted-foreground mt-0.5">Sales: {{ item.salesmanName }}</p>
+            <!-- Linked HPO list if any -->
+            <div v-if="item.linkedHpos && item.linkedHpos.length > 0" class="flex items-center gap-1 mt-1 flex-wrap" @click.stop>
+              <span class="text-[10px] text-muted-foreground font-semibold">HPO ({{ item.linkedHpos.length }}):</span>
+              <span 
+                v-for="hpoNum in item.linkedHpos" 
+                :key="hpoNum"
+                @click.stop="router.push(`/purchase-orders/${hpoNum.replace(/\//g, '-')}`)"
+                class="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 hover:bg-emerald-100 cursor-pointer shadow-2xs"
+                :title="`Buka detail Purchase Order: ${hpoNum}`"
+              >
+                {{ hpoNum }}
+              </span>
+            </div>
           </div>
 
           <!-- 2. Action (Clean Text + Dot Indicator, No Heavy Blocks) -->

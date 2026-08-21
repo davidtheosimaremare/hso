@@ -180,13 +180,15 @@ const invokeEdgeFunctionWithRetry = async (functionName, options, maxRetries = 2
 const fetchOrders = async () => {
   isLoading.value = true
   try {
-      const [soRes, sqRes] = await Promise.all([
+    const [soRes, sqRes, poItemsRes, shipmentsRes] = await Promise.all([
       invokeEdgeFunctionWithRetry('accurate-list-so', {
         body: { fields: 'id,number,transDate,customer,totalAmount,statusName,percentShipped,description,detailItem,poNumber' }
       }),
       invokeEdgeFunctionWithRetry('accurate-list-sq', {
         body: { fields: 'id,number,transDate,customer,totalAmount,statusName,description,detailItem' }
-      }).catch(() => null)
+      }).catch(() => null),
+      supabase.from('purchase_order_items').select('hso_number, header:purchase_orders(number)').not('hso_number', 'is', null).catch(() => ({ data: [] })),
+      supabase.from('shipments').select('so_id, hpo_number').not('hpo_number', 'is', null).catch(() => ({ data: [] }))
     ])
 
     // Build HSO / SQ project map strictly by exact SQ number
@@ -199,29 +201,60 @@ const fetchOrders = async () => {
       }
     })
 
+    // Build map of HSO -> Set of HPO numbers
+    const soHpoMap = {}
+    const poItems = poItemsRes?.data || []
+    poItems.forEach(p => {
+      if (p.hso_number && p.header?.number) {
+        const hso = p.hso_number.trim().toUpperCase()
+        if (!soHpoMap[hso]) soHpoMap[hso] = new Set()
+        soHpoMap[hso].add(p.header.number.trim())
+      }
+    })
+
+    const shipItems = shipmentsRes?.data || []
+    shipItems.forEach(s => {
+      if (s.so_id && s.hpo_number) {
+        const soKey = String(s.so_id).trim().toUpperCase()
+        if (!soHpoMap[soKey]) soHpoMap[soKey] = new Set()
+        s.hpo_number.split(',').forEach(num => {
+          if (num.trim()) soHpoMap[soKey].add(num.trim())
+        })
+      }
+    })
+
     const soData = soRes?.data?.d || []
-      salesOrders.value = soData.map(item => {
-        const desc = item.description || ''
-        let proj = extractProjectFromItem(item)
+    salesOrders.value = soData.map(item => {
+      const desc = item.description || ''
+      let proj = extractProjectFromItem(item)
 
-        // Fallback to exact matching SQ number ONLY if not found in SO itself
-        if (!proj && item.number && sqProjectMap[item.number.toLowerCase()]) {
-          proj = sqProjectMap[item.number.toLowerCase()]
-        }
+      // Fallback to exact matching SQ number ONLY if not found in SO itself
+      if (!proj && item.number && sqProjectMap[item.number.toLowerCase()]) {
+        proj = sqProjectMap[item.number.toLowerCase()]
+      }
 
-        return {
-          id_database: item.id,
-          no_so: item.number,
-          client: item.customer?.name || 'Tanpa Nama',
-          po_number: item.poNumber || '-',
-          date: item.transDate,
-          amount: Math.round(item.totalAmount), 
-          status: item.statusName || '', 
-          progress: item.percentShipped || 0,
-          description: desc,
-          project: proj || '-'
-        }
-      })
+      const soNum = (item.number || '').trim().toUpperCase()
+      const soIdStr = String(item.id || '').trim().toUpperCase()
+      const linkedHposSet = new Set([
+        ...(soHpoMap[soNum] || []),
+        ...(soHpoMap[soIdStr] || [])
+      ])
+      const linkedHpos = Array.from(linkedHposSet).filter(Boolean).sort()
+
+      return {
+        id_database: item.id,
+        no_so: item.number,
+        client: item.customer?.name || 'Tanpa Nama',
+        po_number: item.poNumber || '-',
+        linked_hpos: linkedHpos,
+        date: item.transDate,
+        amount: Math.round(item.totalAmount), 
+        status: item.statusName || '', 
+        progress: item.percentShipped || 0,
+        description: desc,
+        project: proj || '-'
+      }
+    })
   } catch (err) {
     console.error("Error fetching sales orders:", err)
   } finally {
@@ -321,6 +354,8 @@ const filteredAndSortedOrders = computed(() => {
     result = result.filter(so => 
       so.client.toLowerCase().includes(query) || 
       so.no_so.toLowerCase().includes(query) ||
+      (so.po_number && so.po_number.toLowerCase().includes(query)) ||
+      (so.linked_hpos && so.linked_hpos.some(h => h.toLowerCase().includes(query))) ||
       (so.project && so.project.toLowerCase().includes(query)) ||
       (so.description && so.description.toLowerCase().includes(query))
     )
@@ -1275,6 +1310,22 @@ const getStatusColor = (status) => {
                 <span v-if="so.po_number && so.po_number !== '-'" class="text-xs font-medium text-slate-500 dark:text-slate-400">
                   PO: {{ so.po_number }}
                 </span>
+                <!-- LINKED HPO LIST IF MULTIPLE OR SINGLE -->
+                <div v-if="so.linked_hpos && so.linked_hpos.length > 0" class="flex items-center gap-1 flex-wrap mt-0.5" @click.stop>
+                  <span class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                    HPO ({{ so.linked_hpos.length }}):
+                  </span>
+                  <span 
+                    v-for="hpoNum in so.linked_hpos" 
+                    :key="hpoNum"
+                    @click.stop="router.push(`/purchase-orders/${hpoNum.replace(/\//g, '-')}`)"
+                    class="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 cursor-pointer shadow-2xs"
+                    :title="`Buka Purchase Order: ${hpoNum}`"
+                  >
+                    <ShoppingCart class="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+                    {{ hpoNum }}
+                  </span>
+                </div>
               </div>
             </TableCell>
             <TableCell class="py-4 px-4 align-middle whitespace-nowrap">
