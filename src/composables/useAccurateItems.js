@@ -221,7 +221,7 @@ export function useAccurateItems() {
     return items.value
   }
 
-  // Fetch Custom Rules
+  // Fetch Custom Rules & Auto-sync Team-Wide AI Configuration
   const fetchCustomRules = async () => {
     try {
       const { data, error } = await supabase
@@ -230,8 +230,23 @@ export function useAccurateItems() {
         .order('created_at', { ascending: false })
 
       if (!error && data) {
-        customRules.value = data
-        localStorage.setItem('converter_custom_rules_cache', JSON.stringify(data))
+        // Automatically check if team-wide AI config is stored in rules
+        const sysAiRule = data.find(r => r.siemens_mlfb === '__SYSTEM_AI_CONFIG__')
+        if (sysAiRule?.spec_match_notes && typeof localStorage !== 'undefined') {
+          try {
+            const val = JSON.parse(sysAiRule.spec_match_notes)
+            if (val.apiKey) {
+              localStorage.setItem('hso_ai_api_key', val.apiKey)
+              if (val.baseUrl) localStorage.setItem('hso_ai_base_url', val.baseUrl)
+              if (val.model) localStorage.setItem('hso_ai_model', val.model)
+              if (val.webSearch !== undefined) localStorage.setItem('hso_ai_web_search', String(val.webSearch))
+            }
+          } catch {}
+        }
+
+        const filteredRules = data.filter(r => r.siemens_mlfb !== '__SYSTEM_AI_CONFIG__')
+        customRules.value = filteredRules
+        localStorage.setItem('converter_custom_rules_cache', JSON.stringify(filteredRules))
       }
     } catch (e) {
       console.warn('Failed to fetch custom converter rules:', e)

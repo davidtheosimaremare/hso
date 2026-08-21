@@ -11,9 +11,34 @@ export function getAIConfig() {
 }
 
 /**
- * Fetch remote AI configuration from Supabase system_settings with fallback to localStorage
+ * Fetch remote AI configuration from Supabase (converter_custom_rules & system_settings) with fallback to localStorage
  */
 export async function fetchRemoteAIConfig() {
+  // 1. First check converter_custom_rules (Guaranteed to exist and accessible by all team members)
+  try {
+    const { data: ruleData, error: ruleErr } = await supabase
+      .from('converter_custom_rules')
+      .select('spec_match_notes')
+      .eq('siemens_mlfb', '__SYSTEM_AI_CONFIG__')
+      .maybeSingle()
+
+    if (!ruleErr && ruleData?.spec_match_notes) {
+      try {
+        const val = JSON.parse(ruleData.spec_match_notes)
+        if (val.apiKey && typeof localStorage !== 'undefined') {
+          localStorage.setItem('hso_ai_api_key', val.apiKey)
+          if (val.baseUrl) localStorage.setItem('hso_ai_base_url', val.baseUrl)
+          if (val.model) localStorage.setItem('hso_ai_model', val.model)
+          if (val.webSearch !== undefined) localStorage.setItem('hso_ai_web_search', String(val.webSearch))
+          return getAIConfig()
+        }
+      } catch {}
+    }
+  } catch (err) {
+    // Ignore and proceed to system_settings
+  }
+
+  // 2. Also check system_settings table
   try {
     const { data, error } = await supabase
       .from('system_settings')
@@ -50,7 +75,32 @@ export async function saveAIConfig({ apiKey, baseUrl, model, webSearch }) {
     localStorage.setItem('hso_ai_web_search', String(cleanWebSearch))
   }
 
-  // Persist to Supabase database so all team members and future sessions stay configured
+  const jsonConfig = JSON.stringify({
+    apiKey: cleanKey,
+    baseUrl: cleanBaseUrl,
+    model: cleanModel,
+    webSearch: cleanWebSearch
+  })
+
+  // 1. Guaranteed team-wide persistence in converter_custom_rules table
+  try {
+    const rulePayload = {
+      siemens_mlfb: '__SYSTEM_AI_CONFIG__',
+      target_siemens_mlfb: '__SYSTEM_AI_CONFIG__',
+      source_brand: 'SYSTEM',
+      source_model: 'GEMINI_AI_CONFIG',
+      category: 'SYSTEM',
+      spec_match_notes: jsonConfig,
+      match_confidence: 100,
+      is_active: false,
+      updated_at: new Date().toISOString()
+    }
+    await supabase.from('converter_custom_rules').upsert(rulePayload, { onConflict: 'siemens_mlfb' })
+  } catch (err) {
+    console.warn('Could not save AI config to converter_custom_rules:', err)
+  }
+
+  // 2. Also persist to system_settings table if available
   try {
     const payload = {
       key: 'gemini_ai_config',
@@ -64,7 +114,7 @@ export async function saveAIConfig({ apiKey, baseUrl, model, webSearch }) {
     }
     await supabase.from('system_settings').upsert(payload, { onConflict: 'key' })
   } catch (err) {
-    console.warn('Could not save AI config to remote database:', err)
+    // Ignore
   }
 }
 

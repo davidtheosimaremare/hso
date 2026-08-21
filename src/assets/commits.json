@@ -1,5 +1,13 @@
 [
   {
+    "hash": "f8b6574a9948d94fea52915e9e20476015e14d8f",
+    "shortHash": "f8b6574",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 12:16:34 2026 +0700",
+    "message": "fix: persist Gemini AI API key and settings to both database and localStorage automatically"
+  },
+  {
     "hash": "38f9c8f16b05f343fa34ba9f9b470c6c08658b42",
     "shortHash": "38f9c8f",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 11 12:11:13 2026 +0700",
     "message": "fix: remove duplicate closing tags in PermintaanDetailView"
-  },
-  {
-    "hash": "e62493f5bcf340e4bafe7dda8730aa20ca82e090",
-    "shortHash": "e62493f",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 11 12:09:25 2026 +0700",
-    "message": "fix: add default fallback for computed helper values in detail view"
   }
 ]
