@@ -1,5 +1,13 @@
 [
   {
+    "hash": "f93824592c13fde95a72b17b0930f0c2f1d68263",
+    "shortHash": "f938245",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 11:07:44 2026 +0700",
+    "message": "fix: align database mapping badge count with actual mapped items"
+  },
+  {
     "hash": "51e6b2dc4d86cef18185cdc8336e74bff7702ea3",
     "shortHash": "51e6b2d",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Wed Aug 5 11:56:04 2026 +0700",
     "message": "feat: add Marketing Hub Rich Editor, team editing, revision history, and global task pinning sync"
-  },
-  {
-    "hash": "8d6d316e9e0a1f25c4141c5ac46f9a8579ae8c72",
-    "shortHash": "8d6d316",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 4 18:39:34 2026 +0700",
-    "message": "fix(logistics): Add protective status guard preventing downgrade of items already in Hokiindo Raya during bulk HSO sync"
   }
 ]

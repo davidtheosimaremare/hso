@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue'
 import { supabase } from '@/lib/supabase'
+import { cleanPartNumber } from '@/utils/componentConverter'
 
 const items = ref([])
 const customRules = ref([])
@@ -638,19 +639,27 @@ export function useAccurateItems() {
     return counts
   })
 
-  // Count how many unique Siemens items actually have valid equivalent brand mappings
+  // Count how many unique Siemens items in catalog actually have valid equivalent brand mappings
   const mappedCount = computed(() => {
-    const mappedSiemens = new Set()
+    const mappedMlfbSet = new Set()
     ;(customRules.value || []).forEach(r => {
-      const mlfb = (r.siemens_mlfb || r.target_siemens_mlfb || '').trim().toUpperCase()
+      const clean = cleanPartNumber(r.siemens_mlfb || r.target_siemens_mlfb)
       const hasSchneider = r.schneider_model && r.schneider_model.trim() && r.schneider_model.trim() !== '-'
       const hasAbb = r.abb_model && r.abb_model.trim() && r.abb_model.trim() !== '-'
       const hasOther = r.other_model && r.other_model.trim() && r.other_model.trim() !== '-'
-      if (mlfb && (hasSchneider || hasAbb || hasOther)) {
-        mappedSiemens.add(mlfb)
+      if (clean && (hasSchneider || hasAbb || hasOther)) {
+        mappedMlfbSet.add(clean)
       }
     })
-    return mappedSiemens.size
+
+    if (items.value.length > 0) {
+      let count = 0
+      items.value.forEach(item => {
+        if (mappedMlfbSet.has(cleanPartNumber(item.item_no))) count++
+      })
+      return count
+    }
+    return mappedMlfbSet.size
   })
 
   return {

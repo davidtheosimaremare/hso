@@ -91,24 +91,27 @@ const categoryOptions = computed(() => {
 const syncInlineInputsFromRules = () => {
   const map = {}
   ;(customRules.value || []).forEach(r => {
-    const mlfb = (r.siemens_mlfb || r.target_siemens_mlfb || '').toUpperCase()
-    if (mlfb) {
-      map[mlfb] = {
-        schneider: r.schneider_model && r.schneider_model !== '-' ? r.schneider_model : '',
-        schneider_desc: r.schneider_desc || '',
-        schneider_price: r.schneider_price || '',
-        abb: r.abb_model && r.abb_model !== '-' ? r.abb_model : '',
-        abb_desc: r.abb_desc || '',
-        abb_price: r.abb_price || ''
-      }
+    const rawMlfb = (r.siemens_mlfb || r.target_siemens_mlfb || '').toUpperCase()
+    const cleanMlfb = cleanPartNumber(rawMlfb)
+    const hasSch = r.schneider_model && r.schneider_model.trim() && r.schneider_model.trim() !== '-'
+    const hasAbb = r.abb_model && r.abb_model.trim() && r.abb_model.trim() !== '-'
+    const rowData = {
+      schneider: hasSch ? r.schneider_model.trim() : '',
+      schneider_desc: r.schneider_desc || '',
+      schneider_price: r.schneider_price || '',
+      abb: hasAbb ? r.abb_model.trim() : '',
+      abb_desc: r.abb_desc || '',
+      abb_price: r.abb_price || ''
     }
+    if (rawMlfb) map[rawMlfb] = rowData
+    if (cleanMlfb) map[cleanMlfb] = rowData
   })
   inlineInputs.value = map
 }
 
 watch(customRules, () => {
   syncInlineInputsFromRules()
-}, { immediate: true })
+}, { immediate: true, deep: true })
 
 onMounted(async () => {
   await Promise.all([fetchItems(), fetchCustomRules()])
@@ -118,22 +121,28 @@ onMounted(async () => {
 // Cell Get / Set Helper
 const getCellValue = (mlfb, field) => {
   const code = (mlfb || '').toUpperCase()
-  return inlineInputs.value[code]?.[field] ?? ''
+  const clean = cleanPartNumber(code)
+  return inlineInputs.value[code]?.[field] ?? inlineInputs.value[clean]?.[field] ?? ''
 }
 
 const setCellValue = (mlfb, field, value) => {
   const code = (mlfb || '').toUpperCase()
+  const clean = cleanPartNumber(code)
   if (!inlineInputs.value[code]) {
+    const existing = inlineInputs.value[clean] || {}
     inlineInputs.value[code] = {
-      schneider: '',
-      schneider_desc: '',
-      schneider_price: '',
-      abb: '',
-      abb_desc: '',
-      abb_price: ''
+      schneider: existing.schneider || '',
+      schneider_desc: existing.schneider_desc || '',
+      schneider_price: existing.schneider_price || '',
+      abb: existing.abb || '',
+      abb_desc: existing.abb_desc || '',
+      abb_price: existing.abb_price || ''
     }
   }
   inlineInputs.value[code][field] = value
+  if (clean && clean !== code) {
+    inlineInputs.value[clean] = inlineInputs.value[code]
+  }
 }
 
 // Inline Input & Blur Handler
@@ -148,12 +157,17 @@ const handleCellBlur = async (item) => {
 
 const isItemMapped = (mlfb) => {
   const code = (mlfb || '').toUpperCase()
-  const data = inlineInputs.value[code]
-  if (data && (
-    (data.schneider && data.schneider.trim() && data.schneider.trim() !== '-') || 
-    (data.abb && data.abb.trim() && data.abb.trim() !== '-')
-  )) return true
-  const rule = (customRules.value || []).find(r => (r.siemens_mlfb || r.target_siemens_mlfb || '').toUpperCase() === code)
+  const clean = cleanPartNumber(code)
+  const data = inlineInputs.value[code] || inlineInputs.value[clean]
+  if (data) {
+    const hasSch = data.schneider && data.schneider.trim() && data.schneider.trim() !== '-'
+    const hasAbb = data.abb && data.abb.trim() && data.abb.trim() !== '-'
+    if (hasSch || hasAbb) return true
+  }
+  const rule = (customRules.value || []).find(r => {
+    const rRaw = (r.siemens_mlfb || r.target_siemens_mlfb || '').toUpperCase()
+    return rRaw === code || (clean && cleanPartNumber(rRaw) === clean)
+  })
   return !!(rule && (
     (rule.schneider_model && rule.schneider_model.trim() && rule.schneider_model.trim() !== '-') || 
     (rule.abb_model && rule.abb_model.trim() && rule.abb_model.trim() !== '-') ||
@@ -168,12 +182,11 @@ const databaseStats = computed(() => {
   accurateItems.value.forEach(item => {
     if (isItemMapped(item.item_no)) mapped++
   })
-  const finalMapped = Math.max(mapped, mappedCount.value)
   return {
     total,
-    mapped: finalMapped,
-    unmapped: Math.max(0, total - finalMapped),
-    percentage: total > 0 ? Math.round((finalMapped / total) * 100) : 0
+    mapped,
+    unmapped: Math.max(0, total - mapped),
+    percentage: total > 0 ? Math.round((mapped / total) * 100) : 0
   }
 })
 
