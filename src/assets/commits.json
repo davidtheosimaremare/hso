@@ -1,5 +1,13 @@
 [
   {
+    "hash": "c92e99b11f18f4f2e1694bd4c7724aef3b368e62",
+    "shortHash": "c92e99b",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 16:31:22 2026 +0700",
+    "message": "ui: remove HPO badges from SO list view (visible in detail view only)"
+  },
+  {
     "hash": "6c11e43e604a56dce956308c06e70a1270de3f0a",
     "shortHash": "6c11e43",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 14 12:25:46 2026 +0700",
     "message": "feat(collaborate): disable mobile WhatsApp notifications for To-Do tasks to prevent distraction"
-  },
-  {
-    "hash": "3381eba1ae4b3818ec92c2dab900ba33f498f5e3",
-    "shortHash": "3381eba",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 14 12:19:18 2026 +0700",
-    "message": "fix(settings): update display name to HIR Workspace Notification"
   }
 ]

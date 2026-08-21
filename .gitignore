@@ -31,3 +31,4 @@ check_access.js
 scratch/
 test-results/
 playwright-report/
+.vercel

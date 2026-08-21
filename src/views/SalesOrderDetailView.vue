@@ -854,45 +854,14 @@ const fetchHpoInBackground = async (soNumber) => {
       }
     }
 
-    // 2. Also retrieve PO items for any HPOs explicitly recorded in shipments for this SO
-    const existingItemIds = new Set(dbItems.map(i => i.id))
-    const extraHpos = new Set()
-    if (shipmentList.value && shipmentList.value.length > 0) {
-      shipmentList.value.forEach(s => {
-        if (s.hpo_number) {
-          s.hpo_number.split(',').forEach(num => {
-            const cleanNum = num.trim()
-            if (cleanNum) extraHpos.add(cleanNum)
-          })
-        }
-      })
-    }
 
-    if (extraHpos.size > 0) {
-      const soItemCodes = soDetail.value?.items?.map(i => i.code) || []
-      if (soItemCodes.length > 0) {
-        const { data: extraItems } = await supabase
-          .from('accurate_purchase_order_items')
-          .select(`
-            *,
-            header:accurate_purchase_orders!inner(
-              id, number, trans_date, status_name, vendor_name
-            )
-          `)
-          .in('header.number', Array.from(extraHpos))
-          .in('item_code', soItemCodes)
+    // NOTE: Step 2 (fetching extra HPO items via shipments.hpo_number) was removed intentionally.
+    // Reason: If a user clears the Keterangan/detail_notes on an HPO item in Accurate,
+    // that item should no longer be linked to this SO. Fetching by shipment.hpo_number caused
+    // a circular recreation: delete shipment → still in DB → re-fetch → re-create shipment.
+    // Items are ONLY sourced from Step 1 (query by HSO number in detail_notes / hso_number).
 
-        if (extraItems && extraItems.length > 0) {
-          extraItems.forEach(item => {
-            if (!existingItemIds.has(item.id)) {
-              existingItemIds.add(item.id)
-              dbItems.push(item)
-            }
-          })
-        }
-      }
-    }
-    
+
     const poData = { d: null }
     if (!poError && dbItems.length > 0) {
       poData.d = dbItems.map(item => ({
