@@ -126,8 +126,7 @@ const isCopied = ref(false)
 
 const detectedSourceBrand = computed(() => {
   if (!singleInput.value.trim()) return null
-  const det = singleResult.value?.sourceBrand || converterEngine.detectBrand(singleInput.value)
-  return det || 'SCHNEIDER'
+  return singleResult.value?.sourceBrand || converterEngine.detectBrand(singleInput.value, customRules.value)
 })
 
 const sourceItemDesc = computed(() => {

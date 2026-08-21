@@ -238,25 +238,25 @@ export class ComponentConverter {
         const abbPrice = matchCustom.abb_price ? Number(matchCustom.abb_price) : null
 
         // Accurately determine whether query matches Schneider, ABB, or Siemens field
-        let actualSourceBrand = 'SCHNEIDER'
+        let actualSourceBrand = matchCustom.source_brand || null
         const cleanSchneider = cleanPartNumber(schneiderModel)
         const cleanAbb = cleanPartNumber(abbModel)
         const cleanSiemens = cleanPartNumber(targetSiemens)
 
-        if (cleanSchneider && (cleanSchneider === cleanQ || cleanQ.includes(cleanSchneider) || cleanSchneider.includes(cleanQ))) {
-          actualSourceBrand = 'SCHNEIDER'
-        } else if (cleanAbb && (cleanAbb === cleanQ || cleanQ.includes(cleanAbb) || cleanAbb.includes(cleanQ))) {
+        if (cleanAbb && (cleanAbb === cleanQ || cleanQ.includes(cleanAbb) || cleanAbb.includes(cleanQ))) {
           actualSourceBrand = 'ABB'
+        } else if (cleanSchneider && (cleanSchneider === cleanQ || cleanQ.includes(cleanSchneider) || cleanSchneider.includes(cleanQ))) {
+          actualSourceBrand = 'SCHNEIDER'
         } else if (cleanSiemens && (cleanSiemens === cleanQ || cleanQ.includes(cleanSiemens) || cleanSiemens.includes(cleanQ))) {
           actualSourceBrand = 'SIEMENS'
-        } else if (matchCustom.schneider_desc && lowerQ.includes(matchCustom.schneider_desc.toLowerCase())) {
-          actualSourceBrand = 'SCHNEIDER'
         } else if (matchCustom.abb_desc && lowerQ.includes(matchCustom.abb_desc.toLowerCase())) {
           actualSourceBrand = 'ABB'
+        } else if (matchCustom.schneider_desc && lowerQ.includes(matchCustom.schneider_desc.toLowerCase())) {
+          actualSourceBrand = 'SCHNEIDER'
         } else if (matchCustom.siemens_name && lowerQ.includes(matchCustom.siemens_name.toLowerCase())) {
           actualSourceBrand = 'SIEMENS'
         } else {
-          actualSourceBrand = this.detectBrand(query)
+          actualSourceBrand = this.detectBrand(query, customRules) || matchCustom.source_brand || null
         }
 
         return {
@@ -285,7 +285,7 @@ export class ComponentConverter {
     }
 
     // 2. Detect Brand & Category
-    const detectedBrand = explicitBrand || this.detectBrand(query)
+    const detectedBrand = explicitBrand || this.detectBrand(query, customRules)
     
     // 3. Brand-specific conversion
     if (detectedBrand === 'SCHNEIDER') {
@@ -351,22 +351,55 @@ export class ComponentConverter {
       return abbRes
     }
 
-    return schneiderRes.success ? schneiderRes : abbRes
+    return {
+      success: false,
+      sourceBrand: null,
+      message: `Format part number "${query}" belum dikenali di database mapping.`
+    }
   }
 
-  detectBrand(str) {
-    if (!str) return 'SCHNEIDER'
+  detectBrand(str, customRules = []) {
+    if (!str || !str.trim()) return null
     const s = str.trim().toUpperCase()
-    if (/^(5TJ|5SL|5SY|5SJ|5SP|5SV|5SM|5SU|5ST|3VA|3VJ|3VM|3VL|3VT|3WL|3WA|3WT|3WN|3VW|3RT|3TF|3RU|3RB|3RV|3RW|6SL|6SE|3SU|6EP|6ED1|6ES7|6AV|6GK|6AG|3WA9|3WL9|3VA9|3VW9|3VJ9|3VM9|3RT29|3RT19|3RV29|3RU29|5ST3|5ST2|3TX|3TY|3ZX|3KD|3KF|3KC|3LD|3NP|3NA|3ND|3NE|3NC|3NW|3NH)/i.test(s) || /SIEMENS\b/i.test(s)) {
+    const cleanQ = cleanPartNumber(s)
+
+    // 1. Check custom rules database first
+    const rules = (customRules && customRules.length) ? customRules : (this.customRules || [])
+    if (rules && rules.length) {
+      for (const r of rules) {
+        const cleanAbb = cleanPartNumber(r.abb_model || (r.source_brand === 'ABB' ? r.source_model : ''))
+        const cleanSchneider = cleanPartNumber(r.schneider_model || (r.source_brand === 'SCHNEIDER' ? r.source_model : ''))
+        const cleanSiemens = cleanPartNumber(r.siemens_mlfb || r.target_siemens_mlfb || '')
+
+        if (cleanAbb && (cleanAbb === cleanQ || cleanQ.includes(cleanAbb))) return 'ABB'
+        if (cleanSchneider && (cleanSchneider === cleanQ || cleanQ.includes(cleanSchneider))) return 'SCHNEIDER'
+        if (cleanSiemens && (cleanSiemens === cleanQ || cleanQ.includes(cleanSiemens))) return 'SIEMENS'
+      }
+    }
+
+    // 2. Check Accurate Catalog (Siemens)
+    if (this.findInAccurate(s)) {
       return 'SIEMENS'
     }
-    if (/^(S20|SH20|SN20|XT1|XT2|XT3|XT4|XT5|XT7|A1|A2|A3|AF|AX|TF42|TF65|TF96|EF19|EF45|MS116|MS132|MS165|PSR|PSE|PSTX|ACS|CP1|CL|E1\.2|E2\.2|E4\.2|E6\.2|1SDA|1SVR|1SFA|F20)/i.test(s) || /ABB\b/i.test(s)) {
+
+    // 3. Check Known Patterns & Series
+    // SIEMENS
+    if (/^(5TJ|5SL|5SY|5SJ|5SP|5SV|5SM|5SU|5ST|3VA|3VJ|3VM|3VL|3VT|3WL|3WA|3WT|3WN|3VW|3RT|3TF|3RU|3RB|3RV|3RW|6SL|6SE|3SU|6EP|6ED|6ES|6AV|6GK|6AG|3WA9|3WL9|3VA9|3VW9|3VJ9|3VM9|3RT29|3RT19|3RV29|3RU29|5ST3|5ST2|3TX|3TY|3ZX|3KD|3KF|3KC|3LD|3NP|3NA|3ND|3NE|3NC|3NW|3NH)/i.test(s) || /SIEMENS\b/i.test(s)) {
+      return 'SIEMENS'
+    }
+
+    // ABB
+    if (/^(S20|SH20|SN20|S800|XT[1-8]|E1\.2|E2\.2|E4\.2|E6\.2|EMAX|TMAX|A[0-9]|AF[0-9]|AX[0-9]|TF[0-9]|EF[0-9]|MS1[0-9]|MO1[0-9]|PSR|PSE|PSTX|ACS[0-9]|ACH|ACQ|CP1|CL|1SDA|1SVR|1SFA|1SAM|1SAZ|1SBH|F20|DS20|OT[0-9]|OS[0-9]|OETL|CR-M|CP-E)/i.test(s) || /ABB\b/i.test(s)) {
       return 'ABB'
     }
-    if (/^(A9F|A9K|A9R|DOM|EZ9|LV4|LV5|EZC|LC1D|LC1F|LC1E|LRD|GV2|GV3|GV4|ATS|ATV|XB4|XB5|XB7|TM221|SR2|SR3|NW|NT|MTZ|TRV|33668|33671|47893|47440|ABLS)/i.test(s) || /SCHNEIDER|TELEMECANIQUE|MERLIN\s*GERIN|ACTI9|EASYPACT|TESYS/i.test(s)) {
+
+    // SCHNEIDER ELECTRIC
+    if (/^(A9F|A9K|A9R|A9N|DOM|EZ9|LV4|LV5|EZC|EZCV|EZD|C120|C60|LC1D|LC1F|LC1E|LC1K|LP1D|LRD|LR9D|LR9F|LR2K|GV2|GV3|GV4|GV7|ATS|ATV|XB4|XB5|XB7|TM221|TM241|TM251|SR2|SR3|NW|NT|MTZ|MVS|CVS|NSX|NSXm|TRV|33668|33671|47893|47440|ABLS)/i.test(s) || /SCHNEIDER|TELEMECANIQUE|MERLIN\s*GERIN|ACTI9|EASYPACT|TESYS|MASTERPACT|ALTIVAR|ALTISTART/i.test(s)) {
       return 'SCHNEIDER'
     }
-    return 'SCHNEIDER' // default
+
+    // 4. Return null if not identified (never default to Schneider)
+    return null
   }
 
   // ==========================================

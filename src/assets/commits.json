@@ -1,5 +1,13 @@
 [
   {
+    "hash": "28bc21c05a3a65ec6cba79f6bd7ed591f53d8234",
+    "shortHash": "28bc21c",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 11:29:11 2026 +0700",
+    "message": "feat: enhance brand auto-detection, brand-specific source descriptions, and enlarge detected brand logo"
+  },
+  {
     "hash": "9f25eae6331cf86bdc5dd28ddf5bc48ee798b545",
     "shortHash": "9f25eae",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 11 11:51:00 2026 +0700",
     "message": "fix: add default values for missing fields in detail view"
-  },
-  {
-    "hash": "56fc222940f62e7518bbecc4f0d4a5b4f5779efa",
-    "shortHash": "56fc222",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 11 11:50:16 2026 +0700",
-    "message": "chore: add debug log for task data in detail view"
   }
 ]
