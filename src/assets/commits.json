@@ -1,5 +1,13 @@
 [
   {
+    "hash": "fc63f310a26136e83fe5ea949d8b27cabae7b4dd",
+    "shortHash": "fc63f31",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 22:27:16 2026 +0700",
+    "message": "feat: auto-populate current date on status selection in edit modal and ensure flawless persistence"
+  },
+  {
     "hash": "4c05923201f6d4c32f7da6a5e8d6108c50f40798",
     "shortHash": "4c05923",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 14 14:31:45 2026 +0700",
     "message": "feat(collaborate): hide empty metadata fields (Proyek, Customer, PIC) and add inline description & attachment editing without modal popup"
-  },
-  {
-    "hash": "e949880f921855af91b66fe24af6124339aa3258",
-    "shortHash": "e949880",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 14 12:43:44 2026 +0700",
-    "message": "feat(collaborate): redesign task email template to professional white theme with red button and sync in-app notifications"
   }
 ]

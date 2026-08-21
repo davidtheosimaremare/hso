@@ -1055,12 +1055,41 @@ const fetchHdoInBackground = async (doNumbers) => {
   }
 }
 
+// --- EXPLICIT MANUAL SYNC TRIGGERS (SEPARATED HPO, HDO, HRI) ---
+const isAnySyncing = computed(() => isHpoSyncing.value || isHdoSyncing.value || isExcelParsing.value)
+
+const triggerSyncHpo = async () => {
+  if (!soDetail.value?.number) return
+  try {
+    await fetchHpoInBackground(soDetail.value.number)
+    await fetchDetail(true, false)
+    alert('Sinkronisasi HPO dari Accurate berhasil diperbarui!')
+  } catch (err) {
+    alert('Gagal sinkronisasi HPO: ' + err.message)
+  }
+}
+
+const triggerSyncHdo = async () => {
+  const doList = soDetail.value?.shipments?.map(s => s.no).filter(Boolean) || []
+  if (doList.length === 0) {
+    return alert('Tidak ada Surat Jalan (HDO) untuk Sales Order ini di Accurate.')
+  }
+  try {
+    await fetchHdoInBackground(doList)
+    await fetchDetail(true, false)
+    alert('Sinkronisasi HDO & Resi dari Accurate berhasil diperbarui!')
+  } catch (err) {
+    alert('Gagal sinkronisasi HDO: ' + err.message)
+  }
+}
+
 // --- DATABASE LOGISTICS STATUS SYNC LOGIC ---
 const isExcelParsing = ref(false)
 const isExcelModalOpen = ref(false)
 const excelRowsToUpdate = ref([]) // Matched items to update
 const excelProgressCount = ref(0)
 const detectedExcelCols = ref({ exwork: false, eta: false, delivery: false, status: false })
+
 
 const syncFromLogisticsDb = async () => {
   if (!soDetail.value || !soDetail.value.items || soDetail.value.items.length === 0) return
@@ -1637,6 +1666,19 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
     const { data: shipData } = await supabase.from('shipments').select('*').eq('so_id', String(resolvedSoId.value))
     shipmentList.value = shipData || []
 
+    // Directly initialize hpoMapping from Supabase shipments (instant & clean)
+    const directMapping = {}
+    ;(shipData || []).forEach(s => {
+      if (s.item_code && s.hpo_number) {
+        if (directMapping[s.item_code] && !directMapping[s.item_code].includes(s.hpo_number)) {
+          directMapping[s.item_code] += `, ${s.hpo_number}`
+        } else if (!directMapping[s.item_code]) {
+          directMapping[s.item_code] = s.hpo_number
+        }
+      }
+    })
+    hpoMapping.value = directMapping
+
     loadingProgress.value = 85
     loadingMessage.value = 'Memuat aktivitas...'
 
@@ -1772,22 +1814,8 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
     await fetchCartItems()
     fetchLinkedHpb()
 
-    // 1. Sync HDO items if shipments exist in soDetail before closing loader
-    if (soDetail.value?.shipments && soDetail.value.shipments.length > 0) {
-      const doList = soDetail.value.shipments.map(s => s.no).filter(Boolean)
-      if (doList.length > 0) {
-        loadingMessage.value = 'Sinkronisasi data HDO & Resi dari Accurate...'
-        await fetchHdoInBackground(doList)
-      }
-    }
-
-    // 2. Sync HPOs
-    if (!skipHpoSync && soDetail.value?.number) {
-      loadingMessage.value = 'Sinkronisasi data HPO dari Accurate...'
-      await fetchHpoInBackground(soDetail.value.number)
-    } else if (skipHpoSync && soDetail.value?.number) {
-      fetchHpoInBackground(soDetail.value.number)
-    }
+    // Note: Automatic background sync was removed per user instruction.
+    // Sync HPO, HDO, and HRI are now explicitly triggered on demand via the Sync Data menu.
 
   } catch (err) {
     console.error("Fetch Error:", err)
@@ -1814,46 +1842,10 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
   }
 }
 
-// --- REALTIME STATE ---
-const isRealtimeConnected = ref(false)
-let realtimeChannel = null
-
 onMounted(() => {
   fetchDetail()
-
-  // --- Supabase Realtime for PO changes affecting this SO ---
-  realtimeChannel = supabase
-    .channel(`so-po-updates`)
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'accurate_purchase_order_items'
-      },
-      (payload) => {
-        const item = payload.new || payload.old
-        // Check if the updated PO item belongs to this Sales Order
-        if (item && soDetail.value?.number && item.hso_number === soDetail.value.number) {
-          console.log('[Realtime] Related PO updated, reloading HPO details...', payload)
-          // Re-fetch HPO mapping to update the UI
-          fetchHpoInBackground(soDetail.value.number)
-        }
-      }
-    )
-    .subscribe((status) => {
-      console.log('[Realtime SO] Channel status:', status)
-      isRealtimeConnected.value = status === 'SUBSCRIBED'
-    })
 })
 
-
-onUnmounted(() => {
-  if (realtimeChannel) {
-    supabase.removeChannel(realtimeChannel)
-    realtimeChannel = null
-  }
-})
 
 const formatCurrency = (val) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val || 0)
 const fulfillmentPercentage = (items) => {
@@ -2194,21 +2186,40 @@ const getHdoQty = (item) => {
 
 // Helper: Get all HPO entries for specific item (can have multiple POs with different notes)
 const getHpoEntries = (item) => {
-  if (!hpoDetails.value || hpoDetails.value.length === 0) return []
-  
   // Jika baris ini murni stok penuh, tidak mungkin ada HPO
   if (getNoteType(item.admin_note) === 'stock' && item.qty_to_order === 0) return []
   
-  // Find ALL PO items that match this item code
-  const poItems = hpoDetails.value.filter(p => p.itemCode === item.code)
-  return poItems.map(p => ({
-    poNumber: p.poNumber,
-    poDate: p.poDate,
-    quantity: p.quantity,
-    description: p.description,
-    hsoNumber: p.hsoNumber,
-    vendorName: p.vendorName
-  }))
+  // 1. If hpoDetails is available (e.g. from manual HPO sync)
+  if (hpoDetails.value && hpoDetails.value.length > 0) {
+    const poItems = hpoDetails.value.filter(p => p.itemCode === item.code)
+    if (poItems.length > 0) {
+      return poItems.map(p => ({
+        poNumber: p.poNumber,
+        poDate: p.poDate,
+        quantity: p.quantity,
+        description: p.description,
+        hsoNumber: p.hsoNumber,
+        vendorName: p.vendorName
+      }))
+    }
+  }
+
+  // 2. Direct from item.shipments_data (loaded immediately from Supabase)
+  if (item.shipments_data && item.shipments_data.length > 0) {
+    const validShips = item.shipments_data.filter(s => s.hpo_number && s.hpo_number.trim())
+    if (validShips.length > 0) {
+      return validShips.map(s => ({
+        poNumber: s.hpo_number,
+        poDate: s.status_date || s.hokiindo_date || s.exwork_date || s.updated_at,
+        quantity: item.qty_order || item.qty_to_order || 0,
+        description: s.admin_notes || '',
+        hsoNumber: soDetail.value?.number || '',
+        vendorName: s.hpo_number.includes('SIEMENS') ? 'PT. SIEMENS INDONESIA' : ''
+      }))
+    }
+  }
+  
+  return []
 }
 
 // Helper: Determine reference type of a HPO entry
@@ -3199,10 +3210,38 @@ const downloadAttachment = async (att) => {
               <Layers class="w-3.5 h-3.5 mr-1.5"/> Update ({{ selectedItemCodes.length }})
             </Button>
 
-            <Button v-if="canWrite" size="sm" variant="outline" class="h-8 px-3 text-xs font-semibold border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" @click="syncFromLogisticsDb" :disabled="isExcelParsing || isLoading">
-              <RefreshCw class="w-4 h-4 mr-1.5 text-indigo-600 dark:text-indigo-400 shrink-0" :class="isExcelParsing ? 'animate-spin' : ''"/>
-              <span>{{ isExcelParsing ? 'Syncing...' : 'Sync Logistik' }}</span>
-            </Button>
+            <DropdownMenu v-if="canWrite">
+              <DropdownMenuTrigger as-child>
+                <Button size="sm" variant="outline" class="h-8 px-3 text-xs font-semibold border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" :disabled="isAnySyncing || isLoading">
+                  <RefreshCw class="w-3.5 h-3.5 mr-1.5 text-indigo-600 dark:text-indigo-400 shrink-0" :class="isAnySyncing ? 'animate-spin' : ''"/>
+                  <span>{{ isAnySyncing ? 'Syncing...' : 'Sync Data' }}</span>
+                  <ChevronDown class="w-3 h-3 ml-1 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" class="dark:bg-slate-900 dark:border-slate-800 rounded-xl w-64 p-1.5 shadow-lg border border-slate-200 font-sans space-y-1">
+                <DropdownMenuItem @click="triggerSyncHpo" class="dark:hover:bg-slate-800 rounded-lg cursor-pointer py-2 px-2.5 flex items-center gap-2.5">
+                  <ShoppingCart class="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <div class="flex flex-col">
+                    <span class="font-bold text-xs text-slate-800 dark:text-slate-200">Sync HPO (Purchase Order)</span>
+                    <span class="text-[10px] text-slate-500 dark:text-slate-400">Tarik data PO Accurate</span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem @click="triggerSyncHdo" class="dark:hover:bg-slate-800 rounded-lg cursor-pointer py-2 px-2.5 flex items-center gap-2.5">
+                  <Truck class="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
+                  <div class="flex flex-col">
+                    <span class="font-bold text-xs text-slate-800 dark:text-slate-200">Sync HDO (Delivery Order)</span>
+                    <span class="text-[10px] text-slate-500 dark:text-slate-400">Tarik No. Resi & Surat Jalan</span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem @click="triggerSyncHri" class="dark:hover:bg-slate-800 rounded-lg cursor-pointer py-2 px-2.5 flex items-center gap-2.5">
+                  <Package class="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  <div class="flex flex-col">
+                    <span class="font-bold text-xs text-slate-800 dark:text-slate-200">Sync HRI (Database Logistik)</span>
+                    <span class="text-[10px] text-slate-500 dark:text-slate-400">Status Ex-Work / ETA / Dunex</span>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <DropdownMenu>
               <DropdownMenuTrigger as-child>
