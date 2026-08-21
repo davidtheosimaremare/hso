@@ -3260,24 +3260,6 @@ const downloadAttachment = async (att) => {
                 PO Customer: {{ soDetail.po_number }}
               </span>
 
-              <!-- LINKED HPO (PURCHASE ORDERS) LIST -->
-              <div v-if="allLinkedHpos.length > 0" class="flex items-center gap-2 mt-2 flex-wrap">
-                <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  HPO Terikat ({{ allLinkedHpos.length }}):
-                </span>
-                <div class="flex items-center gap-1.5 flex-wrap">
-                  <span 
-                    v-for="hpoNum in allLinkedHpos" 
-                    :key="hpoNum"
-                    @click="router.push(`/purchase-orders/${hpoNum.replace(/\//g, '-')}`)"
-                    class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 cursor-pointer transition-colors shadow-2xs group"
-                    :title="`Klik untuk membuka detail Purchase Order: ${hpoNum}`"
-                  >
-                    <ShoppingCart class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform" />
-                    <span>{{ hpoNum }}</span>
-                  </span>
-                </div>
-              </div>
 
               <p class="text-sm font-medium text-slate-500 dark:text-slate-400 mt-1.5 font-sans">
                 {{ soDetail.client }}

@@ -1,5 +1,13 @@
 [
   {
+    "hash": "729fe00e0a5cab2307d3a4772a6255bedfdbf201",
+    "shortHash": "729fe00",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 16:40:29 2026 +0700",
+    "message": "fix: remove circular Step-2 HPO re-fetch that recreated shipments after Keterangan cleared"
+  },
+  {
     "hash": "c92e99b11f18f4f2e1694bd4c7724aef3b368e62",
     "shortHash": "c92e99b",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 14 12:27:14 2026 +0700",
     "message": "refactor(collaborate): remove redundant Filter 1 count indicator box"
-  },
-  {
-    "hash": "ae688128a3296bb8cbb29948929e63963b68ffb8",
-    "shortHash": "ae68812",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 14 12:25:46 2026 +0700",
-    "message": "feat(collaborate): disable mobile WhatsApp notifications for To-Do tasks to prevent distraction"
   }
 ]
