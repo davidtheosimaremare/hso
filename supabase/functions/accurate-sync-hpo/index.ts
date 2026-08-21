@@ -214,6 +214,36 @@ serve(async (req) => {
 
         console.log(`Found ${matchingItems.length} matching items in POs for ${soNumber}`)
 
+        // Build a set of active (itemCode, poNumber) pairs found in real Accurate POs
+        const activePairs = new Set(matchingItems.map(i => `${i.itemCode.trim().toUpperCase()}||${i.poNumber.trim().toUpperCase()}`))
+
+        // --- PURGE ORPHAN SHIPMENTS ---
+        // Delete any shipment records for this SO where (item_code, hpo_number) is NO LONGER in active POs
+        const { data: existingShipments } = await supabase
+            .from('shipments')
+            .select('id, item_code, hpo_number')
+            .eq('so_id', String(soId))
+            .not('hpo_number', 'is', null)
+
+        if (existingShipments && existingShipments.length > 0) {
+            const orphanIds: string[] = []
+            existingShipments.forEach((s: any) => {
+                const pairKey = `${(s.item_code || '').trim().toUpperCase()}||${(s.hpo_number || '').trim().toUpperCase()}`
+                if (!activePairs.has(pairKey)) {
+                    orphanIds.push(s.id)
+                    console.log(`Orphan: deleting shipment for item=${s.item_code} hpo=${s.hpo_number} (removed from PO)`)
+                }
+            })
+            if (orphanIds.length > 0) {
+                const { error: delErr } = await supabase.from('shipments').delete().in('id', orphanIds)
+                if (delErr) {
+                    console.error(`Failed to purge orphan shipments: ${delErr.message}`)
+                } else {
+                    console.log(`Purged ${orphanIds.length} orphan shipments`)
+                }
+            }
+        }
+
         // Update shipments table for matching items
         let updatedCount = 0
         let createdCount = 0
@@ -221,55 +251,61 @@ serve(async (req) => {
         for (const item of matchingItems) {
             if (!item.itemCode) continue
 
-            // Check if shipment record exists
-            const { data: existingShipment } = await supabase
+            // Check if shipment record exists for this specific item+HPO pair
+            const { data: existingShipments2 } = await supabase
                 .from('shipments')
                 .select('id, current_status, hpo_number')
                 .eq('so_id', String(soId))
                 .eq('item_code', item.itemCode)
-                .maybeSingle()
+                .eq('hpo_number', item.poNumber)
+
+            const existingShipment = existingShipments2?.[0] || null
 
             if (existingShipment) {
-                // Update existing record only if hpo_number is not already set
-                if (!existingShipment.hpo_number) {
+                // Shipment already exists for this item+HPO — no need to recreate
+                updatedCount++
+            } else {
+                // Check if there's any shipment for this item (different HPO)
+                const { data: anyShipments } = await supabase
+                    .from('shipments')
+                    .select('id, current_status, hpo_number')
+                    .eq('so_id', String(soId))
+                    .eq('item_code', item.itemCode)
+                    .is('hpo_number', null)
+
+                const pendingShipment = anyShipments?.[0] || null
+
+                if (pendingShipment) {
+                    // Update existing pending record with HPO number
                     const updatePayload: any = {
                         hpo_number: item.poNumber,
                         updated_at: new Date().toISOString()
                     }
-
-                    // Also update status to "Follow up to factory" if still pending
-                    if (existingShipment.current_status === 'Pending Process') {
+                    if (pendingShipment.current_status === 'Pending Process') {
                         updatePayload.current_status = 'Follow up to factory'
                         updatePayload.status_date = new Date().toISOString().split('T')[0]
                     }
-
-                    const { error: updateErr } = await supabase
+                    await supabase.from('shipments').update(updatePayload).eq('id', pendingShipment.id)
+                    updatedCount++
+                    console.log(`Updated pending shipment for item ${item.itemCode} with HPO ${item.poNumber}`)
+                } else {
+                    // Create new shipment record
+                    const { error: insertErr } = await supabase
                         .from('shipments')
-                        .update(updatePayload)
-                        .eq('id', existingShipment.id)
+                        .insert({
+                            so_id: String(soId),
+                            item_code: item.itemCode,
+                            hpo_number: item.poNumber,
+                            current_status: 'Follow up to factory',
+                            status_date: new Date().toISOString().split('T')[0],
+                            shipment_type: 'IMPORT_PO',
+                            admin_notes: 'Auto-synced dari PO Accurate'
+                        })
 
-                    if (!updateErr) {
-                        updatedCount++
-                        console.log(`Updated shipment for item ${item.itemCode} with HPO ${item.poNumber}`)
+                    if (!insertErr) {
+                        createdCount++
+                        console.log(`Created shipment for item ${item.itemCode} with HPO ${item.poNumber}`)
                     }
-                }
-            } else {
-                // Create new shipment record
-                const { error: insertErr } = await supabase
-                    .from('shipments')
-                    .insert({
-                        so_id: String(soId),
-                        item_code: item.itemCode,
-                        hpo_number: item.poNumber,
-                        current_status: 'Follow up to factory',
-                        status_date: new Date().toISOString().split('T')[0],
-                        shipment_type: 'IMPORT_PO',
-                        admin_notes: 'Auto-synced dari PO Accurate'
-                    })
-
-                if (!insertErr) {
-                    createdCount++
-                    console.log(`Created shipment for item ${item.itemCode} with HPO ${item.poNumber}`)
                 }
             }
         }
