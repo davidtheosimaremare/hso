@@ -1,5 +1,13 @@
 [
   {
+    "hash": "abafa3e5155a972ddcd5c25f307944d60ef60bc6",
+    "shortHash": "abafa3e",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 15:45:39 2026 +0700",
+    "message": "fix: auto-purge orphan shipment records on HPO sync and enforce PERLU DIPESAN status when HPO is deleted"
+  },
+  {
     "hash": "f0aef46e15680089ab88f607630c70b831a18da3",
     "shortHash": "f0aef46",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Wed Aug 12 09:55:32 2026 +0700",
     "message": "fix: handle active_session_id error in MainLayout safely"
-  },
-  {
-    "hash": "be532b80a3afcf81f8a845b47a7295359e94c385",
-    "shortHash": "be532b8",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Aug 12 09:44:37 2026 +0700",
-    "message": "fix: import missing ShoppingCart icon in SalesOrderDetailView to prevent ReferenceError"
   }
 ]

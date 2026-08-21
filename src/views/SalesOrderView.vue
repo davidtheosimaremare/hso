@@ -180,15 +180,16 @@ const invokeEdgeFunctionWithRetry = async (functionName, options, maxRetries = 2
 const fetchOrders = async () => {
   isLoading.value = true
   try {
-    const [soRes, sqRes, poItemsRes, shipmentsRes] = await Promise.all([
+    const [soRes, sqRes] = await Promise.all([
       invokeEdgeFunctionWithRetry('accurate-list-so', {
         body: { fields: 'id,number,transDate,customer,totalAmount,statusName,percentShipped,description,detailItem,poNumber' }
       }),
       invokeEdgeFunctionWithRetry('accurate-list-sq', {
         body: { fields: 'id,number,transDate,customer,totalAmount,statusName,description,detailItem' }
-      }).catch(() => null),
-      supabase.from('purchase_order_items').select('hso_number, header:purchase_orders(number)').not('hso_number', 'is', null).catch(() => ({ data: [] })),
-      supabase.from('shipments').select('so_id, hpo_number').not('hpo_number', 'is', null).catch(() => ({ data: [] }))
+      }).catch(err => {
+        console.warn('SQ list fetch error:', err)
+        return null
+      })
     ])
 
     // Build HSO / SQ project map strictly by exact SQ number
@@ -201,27 +202,42 @@ const fetchOrders = async () => {
       }
     })
 
-    // Build map of HSO -> Set of HPO numbers
+    // Fetch linked HPO mappings from Supabase (safe background fetch)
     const soHpoMap = {}
-    const poItems = poItemsRes?.data || []
-    poItems.forEach(p => {
-      if (p.hso_number && p.header?.number) {
-        const hso = p.hso_number.trim().toUpperCase()
-        if (!soHpoMap[hso]) soHpoMap[hso] = new Set()
-        soHpoMap[hso].add(p.header.number.trim())
-      }
-    })
+    try {
+      const [poItemsRes, shipmentsRes] = await Promise.all([
+        supabase
+          .from('accurate_purchase_order_items')
+          .select('hso_number, header:accurate_purchase_orders(number)')
+          .not('hso_number', 'is', null),
+        supabase
+          .from('shipments')
+          .select('so_id, hpo_number')
+          .not('hpo_number', 'is', null)
+      ])
 
-    const shipItems = shipmentsRes?.data || []
-    shipItems.forEach(s => {
-      if (s.so_id && s.hpo_number) {
-        const soKey = String(s.so_id).trim().toUpperCase()
-        if (!soHpoMap[soKey]) soHpoMap[soKey] = new Set()
-        s.hpo_number.split(',').forEach(num => {
-          if (num.trim()) soHpoMap[soKey].add(num.trim())
-        })
-      }
-    })
+      const poItems = poItemsRes?.data || []
+      poItems.forEach(p => {
+        if (p.hso_number && p.header?.number) {
+          const hso = p.hso_number.trim().toUpperCase()
+          if (!soHpoMap[hso]) soHpoMap[hso] = new Set()
+          soHpoMap[hso].add(p.header.number.trim())
+        }
+      })
+
+      const shipItems = shipmentsRes?.data || []
+      shipItems.forEach(s => {
+        if (s.so_id && s.hpo_number) {
+          const soKey = String(s.so_id).trim().toUpperCase()
+          if (!soHpoMap[soKey]) soHpoMap[soKey] = new Set()
+          s.hpo_number.split(',').forEach(num => {
+            if (num.trim()) soHpoMap[soKey].add(num.trim())
+          })
+        }
+      })
+    } catch (dbErr) {
+      console.warn('Error loading HPO mappings for SO list:', dbErr)
+    }
 
     const soData = soRes?.data?.d || []
     salesOrders.value = soData.map(item => {
