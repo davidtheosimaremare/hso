@@ -131,45 +131,25 @@ const detectedSourceBrand = computed(() => {
 
 const sourceItemDesc = computed(() => {
   if (!singleResult.value || !singleResult.value.success) return ''
+  if (singleResult.value.sourceDescription) return singleResult.value.sourceDescription
   const brand = (detectedSourceBrand.value || '').toUpperCase()
   
   if (brand.includes('SIEMENS')) {
     const item = singleResult.value.accurateItem
-    return item?.item_name || singleResult.value.siemensName || ''
+    return item?.long_description || item?.description || item?.item_name || singleResult.value.siemensName || ''
   } else if (brand.includes('SCHNEIDER')) {
-    if (singleResult.value.schneiderDesc) return singleResult.value.schneiderDesc
-    if (singleResult.value.sourceSpecs) {
-      const sp = singleResult.value.sourceSpecs
-      const parts = [
-        singleResult.value.category ? `Schneider ${singleResult.value.category}` : 'Schneider',
-        singleResult.value.sourceModel,
-        sp.poles,
-        sp.ampere,
-        sp.breakingCapacity || sp.power || sp.coilVoltage || sp.thermalRange
-      ].filter(Boolean)
-      return parts.join(', ')
-    }
-    return singleResult.value.sourceModel ? `Schneider Electric ${singleResult.value.sourceModel}` : ''
+    return singleResult.value.schneiderDesc || ''
   } else if (brand.includes('ABB')) {
-    if (singleResult.value.abbDesc) return singleResult.value.abbDesc
-    if (singleResult.value.sourceSpecs) {
-      const sp = singleResult.value.sourceSpecs
-      const parts = [
-        singleResult.value.category ? `ABB ${singleResult.value.category}` : 'ABB',
-        singleResult.value.sourceModel,
-        sp.poles,
-        sp.ampere,
-        sp.breakingCapacity || sp.power || sp.coilVoltage || sp.thermalRange
-      ].filter(Boolean)
-      return parts.join(', ')
-    }
-    return singleResult.value.sourceModel ? `ABB ${singleResult.value.sourceModel}` : ''
+    return singleResult.value.abbDesc || ''
   }
-  return singleResult.value.schneiderDesc || singleResult.value.abbDesc || ''
+  return ''
 })
 
 const sourceItemPrice = computed(() => {
   if (!singleResult.value || !singleResult.value.success) return null
+  if (singleResult.value.sourcePrice !== undefined && singleResult.value.sourcePrice !== null) {
+    return singleResult.value.sourcePrice
+  }
   const brand = (detectedSourceBrand.value || '').toUpperCase()
   if (brand.includes('SIEMENS')) {
     return singleResult.value.accurateItem?.unit_price || null

@@ -1,5 +1,13 @@
 [
   {
+    "hash": "6d8022e8fc3bbc75172ca49838b98526d5fef897",
+    "shortHash": "6d8022e",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 11:31:48 2026 +0700",
+    "message": "fix: integrate custom rules into brand detection and eliminate hardcoded Schneider fallback"
+  },
+  {
     "hash": "28bc21c05a3a65ec6cba79f6bd7ed591f53d8234",
     "shortHash": "28bc21c",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 11 11:51:36 2026 +0700",
     "message": "refine: simplify template rendering for meta info cards"
-  },
-  {
-    "hash": "7588887274ecdb6d931bc4e50d3e243cb2b32cd3",
-    "shortHash": "7588887",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 11 11:51:00 2026 +0700",
-    "message": "fix: add default values for missing fields in detail view"
   }
 ]

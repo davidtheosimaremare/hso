@@ -205,156 +205,179 @@ export class ComponentConverter {
 
     const query = inputStr.trim()
 
-    // 1. Check User Custom Overrides & Admin Rules first
-    if (customRules && customRules.length) {
-      const cleanQ = cleanPartNumber(query)
-      const lowerQ = query.toLowerCase()
+    // =========================================================================
+    // 1. PRIMARY SOURCE OF TRUTH: DATABASE MAPPING TABLE (EXACT MODEL MATCH)
+    // =========================================================================
+    const cleanQ = cleanPartNumber(query)
+    const lowerQ = query.toLowerCase()
+    const rules = (customRules && customRules.length) ? customRules : (this.customRules || [])
 
-      const matchCustom = customRules.find(r => {
-        const cleanSchneider = cleanPartNumber(r.schneider_model || (r.source_brand === 'SCHNEIDER' ? r.source_model : ''))
+    if (rules && rules.length && cleanQ) {
+      // 1A. Exact match on ABB SKU/Model
+      const abbMatch = rules.find(r => {
         const cleanAbb = cleanPartNumber(r.abb_model || (r.source_brand === 'ABB' ? r.source_model : ''))
-        const cleanSiemens = cleanPartNumber(r.siemens_mlfb || r.target_siemens_mlfb || '')
-        const cleanOther = cleanPartNumber(r.other_model || (r.source_brand === 'OTHER' ? r.source_model : ''))
-        const cleanSource = cleanPartNumber(r.source_model || '')
-
-        const matchSchneiderDesc = Boolean(r.schneider_desc && r.schneider_desc.length > 3 && (lowerQ.includes(r.schneider_desc.toLowerCase()) || r.schneider_desc.toLowerCase().includes(lowerQ)))
-        const matchAbbDesc = Boolean(r.abb_desc && r.abb_desc.length > 3 && (lowerQ.includes(r.abb_desc.toLowerCase()) || r.abb_desc.toLowerCase().includes(lowerQ)))
-        const matchSiemensName = Boolean(r.siemens_name && r.siemens_name.length > 3 && (lowerQ.includes(r.siemens_name.toLowerCase()) || r.siemens_name.toLowerCase().includes(lowerQ)))
-
-        return (cleanSchneider && (cleanSchneider === cleanQ || cleanQ.includes(cleanSchneider))) ||
-               (cleanAbb && (cleanAbb === cleanQ || cleanQ.includes(cleanAbb))) ||
-               (cleanSiemens && (cleanSiemens === cleanQ || cleanQ.includes(cleanSiemens))) ||
-               (cleanOther && (cleanOther === cleanQ || cleanQ.includes(cleanOther))) ||
-               (cleanSource && (cleanSource === cleanQ || cleanQ.includes(cleanSource))) ||
-               matchSchneiderDesc || matchAbbDesc || matchSiemensName
+        return cleanAbb && cleanAbb === cleanQ
       })
+      if (abbMatch) {
+        return this.buildDatabaseRuleResult(abbMatch, 'ABB', query)
+      }
 
-      if (matchCustom) {
-        const targetSiemens = (matchCustom.siemens_mlfb || matchCustom.target_siemens_mlfb || '').trim().toUpperCase()
-        const accurateItem = this.findInAccurate(targetSiemens)
-        const schneiderModel = matchCustom.schneider_model || (matchCustom.source_brand === 'SCHNEIDER' ? matchCustom.source_model : '-')
-        const abbModel = matchCustom.abb_model || (matchCustom.source_brand === 'ABB' ? matchCustom.source_model : '-')
-        const schneiderPrice = matchCustom.schneider_price ? Number(matchCustom.schneider_price) : null
-        const abbPrice = matchCustom.abb_price ? Number(matchCustom.abb_price) : null
+      // 1B. Exact match on Schneider SKU/Model
+      const schneiderMatch = rules.find(r => {
+        const cleanSch = cleanPartNumber(r.schneider_model || (r.source_brand === 'SCHNEIDER' ? r.source_model : ''))
+        return cleanSch && cleanSch === cleanQ
+      })
+      if (schneiderMatch) {
+        return this.buildDatabaseRuleResult(schneiderMatch, 'SCHNEIDER', query)
+      }
 
-        // Accurately determine whether query matches Schneider, ABB, or Siemens field
-        let actualSourceBrand = matchCustom.source_brand || null
-        const cleanSchneider = cleanPartNumber(schneiderModel)
-        const cleanAbb = cleanPartNumber(abbModel)
-        const cleanSiemens = cleanPartNumber(targetSiemens)
+      // 1C. Exact match on Siemens MLFB in database rules
+      const siemensMatch = rules.find(r => {
+        const cleanSie = cleanPartNumber(r.siemens_mlfb || r.target_siemens_mlfb || '')
+        return cleanSie && cleanSie === cleanQ
+      })
+      if (siemensMatch) {
+        return this.buildDatabaseRuleResult(siemensMatch, 'SIEMENS', query)
+      }
 
-        if (cleanAbb && (cleanAbb === cleanQ || cleanQ.includes(cleanAbb) || cleanAbb.includes(cleanQ))) {
-          actualSourceBrand = 'ABB'
-        } else if (cleanSchneider && (cleanSchneider === cleanQ || cleanQ.includes(cleanSchneider) || cleanSchneider.includes(cleanQ))) {
-          actualSourceBrand = 'SCHNEIDER'
-        } else if (cleanSiemens && (cleanSiemens === cleanQ || cleanQ.includes(cleanSiemens) || cleanSiemens.includes(cleanQ))) {
-          actualSourceBrand = 'SIEMENS'
-        } else if (matchCustom.abb_desc && lowerQ.includes(matchCustom.abb_desc.toLowerCase())) {
-          actualSourceBrand = 'ABB'
-        } else if (matchCustom.schneider_desc && lowerQ.includes(matchCustom.schneider_desc.toLowerCase())) {
-          actualSourceBrand = 'SCHNEIDER'
-        } else if (matchCustom.siemens_name && lowerQ.includes(matchCustom.siemens_name.toLowerCase())) {
-          actualSourceBrand = 'SIEMENS'
-        } else {
-          actualSourceBrand = this.detectBrand(query, customRules) || matchCustom.source_brand || null
-        }
+      // 1D. Exact match on Description in database rules
+      const abbDescMatch = rules.find(r => r.abb_desc && r.abb_desc.trim().toLowerCase() === lowerQ)
+      if (abbDescMatch) {
+        return this.buildDatabaseRuleResult(abbDescMatch, 'ABB', query)
+      }
 
-        return {
-          success: true,
-          matchType: accurateItem ? 'EXACT_IN_ACCURATE' : 'CUSTOM_RULE',
-          matchConfidence: matchCustom.match_confidence || 100,
-          sourceBrand: actualSourceBrand,
-          sourceModel: query,
-          category: matchCustom.category || 'OTHER',
-          siemensMLFB: targetSiemens,
-          siemensName: accurateItem?.item_name || matchCustom.siemens_name || matchCustom.target_siemens_name || `Siemens ${targetSiemens}`,
-          schneiderModel,
-          schneiderDesc: matchCustom.schneider_desc || '',
-          schneiderPrice,
-          abbModel,
-          abbDesc: matchCustom.abb_desc || '',
-          abbPrice,
-          otherModel: matchCustom.other_model || '-',
-          specsSummary: accurateItem?.long_description || accurateItem?.description || matchCustom.specs_summary || '',
-          accurateItem,
-          notes: matchCustom.specs_summary || matchCustom.spec_match_notes || 'Dikonversi berdasarkan Master Mapping Admin Database.',
-          specsComparison: [],
-          alternatives: []
-        }
+      const schDescMatch = rules.find(r => r.schneider_desc && r.schneider_desc.trim().toLowerCase() === lowerQ)
+      if (schDescMatch) {
+        return this.buildDatabaseRuleResult(schDescMatch, 'SCHNEIDER', query)
+      }
+
+      // 1E. Prefix match (for search strings >= 4 chars)
+      if (cleanQ.length >= 4) {
+        const pAbb = rules.find(r => {
+          const c = cleanPartNumber(r.abb_model)
+          return c && (c.startsWith(cleanQ) || cleanQ.startsWith(c))
+        })
+        if (pAbb) return this.buildDatabaseRuleResult(pAbb, 'ABB', query)
+
+        const pSch = rules.find(r => {
+          const c = cleanPartNumber(r.schneider_model)
+          return c && (c.startsWith(cleanQ) || cleanQ.startsWith(c))
+        })
+        if (pSch) return this.buildDatabaseRuleResult(pSch, 'SCHNEIDER', query)
+
+        const pSie = rules.find(r => {
+          const c = cleanPartNumber(r.siemens_mlfb || r.target_siemens_mlfb)
+          return c && (c.startsWith(cleanQ) || cleanQ.startsWith(c))
+        })
+        if (pSie) return this.buildDatabaseRuleResult(pSie, 'SIEMENS', query)
       }
     }
 
-    // 2. Detect Brand & Category
-    const detectedBrand = explicitBrand || this.detectBrand(query, customRules)
-    
-    // 3. Brand-specific conversion
-    if (detectedBrand === 'SCHNEIDER') {
-      return this.convertSchneider(query)
-    } else if (detectedBrand === 'ABB') {
-      return this.convertABB(query)
-    } else if (detectedBrand === 'SIEMENS') {
-      // Input is already Siemens -> look up in Accurate & custom rules
-      const targetSiemens = query.trim().toUpperCase()
-      const accurateItem = this.findInAccurate(targetSiemens)
-      const matchingRule = (this.customRules || []).find(r => (r.siemens_mlfb || r.target_siemens_mlfb || '').toUpperCase() === targetSiemens)
-
-      // Dynamic rule suggestion fallback if not explicitly mapped
-      const dynamicSuggestion = generateOfflineRuleSuggestion(
-        targetSiemens,
-        accurateItem?.item_name || '',
-        accurateItem?.category || 'OTHER',
-        accurateItem || {}
-      )
-
-      const schneiderModel = (matchingRule?.schneider_model && matchingRule.schneider_model !== '-')
-        ? matchingRule.schneider_model
-        : (dynamicSuggestion?.schneider_model || '-')
-      const schneiderDesc = matchingRule?.schneider_desc || dynamicSuggestion?.schneider_desc || ''
-      const schneiderPrice = matchingRule?.schneider_price ? Number(matchingRule.schneider_price) : null
-
-      const abbModel = (matchingRule?.abb_model && matchingRule.abb_model !== '-')
-        ? matchingRule.abb_model
-        : (dynamicSuggestion?.abb_model || '-')
-      const abbDesc = matchingRule?.abb_desc || dynamicSuggestion?.abb_desc || ''
-      const abbPrice = matchingRule?.abb_price ? Number(matchingRule.abb_price) : null
+    // =========================================================================
+    // 2. SECONDARY: ACCURATE ITEM MASTER CATALOG (SIEMENS DIRECT LOOKUP)
+    // =========================================================================
+    const directSiemens = this.findInAccurate(query)
+    if (directSiemens) {
+      const targetSiemens = (directSiemens.item_no || query).trim().toUpperCase()
+      const matchingRule = rules.find(r => (r.siemens_mlfb || r.target_siemens_mlfb || '').toUpperCase() === targetSiemens)
 
       return {
         success: true,
-        matchType: accurateItem ? 'EXACT_IN_ACCURATE' : 'SIEMENS_DIRECT',
+        matchType: 'EXACT_IN_ACCURATE',
         matchConfidence: 100,
         sourceBrand: 'SIEMENS',
         sourceModel: query,
-        category: accurateItem?.category || matchingRule?.category || 'SIEMENS_PRODUCT',
+        sourceDescription: directSiemens.long_description || directSiemens.description || directSiemens.item_name || '',
+        sourcePrice: directSiemens.unit_price || null,
+        category: directSiemens.category || matchingRule?.category || 'SIEMENS_PRODUCT',
         siemensMLFB: targetSiemens,
-        siemensName: accurateItem?.item_name || matchingRule?.siemens_name || `Siemens ${targetSiemens}`,
-        schneiderModel,
-        schneiderDesc,
-        schneiderPrice,
-        abbModel,
-        abbDesc,
-        abbPrice,
-        specsSummary: accurateItem?.long_description || accurateItem?.description || matchingRule?.specs_summary || '',
-        accurateItem,
-        notes: 'Produk Siemens dari Database.',
-        specsComparison: [],
-        alternatives: []
+        siemensName: directSiemens.item_name || matchingRule?.siemens_name || `Siemens ${targetSiemens}`,
+        schneiderModel: matchingRule?.schneider_model || '-',
+        schneiderDesc: matchingRule?.schneider_desc || '',
+        schneiderPrice: matchingRule?.schneider_price ? Number(matchingRule.schneider_price) : null,
+        abbModel: matchingRule?.abb_model || '-',
+        abbDesc: matchingRule?.abb_desc || '',
+        abbPrice: matchingRule?.abb_price ? Number(matchingRule.abb_price) : null,
+        specsSummary: directSiemens.long_description || directSiemens.description || matchingRule?.specs_summary || '',
+        accurateItem: directSiemens,
+        notes: 'Produk Siemens terdaftar di Katalog Database Accurate.'
       }
     }
 
-    // Fallback: try Schneider then ABB
+    // =========================================================================
+    // 3. TERTIARY: PATTERN-BASED FALLBACK ENGINE
+    // =========================================================================
+    const detectedBrand = explicitBrand || this.detectBrand(query, rules)
+    
+    if (detectedBrand === 'SCHNEIDER') {
+      const res = this.convertSchneider(query)
+      if (res.success && res.matchConfidence >= 75) return res
+    } else if (detectedBrand === 'ABB') {
+      const res = this.convertABB(query)
+      if (res.success && res.matchConfidence >= 75) return res
+    }
+
+    // Last resort pattern checks
     const schneiderRes = this.convertSchneider(query)
-    if (schneiderRes.success && schneiderRes.matchConfidence >= 75) {
+    if (schneiderRes.success && schneiderRes.matchConfidence >= 80) {
       return schneiderRes
     }
     const abbRes = this.convertABB(query)
-    if (abbRes.success && abbRes.matchConfidence >= 75) {
+    if (abbRes.success && abbRes.matchConfidence >= 80) {
       return abbRes
     }
 
     return {
       success: false,
       sourceBrand: null,
-      message: `Format part number "${query}" belum dikenali di database mapping.`
+      message: `Part number "${query}" tidak ditemukan di database mapping.`
+    }
+  }
+
+  buildDatabaseRuleResult(rule, brand, query) {
+    const targetSiemens = (rule.siemens_mlfb || rule.target_siemens_mlfb || '').trim().toUpperCase()
+    const accurateItem = this.findInAccurate(targetSiemens)
+    const schneiderModel = rule.schneider_model || (rule.source_brand === 'SCHNEIDER' ? rule.source_model : '-')
+    const abbModel = rule.abb_model || (rule.source_brand === 'ABB' ? rule.source_model : '-')
+    const schneiderPrice = (rule.schneider_price !== undefined && rule.schneider_price !== null && rule.schneider_price !== '') ? Number(rule.schneider_price) : null
+    const abbPrice = (rule.abb_price !== undefined && rule.abb_price !== null && rule.abb_price !== '') ? Number(rule.abb_price) : null
+
+    // Determine source description and source price directly from the matched brand
+    let sourceDesc = ''
+    let sourcePrice = null
+
+    if (brand === 'ABB') {
+      sourceDesc = rule.abb_desc || ''
+      sourcePrice = abbPrice
+    } else if (brand === 'SCHNEIDER') {
+      sourceDesc = rule.schneider_desc || ''
+      sourcePrice = schneiderPrice
+    } else if (brand === 'SIEMENS') {
+      sourceDesc = accurateItem?.long_description || accurateItem?.description || rule.siemens_name || ''
+      sourcePrice = accurateItem?.unit_price || null
+    }
+
+    return {
+      success: true,
+      matchType: accurateItem ? 'EXACT_IN_ACCURATE' : 'DATABASE_MAPPING',
+      matchConfidence: 100,
+      sourceBrand: brand,
+      sourceModel: query,
+      sourceDescription: sourceDesc,
+      sourcePrice: sourcePrice,
+      category: rule.category || accurateItem?.category || 'OTHER',
+      siemensMLFB: targetSiemens,
+      siemensName: accurateItem?.item_name || rule.siemens_name || rule.target_siemens_name || `Siemens ${targetSiemens}`,
+      schneiderModel,
+      schneiderDesc: rule.schneider_desc || '',
+      schneiderPrice,
+      abbModel,
+      abbDesc: rule.abb_desc || '',
+      abbPrice,
+      otherModel: rule.other_model || '-',
+      specsSummary: accurateItem?.long_description || accurateItem?.description || rule.specs_summary || '',
+      accurateItem,
+      notes: 'Dikonversi berdasarkan Database Mapping Resmi.'
     }
   }
 
@@ -365,15 +388,22 @@ export class ComponentConverter {
 
     // 1. Check custom rules database first
     const rules = (customRules && customRules.length) ? customRules : (this.customRules || [])
-    if (rules && rules.length) {
+    if (rules && rules.length && cleanQ) {
       for (const r of rules) {
         const cleanAbb = cleanPartNumber(r.abb_model || (r.source_brand === 'ABB' ? r.source_model : ''))
         const cleanSchneider = cleanPartNumber(r.schneider_model || (r.source_brand === 'SCHNEIDER' ? r.source_model : ''))
         const cleanSiemens = cleanPartNumber(r.siemens_mlfb || r.target_siemens_mlfb || '')
 
-        if (cleanAbb && (cleanAbb === cleanQ || cleanQ.includes(cleanAbb))) return 'ABB'
-        if (cleanSchneider && (cleanSchneider === cleanQ || cleanQ.includes(cleanSchneider))) return 'SCHNEIDER'
-        if (cleanSiemens && (cleanSiemens === cleanQ || cleanQ.includes(cleanSiemens))) return 'SIEMENS'
+        if (cleanAbb && cleanAbb === cleanQ) return 'ABB'
+        if (cleanSchneider && cleanSchneider === cleanQ) return 'SCHNEIDER'
+        if (cleanSiemens && cleanSiemens === cleanQ) return 'SIEMENS'
+      }
+
+      // Check description
+      const lower = s.toLowerCase()
+      for (const r of rules) {
+        if (r.abb_desc && r.abb_desc.trim().toLowerCase() === lower) return 'ABB'
+        if (r.schneider_desc && r.schneider_desc.trim().toLowerCase() === lower) return 'SCHNEIDER'
       }
     }
 
