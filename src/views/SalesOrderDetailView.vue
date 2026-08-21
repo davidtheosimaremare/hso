@@ -2439,20 +2439,26 @@ const openActionModal = (item) => {
       dunex_date: item.dunex_date || '',
       hokiindo_date: item.hokiindo_date || '',
       ready_date: item.ready_date || '',
-      admin_notes: item.logistics_note || ''
+      admin_notes: item.logistics_note || '',
+      _hasShipmentRow: !!item.logistics_id,
+      _originalStatus: existingStatus
     }
   } else {
     hpos.forEach(hpo => {
       const ship = getHpoShipment(item, hpo.poNumber)
-      const existingStatus = ship.current_status || 'Follow up with our forwarder'
+      // Use getVisualStatus to get the true displayed status (respects date fields)
+      const visualStatus = getVisualStatus(ship)
+      const existingStatus = validStatuses.includes(visualStatus) ? visualStatus : 'Follow up with our forwarder'
       hpoStatuses[hpo.poNumber] = {
-        status: validStatuses.includes(existingStatus) ? existingStatus : 'Follow up with our forwarder',
+        status: existingStatus,
         exwork_date: ship.exwork_date || '',
         eta_date: ship.eta_date || '',
         dunex_date: ship.dunex_date || '',
         hokiindo_date: ship.hokiindo_date || '',
         ready_date: ship.ready_date || '',
-        admin_notes: (ship && ship.id) ? (ship.admin_notes || '') : (item.logistics_note || '')
+        admin_notes: (ship && ship.id) ? (ship.admin_notes || '') : (item.logistics_note || ''),
+        _hasShipmentRow: !!(ship && ship.id), // Track whether a DB row exists
+        _originalStatus: existingStatus       // Track original to detect changes
       }
     })
   }
@@ -2512,6 +2518,19 @@ const saveUpdate = async () => {
                 } else if (!refNumber) {
                     shipmentId = item.logistics_id
                 }
+                
+                // Skip if: no existing DB row AND status/dates unchanged from original
+                // This prevents accidentally creating a new row that overwrites another HPO's status
+                if (!shipmentId && !statusData._hasShipmentRow) {
+                    const statusUnchanged = statusData.status === statusData._originalStatus
+                    const noDatesSet = !statusData.exwork_date && !statusData.eta_date && !statusData.dunex_date && !statusData.hokiindo_date
+                    const noNotesSet = !statusData.admin_notes
+                    if (statusUnchanged && noDatesSet && noNotesSet) {
+                        console.log(`⏭️ Skipping HPO ${key} - no shipment row and nothing changed`)
+                        continue
+                    }
+                }
+
                 
                 if (!shipmentId) { 
                     const { data: newShip, error: errNew } = await supabase.from('shipments').insert({ so_id: String(soDetail.value.id), shipment_type: 'IMPORT_PO', ...shipmentPayload }).select().single()

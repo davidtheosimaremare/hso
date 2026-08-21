@@ -1,5 +1,13 @@
 [
   {
+    "hash": "993abb43f3d272847b9e214d757d093cf831ae3c",
+    "shortHash": "993abb4",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 16:43:52 2026 +0700",
+    "message": "ui: remove HPO Terikat badges from SO detail page header"
+  },
+  {
     "hash": "729fe00e0a5cab2307d3a4772a6255bedfdbf201",
     "shortHash": "729fe00",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 14 12:29:47 2026 +0700",
     "message": "feat(auth): upgrade single active session check to IP-based location security"
-  },
-  {
-    "hash": "bc40edf650b0479f2766fff2a3eb9cc265825bad",
-    "shortHash": "bc40edf",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 14 12:27:14 2026 +0700",
-    "message": "refactor(collaborate): remove redundant Filter 1 count indicator box"
   }
 ]
