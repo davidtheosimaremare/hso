@@ -186,7 +186,7 @@ export function useAccurateItems() {
         promises.push(
           supabase
             .from('accurate_items')
-            .select('id, item_no, item_name, description, long_description, unit_price, category, brand, stock_status')
+            .select('id, item_no, item_name, description, long_description, unit_price, category, brand, stock_status, stock_quantity, available_to_sell, unit_name')
             .order('item_no', { ascending: true })
             .range(from, from + step - 1)
         )

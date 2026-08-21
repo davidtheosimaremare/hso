@@ -1,5 +1,13 @@
 [
   {
+    "hash": "b5fdf2a305be174e868fad09df80f4c1f62e7ef9",
+    "shortHash": "b5fdf2a",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 11:23:20 2026 +0700",
+    "message": "fix: extract Siemens specifications directly from accurate item description"
+  },
+  {
     "hash": "eed7a032ada5a97aa9497e254bd61b8ff32b9782",
     "shortHash": "eed7a03",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 11 10:09:18 2026 +0700",
     "message": "feat: update sales orders with PO number display, permintaan BOQ with tabs and required fields, and fix 2026 target sales with PPn deduction"
-  },
-  {
-    "hash": "e274eed71d50c25e9803e47c6f25741a9f17aba2",
-    "shortHash": "e274eed",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 7 04:58:04 2026 +0700",
-    "message": "feat: update target penjualan 2026 dari 24M menjadi 35M"
   }
 ]

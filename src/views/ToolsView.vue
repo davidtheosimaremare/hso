@@ -191,6 +191,22 @@ const siemensProductDesc = computed(() => {
   return ''
 })
 
+const formatStockStatus = (item) => {
+  if (!item) return { label: 'Indent', isReady: false }
+  const qty = Number(item.available_to_sell ?? item.stock_quantity ?? 0)
+  if (qty > 0) {
+    const unit = item.unit_name || 'Pcs'
+    return {
+      label: `Stock: ${qty} ${unit}`,
+      isReady: true
+    }
+  }
+  if (item.stock_status && item.stock_status.toUpperCase() === 'READY' && qty <= 0) {
+    return { label: 'Stock: Ready', isReady: true }
+  }
+  return { label: 'Indent', isReady: false }
+}
+
 const handleSingleConvert = () => {
   if (!singleInput.value.trim()) {
     singleResult.value = null
@@ -604,7 +620,7 @@ const handleDirectSyncSiemens = async () => {
 
                 <!-- Price -->
                 <div v-if="sourceItemPrice" class="pt-1.5 border-t border-slate-200/60 dark:border-zinc-800 flex items-center gap-1.5">
-                  <span class="text-[10px] text-slate-400 font-bold uppercase">Harga:</span>
+                  <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Pricelist:</span>
                   <span class="font-mono font-bold text-slate-900 dark:text-white text-sm">
                     {{ formatRupiah(sourceItemPrice) }}
                   </span>
@@ -644,8 +660,13 @@ const handleDirectSyncSiemens = async () => {
                         {{ singleResult.category }}
                       </span>
                     </div>
-                    <span class="text-[11px] font-bold px-2 py-0.5 rounded bg-white dark:bg-zinc-800 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-zinc-700">
-                      Status: {{ singleResult.accurateItem?.stock_status || 'Tersedia di Database' }}
+                    <span 
+                      class="text-[11px] font-bold px-2 py-0.5 rounded border transition-colors"
+                      :class="formatStockStatus(singleResult.accurateItem).isReady 
+                        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' 
+                        : 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-800'"
+                    >
+                      {{ formatStockStatus(singleResult.accurateItem).label }}
                     </span>
                   </div>
 
@@ -681,7 +702,7 @@ const handleDirectSyncSiemens = async () => {
 
                   <!-- Siemens Price (if available) -->
                   <div v-if="singleResult.accurateItem?.unit_price" class="pt-2 border-t border-cyan-200/50 dark:border-cyan-950/40 text-xs flex items-center justify-between">
-                    <span class="text-[10px] text-slate-400 font-bold uppercase">Harga Accurate:</span>
+                    <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Pricelist:</span>
                     <span class="font-mono font-bold text-red-600 dark:text-red-400 text-base">
                       {{ formatRupiah(singleResult.accurateItem.unit_price) }}
                     </span>
@@ -810,8 +831,8 @@ const handleDirectSyncSiemens = async () => {
                       <th class="p-2.5">Input Asal</th>
                       <th class="p-2.5">Ekuivalen Siemens</th>
                       <th class="p-2.5">Nama Resmi</th>
-                      <th class="p-2.5 text-right">Harga Accurate</th>
-                      <th class="p-2.5 text-center">Status</th>
+                      <th class="p-2.5 text-right">Pricelist</th>
+                      <th class="p-2.5 text-center">Stock</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 dark:divide-zinc-800 font-mono">
@@ -825,10 +846,12 @@ const handleDirectSyncSiemens = async () => {
                       </td>
                       <td class="p-2.5 text-center font-sans">
                         <span 
-                          class="px-2 py-0.5 rounded text-[10px] font-semibold"
-                          :class="r.accurateItem ? 'bg-slate-100 text-slate-700 dark:bg-zinc-800 dark:text-slate-300' : 'text-slate-400'"
+                          class="px-2 py-0.5 rounded text-[10px] font-semibold border"
+                          :class="formatStockStatus(r.accurateItem).isReady 
+                            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' 
+                            : 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-800'"
                         >
-                          {{ r.accurateItem ? 'Tercatat' : 'Standar' }}
+                          {{ formatStockStatus(r.accurateItem).label }}
                         </span>
                       </td>
                     </tr>
