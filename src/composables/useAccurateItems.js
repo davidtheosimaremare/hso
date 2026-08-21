@@ -14,13 +14,15 @@ const lastSyncTime = ref(
 )
 
 // Category rank priority order requested by user:
-// 1. ACB, 2. MCB, 3. MCCB, 4. RCCB, 5. CONTACTOR, 6. TOR, and the rest
+// 1. ACB, 2. MCB, 3. MCCB, 4. RCCB, 5. RCBO, 6. CONTACTOR, 7. CONTACTOR_RELAY (Industrial Control), and the rest
 export const CATEGORY_ORDER = [
   'ACB',
   'MCB',
   'MCCB',
   'RCCB',
+  'RCBO',
   'CONTACTOR',
+  'CONTACTOR_RELAY',
   'TOR',
   'MPCB',
   'SOFT_STARTER',
@@ -38,16 +40,19 @@ export const CATEGORY_PRIORITY = {
   'MCB': 2,
   'MCCB': 3,
   'RCCB': 4,
-  'CONTACTOR': 5,
-  'TOR': 6,
-  'MPCB': 7,
-  'SOFT_STARTER': 8,
-  'VFD': 9,
-  'PILOT_DEVICE': 10,
-  'POWER_SUPPLY': 11,
-  'PLC_AUTOMATION': 12,
-  'SPD_MODULAR': 13,
-  'ACCESSORIES': 14,
+  'RCBO': 5,
+  'CONTACTOR': 6,
+  'CONTACTOR_RELAY': 7,
+  'CONTACTOR RELAY': 7,
+  'TOR': 8,
+  'MPCB': 9,
+  'SOFT_STARTER': 10,
+  'VFD': 11,
+  'PILOT_DEVICE': 12,
+  'POWER_SUPPLY': 13,
+  'PLC_AUTOMATION': 14,
+  'SPD_MODULAR': 15,
+  'ACCESSORIES': 16,
   'OTHER': 99
 }
 
@@ -67,7 +72,7 @@ export function categorizeMLFB(itemNo, itemName) {
   const text = `${itemNo} ${itemName}`.toUpperCase()
 
   // 1. ACB (Air Circuit Breaker)
-  if (/^(3WL|3WA|3WT|3WN)/i.test(code) || /ACB\b|AIR CIRCUIT/i.test(text)) return 'ACB'
+  if (/^(3WL|3WA|3WT|3WN)/i.test(code) || /\bACB\b|AIR CIRCUIT/i.test(text)) return 'ACB'
 
   // 2. MCB (Miniature Circuit Breaker)
   if (/^(5SL|5SY|5SJ|5SP|5TJ|5ST)/i.test(code) || /\bMCB\b|MINIATURE CIRCUIT/i.test(text)) return 'MCB'
@@ -75,37 +80,43 @@ export function categorizeMLFB(itemNo, itemName) {
   // 3. MCCB (Molded Case Circuit Breaker)
   if (/^(3VA|3VJ|3VM|3VL|3VT)/i.test(code) || /\bMCCB\b|MOLDED CASE/i.test(text)) return 'MCCB'
 
-  // 4. RCCB / RCBO / ELCB
-  if (/^(5SV|5SM|5SU)/i.test(code) || /\bRCCB\b|\bRCBO\b|\bELCB\b|EARTH LEAKAGE|RESIDUAL CURRENT/i.test(text)) return 'RCCB'
+  // 4. RCCB (Residual Current Circuit Breaker / ELCB)
+  if (/^(5SV|5SM)/i.test(code) || /\bRCCB\b|\bELCB\b|EARTH LEAKAGE/i.test(text)) return 'RCCB'
 
-  // 5. Contactor
+  // 5. RCBO (Residual Current Breaker with Overcurrent Protection)
+  if (/^(5SU)/i.test(code) || /\bRCBO\b/i.test(text)) return 'RCBO'
+
+  // 6. Contactor Relay / Auxiliary Contactor (Industrial Control)
+  if (/^(3RH|3TH)/i.test(code) || /CONTACTOR RELAY|AUXILIARY CONTACTOR|RELAY CONTACTOR|CONTROL RELAY/i.test(text)) return 'CONTACTOR_RELAY'
+
+  // 7. Power Contactor (Industrial Control)
   if (/^(3RT|3TF|3TG|3TS|3TD)/i.test(code) || /CONTACTOR|KONTAKTOR/i.test(text)) return 'CONTACTOR'
 
-  // 6. TOR (Thermal Overload Relay)
+  // 8. TOR (Thermal Overload Relay - Industrial Control)
   if (/^(3RU|3RB)/i.test(code) || /OVERLOAD|TOR\b/i.test(text)) return 'TOR'
 
-  // 7. MPCB (Motor Protection Circuit Breaker)
+  // 9. MPCB (Motor Protection Circuit Breaker - Industrial Control)
   if (/^(3RV)/i.test(code) || /MPCB|MOTOR PROTECT/i.test(text)) return 'MPCB'
 
-  // 8. Soft Starter
+  // 10. Soft Starter (Industrial Control)
   if (/^(3RW)/i.test(code) || /SOFT STARTER/i.test(text)) return 'SOFT_STARTER'
 
-  // 9. VFD / Inverter
+  // 11. VFD / Inverter (Industrial Control)
   if (/^(6SL|6SE|6AU|V20|G120)/i.test(code) || /INVERTER|DRIVE|VFD/i.test(text)) return 'VFD'
 
-  // 10. Pilot Device
+  // 12. Pilot Device (Industrial Control)
   if (/^(3SU|3SB|3SE)/i.test(code) || /PUSH\s*BUTTON|PILOT\s*LAMP|SELECTOR/i.test(text)) return 'PILOT_DEVICE'
 
-  // 11. Power Supply
+  // 13. Power Supply (Industrial Control)
   if (/^(6EP|6ES7148)/i.test(code) || /POWER SUPPLY|SITOP/i.test(text)) return 'POWER_SUPPLY'
 
-  // 12. PLC / Automation
+  // 14. PLC / Automation (Industrial Control)
   if (/^(6ED1|6ES7|6FC|6GK)/i.test(code) || /LOGO!|PLC|SIMATIC/i.test(text)) return 'PLC_AUTOMATION'
 
-  // 13. SPD Modular
+  // 15. SPD Modular
   if (/^(5SD|5TT)/i.test(code) || /SPD|SURGE/i.test(text)) return 'SPD_MODULAR'
 
-  // 14. Accessories
+  // 16. Accessories
   if (/ACC|SWITCH|TERMINAL|RELAY|SOCKET|CABLE/i.test(text)) return 'ACCESSORIES'
 
   return 'OTHER'

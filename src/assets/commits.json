@@ -1,5 +1,13 @@
 [
   {
+    "hash": "d90e66e1087ffd716868beecc1958113f688bea0",
+    "shortHash": "d90e66e",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 11:34:50 2026 +0700",
+    "message": "feat: direct database mapping lookup for brand, description, and price without regex guessing"
+  },
+  {
     "hash": "6d8022e8fc3bbc75172ca49838b98526d5fef897",
     "shortHash": "6d8022e",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 11 11:54:02 2026 +0700",
     "message": "fix: add computed helpers to get project/customer/pic from metadata in detail view"
-  },
-  {
-    "hash": "44bc880f68e8371c9a914bb4a24ba4b20cb8d44c",
-    "shortHash": "44bc880",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 11 11:51:36 2026 +0700",
-    "message": "refine: simplify template rendering for meta info cards"
   }
 ]

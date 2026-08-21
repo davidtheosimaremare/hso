@@ -2,7 +2,7 @@
 import { ref, reactive, computed, onMounted, watch, inject } from 'vue'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
-import { useAccurateItems, CATEGORY_PRIORITY } from '@/composables/useAccurateItems'
+import { useAccurateItems, CATEGORY_PRIORITY, categorizeMLFB } from '@/composables/useAccurateItems'
 import { formatRupiah, cleanPartNumber } from '@/utils/componentConverter'
 import { 
   Search, 
@@ -75,16 +75,16 @@ const showToast = (msg, type = 'success') => {
   }, 4000)
 }
 
-// Category list
+// Category list ordered by priority: ACB, MCB, MCCB, RCCB, RCBO, CONTACTOR, CONTACTOR_RELAY, Industrial Control, and others
 const categoryOptions = computed(() => {
-  const cats = new Set((accurateItems.value || []).map(i => i.category || 'OTHER'))
+  const cats = new Set((accurateItems.value || []).map(i => (i.category || categorizeMLFB(i.item_no, i.item_name) || 'OTHER').toUpperCase()))
   const sorted = Array.from(cats).sort((a, b) => {
     const pA = CATEGORY_PRIORITY[a] ?? 99
     const pB = CATEGORY_PRIORITY[b] ?? 99
     if (pA !== pB) return pA - pB
     return a.localeCompare(b)
   })
-  return [{ key: 'ALL', label: 'Semua Kategori' }, ...sorted.map(c => ({ key: c, label: c }))]
+  return [{ key: 'ALL', label: 'Semua Kategori' }, ...sorted.map(c => ({ key: c, label: c.replace('_', ' ') }))]
 })
 
 // Populate inlineInputs from customRules
@@ -190,16 +190,16 @@ const databaseStats = computed(() => {
   }
 })
 
-// Filtered database products
+// Filtered database products (strictly ordered: ACB, MCB, MCCB, RCCB, RCBO, CONTACTOR, CONTACTOR_RELAY, Industrial Control, and others)
 const filteredDatabaseProducts = computed(() => {
-  return accurateItems.value.filter(item => {
+  const filtered = (accurateItems.value || []).filter(item => {
     const mlfb = (item.item_no || '').toUpperCase()
     const name = (item.item_name || '').toUpperCase()
-    const cat = item.category || 'OTHER'
+    const cat = (item.category || categorizeMLFB(item.item_no, item.item_name) || 'OTHER').toUpperCase()
     const sch = (inlineInputs.value[mlfb]?.schneider || '').toUpperCase()
     const abb = (inlineInputs.value[mlfb]?.abb || '').toUpperCase()
 
-    if (selectedRuleCategory.value !== 'ALL' && cat !== selectedRuleCategory.value) {
+    if (selectedRuleCategory.value !== 'ALL' && cat !== selectedRuleCategory.value.toUpperCase()) {
       return false
     }
 
@@ -213,6 +213,15 @@ const filteredDatabaseProducts = computed(() => {
     }
 
     return true
+  })
+
+  return filtered.sort((a, b) => {
+    const catA = (a.category || categorizeMLFB(a.item_no, a.item_name) || 'OTHER').toUpperCase()
+    const catB = (b.category || categorizeMLFB(b.item_no, b.item_name) || 'OTHER').toUpperCase()
+    const pA = CATEGORY_PRIORITY[catA] ?? 99
+    const pB = CATEGORY_PRIORITY[catB] ?? 99
+    if (pA !== pB) return pA - pB
+    return (a.item_no || '').localeCompare(b.item_no || '')
   })
 })
 
@@ -591,7 +600,7 @@ const importFromExcel = async (e) => {
               <!-- Category -->
               <td class="p-2.5 align-top">
                 <span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold tracking-tight bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400 border border-slate-200/60 dark:border-zinc-700/60">
-                  {{ item.category || 'OTHER' }}
+                  {{ (item.category || categorizeMLFB(item.item_no, item.item_name) || 'OTHER').replace('_', ' ') }}
                 </span>
               </td>
 
