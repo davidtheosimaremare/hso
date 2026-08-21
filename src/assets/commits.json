@@ -1,5 +1,13 @@
 [
   {
+    "hash": "c57fa13e3052d50e0baa6ea26c7a55c9f2226cad",
+    "shortHash": "c57fa13",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 15:51:32 2026 +0700",
+    "message": "fix: resolve order suggestion and add to cart button visibility when HPO is deleted in HSO-26-06-118"
+  },
+  {
     "hash": "2186da004815127a7c45de735e707a47fe7e7ccd",
     "shortHash": "2186da0",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Wed Aug 12 10:12:54 2026 +0700",
     "message": "feat(sales-order): add Dokumen & Lampiran Accurate section and PDF download button to HSO detail"
-  },
-  {
-    "hash": "65497137bbf7b8a743cd5dcd76956b862ecccef2",
-    "shortHash": "6549713",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Aug 12 10:00:08 2026 +0700",
-    "message": "fix: correct Supabase PostgREST column alias syntax for notification queries"
   }
 ]

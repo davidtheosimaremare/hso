@@ -803,6 +803,26 @@ const fetchHpoInBackground = async (soNumber) => {
     let hasMore = true
     let poError = null
 
+    // 1. Build comprehensive search variants for HSO Number
+    const searchVariants = new Set([soNumber])
+    const parts = soNumber.split(/[\/\-]/)
+    if (parts.length === 4) {
+      searchVariants.add(`${parts[0]}/${parts[1]}/${parts[2]}/${parts[3]}`)
+      searchVariants.add(`${parts[0]}/${parts[1]}/${parts[2]}/${parts[3].padStart(4, '0')}`)
+      searchVariants.add(`${parts[0]}/${parts[1]}/${parts[2]}/${Number(parts[3])}`)
+      searchVariants.add(`${parts[0]}-${parts[1]}-${parts[2]}-${parts[3]}`)
+      searchVariants.add(`${parts[0]}-${parts[1]}-${parts[2]}-${parts[3].padStart(4, '0')}`)
+      searchVariants.add(`${parts[1]}/${parts[2]}/${parts[3]}`)
+      searchVariants.add(`${parts[1]}/${parts[2]}/${parts[3].padStart(4, '0')}`)
+    }
+
+    const orClauses = []
+    searchVariants.forEach(variant => {
+      orClauses.push(`detail_notes.ilike.%${variant}%`)
+      orClauses.push(`hso_number.ilike.%${variant}%`)
+    })
+    const orFilter = orClauses.join(',')
+
     while (hasMore) {
       const { data, error } = await supabase
         .from('accurate_purchase_order_items')
@@ -812,7 +832,7 @@ const fetchHpoInBackground = async (soNumber) => {
             id, number, trans_date, status_name, vendor_name
           )
         `)
-        .ilike('detail_notes', `%${soNumber}%`)
+        .or(orFilter)
         .range(page * pageSize, (page + 1) * pageSize - 1)
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
@@ -831,6 +851,45 @@ const fetchHpoInBackground = async (soNumber) => {
         }
       } else {
         hasMore = false
+      }
+    }
+
+    // 2. Also retrieve PO items for any HPOs explicitly recorded in shipments for this SO
+    const existingItemIds = new Set(dbItems.map(i => i.id))
+    const extraHpos = new Set()
+    if (shipmentList.value && shipmentList.value.length > 0) {
+      shipmentList.value.forEach(s => {
+        if (s.hpo_number) {
+          s.hpo_number.split(',').forEach(num => {
+            const cleanNum = num.trim()
+            if (cleanNum) extraHpos.add(cleanNum)
+          })
+        }
+      })
+    }
+
+    if (extraHpos.size > 0) {
+      const soItemCodes = soDetail.value?.items?.map(i => i.code) || []
+      if (soItemCodes.length > 0) {
+        const { data: extraItems } = await supabase
+          .from('accurate_purchase_order_items')
+          .select(`
+            *,
+            header:accurate_purchase_orders!inner(
+              id, number, trans_date, status_name, vendor_name
+            )
+          `)
+          .in('header.number', Array.from(extraHpos))
+          .in('item_code', soItemCodes)
+
+        if (extraItems && extraItems.length > 0) {
+          extraItems.forEach(item => {
+            if (!existingItemIds.has(item.id)) {
+              existingItemIds.add(item.id)
+              dbItems.push(item)
+            }
+          })
+        }
       }
     }
     
@@ -1999,14 +2058,17 @@ const isItemArrivedAtHokiindo = (item) => {
   if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) === 0) return false
 
   // For items needing PO (qty_to_order > 0 / NO STOCK):
-  // It MUST have an active HPO in getHpoEntries(item) to be considered arrived via HPO!
+  // It MUST have active HPOs, and the total arrived quantity across all HPOs MUST meet or exceed qty_to_order!
   const hpos = getHpoEntries(item)
   if (hpos.length > 0) {
-    return hpos.some(hpo => {
+    const arrivedQty = hpos.reduce((sum, hpo) => {
       const shipment = getHpoShipment(item, hpo.poNumber)
-      if (!shipment || Object.keys(shipment).length === 0) return false
-      return getVisualStatus(shipment) === 'Already in Hokiindo Raya'
-    })
+      if (shipment && getVisualStatus(shipment) === 'Already in Hokiindo Raya') {
+        return sum + (hpo.quantity || 0)
+      }
+      return sum
+    }, 0)
+    return arrivedQty >= item.qty_to_order
   }
 
   // If item requires ordering (qty_to_order > 0) and has NO active HPO, it cannot be arrived at Hokiindo!
