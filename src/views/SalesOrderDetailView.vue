@@ -4384,7 +4384,7 @@ const downloadAttachment = async (att) => {
                              <div class="bg-white dark:bg-gray-800 border-2 border-gray-300 dark:border-gray-600 rounded-lg p-4 space-y-3">
                                  <!-- Ex-Works -->
                                  <div class="border-l-4 pl-3 transition-all" :class="statusData.status === 'Follow up with our forwarder' ? 'border-red-600 bg-red-50 dark:bg-red-900/20' : 'border-gray-300'">
-                                     <div class="cursor-pointer py-2" @click="statusData.status = 'Follow up with our forwarder'">
+                                     <div class="cursor-pointer py-2" @click="statusData.status = 'Follow up with our forwarder'; if (!statusData.exwork_date) statusData.exwork_date = new Date().toISOString().split('T')[0]">
                                          <div class="flex items-center gap-3 mb-2">
                                              <div class="w-3 h-3 rounded-full" :class="statusData.status === 'Follow up with our forwarder' ? 'bg-red-600' : 'bg-gray-300'"></div>
                                              <span class="text-base font-medium" :class="statusData.status === 'Follow up with our forwarder' ? 'text-red-700 dark:text-red-300 font-bold' : 'text-gray-600 dark:text-gray-400'">Barang Ready (Ex-Works)</span>
@@ -4398,7 +4398,7 @@ const downloadAttachment = async (att) => {
                                  
                                  <!-- ETA Port JKT -->
                                  <div class="border-l-4 pl-3 transition-all" :class="statusData.status === 'ETA Port JKT' ? 'border-red-600 bg-red-50 dark:bg-red-900/20' : 'border-gray-300'">
-                                     <div class="cursor-pointer py-2" @click="statusData.status = 'ETA Port JKT'">
+                                     <div class="cursor-pointer py-2" @click="statusData.status = 'ETA Port JKT'; if (!statusData.eta_date) statusData.eta_date = new Date().toISOString().split('T')[0]">
                                          <div class="flex items-center gap-3 mb-2">
                                              <div class="w-3 h-3 rounded-full" :class="statusData.status === 'ETA Port JKT' ? 'bg-red-600' : 'bg-gray-300'"></div>
                                              <span class="text-base font-medium" :class="statusData.status === 'ETA Port JKT' ? 'text-red-700 dark:text-red-300 font-bold' : 'text-gray-600 dark:text-gray-400'">Sedang Transit (ETA JKT)</span>
@@ -4412,7 +4412,7 @@ const downloadAttachment = async (att) => {
                                  
                                  <!-- Tiba Dunex -->
                                  <div class="border-l-4 pl-3 transition-all" :class="statusData.status === 'Already in siemens Warehouse' ? 'border-red-600 bg-red-50 dark:bg-red-900/20' : 'border-gray-300'">
-                                     <div class="cursor-pointer py-2" @click="statusData.status = 'Already in siemens Warehouse'">
+                                     <div class="cursor-pointer py-2" @click="statusData.status = 'Already in siemens Warehouse'; if (!statusData.dunex_date) statusData.dunex_date = new Date().toISOString().split('T')[0]">
                                          <div class="flex items-center gap-3 mb-2">
                                              <div class="w-3 h-3 rounded-full" :class="statusData.status === 'Already in siemens Warehouse' ? 'bg-red-600' : 'bg-gray-300'"></div>
                                              <span class="text-base font-medium" :class="statusData.status === 'Already in siemens Warehouse' ? 'text-red-700 dark:text-red-300 font-bold' : 'text-gray-600 dark:text-gray-400'">Tiba di Dunex</span>
@@ -4426,7 +4426,7 @@ const downloadAttachment = async (att) => {
                                  
                                  <!-- Tiba Hokiindo -->
                                  <div class="border-l-4 pl-3 transition-all" :class="statusData.status === 'Already in Hokiindo Raya' ? 'border-red-600 bg-red-50 dark:bg-red-900/20' : 'border-gray-300'">
-                                     <div class="cursor-pointer py-2" @click="statusData.status = 'Already in Hokiindo Raya'">
+                                     <div class="cursor-pointer py-2" @click="statusData.status = 'Already in Hokiindo Raya'; if (!statusData.hokiindo_date) statusData.hokiindo_date = new Date().toISOString().split('T')[0]">
                                          <div class="flex items-center gap-3 mb-2">
                                              <div class="w-3 h-3 rounded-full" :class="statusData.status === 'Already in Hokiindo Raya' ? 'bg-red-600' : 'bg-gray-300'"></div>
                                              <span class="text-base font-medium" :class="statusData.status === 'Already in Hokiindo Raya' ? 'text-red-700 dark:text-red-300 font-bold' : 'text-gray-600 dark:text-gray-400'">Tiba di Hokiindo (Siap Kirim)</span>
