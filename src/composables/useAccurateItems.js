@@ -638,9 +638,25 @@ export function useAccurateItems() {
     return counts
   })
 
+  // Count how many unique Siemens items actually have valid equivalent brand mappings
+  const mappedCount = computed(() => {
+    const mappedSiemens = new Set()
+    ;(customRules.value || []).forEach(r => {
+      const mlfb = (r.siemens_mlfb || r.target_siemens_mlfb || '').trim().toUpperCase()
+      const hasSchneider = r.schneider_model && r.schneider_model.trim() && r.schneider_model.trim() !== '-'
+      const hasAbb = r.abb_model && r.abb_model.trim() && r.abb_model.trim() !== '-'
+      const hasOther = r.other_model && r.other_model.trim() && r.other_model.trim() !== '-'
+      if (mlfb && (hasSchneider || hasAbb || hasOther)) {
+        mappedSiemens.add(mlfb)
+      }
+    })
+    return mappedSiemens.size
+  })
+
   return {
     items,
     customRules,
+    mappedCount,
     isLoading,
     isSyncing,
     syncProgress,

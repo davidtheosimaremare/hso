@@ -38,6 +38,7 @@ const canRead = computed(() => {
 const { 
   items: accurateItems, 
   customRules, 
+  mappedCount,
   isLoading: isAccurateLoading,
   isSyncing: isCatalogSyncing,
   syncProgress: catalogSyncProgress,
@@ -148,9 +149,16 @@ const handleCellBlur = async (item) => {
 const isItemMapped = (mlfb) => {
   const code = (mlfb || '').toUpperCase()
   const data = inlineInputs.value[code]
-  if (data && (data.schneider?.trim() || data.abb?.trim())) return true
+  if (data && (
+    (data.schneider && data.schneider.trim() && data.schneider.trim() !== '-') || 
+    (data.abb && data.abb.trim() && data.abb.trim() !== '-')
+  )) return true
   const rule = (customRules.value || []).find(r => (r.siemens_mlfb || r.target_siemens_mlfb || '').toUpperCase() === code)
-  return !!(rule && ((rule.schneider_model && rule.schneider_model !== '-') || (rule.abb_model && rule.abb_model !== '-')))
+  return !!(rule && (
+    (rule.schneider_model && rule.schneider_model.trim() && rule.schneider_model.trim() !== '-') || 
+    (rule.abb_model && rule.abb_model.trim() && rule.abb_model.trim() !== '-') ||
+    (rule.other_model && rule.other_model.trim() && rule.other_model.trim() !== '-')
+  ))
 }
 
 // Database stats
@@ -160,11 +168,12 @@ const databaseStats = computed(() => {
   accurateItems.value.forEach(item => {
     if (isItemMapped(item.item_no)) mapped++
   })
+  const finalMapped = Math.max(mapped, mappedCount.value)
   return {
     total,
-    mapped,
-    unmapped: total - mapped,
-    percentage: total > 0 ? Math.round((mapped / total) * 100) : 0
+    mapped: finalMapped,
+    unmapped: Math.max(0, total - finalMapped),
+    percentage: total > 0 ? Math.round((finalMapped / total) * 100) : 0
   }
 })
 

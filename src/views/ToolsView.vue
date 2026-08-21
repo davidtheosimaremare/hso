@@ -62,6 +62,7 @@ const convertMode = ref('single') // 'single' | 'batch'
 const { 
   items: accurateItems, 
   customRules, 
+  mappedCount,
   isLoading: isItemsLoading, 
   isSyncing: isCatalogSyncing,
   syncProgress: catalogSyncProgress,
@@ -469,8 +470,13 @@ const handleDirectSyncSiemens = async () => {
       >
         <Database class="w-4 h-4" />
         <span>2. Database Mapping</span>
-        <span class="px-1.5 py-0.5 text-[10px] font-mono rounded bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400">
-          {{ customRules.length }}
+        <span 
+          class="px-1.5 py-0.5 text-[10px] font-mono rounded font-semibold transition-colors"
+          :class="mappedCount > 0 
+            ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800' 
+            : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-slate-400'"
+        >
+          {{ mappedCount }}
         </span>
       </button>
     </div>
