@@ -116,10 +116,26 @@ serve(async (req) => {
         console.log(`Found ${poList.length} POs matching "${searchKeyword}"`)
 
         if (poList.length === 0) {
+            // Even when no POs found (e.g. Keterangan cleared), purge any existing HPO shipments for this SO
+            // so items revert to PERLU DIPESAN status
+            const { data: existingHpoShipments } = await supabase
+                .from('shipments')
+                .select('id, item_code, hpo_number')
+                .eq('so_id', String(soId))
+                .not('hpo_number', 'is', null)
+
+            let purgedCount = 0
+            if (existingHpoShipments && existingHpoShipments.length > 0) {
+                const orphanIds = existingHpoShipments.map((s: any) => s.id)
+                console.log(`No POs found - purging ${orphanIds.length} orphan HPO shipments for SO ${soNumber}`)
+                const { error: delErr } = await supabase.from('shipments').delete().in('id', orphanIds)
+                if (!delErr) purgedCount = orphanIds.length
+            }
+
             return new Response(JSON.stringify({
                 s: true,
                 message: `Tidak ada PO ditemukan untuk ${soNumber}`,
-                stats: { totalPOsFound: 0, matchingItems: 0, updated: 0, created: 0 },
+                stats: { totalPOsFound: 0, matchingItems: 0, updated: 0, created: 0, purged: purgedCount },
                 items: []
             }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
