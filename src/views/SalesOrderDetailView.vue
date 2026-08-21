@@ -959,10 +959,11 @@ const fetchHpoInBackground = async (soNumber) => {
         soDetail.value.items.forEach(item => {
           const hasHpo = mapping[item.code]
           if (hasHpo) {
-            const hasShipment = shipmentList.value.some(s => s.item_code === item.code)
-            if (!hasShipment) {
-              const hpos = hasHpo.split(',').map(x => x.trim())
-              hpos.forEach(hpo => {
+            const hpos = hasHpo.split(',').map(x => x.trim())
+            hpos.forEach(hpo => {
+              // Only create if no shipment exists for this specific (item_code, hpo_number) pair
+              const hasShipment = shipmentList.value.some(s => s.item_code === item.code && s.hpo_number === hpo)
+              if (!hasShipment) {
                 missingShipments.push({
                   so_id: String(soDetail.value.id),
                   item_code: item.code,
@@ -971,8 +972,8 @@ const fetchHpoInBackground = async (soNumber) => {
                   status_date: new Date().toISOString().split('T')[0],
                   shipment_type: 'IMPORT_PO'
                 })
-              })
-            }
+              }
+            })
           }
         })
         

@@ -1,5 +1,21 @@
 [
   {
+    "hash": "5e2cffcec3a6e748ccc6e69a747d242d514044c1",
+    "shortHash": "5e2cffc",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 16:23:41 2026 +0700",
+    "message": "fix: accurate-sync-hpo now purges orphan shipments before creating new ones, preventing deleted PO items from being re-created on sync"
+  },
+  {
+    "hash": "566cecd97275ece113b359d63ef1814d4f785baf",
+    "shortHash": "566cecd",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 16:17:28 2026 +0700",
+    "message": "fix: enforce strict stock check in isItemArrivedAtHokiindo and clean up all stale shipment rows"
+  },
+  {
     "hash": "7f095536b2420228c777baaf76b3e7731a49b80e",
     "shortHash": "7f09553",
     "author": "davidtheosimaremare",
@@ -382,21 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 14 10:48:40 2026 +0700",
     "message": "feat(collaborate): refine compact filter bar, neutral styling & task highlight"
-  },
-  {
-    "hash": "00cf944b5f1edbb5af5d047bd153fe07b306d687",
-    "shortHash": "00cf944",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Aug 12 11:15:25 2026 +0700",
-    "message": "chore: final clean deploy for accurate attachment integration"
-  },
-  {
-    "hash": "8ebcbac9456d4133ffc371734379a65111dcfb15",
-    "shortHash": "8ebcbac",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Aug 12 10:46:59 2026 +0700",
-    "message": "feat: enhance Accurate SO detail edge function with attachment fetching logic"
   }
 ]
