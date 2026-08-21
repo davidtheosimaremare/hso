@@ -938,8 +938,12 @@ const fetchHpoInBackground = async (soNumber) => {
         const orphanShipments = shipmentList.value.filter(s => {
           if (!s.hpo_number) return false
           const hpoNum = s.hpo_number.trim().toUpperCase()
-          // Check if this HPO exists in any active PO in items
-          const existsInActivePo = items.some(p => (p.poNumber || '').trim().toUpperCase() === hpoNum)
+          const itemCode = (s.item_code || '').trim().toUpperCase()
+          // Check if this specific item_code and HPO pair exists in active PO items
+          const existsInActivePo = items.some(p => 
+            (p.poNumber || '').trim().toUpperCase() === hpoNum && 
+            (p.itemCode || '').trim().toUpperCase() === itemCode
+          )
           return !existsInActivePo
         })
 

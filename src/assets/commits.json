@@ -1,5 +1,13 @@
 [
   {
+    "hash": "71a1e50b2da554983105c93500cb6dc6a5c2ba2e",
+    "shortHash": "71a1e50",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 15:52:54 2026 +0700",
+    "message": "fix: multi-HPO query matching and accurate arrived status validation based on total quantity"
+  },
+  {
     "hash": "c57fa13e3052d50e0baa6ea26c7a55c9f2226cad",
     "shortHash": "c57fa13",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Wed Aug 12 10:35:08 2026 +0700",
     "message": "feat(sales-order): display Accurate transaction documents attachments card matching Accurate modal"
-  },
-  {
-    "hash": "7efea502decbcd6ff5ab7e602926a4b9c4599a27",
-    "shortHash": "7efea50",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Aug 12 10:12:54 2026 +0700",
-    "message": "feat(sales-order): add Dokumen & Lampiran Accurate section and PDF download button to HSO detail"
   }
 ]
