@@ -1,5 +1,13 @@
 [
   {
+    "hash": "f0aef46e15680089ab88f607630c70b831a18da3",
+    "shortHash": "f0aef46",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 15:42:48 2026 +0700",
+    "message": "feat: display multiple linked HPOs across Sales Order list, detail header, table rows, and dashboard priority cards"
+  },
+  {
     "hash": "3b510a5f1e50b0410cc667a5abaa135562f0dd13",
     "shortHash": "3b510a5",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Wed Aug 12 09:44:37 2026 +0700",
     "message": "fix: import missing ShoppingCart icon in SalesOrderDetailView to prevent ReferenceError"
-  },
-  {
-    "hash": "5f86ba70ed9963e13af1360b8aa24f8fc2ecd0e6",
-    "shortHash": "5f86ba7",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Aug 12 08:18:22 2026 +0700",
-    "message": "feat(sales-order): set item status to SIAP DIKIRIM when arrived at Hokiindo and display surplus/shortage note at bottom"
   }
 ]

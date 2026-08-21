@@ -873,8 +873,27 @@ const fetchHpoInBackground = async (soNumber) => {
       hpoDetails.value = items
       console.log(`Background: Found ${Object.keys(mapping).length} HPO mappings`)
 
-      // Database healing: Auto-create missing shipment records for items that have POs but no shipment rows in the DB
+      // Database healing & cleanup:
+      // 1. Auto-delete orphan shipment records whose HPO was deleted or no longer exists in Accurate POs
+      // 2. Auto-create missing shipment records for active POs
       if (soDetail.value && soDetail.value.items) {
+        const orphanShipments = shipmentList.value.filter(s => {
+          if (!s.hpo_number) return false
+          const hpoNum = s.hpo_number.trim().toUpperCase()
+          // Check if this HPO exists in any active PO in items
+          const existsInActivePo = items.some(p => (p.poNumber || '').trim().toUpperCase() === hpoNum)
+          return !existsInActivePo
+        })
+
+        if (orphanShipments.length > 0) {
+          const orphanIds = orphanShipments.map(s => s.id)
+          console.log(`Auto-cleanup: Purging ${orphanIds.length} orphan shipments from deleted HPOs:`, orphanShipments)
+          const { error: delErr } = await supabase.from('shipments').delete().in('id', orphanIds)
+          if (!delErr) {
+            shipmentList.value = shipmentList.value.filter(s => !orphanIds.includes(s.id))
+          }
+        }
+
         const missingShipments = []
         soDetail.value.items.forEach(item => {
           const hasHpo = mapping[item.code]
@@ -1955,6 +1974,8 @@ const isItemArrivedAtHokiindo = (item) => {
   if (isDisplayedFullyShipped(item)) return false
   if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) === 0) return false
 
+  // For items needing PO (qty_to_order > 0 / NO STOCK):
+  // It MUST have an active HPO in getHpoEntries(item) to be considered arrived via HPO!
   const hpos = getHpoEntries(item)
   if (hpos.length > 0) {
     return hpos.some(hpo => {
@@ -1964,6 +1985,12 @@ const isItemArrivedAtHokiindo = (item) => {
     })
   }
 
+  // If item requires ordering (qty_to_order > 0) and has NO active HPO, it cannot be arrived at Hokiindo!
+  if (item.qty_to_order > 0 || getNoteType(item.admin_note) === 'no_stock') {
+    return false
+  }
+
+  // Pure Stock items (qty_to_order === 0):
   if (item.hokiindo_date) return true
   if (item.logistics_status === 'Already in Hokiindo Raya') return true
 
@@ -2013,7 +2040,10 @@ const getRowStatus = (item) => {
     return { text: `DIKIRIM SEBAGIAN (SISA ${getDisplayedQtyRemaining(item)} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: Truck }
   }
 
-  // Jika item sudah tiba di Gudang Hokiindo -> Status utama: SIAP DIKIRIM -> HIJAU
+  // Cek HPO aktif dari Accurate PO
+  const hpoEntries = getHpoEntries(item)
+
+  // Jika item sudah tiba di Gudang Hokiindo (hanya valid jika HPO aktif ada atau item murni stok) -> HIJAU
   if (isItemArrivedAtHokiindo(item)) {
     return { text: 'SIAP DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: Package }
   }
@@ -2023,11 +2053,7 @@ const getRowStatus = (item) => {
     return { text: 'SIAP DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: Package }
   }
 
-  // Cek HPO dari Accurate atau dari DB (hanya untuk item NO STOCK / qty_to_order > 0)
-  const hpoEntries = getHpoEntries(item)
-  const hasHpoInDb = item.logistics_hpo && item.logistics_hpo.trim().length > 0
-
-  // Jika belum/kurang dipesan -> MERAH
+  // JIKA ITEM PERLU DIPESAN (qty_to_order > 0 / NO STOCK):
   if (item.qty_to_order > 0) {
     if (hpoEntries.length > 0) {
       const totalPo = hpoEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
@@ -2041,8 +2067,13 @@ const getRowStatus = (item) => {
           return { text: `DI KERANJANG (KURANG ${shortage} ${item.unit})`, class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: ShoppingCart }
         }
         return { text: `KURANG DIPESAN (${shortage} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: AlertTriangle }
+      } else if (totalPo > item.qty_to_order) {
+        return { text: 'KELEBIHAN DIPESAN', class: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800', icon: AlertTriangle }
+      } else {
+        return { text: 'SUDAH DIPESAN', class: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800', icon: CheckCircle2 }
       }
-    } else if (!hasHpoInDb) {
+    } else {
+      // Tidak ada HPO aktif sama sekali (atau HPO telah dihapus dan disync) -> WAJIB PERLU DIPESAN
       const matchedHpb = linkedHpbs.value.find(h => h.itemCode === item.code)
       if (matchedHpb) {
         return { 
@@ -2059,27 +2090,7 @@ const getRowStatus = (item) => {
     }
   }
 
-  // Jika ada HPO dari Accurate (dan sudah terpenuhi penuh)
-  if (hpoEntries.length > 0) {
-    const totalPo = hpoEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
-    if (totalPo > item.qty_to_order && item.qty_to_order > 0) {
-      return { text: 'KELEBIHAN DIPESAN', class: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800', icon: AlertTriangle }
-    }
-    return { text: 'SUDAH DIPESAN', class: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800', icon: CheckCircle2 }
-  }
-  
-  // Jika dari DB (manual input lama yang tidak terbaca array)
-  if (hasHpoInDb) {
-    return { text: 'SUDAH DIPESAN', class: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800', icon: CheckCircle2 }
-  }
-  
-  // Fallback: stock belum dikirim (seharusnya sudah ditangani di atas) -> HIJAU
-  if (item.qty_shipped === 0) {
-    return { text: 'SIAP DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: Package }
-  }
-  
-  // Default
-  return { text: 'MENUNGGU', class: 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700', icon: Hourglass }
+  return { text: 'PENDING', class: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700', icon: Clock }
 }
 
 // Helper: Check if item has a specific shipment status (Exwork, ETA, Dunex, Hokiindo)
@@ -2235,42 +2246,21 @@ const getHpoShortage = (item) => {
 const allLinkedHpos = computed(() => {
   const hpos = new Set()
   
-  // 1. From hpoDetails (Accurate PO items matching items of this HSO)
+  // 1. From hpoDetails (Accurate PO items matching items of this HSO) - PRIMARY TRUTH
   if (hpoDetails.value && hpoDetails.value.length > 0) {
     hpoDetails.value.forEach(p => {
       if (p.poNumber && p.poNumber.trim()) {
         hpos.add(p.poNumber.trim())
       }
     })
+    return Array.from(hpos).filter(Boolean).sort()
   }
   
-  // 2. From hpoMapping
-  if (hpoMapping.value) {
+  // 2. Fallback only while HPO syncing is in progress
+  if (isHpoSyncing.value && hpoMapping.value) {
     Object.values(hpoMapping.value).forEach(str => {
       if (str) {
         str.split(',').forEach(n => {
-          if (n.trim()) hpos.add(n.trim())
-        })
-      }
-    })
-  }
-  
-  // 3. From shipmentList (database shipments)
-  if (shipmentList.value && shipmentList.value.length > 0) {
-    shipmentList.value.forEach(s => {
-      if (s.hpo_number) {
-        s.hpo_number.split(',').forEach(n => {
-          if (n.trim()) hpos.add(n.trim())
-        })
-      }
-    })
-  }
-  
-  // 4. From soDetail.items
-  if (soDetail.value?.items) {
-    soDetail.value.items.forEach(item => {
-      if (item.logistics_hpo) {
-        item.logistics_hpo.split(',').forEach(n => {
           if (n.trim()) hpos.add(n.trim())
         })
       }
@@ -3556,8 +3546,8 @@ const downloadAttachment = async (att) => {
                             </template>
                         </div>
                         
-                        <!-- Fallback HPO from DB -->
-                        <div v-else-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && item.logistics_hpo" class="mt-1 space-y-1">
+                        <!-- Fallback HPO from DB (only if confirmed active in hpoMapping) -->
+                        <div v-else-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && item.logistics_hpo && hpoMapping[item.code]" class="mt-1 space-y-1">
                             <div v-for="hpoStr in item.logistics_hpo.split(',').map(s => s.trim()).filter(Boolean)" :key="hpoStr" class="bg-white dark:bg-slate-800/80 border border-dashed border-slate-300 dark:border-slate-700 rounded-md p-1.5 px-2 space-y-1 font-sans">
                                 <div class="flex items-center justify-between gap-1 text-xs">
                                     <div class="flex items-center gap-1 min-w-0">
@@ -3892,8 +3882,8 @@ const downloadAttachment = async (att) => {
 
 
                   <!-- Fallback HPO from DB (imported status/manual PO) -->
-                  <!-- Only show if item has remaining qty to ship -->
-                  <div v-else-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && item.logistics_hpo" class="space-y-2">
+                  <!-- Only show if item has remaining qty to ship and confirmed active in hpoMapping -->
+                  <div v-else-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && item.logistics_hpo && hpoMapping[item.code]" class="space-y-2">
                     <div v-for="hpoStr in item.logistics_hpo.split(',').map(s => s.trim()).filter(Boolean)" :key="hpoStr" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
                       <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-slate-100 dark:border-slate-700">
                         <ShoppingCart class="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
