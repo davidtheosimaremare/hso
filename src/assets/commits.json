@@ -1,5 +1,13 @@
 [
   {
+    "hash": "a962e46c6968f0030bc3f5ddae8c25c49c1f9831",
+    "shortHash": "a962e46",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 11:15:24 2026 +0700",
+    "message": "fix: use converter_custom_rules table and upsertRuleBySiemensMlfb for inline mapping autosave"
+  },
+  {
     "hash": "18fb47d005b4efa6dac3867bfa84d7f0d0118c01",
     "shortHash": "18fb47d",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Thu Aug 6 12:35:40 2026 +0700",
     "message": "fix: tambah bulkModeType & executeBulkAction di SalesOrderView"
-  },
-  {
-    "hash": "0cb4b9500754c9c036c10e2e6ac0ce162bf9e7d6",
-    "shortHash": "0cb4b95",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Aug 6 10:10:13 2026 +0700",
-    "message": "feat: reorder & recolor dashboard invoice priority card"
   }
 ]

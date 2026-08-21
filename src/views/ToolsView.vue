@@ -590,230 +590,76 @@ const handleDirectSyncSiemens = async () => {
           <!-- RIGHT COLUMN: TARGET RESULT (ATAS - BAWAH STACK) -->
           <div class="bg-white dark:bg-zinc-900 rounded-xl border border-slate-200 dark:border-zinc-800 hover:border-red-400 dark:hover:border-red-600/60 p-4 shadow-sm flex flex-col justify-between space-y-4 transition-all">
             
-            <!-- Target Header & Swap Button -->
-            <div class="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-100 dark:border-zinc-800">
+            <!-- Target Header -->
+            <div class="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-100 dark:border-zinc-800 min-h-[38px]">
               <div class="flex items-center gap-2">
                 <span class="text-xs font-bold text-slate-500 dark:text-slate-400">Hasil Padanan:</span>
-                <span class="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  {{ !singleInput.trim() ? '-' : detectedSourceBrand === 'SIEMENS' ? 'Schneider Electric & ABB' : detectedSourceBrand === 'ABB' ? 'Siemens & Schneider Electric' : 'Siemens & ABB' }}
-                </span>
+                <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-cyan-50 dark:bg-cyan-950/40 border border-cyan-200 dark:border-cyan-800/50 shadow-2xs">
+                  <img src="/logosiemens.webp" alt="Siemens" class="h-4.5 max-w-[85px] object-contain" />
+                </div>
               </div>
             </div>
 
-            <!-- Result Body (Atas - Bawah Cards) -->
+            <!-- Result Body (Siemens Only) -->
             <div class="flex-1 flex flex-col justify-center">
               
               <!-- Result Available -->
               <div v-if="singleResult && singleResult.success" class="space-y-3.5">
                 
-                <!-- ========================================================= -->
-                <!-- OPTION A: INPUT IS NOT SIEMENS (Show Siemens TOP, Counterpart BOTTOM) -->
-                <!-- ========================================================= -->
-                <template v-if="detectedSourceBrand !== 'SIEMENS'">
+                <!-- CARD: SIEMENS -->
+                <div class="p-4 rounded-xl border border-cyan-200 dark:border-cyan-950/60 bg-cyan-50/20 dark:bg-cyan-950/10 space-y-3 shadow-2xs">
                   
-                  <!-- CARD 1 (ATAS): SIEMENS -->
-                  <div class="p-3.5 rounded-xl border border-cyan-200 dark:border-cyan-950/60 bg-cyan-50/20 dark:bg-cyan-950/10 space-y-2">
-                    <div class="flex items-center justify-between gap-2 flex-wrap">
-                      <div class="flex items-center gap-2">
-                        <img src="/logosiemens.webp" alt="Siemens" class="h-5.5 max-w-[95px] object-contain" />
-                      </div>
-                      <span class="text-[11px] font-bold px-2 py-0.5 rounded bg-white dark:bg-zinc-800 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-zinc-700">
-                        Status: {{ singleResult.accurateItem?.stock_status || 'Tersedia di Database' }}
+                  <!-- Header: Category & Stock Status -->
+                  <div class="flex items-center justify-between gap-2 flex-wrap">
+                    <div class="flex items-center gap-2">
+                      <img src="/logosiemens.webp" alt="Siemens" class="h-5.5 max-w-[95px] object-contain" />
+                      <span v-if="singleResult.category" class="text-[10px] font-bold px-2 py-0.5 rounded bg-cyan-100 dark:bg-cyan-900/60 text-cyan-800 dark:text-cyan-200 border border-cyan-200 dark:border-cyan-800">
+                        {{ singleResult.category }}
                       </span>
                     </div>
-
-                    <!-- Siemens SKU & Copy Button -->
-                    <div class="flex items-center justify-between gap-2 pt-0.5">
-                      <div class="text-lg font-mono font-black text-slate-900 dark:text-white tracking-tight">
-                        {{ singleResult.siemensMLFB }}
-                      </div>
-                      <button
-                        @click="copyToClipboard(singleResult.siemensMLFB, 'Part Number Siemens')"
-                        class="px-2 py-1 rounded bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-700 hover:border-red-500 hover:text-red-600 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all shrink-0 shadow-2xs"
-                        title="Salin Part Number"
-                      >
-                        <Check v-if="isCopied" class="w-3.5 h-3.5 text-emerald-600" />
-                        <Copy v-else class="w-3.5 h-3.5" />
-                        <span>{{ isCopied ? 'Tersalin' : 'Salin' }}</span>
-                      </button>
-                    </div>
-
-                    <!-- Siemens Description -->
-                    <div class="text-xs text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
-                      {{ singleResult.siemensName }}
-                    </div>
-
-                    <!-- Siemens Price (if available) -->
-                    <div v-if="singleResult.accurateItem?.unit_price" class="pt-1.5 border-t border-cyan-200/50 dark:border-cyan-950/40 text-xs flex items-center gap-1.5">
-                      <span class="text-[10px] text-slate-400 font-bold uppercase">Harga:</span>
-                      <span class="font-mono font-bold text-red-600 dark:text-red-400 text-sm">
-                        {{ formatRupiah(singleResult.accurateItem.unit_price) }}
-                      </span>
-                    </div>
+                    <span class="text-[11px] font-bold px-2 py-0.5 rounded bg-white dark:bg-zinc-800 text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-zinc-700">
+                      Status: {{ singleResult.accurateItem?.stock_status || 'Tersedia di Database' }}
+                    </span>
                   </div>
 
-                  <!-- CARD 2 (BAWAH): ABB (if input was Schneider) OR SCHNEIDER (if input was ABB) -->
-                  
-                  <!-- If input was Schneider -> show ABB -->
-                  <div v-if="detectedSourceBrand === 'SCHNEIDER'" class="p-3.5 rounded-xl border border-red-200 dark:border-red-950/60 bg-red-50/20 dark:bg-red-950/10 space-y-2">
-                    <div class="flex items-center justify-between gap-2 flex-wrap">
-                      <div class="flex items-center gap-2">
-                        <img src="/logoabb.png" alt="ABB" class="h-4.5 max-w-[65px] object-contain" />
-                      </div>
+                  <!-- Siemens SKU & Copy Button -->
+                  <div class="flex items-center justify-between gap-2 pt-0.5">
+                    <div class="text-xl font-mono font-black text-slate-900 dark:text-white tracking-tight">
+                      {{ singleResult.siemensMLFB }}
                     </div>
-
-                    <!-- ABB SKU & Copy Button -->
-                    <div class="flex items-center justify-between gap-2 pt-0.5">
-                      <div class="text-lg font-mono font-black text-slate-900 dark:text-white tracking-tight">
-                        {{ singleResult.abbModel && singleResult.abbModel !== '-' ? singleResult.abbModel : 'Belum di-mapping' }}
-                      </div>
-                      <button
-                        v-if="singleResult.abbModel && singleResult.abbModel !== '-'"
-                        @click="copyToClipboard(singleResult.abbModel, 'Part Number ABB')"
-                        class="px-2 py-1 rounded bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-700 hover:border-red-500 hover:text-red-600 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all shrink-0 shadow-2xs"
-                        title="Salin Part Number"
-                      >
-                        <Copy class="w-3.5 h-3.5" />
-                        <span>Salin</span>
-                      </button>
-                    </div>
-
-                    <!-- ABB Description -->
-                    <div v-if="singleResult.abbDesc" class="text-xs text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
-                      {{ singleResult.abbDesc }}
-                    </div>
-
-                    <!-- ABB Price (if available) -->
-                    <div v-if="singleResult.abbPrice" class="pt-1.5 border-t border-red-200/50 dark:border-red-950/40 text-xs flex items-center gap-1.5">
-                      <span class="text-[10px] text-slate-400 font-bold uppercase">Harga:</span>
-                      <span class="font-mono font-bold text-slate-900 dark:text-white text-sm">
-                        {{ formatRupiah(singleResult.abbPrice) }}
-                      </span>
-                    </div>
+                    <button
+                      @click="copyToClipboard(singleResult.siemensMLFB, 'Part Number Siemens')"
+                      class="px-2.5 py-1.5 rounded-lg bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-700 hover:border-red-500 hover:text-red-600 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-all shrink-0 shadow-2xs"
+                      title="Salin Part Number"
+                    >
+                      <Check v-if="isCopied" class="w-3.5 h-3.5 text-emerald-600" />
+                      <Copy v-else class="w-3.5 h-3.5" />
+                      <span>{{ isCopied ? 'Tersalin' : 'Salin' }}</span>
+                    </button>
                   </div>
 
-                  <!-- If input was ABB or OTHER -> show Schneider Electric -->
-                  <div v-else class="p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-950/60 bg-emerald-50/20 dark:bg-emerald-950/10 space-y-2">
-                    <div class="flex items-center justify-between gap-2 flex-wrap">
-                      <div class="flex items-center gap-2">
-                        <img src="/logoschneider.png" alt="Schneider Electric" class="h-6 max-w-[110px] object-contain" />
-                      </div>
-                    </div>
-
-                    <!-- Schneider SKU & Copy Button -->
-                    <div class="flex items-center justify-between gap-2 pt-0.5">
-                      <div class="text-lg font-mono font-black text-slate-900 dark:text-white tracking-tight">
-                        {{ singleResult.schneiderModel && singleResult.schneiderModel !== '-' ? singleResult.schneiderModel : 'Belum di-mapping' }}
-                      </div>
-                      <button
-                        v-if="singleResult.schneiderModel && singleResult.schneiderModel !== '-'"
-                        @click="copyToClipboard(singleResult.schneiderModel, 'Part Number Schneider')"
-                        class="px-2 py-1 rounded bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-700 hover:border-red-500 hover:text-red-600 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all shrink-0 shadow-2xs"
-                        title="Salin Part Number"
-                      >
-                        <Copy class="w-3.5 h-3.5" />
-                        <span>Salin</span>
-                      </button>
-                    </div>
-
-                    <!-- Schneider Description -->
-                    <div v-if="singleResult.schneiderDesc" class="text-xs text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
-                      {{ singleResult.schneiderDesc }}
-                    </div>
-
-                    <!-- Schneider Price (if available) -->
-                    <div v-if="singleResult.schneiderPrice" class="pt-1.5 border-t border-emerald-200/50 dark:border-emerald-950/40 text-xs flex items-center gap-1.5">
-                      <span class="text-[10px] text-slate-400 font-bold uppercase">Harga:</span>
-                      <span class="font-mono font-bold text-slate-900 dark:text-white text-sm">
-                        {{ formatRupiah(singleResult.schneiderPrice) }}
-                      </span>
-                    </div>
+                  <!-- Siemens Description -->
+                  <div class="text-xs text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
+                    {{ singleResult.siemensName || singleResult.accurateItem?.item_name || singleResult.accurateItem?.description }}
                   </div>
 
-                </template>
-
-                <!-- ========================================================= -->
-                <!-- OPTION B: INPUT IS SIEMENS (Show Schneider TOP, ABB BOTTOM) -->
-                <!-- ========================================================= -->
-                <template v-else>
-                  
-                  <!-- CARD 1 (ATAS): SCHNEIDER ELECTRIC -->
-                  <div class="p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-950/60 bg-emerald-50/20 dark:bg-emerald-950/10 space-y-2">
-                    <div class="flex items-center justify-between gap-2 flex-wrap">
-                      <div class="flex items-center gap-2">
-                        <img src="/logoschneider.png" alt="Schneider Electric" class="h-6 max-w-[110px] object-contain" />
-                      </div>
-                    </div>
-
-                    <!-- Schneider SKU & Copy Button -->
-                    <div class="flex items-center justify-between gap-2 pt-0.5">
-                      <div class="text-lg font-mono font-black text-slate-900 dark:text-white tracking-tight">
-                        {{ singleResult.schneiderModel && singleResult.schneiderModel !== '-' ? singleResult.schneiderModel : 'Belum di-mapping' }}
-                      </div>
-                      <button
-                        v-if="singleResult.schneiderModel && singleResult.schneiderModel !== '-'"
-                        @click="copyToClipboard(singleResult.schneiderModel, 'Part Number Schneider')"
-                        class="px-2 py-1 rounded bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-700 hover:border-red-500 hover:text-red-600 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all shrink-0 shadow-2xs"
-                        title="Salin Part Number"
-                      >
-                        <Copy class="w-3.5 h-3.5" />
-                        <span>Salin</span>
-                      </button>
-                    </div>
-
-                    <!-- Schneider Description -->
-                    <div v-if="singleResult.schneiderDesc" class="text-xs text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
-                      {{ singleResult.schneiderDesc }}
-                    </div>
-
-                    <!-- Schneider Price (if available) -->
-                    <div v-if="singleResult.schneiderPrice" class="pt-1.5 border-t border-emerald-200/50 dark:border-emerald-950/40 text-xs flex items-center gap-1.5">
-                      <span class="text-[10px] text-slate-400 font-bold uppercase">Harga:</span>
-                      <span class="font-mono font-bold text-slate-900 dark:text-white text-sm">
-                        {{ formatRupiah(singleResult.schneiderPrice) }}
-                      </span>
-                    </div>
+                  <!-- Specifications Summary (if available) -->
+                  <div 
+                    v-if="singleResult.specsSummary && singleResult.specsSummary !== singleResult.siemensName" 
+                    class="text-[11px] text-slate-600 dark:text-slate-300 bg-white/80 dark:bg-zinc-900/70 p-2.5 rounded-lg border border-slate-200/60 dark:border-zinc-800/60 leading-relaxed"
+                  >
+                    <span class="font-bold text-slate-500 dark:text-slate-400 uppercase text-[10px] block mb-0.5">Spesifikasi:</span>
+                    {{ singleResult.specsSummary }}
                   </div>
 
-                  <!-- CARD 2 (BAWAH): ABB -->
-                  <div class="p-3.5 rounded-xl border border-red-200 dark:border-red-950/60 bg-red-50/20 dark:bg-red-950/10 space-y-2">
-                    <div class="flex items-center justify-between gap-2 flex-wrap">
-                      <div class="flex items-center gap-2">
-                        <img src="/logoabb.png" alt="ABB" class="h-4.5 max-w-[65px] object-contain" />
-                      </div>
-                    </div>
-
-                    <!-- ABB SKU & Copy Button -->
-                    <div class="flex items-center justify-between gap-2 pt-0.5">
-                      <div class="text-lg font-mono font-black text-slate-900 dark:text-white tracking-tight">
-                        {{ singleResult.abbModel && singleResult.abbModel !== '-' ? singleResult.abbModel : 'Belum di-mapping' }}
-                      </div>
-                      <button
-                        v-if="singleResult.abbModel && singleResult.abbModel !== '-'"
-                        @click="copyToClipboard(singleResult.abbModel, 'Part Number ABB')"
-                        class="px-2 py-1 rounded bg-white dark:bg-zinc-800 border border-slate-300 dark:border-zinc-700 hover:border-red-500 hover:text-red-600 text-slate-700 dark:text-slate-200 text-xs font-semibold flex items-center gap-1 cursor-pointer transition-all shrink-0 shadow-2xs"
-                        title="Salin Part Number"
-                      >
-                        <Copy class="w-3.5 h-3.5" />
-                        <span>Salin</span>
-                      </button>
-                    </div>
-
-                    <!-- ABB Description -->
-                    <div v-if="singleResult.abbDesc" class="text-xs text-slate-700 dark:text-slate-300 font-medium leading-relaxed">
-                      {{ singleResult.abbDesc }}
-                    </div>
-
-                    <!-- ABB Price (if available) -->
-                    <div v-if="singleResult.abbPrice" class="pt-1.5 border-t border-red-200/50 dark:border-red-950/40 text-xs flex items-center gap-1.5">
-                      <span class="text-[10px] text-slate-400 font-bold uppercase">Harga:</span>
-                      <span class="font-mono font-bold text-slate-900 dark:text-white text-sm">
-                        {{ formatRupiah(singleResult.abbPrice) }}
-                      </span>
-                    </div>
+                  <!-- Siemens Price (if available) -->
+                  <div v-if="singleResult.accurateItem?.unit_price" class="pt-2 border-t border-cyan-200/50 dark:border-cyan-950/40 text-xs flex items-center justify-between">
+                    <span class="text-[10px] text-slate-400 font-bold uppercase">Harga Accurate:</span>
+                    <span class="font-mono font-bold text-red-600 dark:text-red-400 text-base">
+                      {{ formatRupiah(singleResult.accurateItem.unit_price) }}
+                    </span>
                   </div>
-
-                </template>
+                </div>
 
               </div>
 
