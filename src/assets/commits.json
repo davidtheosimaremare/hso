@@ -1,5 +1,13 @@
 [
   {
+    "hash": "7f095536b2420228c777baaf76b3e7731a49b80e",
+    "shortHash": "7f09553",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 16:10:40 2026 +0700",
+    "message": "fix: precisely clean up orphan shipments by (itemCode, poNumber) pair so deleted items enter purchase list"
+  },
+  {
     "hash": "71a1e50b2da554983105c93500cb6dc6a5c2ba2e",
     "shortHash": "71a1e50",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Wed Aug 12 10:46:59 2026 +0700",
     "message": "feat: enhance Accurate SO detail edge function with attachment fetching logic"
-  },
-  {
-    "hash": "3395a02a9c58360b07e011765772ff45e55fda71",
-    "shortHash": "3395a02",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Aug 12 10:35:08 2026 +0700",
-    "message": "feat(sales-order): display Accurate transaction documents attachments card matching Accurate modal"
   }
 ]

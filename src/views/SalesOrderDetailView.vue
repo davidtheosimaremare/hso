@@ -911,50 +911,49 @@ const fetchHpoInBackground = async (soNumber) => {
     
     syncProgress.value = 60
     
-    if (!poError && poData?.d) {
-      const mapping = {}
-      const items = poData.d
-      const totalItems = items.length
-      
-      items.forEach((item, idx) => {
-        if (item.itemCode && item.poNumber) {
-          if (mapping[item.itemCode] && !mapping[item.itemCode].includes(item.poNumber)) {
-            mapping[item.itemCode] += `, ${item.poNumber}`
-          } else if (!mapping[item.itemCode]) {
-            mapping[item.itemCode] = item.poNumber
-          }
+    const mapping = {}
+    const items = poData?.d || []
+    const totalItems = items.length
+    
+    items.forEach((item, idx) => {
+      if (item.itemCode && item.poNumber) {
+        if (mapping[item.itemCode] && !mapping[item.itemCode].includes(item.poNumber)) {
+          mapping[item.itemCode] += `, ${item.poNumber}`
+        } else if (!mapping[item.itemCode]) {
+          mapping[item.itemCode] = item.poNumber
         }
-        syncProgress.value = 60 + Math.round((idx + 1) / Math.max(totalItems, 1) * 35)
+      }
+      syncProgress.value = 60 + Math.round((idx + 1) / Math.max(totalItems, 1) * 35)
+    })
+    
+    hpoMapping.value = mapping
+    hpoDetails.value = items
+    console.log(`Background: Found ${Object.keys(mapping).length} HPO mappings, ${items.length} active PO items`)
+
+    // Database healing & cleanup:
+    // 1. Auto-delete orphan shipment records whose HPO was deleted or no longer exists in Accurate POs
+    // 2. Auto-create missing shipment records for active POs
+    if (soDetail.value && soDetail.value.items) {
+      const orphanShipments = shipmentList.value.filter(s => {
+        if (!s.hpo_number) return false
+        const hpoNum = s.hpo_number.trim().toUpperCase()
+        const itemCode = (s.item_code || '').trim().toUpperCase()
+        // Check if this specific item_code and HPO pair exists in active PO items
+        const existsInActivePo = items.some(p => 
+          (p.poNumber || '').trim().toUpperCase() === hpoNum && 
+          (p.itemCode || '').trim().toUpperCase() === itemCode
+        )
+        return !existsInActivePo
       })
-      
-      hpoMapping.value = mapping
-      hpoDetails.value = items
-      console.log(`Background: Found ${Object.keys(mapping).length} HPO mappings`)
 
-      // Database healing & cleanup:
-      // 1. Auto-delete orphan shipment records whose HPO was deleted or no longer exists in Accurate POs
-      // 2. Auto-create missing shipment records for active POs
-      if (soDetail.value && soDetail.value.items) {
-        const orphanShipments = shipmentList.value.filter(s => {
-          if (!s.hpo_number) return false
-          const hpoNum = s.hpo_number.trim().toUpperCase()
-          const itemCode = (s.item_code || '').trim().toUpperCase()
-          // Check if this specific item_code and HPO pair exists in active PO items
-          const existsInActivePo = items.some(p => 
-            (p.poNumber || '').trim().toUpperCase() === hpoNum && 
-            (p.itemCode || '').trim().toUpperCase() === itemCode
-          )
-          return !existsInActivePo
-        })
-
-        if (orphanShipments.length > 0) {
-          const orphanIds = orphanShipments.map(s => s.id)
-          console.log(`Auto-cleanup: Purging ${orphanIds.length} orphan shipments from deleted HPOs:`, orphanShipments)
-          const { error: delErr } = await supabase.from('shipments').delete().in('id', orphanIds)
-          if (!delErr) {
-            shipmentList.value = shipmentList.value.filter(s => !orphanIds.includes(s.id))
-          }
+      if (orphanShipments.length > 0) {
+        const orphanIds = orphanShipments.map(s => s.id)
+        console.log(`Auto-cleanup: Purging ${orphanIds.length} orphan shipments from deleted HPOs:`, orphanShipments)
+        const { error: delErr } = await supabase.from('shipments').delete().in('id', orphanIds)
+        if (!delErr) {
+          shipmentList.value = shipmentList.value.filter(s => !orphanIds.includes(s.id))
         }
+      }
 
         const missingShipments = []
         soDetail.value.items.forEach(item => {
@@ -1014,9 +1013,7 @@ const fetchHpoInBackground = async (soNumber) => {
           item.dunex_date = myShipment.dunex_date || null
           item.hokiindo_date = myShipment.hokiindo_date || null
           item.ready_date = myShipment.ready_date || null
-          item.exwork_waiting = myShipment.exwork_waiting || false
         })
-      }
       }
       
       syncProgress.value = 100
@@ -2075,12 +2072,13 @@ const isItemArrivedAtHokiindo = (item) => {
     return arrivedQty >= item.qty_to_order
   }
 
-  // If item requires ordering (qty_to_order > 0) and has NO active HPO, it cannot be arrived at Hokiindo!
-  if (item.qty_to_order > 0 || getNoteType(item.admin_note) === 'no_stock') {
+  // If item requires ordering (qty_to_order > 0) or note is NOT pure stock, and has NO active HPO:
+  // It CAN NEVER be considered arrived at Hokiindo!
+  if (item.qty_to_order > 0 || getNoteType(item.admin_note) !== 'stock') {
     return false
   }
 
-  // Pure Stock items (qty_to_order === 0):
+  // Pure Stock items (qty_to_order === 0 and note is STOCK):
   if (item.hokiindo_date) return true
   if (item.logistics_status === 'Already in Hokiindo Raya') return true
 
