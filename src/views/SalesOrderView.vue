@@ -1326,22 +1326,7 @@ const getStatusColor = (status) => {
                 <span v-if="so.po_number && so.po_number !== '-'" class="text-xs font-medium text-slate-500 dark:text-slate-400">
                   PO: {{ so.po_number }}
                 </span>
-                <!-- LINKED HPO LIST IF MULTIPLE OR SINGLE -->
-                <div v-if="so.linked_hpos && so.linked_hpos.length > 0" class="flex items-center gap-1 flex-wrap mt-0.5" @click.stop>
-                  <span class="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                    HPO ({{ so.linked_hpos.length }}):
-                  </span>
-                  <span 
-                    v-for="hpoNum in so.linked_hpos" 
-                    :key="hpoNum"
-                    @click.stop="router.push(`/purchase-orders/${hpoNum.replace(/\//g, '-')}`)"
-                    class="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 cursor-pointer shadow-2xs"
-                    :title="`Buka Purchase Order: ${hpoNum}`"
-                  >
-                    <ShoppingCart class="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
-                    {{ hpoNum }}
-                  </span>
-                </div>
+
               </div>
             </TableCell>
             <TableCell class="py-4 px-4 align-middle whitespace-nowrap">

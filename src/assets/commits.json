@@ -1,5 +1,21 @@
 [
   {
+    "hash": "6c11e43e604a56dce956308c06e70a1270de3f0a",
+    "shortHash": "6c11e43",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 16:27:01 2026 +0700",
+    "message": "fix: purge HPO shipments even when 0 POs found (e.g. Keterangan cleared in Accurate)"
+  },
+  {
+    "hash": "f778b3c6cb7414a6a47c51ca5b455a256f9f5670",
+    "shortHash": "f778b3c",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 16:24:51 2026 +0700",
+    "message": "fix: check (item_code, hpo_number) pair in healing logic to prevent re-creating deleted HPO shipments"
+  },
+  {
     "hash": "5e2cffcec3a6e748ccc6e69a747d242d514044c1",
     "shortHash": "5e2cffc",
     "author": "davidtheosimaremare",
@@ -382,21 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 14 12:19:18 2026 +0700",
     "message": "fix(settings): update display name to HIR Workspace Notification"
-  },
-  {
-    "hash": "cc80d95a4ca3add1d3c33252c366fea57828b68f",
-    "shortHash": "cc80d95",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 14 12:03:58 2026 +0700",
-    "message": "feat(notifications): update workspace default email to workspace@hokiindo.co.id and enable dynamic sender header"
-  },
-  {
-    "hash": "7ef0858aa4dcdfcc7dbd5b4d773165c6d04a9241",
-    "shortHash": "7ef0858",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 14 10:48:40 2026 +0700",
-    "message": "feat(collaborate): refine compact filter bar, neutral styling & task highlight"
   }
 ]
