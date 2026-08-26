@@ -1,5 +1,13 @@
 [
   {
+    "hash": "8a4eb714c173c93782ffa60a0b7ce391ba848353",
+    "shortHash": "8a4eb71",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Aug 26 11:20:45 2026 +0700",
+    "message": "fix(tracking): correctly isolate in-progress PO for remaining quantities against partially shipped items"
+  },
+  {
     "hash": "7c4b575a0607e51c78cbb9ab4d5d5fe01d4d5309",
     "shortHash": "7c4b575",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 18 12:03:04 2026 +0700",
     "message": "fix(sales-orders): restrict HPO boxes to logistics status and prioritize DIKIRIM SEBAGIAN on global item status badge"
-  },
-  {
-    "hash": "a07c04caa544f1ffcb46ce2eba0edcef0fce7e23",
-    "shortHash": "a07c04c",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 14 16:50:18 2026 +0700",
-    "message": "fix(delegation): display target notification_email in delegation chips and selection dropdowns"
   }
 ]

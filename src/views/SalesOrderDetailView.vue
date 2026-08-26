@@ -2369,11 +2369,16 @@ const getHpoShipment = (item, hpoNumber) => {
   const target = String(hpoNumber || '').trim().replace(/HP0/gi, 'HPO').toLowerCase()
   const cleanTarget = target.split(/\s+/)[0]
 
-  return item.shipments_data.find(s => {
+  if (!cleanTarget) return item.shipments_data[0] || {}
+
+  const match = item.shipments_data.find(s => {
     const sPo = String(s.hpo_number || '').trim().replace(/HP0/gi, 'HPO').toLowerCase()
     const cleanSPo = sPo.split(/\s+/)[0]
-    return sPo === target || cleanSPo === cleanTarget || sPo.includes(cleanTarget) || target.includes(cleanSPo)
-  }) || item.shipments_data[0] || {}
+    if (!cleanSPo) return false
+    return sPo === target || cleanSPo === cleanTarget || (cleanSPo.length >= 5 && cleanTarget.includes(cleanSPo)) || (cleanTarget.length >= 5 && sPo.includes(cleanTarget))
+  })
+
+  return match || item.shipments_data.find(s => s.hpo_number && s.hpo_number.trim()) || item.shipments_data[0] || {}
 }
 
 // Helper: Calculate HPO discrepancy
