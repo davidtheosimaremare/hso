@@ -452,12 +452,6 @@ const exportToExcel = () => {
                                             <span class="text-slate-500 font-medium">EXWORK</span>
                                             <span class="font-bold text-amber-700">{{ formatDate(item.exwork_date) }}</span>
                                         </div>
-                                        <div v-if="!item.exwork_date && !item.eta_date && !item.dunex_date && !item.hokiindo_date" class="flex items-center justify-end gap-2">
-                                            <span class="text-slate-400 italic">Sedang Diproses</span>
-                                        </div>
-                                    </div>
-                                    <div v-else class="flex items-center justify-end gap-2">
-                                        <span class="text-slate-400 italic">Menunggu Proses Antrian</span>
                                     </div>
                                 </div>
                             </div>
