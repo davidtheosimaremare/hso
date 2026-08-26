@@ -136,48 +136,7 @@ const fetchTrackingData = async () => {
             console.warn('Cross SO tracking lookup note:', e)
         }
 
-        const shipmentsMap = (shipData || []).reduce((map, s) => {
-            const codeKey = (s.item_code || '').trim().toUpperCase()
-            const existing = map[codeKey]
-            
-            let status = s.current_status
-            let exwork = s.exwork_date
-            let eta = s.eta_date
-            let dunex = s.dunex_date
-            let hokiindo = s.hokiindo_date
-
-            // If shipment has no dates, try cross-SO tracking
-            if (!exwork && !eta && !dunex && !hokiindo && crossSoTrackingMap.has(codeKey)) {
-                const fallback = crossSoTrackingMap.get(codeKey)
-                if (fallback) {
-                    status = fallback.current_status || status
-                    exwork = fallback.exwork_date || exwork
-                    eta = fallback.eta_date || eta
-                    dunex = fallback.dunex_date || dunex
-                    hokiindo = fallback.hokiindo_date || hokiindo
-                }
-            }
-
-            const currentObj = {
-                status: status,
-                hpo: s.hpo_number,
-                exwork_date: exwork,
-                eta_date: eta,
-                dunex_date: dunex,
-                hokiindo_date: hokiindo
-            }
-
-            if (!existing) {
-                map[codeKey] = currentObj
-            } else {
-                const existingScore = (existing.hpo ? 10 : 0) + (existing.hokiindo_date ? 4 : (existing.dunex_date ? 3 : (existing.eta_date ? 2 : (existing.exwork_date ? 1 : 0))))
-                const newScore = (currentObj.hpo ? 10 : 0) + (currentObj.hokiindo_date ? 4 : (currentObj.dunex_date ? 3 : (currentObj.eta_date ? 2 : (currentObj.exwork_date ? 1 : 0))))
-                if (newScore >= existingScore) {
-                    map[codeKey] = currentObj
-                }
-            }
-            return map
-        }, {})
+        const shipmentsList = shipData || []
 
         soHeader.value = {
             number: d.number,
@@ -207,15 +166,46 @@ const fetchTrackingData = async () => {
                 isRemainingStockReady = stockRemaining >= qtyRemaining && qtyRemaining > 0
             }
 
-            // Ambil data logistik dari DB untuk item ini jika bukan stock ready
-            const logistik = isRemainingStockReady ? {} : (shipmentsMap[codeKey] || {})
+            // Ambil semua data shipments untuk item ini
+            const myShipments = shipmentsList.filter(s => (s.item_code || '').trim().toUpperCase() === codeKey)
+            const inProgressShipments = myShipments.filter(s => !['Already in Hokiindo Raya', 'Completed'].includes(s.current_status) && !s.hokiindo_date)
+            const arrivedShipments = myShipments.filter(s => ['Already in Hokiindo Raya', 'Completed'].includes(s.current_status) || s.hokiindo_date)
 
-            let isRemainingArrived = false
-            if (logistik.status === 'Already in Hokiindo Raya' || logistik.hokiindo_date) {
-                isRemainingArrived = true
+            let logistik = {}
+            let isReadyToShip = false
+
+            if (isRemainingStockReady) {
+                isReadyToShip = true
+                logistik = { status: 'Ready Stock' }
+            } else if (inProgressShipments.length > 0) {
+                // Sisa barang sedang dalam proses pengiriman HPO aktif (Ex-Works, ETA, Dunex, dll)
+                logistik = inProgressShipments[0]
+                isReadyToShip = false
+            } else if (qtyShipped === 0 && arrivedShipments.length > 0) {
+                // Belum ada yg dikirim sama sekali ke customer, dan barang PO sudah tiba di gudang
+                logistik = arrivedShipments[0]
+                isReadyToShip = true
+            } else {
+                // Tidak ada PO in-progress, dan stok tidak ada / sudah terpakai
+                logistik = {}
+                isReadyToShip = false
             }
 
-            const isReadyToShip = isRemainingStockReady || isRemainingArrived
+            // Fallback cross-SO tracking if inProgressShipments has missing dates
+            let exwork = logistik.exwork_date
+            let eta = logistik.eta_date
+            let dunex = logistik.dunex_date
+            let hokiindo = logistik.hokiindo_date
+
+            if (logistik.hpo_number && !exwork && !eta && !dunex && !hokiindo && crossSoTrackingMap.has(codeKey)) {
+                const fallback = crossSoTrackingMap.get(codeKey)
+                if (fallback) {
+                    exwork = fallback.exwork_date || exwork
+                    eta = fallback.eta_date || eta
+                    dunex = fallback.dunex_date || dunex
+                    hokiindo = fallback.hokiindo_date || hokiindo
+                }
+            }
 
             return {
                 name: item.item?.name || item.detailName,
@@ -224,12 +214,12 @@ const fetchTrackingData = async () => {
                 qty_shipped: qtyShipped,
                 qty_remaining: qtyRemaining,
                 is_ready: isReadyToShip,
-                hpo: logistik.hpo || null,
-                status: isRemainingStockReady ? 'Ready Stock' : (logistik.status || 'Pending Process'),
-                exwork_date: logistik.exwork_date || null,
-                eta_date: logistik.eta_date || null,
-                dunex_date: logistik.dunex_date || null,
-                hokiindo_date: logistik.hokiindo_date || null
+                hpo: logistik.hpo_number || null,
+                status: isReadyToShip ? 'Ready Stock' : (logistik.current_status || 'Pending Process'),
+                exwork_date: exwork || null,
+                eta_date: eta || null,
+                dunex_date: dunex || null,
+                hokiindo_date: hokiindo || null
             }
         })
 
