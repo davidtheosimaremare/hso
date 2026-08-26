@@ -1,5 +1,13 @@
 [
   {
+    "hash": "837e5dd34ffc6c7014c6ff3ee100309b549db184",
+    "shortHash": "837e5dd",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 21 23:52:32 2026 +0700",
+    "message": "fix: restore clean logistics sync UX, cross-SO tracking enrichment, and prevent destructive purge [skip vercel] [skip ci]"
+  },
+  {
     "hash": "3217c4bd1e5463e825889f81ec9b08da1306d544",
     "shortHash": "3217c4b",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 14 16:25:44 2026 +0700",
     "message": "fix(settings): persist user notification_email directly to user_access database table"
-  },
-  {
-    "hash": "2c3b1d3d235b0ebb0ea85c2bda792669be06fbe0",
-    "shortHash": "2c3b1d3",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 14 15:50:13 2026 +0700",
-    "message": "fix(notifications): resolve multi-assignee email truncation and live user_access notification_email lookup for task dispatches"
   }
 ]

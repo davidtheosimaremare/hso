@@ -301,7 +301,9 @@ const formatShortDate = (dateStr) => {
 }
 
 const formatCurrency = (val) => {
-    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val)
+    const num = typeof val === 'number' ? val : parseFloat(String(val || 0).replace(/,/g, ''))
+    if (isNaN(num)) return 'Rp 0'
+    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num)
 }
 
 // --- LOGIC MULTI SELECT ---
@@ -1265,7 +1267,13 @@ const getStatusColor = (status) => {
                 <component :is="sortKey==='project' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='project' ? 'text-red-600' : 'opacity-30'"/>
               </div>
             </TableHead>
-            <TableHead class="hidden lg:table-cell text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[230px] py-3.5 px-4" @click="toggleSort('progress')">
+            <TableHead class="text-right text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[180px] py-3.5 px-4" @click="toggleSort('amount')">
+              <div class="flex items-center justify-end gap-1.5">
+                Nilai (IDR)
+                <component :is="sortKey==='amount' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='amount' ? 'text-red-600' : 'opacity-30'"/>
+              </div>
+            </TableHead>
+            <TableHead class="hidden lg:table-cell text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[200px] py-3.5 px-4" @click="toggleSort('progress')">
               <div class="flex items-center gap-1.5">
                 Progress
                 <component :is="sortKey==='progress' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='progress' ? 'text-red-600' : 'opacity-30'"/>
@@ -1275,12 +1283,6 @@ const getStatusColor = (status) => {
               <div class="flex items-center gap-1.5">
                 Status
                 <component :is="sortKey==='status' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='status' ? 'text-red-600' : 'opacity-30'"/>
-              </div>
-            </TableHead>
-            <TableHead class="hidden md:table-cell text-right text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[180px] py-3.5 px-4" @click="toggleSort('amount')">
-              <div class="flex items-center justify-end gap-1.5">
-                Nilai (IDR)
-                <component :is="sortKey==='amount' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='amount' ? 'text-red-600' : 'opacity-30'"/>
               </div>
             </TableHead>
           </TableRow>
@@ -1340,7 +1342,10 @@ const getStatusColor = (status) => {
                 {{ so.project }}
               </span>
             </TableCell>
-            <TableCell class="hidden lg:table-cell py-4 px-4 align-middle w-[230px]">
+            <TableCell class="text-right py-4 px-4 align-middle whitespace-nowrap">
+              <span class="text-xs md:text-sm font-bold text-slate-900 dark:text-slate-100 font-sans tabular-nums">{{ formatCurrency(so.amount) }}</span>
+            </TableCell>
+            <TableCell class="hidden lg:table-cell py-4 px-4 align-middle w-[200px]">
               <div class="flex items-center gap-3">
                 <div class="flex-1 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                   <div class="h-full rounded-full transition-all duration-700"
@@ -1355,9 +1360,6 @@ const getStatusColor = (status) => {
               <Badge variant="outline" class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border whitespace-nowrap" :class="getStatusColor(so.status)">
                 {{ so.status }}
               </Badge>
-            </TableCell>
-            <TableCell class="hidden md:table-cell text-right py-4 px-4 align-middle">
-              <span class="text-xs md:text-sm font-bold text-slate-900 dark:text-slate-100 font-sans">{{ formatCurrency(so.amount) }}</span>
             </TableCell>
           </TableRow>
         </TableBody>

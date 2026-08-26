@@ -66,6 +66,30 @@ const formatDate = (dateStr) => {
     }
 }
 
+// Helper: Parse stock info from admin note
+const parseStockFromNote = (note) => {
+    if (!note) return { qty: 0, isReady: false, hasInfo: false }
+    const lower = note.toLowerCase()
+    
+    // No stock / kosong / indent
+    if (lower.includes('no stock') || lower.includes('non stock') || lower.includes('kosong') || lower.includes('indent')) {
+        return { qty: 0, isReady: false, hasInfo: true }
+    }
+    
+    // Cek apakah ada angka setelah stock/stok
+    const match = lower.match(/(?:stock|stok|sisa)\s*[:.]?\s*(\d+)/)
+    if (match) {
+        return { qty: parseInt(match[1]), isReady: false, hasInfo: true }
+    }
+    
+    // Jika ada kata stock/stok/ready tapi TIDAK ada angka = ready stock
+    if (lower.includes('stock') || lower.includes('stok') || lower.includes('ready')) {
+        return { qty: 999999, isReady: true, hasInfo: true }
+    }
+    
+    return { qty: 0, isReady: false, hasInfo: false }
+}
+
 // --- DATA FETCHING ---
 const fetchTrackingData = async () => {
     isLoading.value = true
@@ -83,100 +107,131 @@ const fetchTrackingData = async () => {
         const d = accData.d
 
         const { data: shipData } = await supabase
-            .from('shipments').select('item_code, current_status, hpo_number, exwork_date, eta_date, dunex_date').eq('so_id', String(soId))
+            .from('shipments')
+            .select('item_code, current_status, hpo_number, exwork_date, eta_date, dunex_date, hokiindo_date, status_date')
+            .eq('so_id', String(soId))
 
-        const shipmentsMap = (shipData || []).reduce((map, s) => {
-            const existing = map[s.item_code];
-            if (!existing) {
-                map[s.item_code] = { 
-                    status: s.current_status, 
-                    hpo: s.hpo_number,
-                    exwork_date: s.exwork_date,
-                    eta_date: s.eta_date,
-                    dunex_date: s.dunex_date
-                };
-            } else {
-                // Prioritize shipments with a non-null HPO number
-                const existingHasHpo = existing.hpo ? 1 : 0;
-                const newHasHpo = s.hpo_number ? 1 : 0;
-                if (newHasHpo > existingHasHpo) {
-                    map[s.item_code] = { 
-                        status: s.current_status, 
-                        hpo: s.hpo_number,
-                        exwork_date: s.exwork_date,
-                        eta_date: s.eta_date,
-                        dunex_date: s.dunex_date
-                    };
-                } else if (newHasHpo === existingHasHpo) {
-                    // Fallback to the one that has dates configured
-                    const existingHasDates = (existing.exwork_date || existing.eta_date || existing.dunex_date) ? 1 : 0;
-                    const newHasDates = (s.exwork_date || s.eta_date || s.dunex_date) ? 1 : 0;
-                    if (newHasDates > existingHasDates) {
-                        map[s.item_code] = { 
-                            status: s.current_status, 
-                            hpo: s.hpo_number,
-                            exwork_date: s.exwork_date,
-                            eta_date: s.eta_date,
-                            dunex_date: s.dunex_date
-                        };
-                    }
+        // Cross-SO fallback for items without specific shipment dates in this SO
+        let crossSoTrackingMap = new Map()
+        try {
+            const itemCodes = (d.detailItem || []).map(i => i.item?.no || i.detailName).filter(Boolean)
+            if (itemCodes.length > 0) {
+                const { data: knownTracking } = await supabase
+                    .from('shipments')
+                    .select('item_code, hpo_number, current_status, exwork_date, eta_date, dunex_date, hokiindo_date, status_date, updated_at')
+                    .in('item_code', itemCodes)
+                    .neq('current_status', 'Follow up with our forwarder')
+                    .order('updated_at', { ascending: false })
+
+                if (knownTracking) {
+                    knownTracking.forEach(t => {
+                        const keyExact = `${(t.item_code || '').trim().toUpperCase()}||${(t.hpo_number || '').trim().toUpperCase()}`
+                        if (!crossSoTrackingMap.has(keyExact)) crossSoTrackingMap.set(keyExact, t)
+                        const keyItem = (t.item_code || '').trim().toUpperCase()
+                        if (!crossSoTrackingMap.has(keyItem)) crossSoTrackingMap.set(keyItem, t)
+                    })
                 }
             }
-            return map;
-        }, {});
+        } catch (e) {
+            console.warn('Cross SO tracking lookup note:', e)
+        }
+
+        const shipmentsMap = (shipData || []).reduce((map, s) => {
+            const codeKey = (s.item_code || '').trim().toUpperCase()
+            const existing = map[codeKey]
+            
+            let status = s.current_status
+            let exwork = s.exwork_date
+            let eta = s.eta_date
+            let dunex = s.dunex_date
+            let hokiindo = s.hokiindo_date
+
+            // If shipment has no dates, try cross-SO tracking
+            if (!exwork && !eta && !dunex && !hokiindo && crossSoTrackingMap.has(codeKey)) {
+                const fallback = crossSoTrackingMap.get(codeKey)
+                if (fallback) {
+                    status = fallback.current_status || status
+                    exwork = fallback.exwork_date || exwork
+                    eta = fallback.eta_date || eta
+                    dunex = fallback.dunex_date || dunex
+                    hokiindo = fallback.hokiindo_date || hokiindo
+                }
+            }
+
+            const currentObj = {
+                status: status,
+                hpo: s.hpo_number,
+                exwork_date: exwork,
+                eta_date: eta,
+                dunex_date: dunex,
+                hokiindo_date: hokiindo
+            }
+
+            if (!existing) {
+                map[codeKey] = currentObj
+            } else {
+                const existingScore = (existing.hpo ? 10 : 0) + (existing.hokiindo_date ? 4 : (existing.dunex_date ? 3 : (existing.eta_date ? 2 : (existing.exwork_date ? 1 : 0))))
+                const newScore = (currentObj.hpo ? 10 : 0) + (currentObj.hokiindo_date ? 4 : (currentObj.dunex_date ? 3 : (currentObj.eta_date ? 2 : (currentObj.exwork_date ? 1 : 0))))
+                if (newScore >= existingScore) {
+                    map[codeKey] = currentObj
+                }
+            }
+            return map
+        }, {})
 
         soHeader.value = {
             number: d.number,
             client: d.customer?.name || '-',
             po_number: d.poNumber || '-',
-            do_list: d.processHistory.filter(h => h.historyType === 'DO').map(h => h.no).join(', '),
+            do_list: (d.processHistory || []).filter(h => h.historyType === 'DO').map(h => h.no).join(', '),
             items_raw: d.detailItem
         }
 
-        soItems.value = d.detailItem.map(item => {
-            const itemCode = item.item?.no || item.detailName;
+        soItems.value = (d.detailItem || []).map(item => {
+            const itemCode = item.item?.no || item.detailName
+            const codeKey = (itemCode || '').trim().toUpperCase()
             
-            const note = item.detailNotes || '';
-            const lowerNote = note.toLowerCase();
-            let isStock = false;
-            
-            // Cek apakah item adalah STOCK
-            if (!lowerNote.includes('no stock') && !lowerNote.includes('non stock') && !lowerNote.includes('kosong') && !lowerNote.includes('indent')) {
-                const match = lowerNote.match(/(?:stock|stok|sisa)\s*[:.]?\s*(\d+)/);
-                if (!match && (lowerNote.includes('stock') || lowerNote.includes('stok') || lowerNote.includes('ready'))) {
-                    isStock = true;
-                } else if (match) {
-                    const stockQty = parseInt(match[1]);
-                    const qtyRemaining = item.quantity - (item.shipQuantity || 0);
-                    if (stockQty >= qtyRemaining && qtyRemaining > 0) {
-                        isStock = true;
-                    }
-                }
+            const note = item.detailNotes || ''
+            const stockInfo = parseStockFromNote(note)
+
+            const qtyOrder = item.quantity || 0
+            const qtyShipped = item.shipQuantity || 0
+            const qtyRemaining = Math.max(0, qtyOrder - qtyShipped)
+
+            // Cek sisa stok yang belum terkirim
+            let isRemainingStockReady = false
+            if (stockInfo.isReady) {
+                isRemainingStockReady = true
+            } else if (stockInfo.hasInfo && stockInfo.qty > 0) {
+                const stockRemaining = Math.max(0, stockInfo.qty - qtyShipped)
+                isRemainingStockReady = stockRemaining >= qtyRemaining && qtyRemaining > 0
             }
 
-            // Jika item adalah STOCK, abaikan data logistik dari DB karena tidak ada HPO impor untuk stock
-            const logistik = isStock ? {} : (shipmentsMap[itemCode] || {});
-            
-            let isReady = isStock;
-            
-            // Jika bukan stock, cek dari status logistik apakah sudah sampai di Hokiindo
-            if (!isStock && ['Already in Hokiindo Raya'].includes(logistik.status)) {
-                isReady = true;
+            // Ambil data logistik dari DB untuk item ini jika bukan stock ready
+            const logistik = isRemainingStockReady ? {} : (shipmentsMap[codeKey] || {})
+
+            let isRemainingArrived = false
+            if (logistik.status === 'Already in Hokiindo Raya' || logistik.hokiindo_date) {
+                isRemainingArrived = true
             }
-            
+
+            const isReadyToShip = isRemainingStockReady || isRemainingArrived
+
             return {
                 name: item.item?.name || item.detailName,
                 code: itemCode,
-                qty_order: item.quantity,
-                qty_shipped: item.shipQuantity || 0,
-                status: isStock ? 'Ready Stock' : (logistik.status || 'NO ACTION'),
-                is_ready: isReady,
+                qty_order: qtyOrder,
+                qty_shipped: qtyShipped,
+                qty_remaining: qtyRemaining,
+                is_ready: isReadyToShip,
                 hpo: logistik.hpo || null,
+                status: isRemainingStockReady ? 'Ready Stock' : (logistik.status || 'Pending Process'),
                 exwork_date: logistik.exwork_date || null,
                 eta_date: logistik.eta_date || null,
-                dunex_date: logistik.dunex_date || null
+                dunex_date: logistik.dunex_date || null,
+                hokiindo_date: logistik.hokiindo_date || null
             }
-        });
+        })
 
     } catch (error) {
         fetchError.value = error.message
@@ -375,22 +430,34 @@ const exportToExcel = () => {
                                     </span>
                                 </div>
                                 
-                                <!-- Dates Timeline - Only show if date exists -->
+                                <!-- Dates Timeline -->
                                 <div class="text-right text-xs space-y-1">
                                     <div v-if="item.is_ready" class="flex items-center justify-end gap-2 mb-2">
-                                        <span class="inline-block bg-red-100 text-red-700 border border-red-200 px-2 py-1 rounded font-bold uppercase tracking-wider shadow-sm">Siap Dikirim</span>
+                                        <span class="inline-block bg-emerald-100 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded font-bold uppercase tracking-wider shadow-xs">Siap Dikirim</span>
                                     </div>
-                                    <div v-if="item.exwork_date" class="flex items-center justify-end gap-2">
-                                        <span class="text-slate-500">EXWORK</span>
-                                        <span class="font-bold text-amber-700">{{ formatDate(item.exwork_date) }}</span>
+                                    <div v-else-if="item.hpo" class="space-y-1">
+                                        <div v-if="item.hokiindo_date" class="flex items-center justify-end gap-2">
+                                            <span class="text-slate-500 font-medium">Tiba di Hokiindo</span>
+                                            <span class="font-bold text-emerald-700">{{ formatDate(item.hokiindo_date) }}</span>
+                                        </div>
+                                        <div v-if="item.dunex_date" class="flex items-center justify-end gap-2">
+                                            <span class="text-slate-500 font-medium">Tiba di DUNEX</span>
+                                            <span class="font-bold text-cyan-700">{{ formatDate(item.dunex_date) }}</span>
+                                        </div>
+                                        <div v-if="item.eta_date" class="flex items-center justify-end gap-2">
+                                            <span class="text-slate-500 font-medium">ETA PORT JKT</span>
+                                            <span class="font-bold text-blue-700">{{ formatDate(item.eta_date) }}</span>
+                                        </div>
+                                        <div v-if="item.exwork_date" class="flex items-center justify-end gap-2">
+                                            <span class="text-slate-500 font-medium">EXWORK</span>
+                                            <span class="font-bold text-amber-700">{{ formatDate(item.exwork_date) }}</span>
+                                        </div>
+                                        <div v-if="!item.exwork_date && !item.eta_date && !item.dunex_date && !item.hokiindo_date" class="flex items-center justify-end gap-2">
+                                            <span class="text-slate-400 italic">Sedang Diproses</span>
+                                        </div>
                                     </div>
-                                    <div v-if="item.eta_date" class="flex items-center justify-end gap-2">
-                                        <span class="text-slate-500">ETA PORT JKT</span>
-                                        <span class="font-bold text-red-700">{{ formatDate(item.eta_date) }}</span>
-                                    </div>
-                                    <div v-if="item.dunex_date" class="flex items-center justify-end gap-2">
-                                        <span class="text-slate-500">Tiba di DUNEX</span>
-                                        <span class="font-bold text-cyan-700">{{ formatDate(item.dunex_date) }}</span>
+                                    <div v-else class="flex items-center justify-end gap-2">
+                                        <span class="text-slate-400 italic">Menunggu Proses Antrian</span>
                                     </div>
                                 </div>
                             </div>

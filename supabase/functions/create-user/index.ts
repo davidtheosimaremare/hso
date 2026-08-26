@@ -53,7 +53,9 @@ serve(async (req) => {
 
         console.log(`Creating user: ${email}`)
 
-        // Create user using Admin API
+        // Create user using Admin API (or update if already exists in auth.users)
+        let userId: string | undefined
+
         const { data, error } = await supabaseAdmin.auth.admin.createUser({
             email: email,
             password: password,
@@ -61,13 +63,31 @@ serve(async (req) => {
         })
 
         if (error) {
-            console.error('Auth error:', error)
-            throw new Error(error.message)
+            if (error.message.toLowerCase().includes('already') || error.message.toLowerCase().includes('registered')) {
+                console.log(`User ${email} exists in auth.users, updating password...`)
+                const { data: listData } = await supabaseAdmin.auth.admin.listUsers()
+                const existing = listData?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase())
+                if (existing) {
+                    const { error: updErr } = await supabaseAdmin.auth.admin.updateUserById(existing.id, {
+                        password: password,
+                        email_confirm: true
+                    })
+                    if (updErr) throw new Error(updErr.message)
+                    userId = existing.id
+                } else {
+                    throw new Error(error.message)
+                }
+            } else {
+                console.error('Auth error:', error)
+                throw new Error(error.message)
+            }
+        } else {
+            userId = data.user?.id
         }
 
-        console.log(`User created: ${data.user?.id}`)
+        console.log(`User active: ${userId}`)
 
-        // Also add to user_access table for tracking (optional, may fail if table doesn't exist)
+        // Also add to user_access table for tracking
         try {
             await supabaseAdmin
                 .from('user_access')
@@ -75,7 +95,7 @@ serve(async (req) => {
                     email: email, 
                     is_active: true,
                     role: role || 'STAFF',
-                    allowed_modules: allowed_modules || ['dashboard']
+                    allowed_modules: allowed_modules || ['dashboard:read']
                 }, { onConflict: 'email' })
         } catch (e) {
             console.log('Note: user_access table update skipped:', e.message)
