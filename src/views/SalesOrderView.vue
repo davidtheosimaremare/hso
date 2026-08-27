@@ -1315,12 +1315,15 @@ const getStatusColor = (status) => {
               </div>
             </TableCell>
             <TableCell class="py-4 px-4 align-middle whitespace-nowrap">
-              <div class="flex flex-col gap-0.5">
+              <div class="flex flex-col items-start gap-1">
                 <span class="text-xs md:text-sm font-bold text-slate-900 dark:text-slate-100 font-sans">
                   {{ so.no_so }}
                 </span>
-                <span v-if="so.project && so.project !== '-'" class="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[240px]" :title="so.project">
-                  {{ so.project }}
+                <span v-if="so.project && so.project !== '-'" 
+                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700 max-w-[240px] truncate" 
+                  :title="so.project">
+                  <span class="text-slate-400 dark:text-slate-500 font-normal">Project:</span>
+                  <span class="font-semibold truncate">{{ so.project }}</span>
                 </span>
                 <span v-if="so.po_number && so.po_number !== '-'" class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate max-w-[240px]" :title="so.po_number">
                   PO: {{ so.po_number }}

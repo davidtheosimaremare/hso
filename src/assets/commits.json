@@ -1,5 +1,13 @@
 [
   {
+    "hash": "935b5e035964101f92687658b55074156b8fb3d4",
+    "shortHash": "935b5e0",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Aug 27 17:37:33 2026 +0700",
+    "message": "refactor(sales-order): embed project into No. SO cell and optimize table columns width"
+  },
+  {
     "hash": "8cd2d6500d22411b0c101ccccf7f9b22be8dace3",
     "shortHash": "8cd2d65",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 18 12:35:00 2026 +0700",
     "message": "fix(sales-orders): suppress Kekurangan dipesan warning when item has been shipped for full requested quantity"
-  },
-  {
-    "hash": "2b321bcb2c8ee058d145b74731c82854e8c5e29b",
-    "shortHash": "2b321bc",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 18 12:16:05 2026 +0700",
-    "message": "fix(sales-orders): include stock items and arrived-at-Hokiindo items in Menunggu Pengiriman filter"
   }
 ]
