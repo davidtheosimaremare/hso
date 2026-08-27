@@ -1,5 +1,13 @@
 [
   {
+    "hash": "8cd2d6500d22411b0c101ccccf7f9b22be8dace3",
+    "shortHash": "8cd2d65",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Aug 26 14:16:15 2026 +0700",
+    "message": "fix(hso-detail): fix getHpoShipment matching to properly resolve ETA Port JKT"
+  },
+  {
     "hash": "8a4eb714c173c93782ffa60a0b7ce391ba848353",
     "shortHash": "8a4eb71",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 18 12:16:05 2026 +0700",
     "message": "fix(sales-orders): include stock items and arrived-at-Hokiindo items in Menunggu Pengiriman filter"
-  },
-  {
-    "hash": "f39b17dedf7c34c1764a1701925e85fa1de249a1",
-    "shortHash": "f39b17d",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 18 12:03:04 2026 +0700",
-    "message": "fix(sales-orders): restrict HPO boxes to logistics status and prioritize DIKIRIM SEBAGIAN on global item status badge"
   }
 ]

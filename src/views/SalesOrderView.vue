@@ -1243,7 +1243,7 @@ const getStatusColor = (status) => {
                 />
               </div>
             </TableHead>
-            <TableHead class="text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[180px] py-3.5 px-4" @click="toggleSort('no_so')">
+            <TableHead class="text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[220px] py-3.5 px-4" @click="toggleSort('no_so')">
               <div class="flex items-center gap-1.5">
                 No. SO
                 <component :is="sortKey==='no_so' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='no_so' ? 'text-red-600' : 'opacity-30'"/>
@@ -1261,19 +1261,13 @@ const getStatusColor = (status) => {
                 <component :is="sortKey==='client' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='client' ? 'text-red-600' : 'opacity-30'"/>
               </div>
             </TableHead>
-            <TableHead class="hidden md:table-cell text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white py-3.5 px-4" @click="toggleSort('project')">
-              <div class="flex items-center gap-1.5">
-                Proyek
-                <component :is="sortKey==='project' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='project' ? 'text-red-600' : 'opacity-30'"/>
-              </div>
-            </TableHead>
             <TableHead class="text-right text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[180px] py-3.5 px-4" @click="toggleSort('amount')">
               <div class="flex items-center justify-end gap-1.5">
                 Nilai (IDR)
                 <component :is="sortKey==='amount' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='amount' ? 'text-red-600' : 'opacity-30'"/>
               </div>
             </TableHead>
-            <TableHead class="hidden lg:table-cell text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[200px] py-3.5 px-4" @click="toggleSort('progress')">
+            <TableHead class="hidden lg:table-cell text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[180px] py-3.5 px-4" @click="toggleSort('progress')">
               <div class="flex items-center gap-1.5">
                 Progress
                 <component :is="sortKey==='progress' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='progress' ? 'text-red-600' : 'opacity-30'"/>
@@ -1289,7 +1283,7 @@ const getStatusColor = (status) => {
         </TableHeader>
         <TableBody>
           <TableRow v-if="isLoading">
-            <TableCell colspan="8" class="py-20 text-center">
+            <TableCell colspan="7" class="py-20 text-center">
               <div class="flex flex-col items-center gap-3 text-slate-400">
                 <Loader2 class="w-8 h-8 animate-spin text-red-600"/>
                 <span class="text-sm font-medium">Sedang mengambil data dari Accurate...</span>
@@ -1297,7 +1291,7 @@ const getStatusColor = (status) => {
             </TableCell>
           </TableRow>
           <TableRow v-else-if="filteredAndSortedOrders.length === 0">
-            <TableCell colspan="8" class="py-20 text-center">
+            <TableCell colspan="7" class="py-20 text-center">
               <div class="flex flex-col items-center gap-3 text-slate-400">
                 <div class="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center">
                   <FileText class="w-6 h-6 opacity-40"/>
@@ -1325,10 +1319,12 @@ const getStatusColor = (status) => {
                 <span class="text-xs md:text-sm font-bold text-slate-900 dark:text-slate-100 font-sans">
                   {{ so.no_so }}
                 </span>
-                <span v-if="so.po_number && so.po_number !== '-'" class="text-xs font-medium text-slate-500 dark:text-slate-400">
+                <span v-if="so.project && so.project !== '-'" class="text-xs font-semibold text-slate-700 dark:text-slate-300 truncate max-w-[240px]" :title="so.project">
+                  {{ so.project }}
+                </span>
+                <span v-if="so.po_number && so.po_number !== '-'" class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate max-w-[240px]" :title="so.po_number">
                   PO: {{ so.po_number }}
                 </span>
-
               </div>
             </TableCell>
             <TableCell class="py-4 px-4 align-middle whitespace-nowrap">
@@ -1337,15 +1333,10 @@ const getStatusColor = (status) => {
             <TableCell class="py-4 px-4 align-middle">
               <p class="font-semibold text-slate-900 dark:text-slate-100 text-xs md:text-sm truncate max-w-[280px]" :title="so.client">{{ so.client }}</p>
             </TableCell>
-            <TableCell class="hidden md:table-cell py-4 px-4 align-middle">
-              <span class="text-xs md:text-sm font-medium text-slate-700 dark:text-slate-300 truncate max-w-[220px] block" :title="so.project">
-                {{ so.project }}
-              </span>
-            </TableCell>
             <TableCell class="text-right py-4 px-4 align-middle whitespace-nowrap">
               <span class="text-xs md:text-sm font-bold text-slate-900 dark:text-slate-100 font-sans tabular-nums">{{ formatCurrency(so.amount) }}</span>
             </TableCell>
-            <TableCell class="hidden lg:table-cell py-4 px-4 align-middle w-[200px]">
+            <TableCell class="hidden lg:table-cell py-4 px-4 align-middle w-[180px]">
               <div class="flex items-center gap-3">
                 <div class="flex-1 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                   <div class="h-full rounded-full transition-all duration-700"
