@@ -1,5 +1,13 @@
 [
   {
+    "hash": "d3221c49039e5046fb798ded5f0c3f04b073d2e0",
+    "shortHash": "d3221c4",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 28 17:04:48 2026 +0700",
+    "message": "fix(sync-logistics): fix variable scope and display split schedules in bulk sync modal"
+  },
+  {
     "hash": "2566bbc75d19fb20bc7ce6b048d316df1c84c789",
     "shortHash": "2566bbc",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 18 18:14:19 2026 +0700",
     "message": "perf(edge-functions): optimize accurate-list-sq with timeout handling and single-page break on filterNumber"
-  },
-  {
-    "hash": "953510c49ed2e290937ee36a14b5f2e265943435",
-    "shortHash": "953510c",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 18 18:11:13 2026 +0700",
-    "message": "perf(edge-functions): optimize accurate-detail-so with batch item stock fetches to prevent Accurate API rate limits"
   }
 ]

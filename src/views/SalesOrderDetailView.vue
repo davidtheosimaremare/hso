@@ -78,6 +78,25 @@ const errorMessage = ref(null)
 
 const cartItems = ref([])
 
+// Global Matching Helpers for HPO and SKU
+const isHpoMatch = (dbHpo, excelHpo) => {
+  const normalize = (s) => String(s || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '').replace(/0/g, 'o')
+  const d = normalize(dbHpo)
+  const e = normalize(excelHpo)
+  if (!d || !e) return false
+  if (d === e) return true
+  if (d.includes(e) || e.includes(d)) return true
+  return false
+}
+
+const isItemMatch = (dbItem, excelItem) => {
+  if (!dbItem || !excelItem) return false
+  const d = String(dbItem || '').trim().toLowerCase().replace(/[\s\-\.]/g, '')
+  const e = String(excelItem || '').trim().toLowerCase().replace(/[\s\-\.]/g, '')
+  if (!d || !e) return false
+  return d === e || d.includes(e) || e.includes(d)
+}
+
 const fetchCartItems = async () => {
   if (!soDetail.value) return
   try {
@@ -1054,15 +1073,23 @@ const syncFromLogisticsDb = async () => {
   
   isExcelParsing.value = true
   try {
-    const itemCodes = soDetail.value.items.map(i => i.code)
+    const itemCodes = (soDetail.value.items || []).map(i => i.code).filter(Boolean)
     
-    // Fetch matching tracking rows from Supabase
-    const { data: rows, error } = await supabase
-      .from('raw_forwarder_tracking')
-      .select('*')
-      .in('item_code', itemCodes)
-    
-    if (error) throw error
+    // Fetch matching tracking rows from Supabase (chunked to avoid URL length limit)
+    const chunks = []
+    for (let i = 0; i < itemCodes.length; i += 25) {
+      chunks.push(itemCodes.slice(i, i + 25))
+    }
+
+    const queryResults = await Promise.all(chunks.map(chunk => 
+      supabase
+        .from('raw_forwarder_tracking')
+        .select('*')
+        .in('item_code', chunk)
+    ))
+
+    const rows = queryResults.flatMap(r => r.data || [])
+    if (rows) forwarderTrackingList.value = rows
     
     if (!rows || rows.length === 0) {
       alert("Tidak ada data pelacakan di database yang cocok dengan item produk di SO ini. Pastikan Anda sudah mengunggah Excel logistik terbaru di Dashboard.")
@@ -1693,12 +1720,21 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
     try {
       const itemCodes = sortedItems.map(i => i.item?.no || i.detailName || i.code).filter(Boolean)
       if (itemCodes.length > 0) {
-        const { data: knownTracking } = await supabase
-          .from('shipments')
-          .select('item_code, hpo_number, current_status, exwork_date, eta_date, dunex_date, hokiindo_date, ready_date, exwork_waiting, status_date, updated_at')
-          .in('item_code', itemCodes)
-          .neq('current_status', 'Follow up with our forwarder')
-          .order('updated_at', { ascending: false })
+        const chunks = []
+        for (let i = 0; i < itemCodes.length; i += 25) {
+          chunks.push(itemCodes.slice(i, i + 25))
+        }
+
+        const queryResults = await Promise.all(chunks.map(chunk => 
+          supabase
+            .from('shipments')
+            .select('item_code, hpo_number, current_status, exwork_date, eta_date, dunex_date, hokiindo_date, ready_date, exwork_waiting, status_date, updated_at')
+            .in('item_code', chunk)
+            .neq('current_status', 'Follow up with our forwarder')
+            .order('updated_at', { ascending: false })
+        ))
+
+        const knownTracking = queryResults.flatMap(r => r.data || [])
 
         if (knownTracking && knownTracking.length > 0) {
           const trackingMap = new Map()
@@ -1777,13 +1813,21 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
 
     // Load forwarder tracking sub-schedules for items in this SO
     try {
-      const itemCodes = sortedItems.map(i => i.item?.no).filter(Boolean)
+      const itemCodes = sortedItems.map(i => i.item?.no || i.detailName || i.code).filter(Boolean)
       if (itemCodes.length > 0) {
-        const { data: rawTracking } = await supabase
-          .from('raw_forwarder_tracking')
-          .select('*')
-          .in('item_code', itemCodes)
-        forwarderTrackingList.value = rawTracking || []
+        const chunks = []
+        for (let i = 0; i < itemCodes.length; i += 25) {
+          chunks.push(itemCodes.slice(i, i + 25))
+        }
+
+        const trackResults = await Promise.all(chunks.map(chunk => 
+          supabase
+            .from('raw_forwarder_tracking')
+            .select('*')
+            .in('item_code', chunk)
+        ))
+
+        forwarderTrackingList.value = trackResults.flatMap(r => r.data || [])
       }
     } catch (trackErr) {
       console.warn('Error loading raw_forwarder_tracking from Supabase:', trackErr)
