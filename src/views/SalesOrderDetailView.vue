@@ -68,6 +68,7 @@ const isAddingToCart = ref(null)
 const syncProgress = ref(0) // Progress sync HPO 0-100
 const hpoMapping = ref({}) // Mapping item_code -> HPO number dari Accurate PO
 const hpoDetails = ref([]) // Full PO details with quantities
+const forwarderTrackingList = ref([]) // Multi-schedule tracking data from raw_forwarder_tracking
 const hdoMapping = ref({}) // Mapping item_code -> HDO number dari Accurate DO
 const uniqueTrackingCode = ref(null)
 const linkedHpbs = ref([])
@@ -1709,6 +1710,20 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
       console.warn('Error loading accurate PO items from Supabase:', poErr)
     }
 
+    // Load forwarder tracking sub-schedules for items in this SO
+    try {
+      const itemCodes = sortedItems.map(i => i.item?.no).filter(Boolean)
+      if (itemCodes.length > 0) {
+        const { data: rawTracking } = await supabase
+          .from('raw_forwarder_tracking')
+          .select('*')
+          .in('item_code', itemCodes)
+        forwarderTrackingList.value = rawTracking || []
+      }
+    } catch (trackErr) {
+      console.warn('Error loading raw_forwarder_tracking from Supabase:', trackErr)
+    }
+
     // Initialize hpoMapping directly from Supabase shipments & PO items
     const directMapping = {}
     ;(shipData || []).forEach(s => {
@@ -2379,6 +2394,81 @@ const getHpoShipment = (item, hpoNumber) => {
   })
 
   return match || item.shipments_data.find(s => s.hpo_number && s.hpo_number.trim()) || item.shipments_data[0] || {}
+}
+
+// Helper: Get sub-schedules (split deliveries) for a specific HPO and item
+const getHpoSubSchedules = (item, hpoNumber) => {
+  if (!hpoNumber) return []
+  const target = String(hpoNumber || '').trim().replace(/HP0/gi, 'HPO').toLowerCase()
+  const cleanTarget = target.split(/\s+/)[0]
+  if (!cleanTarget) return []
+
+  const matchingRaw = (forwarderTrackingList.value || []).filter(r => {
+    return isItemMatch(r.item_code, item.code) && isHpoMatch(r.hpo_number, cleanTarget)
+  })
+
+  if (matchingRaw.length > 0) {
+    const groups = new Map()
+    matchingRaw.forEach(r => {
+      let status = 'Follow up with our forwarder'
+      if (r.status) {
+        const sLower = String(r.status).toLowerCase()
+        if (sLower.includes('delivery') || sLower.includes('done') || sLower.includes('arrived') || sLower.includes('hokiindo') || r.delivery_date) {
+          status = 'Already in Hokiindo Raya'
+        } else if (sLower.includes('dunex') || sLower.includes('warehouse')) {
+          status = 'Already in siemens Warehouse'
+        } else if (sLower.includes('eta') || sLower.includes('port') || r.eta_date) {
+          status = 'ETA Port JKT'
+        } else {
+          status = 'Follow up with our forwarder'
+        }
+      } else if (r.delivery_date) {
+        status = 'Already in Hokiindo Raya'
+      } else if (r.eta_date) {
+        status = 'ETA Port JKT'
+      } else if (r.exwork_date || r.exwork_waiting) {
+        status = 'Follow up with our forwarder'
+      }
+
+      const displayStatus = status === 'Follow up with our forwarder' ? 'Ex-Works' 
+        : status === 'ETA Port JKT' ? 'ETA JKT' 
+        : status === 'Already in siemens Warehouse' ? 'Tiba Dunex' 
+        : status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' 
+        : status
+
+      let displayDate = '-'
+      if (r.delivery_date) displayDate = formatDateSimple(r.delivery_date)
+      else if (r.eta_date) displayDate = formatDateSimple(r.eta_date)
+      else if (r.exwork_date) displayDate = formatDateSimple(r.exwork_date)
+      else if (r.exwork_waiting) displayDate = 'Waiting'
+
+      const key = `${displayStatus}||${displayDate}`
+      if (!groups.has(key)) {
+        groups.set(key, {
+          qty: 0,
+          status: displayStatus,
+          date: displayDate,
+          rawStatus: status
+        })
+      }
+      groups.get(key).qty += (r.quantity || 0)
+    })
+
+    return Array.from(groups.values())
+  }
+
+  // Fallback to shipments_data if no split tracking found in raw_forwarder_tracking
+  const shipment = getHpoShipment(item, hpoNumber)
+  if (shipment && shipment.current_status && shipment.current_status !== 'Pending Process') {
+    return [{
+      qty: null,
+      status: getHpoDisplayStatus(item, shipment),
+      date: getHpoDisplayDate(item, shipment),
+      rawStatus: shipment.current_status
+    }]
+  }
+
+  return []
 }
 
 // Helper: Calculate HPO discrepancy
@@ -3651,7 +3741,7 @@ const downloadAttachment = async (att) => {
                         </template>
                         
                         <!-- HPO Number + Logistics Status Combined -->
-                        <div v-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && getHpoEntries(item).length > 0" class="mt-1 space-y-1">
+                        <div v-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && getHpoEntries(item).length > 0" class="mt-1 space-y-1.5">
                             <template v-for="(hpo, idx) in getHpoEntries(item)" :key="idx">
                             <div class="bg-white dark:bg-slate-800/80 border border-dashed border-slate-300 dark:border-slate-700 rounded-md p-1.5 px-2 space-y-1 font-sans">
                                 <!-- HPO Line: Number & Qty -->
@@ -3665,21 +3755,35 @@ const downloadAttachment = async (att) => {
                                     </span>
                                 </div>
 
-                                <!-- Vendor & Logistics Status Row -->
-                                <div class="flex items-center gap-1.5 text-[11px] flex-wrap">
-                                    <span v-if="hpo.vendorName" class="font-medium text-slate-500 dark:text-slate-400 truncate max-w-[130px] shrink-0 text-[10px]">
-                                        🏢 {{ hpo.vendorName }}
-                                    </span>
-                                    <template v-for="hpoShipment in [getHpoShipment(item, hpo.poNumber)]" :key="hpoShipment.id || hpo.poNumber">
-                                        <span v-if="hpoShipment.current_status && hpoShipment.current_status !== 'Pending Process'" 
-                                              class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold border text-[10px] whitespace-nowrap shrink-0"
-                                              :class="getLogisticsBadgeClass(getHpoDisplayStatus(item, hpoShipment))">
-                                            <span class="whitespace-nowrap">{{ getHpoDisplayStatus(item, hpoShipment) }}</span>
-                                            <span v-if="getHpoDisplayDate(item, hpoShipment) && getHpoDisplayDate(item, hpoShipment) !== '-'" class="opacity-85 font-medium text-[9.5px] whitespace-nowrap">
-                                                ({{ getHpoDisplayDate(item, hpoShipment) }})
+                                <!-- Vendor Row -->
+                                <div v-if="hpo.vendorName" class="font-medium text-slate-500 dark:text-slate-400 truncate max-w-[200px] text-[10px]">
+                                    🏢 {{ hpo.vendorName }}
+                                </div>
+
+                                <!-- Sub-Schedules (Split Deliveries) or Single Status -->
+                                <div v-if="getHpoSubSchedules(item, hpo.poNumber).length > 1" class="space-y-1 pt-1 border-t border-slate-100 dark:border-slate-700/60">
+                                    <div v-for="(sub, subIdx) in getHpoSubSchedules(item, hpo.poNumber)" :key="subIdx" class="flex items-center justify-between gap-1.5 text-[10px]">
+                                        <span class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1 shrink-0">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                                            {{ sub.qty ? `${sub.qty} ${item.unit}` : '' }}
+                                        </span>
+                                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold border text-[9.5px] whitespace-nowrap shrink-0"
+                                              :class="getLogisticsBadgeClass(sub.status)">
+                                            <span class="whitespace-nowrap">{{ sub.status }}</span>
+                                            <span v-if="sub.date && sub.date !== '-'" class="opacity-85 font-medium text-[9px] whitespace-nowrap">
+                                                ({{ sub.date }})
                                             </span>
                                         </span>
-                                    </template>
+                                    </div>
+                                </div>
+                                <div v-else-if="getHpoSubSchedules(item, hpo.poNumber).length === 1" class="flex items-center gap-1.5 text-[11px] flex-wrap">
+                                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold border text-[10px] whitespace-nowrap shrink-0"
+                                          :class="getLogisticsBadgeClass(getHpoSubSchedules(item, hpo.poNumber)[0].status)">
+                                        <span class="whitespace-nowrap">{{ getHpoSubSchedules(item, hpo.poNumber)[0].status }}</span>
+                                        <span v-if="getHpoSubSchedules(item, hpo.poNumber)[0].date && getHpoSubSchedules(item, hpo.poNumber)[0].date !== '-'" class="opacity-85 font-medium text-[9.5px] whitespace-nowrap">
+                                            ({{ getHpoSubSchedules(item, hpo.poNumber)[0].date }})
+                                        </span>
+                                    </span>
                                 </div>
                             </div>
                             </template>
@@ -3979,7 +4083,7 @@ const downloadAttachment = async (att) => {
                   <!-- HPO List -->
                   <!-- Only show HPO list if item has remaining qty to ship -->
                   <div v-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && getHpoEntries(item).length > 0" class="space-y-2">
-                    <div v-for="(hpo, idx) in getHpoEntries(item)" :key="idx" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
+                    <div v-for="(hpo, idx) in getHpoEntries(item)" :key="idx" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm space-y-2">
                       <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-slate-100 dark:border-slate-700">
                         <ShoppingCart class="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
                         <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">PO Siemens</span>
@@ -3989,32 +4093,37 @@ const downloadAttachment = async (att) => {
                         <span class="text-xs font-extrabold text-red-600 dark:text-red-400 whitespace-nowrap bg-red-50 dark:bg-red-950/20 px-2 py-0.5 rounded-lg border border-red-100 dark:border-red-950/60">{{ hpo.quantity }} {{ item.unit }}</span>
                       </div>
                       
-                      <div v-if="hpo.vendorName" class="mt-2 flex">
+                      <div v-if="hpo.vendorName" class="mt-1 flex">
                         <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-800 dark:bg-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-600">
                           🏢 {{ hpo.vendorName }}
                         </span>
                       </div>
 
-                      <!-- Logistics status tree inside HPO -->
-                      <template v-for="hpoShipment in [getHpoShipment(item, hpo.poNumber)]" :key="hpoShipment.id || hpo.poNumber">
-                        <div v-if="hpoShipment.current_status && hpoShipment.current_status !== 'Pending Process'" class="mt-2">
-                          <div class="flex items-center justify-between gap-1.5 px-2 py-1 rounded-lg border text-[10px] whitespace-nowrap"
-                               :class="getLogisticsBadgeClass(getHpoDisplayStatus(item, hpoShipment))">
-                            <div class="flex items-center gap-1 min-w-0">
-                              <span class="font-bold whitespace-nowrap">
-                                {{ getHpoDisplayStatus(item, hpoShipment) }}
-                              </span>
-                              <span v-if="getHpoDisplayDate(item, hpoShipment) && getHpoDisplayDate(item, hpoShipment) !== '-'" class="opacity-85 font-medium text-[9.5px] whitespace-nowrap">
-                                ({{ getHpoDisplayDate(item, hpoShipment) }})
-                              </span>
-                            </div>
-                            <span v-if="hpoShipment.exwork_waiting && getVisualStatus(hpoShipment) === 'Follow up with our forwarder'"
-                                  class="text-[9.5px] font-semibold text-amber-700 dark:text-amber-300 whitespace-nowrap shrink-0">
-                              ⏳ Waiting
+                      <!-- Sub-Schedules (Split Deliveries) or Single Status -->
+                      <div v-if="getHpoSubSchedules(item, hpo.poNumber).length > 1" class="space-y-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-700/60">
+                        <div v-for="(sub, subIdx) in getHpoSubSchedules(item, hpo.poNumber)" :key="subIdx" class="flex items-center justify-between gap-2 text-xs">
+                          <span class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                            <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                            {{ sub.qty ? `${sub.qty} ${item.unit}` : '' }}
+                          </span>
+                          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-semibold border text-xs whitespace-nowrap"
+                                :class="getLogisticsBadgeClass(sub.status)">
+                            <span>{{ sub.status }}</span>
+                            <span v-if="sub.date && sub.date !== '-'" class="opacity-85 font-medium text-[11px]">
+                              ({{ sub.date }})
                             </span>
-                          </div>
+                          </span>
                         </div>
-                      </template>
+                      </div>
+                      <div v-else-if="getHpoSubSchedules(item, hpo.poNumber).length === 1" class="flex items-center gap-2 pt-1">
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-semibold border text-xs whitespace-nowrap"
+                              :class="getLogisticsBadgeClass(getHpoSubSchedules(item, hpo.poNumber)[0].status)">
+                          <span>{{ getHpoSubSchedules(item, hpo.poNumber)[0].status }}</span>
+                          <span v-if="getHpoSubSchedules(item, hpo.poNumber)[0].date && getHpoSubSchedules(item, hpo.poNumber)[0].date !== '-'" class="opacity-85 font-medium text-[11px]">
+                            ({{ getHpoSubSchedules(item, hpo.poNumber)[0].date }})
+                          </span>
+                        </span>
+                      </div>
                     </div>
                   </div>
 

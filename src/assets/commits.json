@@ -1,5 +1,13 @@
 [
   {
+    "hash": "c96769646e725be24f919ffa29bfbad77019cdc2",
+    "shortHash": "c967696",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Aug 27 17:50:23 2026 +0700",
+    "message": "feat(sales-order): format project info as default styled badge 'Project: {nama project}'"
+  },
+  {
     "hash": "935b5e035964101f92687658b55074156b8fb3d4",
     "shortHash": "935b5e0",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 18 13:45:50 2026 +0700",
     "message": "fix(resilience): add invokeEdgeFunctionWithRetry helper to transparently retry network errors caused by browser extensions"
-  },
-  {
-    "hash": "393be0bd1b07f035455ffb476bd5027bd3325688",
-    "shortHash": "393be0b",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 18 12:35:00 2026 +0700",
-    "message": "fix(sales-orders): suppress Kekurangan dipesan warning when item has been shipped for full requested quantity"
   }
 ]
