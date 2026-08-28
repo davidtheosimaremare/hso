@@ -1238,6 +1238,35 @@ const syncFromLogisticsDb = async () => {
 
       seenKeys.add(key)
 
+      let splitBreakdown = []
+      if (matchedExcelRows.length > 1) {
+        const groups = new Map()
+        matchedExcelRows.forEach(r => {
+          let rawSt = r[statusCol] ? mapStatusLocal(r[statusCol]) : 'Follow up with our forwarder'
+          if (r[deliveryCol]) rawSt = 'Already in Hokiindo Raya'
+          else if (r[etaCol]) rawSt = 'ETA Port JKT'
+          else if (r[exworkCol]) rawSt = 'Follow up with our forwarder'
+
+          const dispSt = rawSt === 'Follow up with our forwarder' ? 'Ex-Works'
+            : rawSt === 'ETA Port JKT' ? 'ETA JKT'
+            : rawSt === 'Already in siemens Warehouse' ? 'Tiba Dunex'
+            : rawSt === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo'
+            : rawSt
+
+          let dispDt = '-'
+          if (r[deliveryCol]) dispDt = formatDateSimple(parseExcelDateLocal(r[deliveryCol]))
+          else if (r[etaCol]) dispDt = formatDateSimple(parseExcelDateLocal(r[etaCol]))
+          else if (r[exworkCol]) dispDt = formatDateSimple(parseExcelDateLocal(r[exworkCol]))
+
+          const gKey = `${dispSt}||${dispDt}`
+          if (!groups.has(gKey)) {
+            groups.set(gKey, { qty: 0, status: dispSt, date: dispDt })
+          }
+          groups.get(gKey).qty += (parseFloat(r._qty || 0) || 0)
+        })
+        splitBreakdown = Array.from(groups.values())
+      }
+
       let excelExwork = exworkCol ? parseExcelDateLocal(matchingExcelRow[exworkCol]) : null
       let excelEta = etaCol ? parseExcelDateLocal(matchingExcelRow[etaCol]) : null
       let excelDelivery = deliveryCol ? parseExcelDateLocal(matchingExcelRow[deliveryCol]) : null
@@ -1288,7 +1317,8 @@ const syncFromLogisticsDb = async () => {
         dbEta: primaryShipment.eta_date || '',
         dbDelivery: primaryShipment.hokiindo_date || primaryShipment.dunex_date || '',
         shipmentIds: dbShipments.map(s => s.id),
-        isVirtual: false
+        isVirtual: false,
+        splitBreakdown
       })
     })
 
@@ -1319,6 +1349,35 @@ const syncFromLogisticsDb = async () => {
           if (!matchingExcelRow) return
 
           seenKeys.add(key)
+
+          let splitBreakdown = []
+          if (matchedExcelRows.length > 1) {
+            const groups = new Map()
+            matchedExcelRows.forEach(r => {
+              let rawSt = r[statusCol] ? mapStatusLocal(r[statusCol]) : 'Follow up with our forwarder'
+              if (r[deliveryCol]) rawSt = 'Already in Hokiindo Raya'
+              else if (r[etaCol]) rawSt = 'ETA Port JKT'
+              else if (r[exworkCol]) rawSt = 'Follow up with our forwarder'
+
+              const dispSt = rawSt === 'Follow up with our forwarder' ? 'Ex-Works'
+                : rawSt === 'ETA Port JKT' ? 'ETA JKT'
+                : rawSt === 'Already in siemens Warehouse' ? 'Tiba Dunex'
+                : rawSt === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo'
+                : rawSt
+
+              let dispDt = '-'
+              if (r[deliveryCol]) dispDt = formatDateSimple(parseExcelDateLocal(r[deliveryCol]))
+              else if (r[etaCol]) dispDt = formatDateSimple(parseExcelDateLocal(r[etaCol]))
+              else if (r[exworkCol]) dispDt = formatDateSimple(parseExcelDateLocal(r[exworkCol]))
+
+              const gKey = `${dispSt}||${dispDt}`
+              if (!groups.has(gKey)) {
+                groups.set(gKey, { qty: 0, status: dispSt, date: dispDt })
+              }
+              groups.get(gKey).qty += (parseFloat(r._qty || 0) || 0)
+            })
+            splitBreakdown = Array.from(groups.values())
+          }
 
           let excelExwork = exworkCol ? parseExcelDateLocal(matchingExcelRow[exworkCol]) : null
           let excelEta = etaCol ? parseExcelDateLocal(matchingExcelRow[etaCol]) : null
@@ -1364,7 +1423,8 @@ const syncFromLogisticsDb = async () => {
             dbEta: '-',
             dbDelivery: '-',
             shipmentIds: [],
-            isVirtual: true
+            isVirtual: true,
+            splitBreakdown
           })
         })
       })
@@ -1618,6 +1678,11 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
         throw new Error(accData?.message || "Gagal mengambil data dari Accurate (Response Invalid).")
     }
 
+    const d = accData.d
+    const history = d?.processHistory || []
+    const rawItems = d?.detailItem || []
+    const sortedItems = rawItems.sort((a, b) => (a.seq || 0) - (b.seq || 0))
+
     loadingProgress.value = 70
     loadingMessage.value = 'Memuat data pengiriman...'
 
@@ -1626,7 +1691,7 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
 
     // Enrich shipments with existing known tracking data in Supabase for items in this SO
     try {
-      const itemCodes = sortedItems.map(i => i.item?.no).filter(Boolean)
+      const itemCodes = sortedItems.map(i => i.item?.no || i.detailName || i.code).filter(Boolean)
       if (itemCodes.length > 0) {
         const { data: knownTracking } = await supabase
           .from('shipments')
@@ -1764,11 +1829,6 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
     // Get current user
     const { data: { user } } = await supabase.auth.getUser()
     currentUser.value = user
-
-    const d = accData.d
-    const history = d.processHistory || []
-    const rawItems = d.detailItem || []
-    const sortedItems = rawItems.sort((a, b) => (a.seq || 0) - (b.seq || 0))
 
     const linkData = await supabase.from('so_tracking_links').select('unique_code').eq('so_id', String(resolvedSoId.value)).maybeSingle()
     uniqueTrackingCode.value = linkData.data?.unique_code || null
@@ -4729,7 +4789,19 @@ const downloadAttachment = async (att) => {
                     class="border-b border-slate-100 dark:border-slate-800/50 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors text-xs"
                   >
                     <TableCell class="font-bold">{{ row.hpoNumber }}</TableCell>
-                    <TableCell class="font-medium text-slate-600 dark:text-slate-400">{{ row.itemCode }}</TableCell>
+                    <TableCell class="font-medium text-slate-600 dark:text-slate-400">
+                      <div>{{ row.itemCode }}</div>
+                      <!-- Split Breakdown in Modal -->
+                      <div v-if="row.splitBreakdown && row.splitBreakdown.length > 1" class="mt-1.5 space-y-1 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-md p-2 text-[11px]">
+                        <div class="font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                          <span>⚠️ Terpecah {{ row.splitBreakdown.length }} Jadwal Logistik:</span>
+                        </div>
+                        <div v-for="(sub, sIdx) in row.splitBreakdown" :key="sIdx" class="flex items-center justify-between gap-3 text-slate-700 dark:text-slate-300 pt-0.5 border-t border-amber-100 dark:border-amber-900/40 first:border-0 first:pt-0">
+                          <span class="font-bold text-slate-800 dark:text-slate-200">{{ sub.qty ? `${sub.qty} Pcs` : '-' }}</span>
+                          <span class="font-semibold text-amber-900 dark:text-amber-200">{{ sub.status }} ({{ sub.date }})</span>
+                        </div>
+                      </div>
+                    </TableCell>
                     
                     <!-- Status -->
                     <TableCell>

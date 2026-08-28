@@ -1,5 +1,13 @@
 [
   {
+    "hash": "2566bbc75d19fb20bc7ce6b048d316df1c84c789",
+    "shortHash": "2566bbc",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 28 16:57:36 2026 +0700",
+    "message": "feat(logistics): support split sub-schedules per HPO with exact HSO-HPO matching"
+  },
+  {
     "hash": "c96769646e725be24f919ffa29bfbad77019cdc2",
     "shortHash": "c967696",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Tue Aug 18 18:11:13 2026 +0700",
     "message": "perf(edge-functions): optimize accurate-detail-so with batch item stock fetches to prevent Accurate API rate limits"
-  },
-  {
-    "hash": "b45bf37ebfe67582446f4521e1401089cfe0d439",
-    "shortHash": "b45bf37",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 18 13:45:50 2026 +0700",
-    "message": "fix(resilience): add invokeEdgeFunctionWithRetry helper to transparently retry network errors caused by browser extensions"
   }
 ]
