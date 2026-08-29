@@ -1,5 +1,13 @@
 [
   {
+    "hash": "842a207b53cb0dc45f1cf9104c41ac6ffcf442a5",
+    "shortHash": "842a207",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Aug 28 17:09:38 2026 +0700",
+    "message": "fix(hso-detail): fix 400 Bad Request URL limit via chunking and declare matching helpers globally"
+  },
+  {
     "hash": "d3221c49039e5046fb798ded5f0c3f04b073d2e0",
     "shortHash": "d3221c4",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Wed Aug 19 11:08:47 2026 +0700",
     "message": "feat(sales-orders): rename PRODUK SUDAH DIKIRIM to TERKIRIM, robustly ensure HDOs are loaded and displayed for all shipped items"
-  },
-  {
-    "hash": "b91c0723dbdfd85c4334fb4cc7baf8ae07f21a60",
-    "shortHash": "b91c072",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Tue Aug 18 18:14:19 2026 +0700",
-    "message": "perf(edge-functions): optimize accurate-list-sq with timeout handling and single-page break on filterNumber"
   }
 ]

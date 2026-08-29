@@ -86,7 +86,10 @@ const fetchOrders = async () => {
   isLoading.value = true
   let query = supabase
     .from('accurate_receive_items')
-    .select('id, number, trans_date, vendor_name, status_name, po_number')
+    .select(`
+      id, number, trans_date, vendor_name, status_name, po_number,
+      items:accurate_receive_item_items(id, item_code, item_name, quantity, unit_name, detail_notes, hso_number)
+    `)
     
   const { data, error } = await query.order('trans_date', { ascending: false }).limit(2000)
 
@@ -99,7 +102,10 @@ const fetchOrders = async () => {
       vendor: item.vendor_name || 'Tanpa Nama',
       date: item.trans_date,
       po_number: item.po_number || '-',
-      status: item.status_name || ''
+      status: item.status_name || '',
+      items: item.items || [],
+      item_count: (item.items || []).length,
+      total_qty: (item.items || []).reduce((acc, i) => acc + (parseFloat(i.quantity) || 0), 0)
     }))
   }
   isLoading.value = false
@@ -295,7 +301,13 @@ const filteredAndSortedOrders = computed(() => {
     result = result.filter(ri => 
       ri.vendor.toLowerCase().includes(query) || 
       ri.no_ri.toLowerCase().includes(query) ||
-      ri.po_number.toLowerCase().includes(query)
+      ri.po_number.toLowerCase().includes(query) ||
+      (ri.items && ri.items.some(i => 
+        (i.item_code && i.item_code.toLowerCase().includes(query)) ||
+        (i.item_name && i.item_name.toLowerCase().includes(query)) ||
+        (i.hso_number && i.hso_number.toLowerCase().includes(query)) ||
+        (i.detail_notes && i.detail_notes.toLowerCase().includes(query))
+      ))
     )
   }
 
@@ -567,26 +579,30 @@ const hasActiveFilters = computed(() => {
                 </div>
             </TableHead>
 
-            <TableHead class="hidden md:table-cell text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[180px] py-3.5 px-4" @click="toggleSort('po_number')">
+            <TableHead class="hidden lg:table-cell text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[160px] py-3.5 px-4" @click="toggleSort('po_number')">
                 <div class="flex items-center gap-1.5">
                   No. PO 
                   <component :is="sortKey==='po_number' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='po_number' ? 'text-red-600' : 'opacity-30'"/>
                 </div>
             </TableHead>
 
-            <TableHead class="text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[140px] py-3.5 px-4" @click="toggleSort('status')">
+            <TableHead class="hidden sm:table-cell text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider py-3.5 px-4">
+                Barang Diterima
+            </TableHead>
+
+            <TableHead class="text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[130px] py-3.5 px-4" @click="toggleSort('status')">
                 <div class="flex items-center gap-1.5">
                   Status 
                   <component :is="sortKey==='status' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='status' ? 'text-red-600' : 'opacity-30'"/>
                 </div>
             </TableHead>
 
-            <TableHead class="w-[50px]"></TableHead>
+            <TableHead class="w-[80px] text-right py-3.5 px-4 text-xs font-bold uppercase tracking-wider text-slate-500">Aksi</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           <TableRow v-if="isLoading">
-            <TableCell colspan="6" class="py-20 text-center">
+            <TableCell colspan="7" class="py-20 text-center">
               <div class="flex flex-col items-center gap-3 text-slate-400">
                 <Loader2 class="w-8 h-8 animate-spin text-red-600"/>
                 <span class="text-sm font-medium">Sedang mengambil data dari Accurate...</span>
@@ -595,7 +611,7 @@ const hasActiveFilters = computed(() => {
           </TableRow>
 
           <TableRow v-else-if="filteredAndSortedOrders.length === 0">
-            <TableCell colspan="6" class="py-20 text-center">
+            <TableCell colspan="7" class="py-20 text-center">
               <div class="flex flex-col items-center gap-3 text-slate-400">
                 <div class="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center">
                   <PackageCheck class="w-6 h-6 opacity-40"/>
@@ -610,6 +626,7 @@ const hasActiveFilters = computed(() => {
             v-else 
             v-for="ri in paginatedOrders" 
             :key="ri.id_database" 
+            @click="router.push('/receive-items/' + ri.id_database)"
             class="group cursor-pointer hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors border-b border-slate-100 dark:border-slate-800/80 last:border-0"
           >
             <TableCell class="py-4 px-4 align-middle whitespace-nowrap">
@@ -625,7 +642,7 @@ const hasActiveFilters = computed(() => {
 
             <TableCell class="py-4 px-4 align-middle whitespace-nowrap">
               <div class="flex flex-col">
-                <span class="text-xs md:text-sm font-bold text-slate-900 dark:text-slate-100 font-sans truncate max-w-[250px]" :title="ri.vendor">{{ ri.vendor }}</span>
+                <span class="text-xs md:text-sm font-bold text-slate-900 dark:text-slate-100 font-sans truncate max-w-[220px]" :title="ri.vendor">{{ ri.vendor }}</span>
                 <span class="text-[11px] text-slate-400 md:hidden mt-0.5 font-medium">{{ formatShortDate(ri.date) }}</span>
               </div>
             </TableCell>
@@ -634,8 +651,24 @@ const hasActiveFilters = computed(() => {
               <span class="text-xs md:text-sm font-medium text-slate-600 dark:text-slate-400 font-sans">{{ formatShortDate(ri.date) }}</span>
             </TableCell>
 
-            <TableCell class="hidden md:table-cell py-4 px-4 align-middle whitespace-nowrap">
+            <TableCell class="hidden lg:table-cell py-4 px-4 align-middle whitespace-nowrap">
               <span class="text-xs md:text-sm font-semibold text-slate-700 dark:text-slate-300 font-sans">{{ ri.po_number || '-' }}</span>
+            </TableCell>
+
+            <!-- Items Summary Column -->
+            <TableCell class="hidden sm:table-cell py-4 px-4 align-middle">
+              <div v-if="ri.item_count > 0" class="flex flex-col gap-1 max-w-[280px]">
+                <div class="flex items-center gap-1.5">
+                  <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700">
+                    📦 {{ ri.item_count }} Item ({{ ri.total_qty }} PCS)
+                  </span>
+                </div>
+                <div class="text-[11px] text-slate-500 dark:text-slate-400 font-mono truncate" :title="ri.items.map(i => i.item_code).filter(Boolean).join(', ')">
+                  {{ ri.items.map(i => i.item_code).filter(Boolean).slice(0, 2).join(', ') }}
+                  <span v-if="ri.item_count > 2" class="text-slate-400 dark:text-slate-500 font-sans italic">+{{ ri.item_count - 2 }} lainnya</span>
+                </div>
+              </div>
+              <span v-else class="text-xs text-slate-400 italic">-</span>
             </TableCell>
 
             <TableCell class="py-4 px-4 align-middle whitespace-nowrap">
@@ -645,7 +678,12 @@ const hasActiveFilters = computed(() => {
             </TableCell>
 
             <TableCell class="py-4 px-4 align-middle text-right">
-              <ArrowRight class="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-red-600 dark:group-hover:text-red-400 group-hover:translate-x-1 transition-all" />
+              <div class="inline-flex items-center gap-1">
+                <Button size="sm" variant="ghost" class="h-7 px-2 text-xs font-semibold text-slate-600 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 gap-1" @click.stop="router.push('/receive-items/' + ri.id_database)">
+                  <span>Detail</span>
+                  <ArrowRight class="w-3.5 h-3.5" />
+                </Button>
+              </div>
             </TableCell>
 
           </TableRow>
