@@ -27,6 +27,7 @@ import PermintaanDetailView from '@/views/PermintaanDetailView.vue'
 import MarketingHubView from '@/views/MarketingHubView.vue'
 import NotificationsView from '@/views/NotificationsView.vue'
 import ToolsView from '@/views/ToolsView.vue'
+import ProductUsageTrackerView from '@/views/ProductUsageTrackerView.vue'
 import SalesLeadsView from '@/views/SalesLeadsView.vue'
 
 
@@ -74,6 +75,8 @@ const router = createRouter({
         { path: '/permintaan/:id', redirect: to => `/collaborate/${to.params.id}` },
         { path: '/marketing-hub', component: MarketingHubView },
         { path: '/notifications', component: NotificationsView },
+        { path: '/tools', redirect: '/tools/product-tracker' },
+        { path: '/tools/product-tracker', component: ProductUsageTrackerView },
         { path: '/tools/converter', component: ToolsView },
         { path: '/tools/maps-lead', redirect: '/tools/converter' },
       ]

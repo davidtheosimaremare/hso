@@ -1,5 +1,13 @@
 [
   {
+    "hash": "d5df173ea0cbd9c21876385377b469c05fa11a50",
+    "shortHash": "d5df173",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Sat Aug 29 10:48:26 2026 +0700",
+    "message": "feat(receive-items): add detailed received items breakdown, admin notes, official Accurate PDF printing, and attachment documents preview"
+  },
+  {
     "hash": "842a207b53cb0dc45f1cf9104c41ac6ffcf442a5",
     "shortHash": "842a207",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Wed Aug 19 14:01:36 2026 +0700",
     "message": "feat: add 2-way Marketing Hub to-do sync & in-app Accurate transaction document preview"
-  },
-  {
-    "hash": "180978f1742c8441576fd3c4c6b177d3b09d2926",
-    "shortHash": "180978f",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Aug 19 11:08:47 2026 +0700",
-    "message": "feat(sales-orders): rename PRODUK SUDAH DIKIRIM to TERKIRIM, robustly ensure HDOs are loaded and displayed for all shipped items"
   }
 ]

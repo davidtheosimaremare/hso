@@ -31,7 +31,8 @@ import {
   ClipboardList,
   Wrench,
   Building2,
-  ArrowRightLeft
+  ArrowRightLeft,
+  Boxes
 } from 'lucide-vue-next'
 import {
   Sheet,
@@ -293,7 +294,14 @@ const menuGroups = [
       { type: 'item', name: 'Penawaran', path: '/hsq', icon: FileText, moduleKey: 'hsq' },
       { type: 'item', name: 'Penjualan', path: '/sales-orders', icon: FileText, moduleKey: 'sales-orders' },
       { type: 'item', name: 'Database Leads', path: '/sales-leads', icon: Building2, moduleKey: 'hsq' },
-      { type: 'item', name: 'Marketing Hub', path: '/marketing-hub', icon: Megaphone, moduleKey: 'marketing-hub' },
+      { type: 'item', name: 'Marketing Hub', path: '/marketing-hub', icon: Megaphone, moduleKey: 'marketing-hub' }
+    ]
+  },
+  {
+    type: 'category',
+    name: 'Tools',
+    items: [
+      { type: 'item', name: 'Pelacak Produk (HSO/HPO)', path: '/tools/product-tracker', icon: Boxes, moduleKey: 'hsq' },
       { type: 'item', name: 'Component Converter', path: '/tools/converter', icon: ArrowRightLeft, moduleKey: 'hsq' }
     ]
   },
