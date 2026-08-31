@@ -301,7 +301,7 @@ const menuGroups = [
     type: 'category',
     name: 'Tools',
     items: [
-      { type: 'item', name: 'Pelacak Produk (HSO/HPO)', path: '/tools/product-tracker', icon: Boxes, moduleKey: 'hsq' },
+      { type: 'item', name: 'Alokasi Produk', path: '/tools/product-tracker', icon: Boxes, moduleKey: 'hsq' },
       { type: 'item', name: 'Component Converter', path: '/tools/converter', icon: ArrowRightLeft, moduleKey: 'hsq' }
     ]
   },

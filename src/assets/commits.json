@@ -1,5 +1,13 @@
 [
   {
+    "hash": "2f88d94c0d027cbba3c00416df7642867da85cc1",
+    "shortHash": "2f88d94",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Sat Aug 29 11:03:17 2026 +0700",
+    "message": "feat(tools): add Product Usage Tracker (Pelacak Penggunaan Produk HSO & HPO)"
+  },
+  {
     "hash": "d5df173ea0cbd9c21876385377b469c05fa11a50",
     "shortHash": "d5df173",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Wed Aug 19 14:08:00 2026 +0700",
     "message": "feat: add universal in-app file viewer supporting PDF, images, CSV, text, code, audio, video and office docs"
-  },
-  {
-    "hash": "fc024f21fefc9a2cb64ef1172cdd0bfa49be82bb",
-    "shortHash": "fc024f2",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Aug 19 14:01:36 2026 +0700",
-    "message": "feat: add 2-way Marketing Hub to-do sync & in-app Accurate transaction document preview"
   }
 ]
