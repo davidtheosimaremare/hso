@@ -766,25 +766,19 @@ const startGlobalSync = async () => {
       riHeaders.forEach(h => { riHeaderMap[h.id] = h })
     }
 
-    if (riItems) {
-      riItems.forEach(item => {
-        const parentHeader = riHeaderMap[item.receive_item_id]
-        const hpo = parentHeader?.po_number || ''
-        const itemCode = item.item_code
-        if (itemCode) {
-          trackingList.push({
-            hpo_number: hpo,
-            item_code: itemCode,
-            status: 'Already in Hokiindo Raya',
-            delivery_date: parentHeader?.trans_date || null,
-            exwork_date: null,
-            eta_date: null,
-            exwork_waiting: false
-          })
-        }
-      })
+    // Helper to check HSO note match
+    const isHsoNoteMatch = (noteOrHso, targetHso) => {
+      if (!noteOrHso || !targetHso) return false
+      const normalize = (s) => String(s).toUpperCase().replace(/[^A-Z0-9]/g, '')
+      const nTarget = normalize(targetHso)
+      const nNote = normalize(noteOrHso)
+      if (!nTarget || !nNote) return false
+      if (nNote.includes(nTarget) || nTarget.includes(nNote)) return true
+      const targetNoPrefix = nTarget.replace(/^HSO/, '')
+      if (targetNoPrefix && nNote.includes(targetNoPrefix)) return true
+      return false
     }
-    
+
     // 6. In-Memory Matching
     const statusLevels = {
       'Already in Hokiindo Raya': 4,

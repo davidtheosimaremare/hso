@@ -1,5 +1,21 @@
 [
   {
+    "hash": "a47d656f8f1fe0005d45a1ea9e1563fe6eb2de73",
+    "shortHash": "a47d656",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 19:33:37 2026 +0700",
+    "message": "fix(logistics): do not show Ex-Works date unless actual exwork_date from forwarder excel exists"
+  },
+  {
+    "hash": "c4b008c258272d281f7d2a596ad57e713e401478",
+    "shortHash": "c4b008c",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 19:32:39 2026 +0700",
+    "message": "fix(sales-order): prevent phantom logistics status and cross-SO tracking inheritance"
+  },
+  {
     "hash": "dfd441afa30476d464b3b015e5eba08930828d3e",
     "shortHash": "dfd441a",
     "author": "davidtheosimaremare",
@@ -382,21 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 12:24:19 2026 +0700",
     "message": "fix: store and sync team-wide Gemini API key in database so all users share the same key"
-  },
-  {
-    "hash": "f8b6574a9948d94fea52915e9e20476015e14d8f",
-    "shortHash": "f8b6574",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 12:16:34 2026 +0700",
-    "message": "fix: persist Gemini AI API key and settings to both database and localStorage automatically"
-  },
-  {
-    "hash": "38f9c8f16b05f343fa34ba9f9b470c6c08658b42",
-    "shortHash": "38f9c8f",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 12:04:44 2026 +0700",
-    "message": "feat: integrate Google Gemini AI with Google Search Grounding and add Saran AI row buttons"
   }
 ]
