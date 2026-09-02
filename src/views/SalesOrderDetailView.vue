@@ -98,6 +98,27 @@ const isItemMatch = (dbItem, excelItem) => {
   return d === e || d.includes(e) || e.includes(d)
 }
 
+// Helper to normalize HSO string for matching (e.g. 'HSO/26/08/0012' -> 'HSO26080012')
+const normalizeHso = (val) => {
+  if (!val) return ''
+  return String(val).toUpperCase().replace(/[^A-Z0-9]/g, '')
+}
+
+// Check if a note or extracted HSO string matches target HSO
+const isHsoNoteMatch = (noteOrHso, targetHso) => {
+  if (!noteOrHso || !targetHso) return false
+  const nTarget = normalizeHso(targetHso)
+  const nNote = normalizeHso(noteOrHso)
+  if (!nTarget || !nNote) return false
+  if (nNote.includes(nTarget) || nTarget.includes(nNote)) return true
+  
+  // Also check without prefix 'HSO' (e.g. '26080012')
+  const targetNoPrefix = nTarget.replace(/^HSO/, '')
+  if (targetNoPrefix && nNote.includes(targetNoPrefix)) return true
+
+  return false
+}
+
 const fetchCartItems = async () => {
   if (!soDetail.value) return
   try {
@@ -1061,6 +1082,47 @@ const fetchHdoInBackground = async (doNumbers) => {
   }
 }
 
+// --- BACKGROUND HRI FETCH (Penerimaan Barang yang membawa keterangan HSO ini) ---
+const fetchHriInBackground = async (soNumber) => {
+  if (!soNumber) return
+  try {
+    const searchVariants = new Set([soNumber])
+    const parts = soNumber.split(/[\/\-]/)
+    if (parts.length === 4) {
+      searchVariants.add(`${parts[0]}/${parts[1]}/${parts[2]}/${parts[3]}`)
+      searchVariants.add(`${parts[0]}/${parts[1]}/${parts[2]}/${parts[3].padStart(4, '0')}`)
+      searchVariants.add(`${parts[0]}/${parts[1]}/${parts[2]}/${Number(parts[3])}`)
+      searchVariants.add(`${parts[0]}-${parts[1]}-${parts[2]}-${parts[3]}`)
+      searchVariants.add(`${parts[0]}-${parts[1]}-${parts[2]}-${parts[3].padStart(4, '0')}`)
+      searchVariants.add(`${parts[1]}/${parts[2]}/${parts[3]}`)
+      searchVariants.add(`${parts[1]}/${parts[2]}/${parts[3].padStart(4, '0')}`)
+    }
+
+    const orClauses = []
+    searchVariants.forEach(variant => {
+      orClauses.push(`detail_notes.ilike.%${variant}%`)
+      orClauses.push(`hso_number.ilike.%${variant}%`)
+    })
+    const orFilter = orClauses.join(',')
+
+    const { data, error } = await supabase
+      .from('accurate_receive_item_items')
+      .select(`
+        id, receive_item_id, item_code, item_name, quantity, unit_name, detail_notes, hso_number,
+        ri:accurate_receive_items(id, number, vendor_name, trans_date, status_name, po_number)
+      `)
+      .or(orFilter)
+      .order('created_at', { ascending: false })
+
+    if (!error && data) {
+      receiveItemDetails.value = data
+      console.log(`[HRI] Loaded ${data.length} receive item(s) carrying HSO ${soNumber}`)
+    }
+  } catch (err) {
+    console.warn('Error loading receive items for HSO:', err)
+  }
+}
+
 // --- DATABASE LOGISTICS STATUS SYNC LOGIC ---
 const isExcelParsing = ref(false)
 const isExcelModalOpen = ref(false)
@@ -2010,9 +2072,10 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
       }
     }
 
-    // 2. Fetch HPOs from Accurate in background
+    // 2. Fetch HPOs and HRIs (Penerimaan Barang) from Accurate in background
     if (soDetail.value?.number) {
       fetchHpoInBackground(soDetail.value.number)
+      fetchHriInBackground(soDetail.value.number)
     }
 
   } catch (err) {
@@ -2599,61 +2662,47 @@ const getHpoSubSchedules = (item, hpoNumber) => {
   return []
 }
 
-// Helper: Get Receive Item (HRI) info matching item and HPO
+// Helper: Get Receive Item (HRI) info matching item and HPO strictly for THIS HSO
 const getHriInfo = (item, hpoNumber) => {
   const itemCode = (item?.code || item?.item_code || '').trim().toUpperCase()
   const cleanHpo = (hpoNumber || '').trim().toUpperCase().replace(/HP0/gi, 'HPO')
-  const soNumber = (soDetail.value?.number || '').replace(/\//g, '').toUpperCase()
+  const currentHso = soDetail.value?.number || ''
 
-  if (!itemCode || !receiveItemDetails.value || receiveItemDetails.value.length === 0) return null
+  if (!itemCode || !currentHso || !receiveItemDetails.value || receiveItemDetails.value.length === 0) return null
 
-  // 1. Try match with item_code + po_number
+  // STRICT RULE: Only consider HRI items whose detail_notes or hso_number explicitly matches THIS HSO
+  const hsoMatchingRis = receiveItemDetails.value.filter(ri => {
+    const riItemCode = (ri.item_code || '').trim().toUpperCase()
+    if (riItemCode !== itemCode) return false
+    return isHsoNoteMatch(ri.hso_number, currentHso) || isHsoNoteMatch(ri.detail_notes, currentHso)
+  })
+
+  if (hsoMatchingRis.length === 0) return null
+
+  // 1. If HPO number is specified, prioritize exact matching PO
   if (cleanHpo) {
-    const exactMatch = receiveItemDetails.value.find(ri => {
-      const riCode = (ri.item_code || '').trim().toUpperCase()
+    const exactPoMatch = hsoMatchingRis.find(ri => {
       const riPo = (ri.ri?.po_number || '').trim().toUpperCase().replace(/HP0/gi, 'HPO')
-      if (riCode !== itemCode) return false
       return riPo === cleanHpo || riPo.includes(cleanHpo) || cleanHpo.includes(riPo)
     })
-    if (exactMatch?.ri) {
+    if (exactPoMatch?.ri) {
       return {
-        id: exactMatch.ri.id,
-        number: exactMatch.ri.number,
-        trans_date: exactMatch.ri.trans_date,
-        vendor_name: exactMatch.ri.vendor_name
+        id: exactPoMatch.ri.id,
+        number: exactPoMatch.ri.number,
+        trans_date: exactPoMatch.ri.trans_date,
+        vendor_name: exactPoMatch.ri.vendor_name
       }
     }
   }
 
-  // 2. Try match with item_code + hso_number in detail_notes or hso_number column
-  if (soNumber) {
-    const hsoMatch = receiveItemDetails.value.find(ri => {
-      const riCode = (ri.item_code || '').trim().toUpperCase()
-      if (riCode !== itemCode) return false
-      const riHso = (ri.hso_number || ri.detail_notes || '').replace(/\//g, '').toUpperCase()
-      return riHso.includes(soNumber)
-    })
-    if (hsoMatch?.ri) {
-      return {
-        id: hsoMatch.ri.id,
-        number: hsoMatch.ri.number,
-        trans_date: hsoMatch.ri.trans_date,
-        vendor_name: hsoMatch.ri.vendor_name
-      }
-    }
-  }
-
-  // 3. Fallback: match by item_code only
-  const itemMatch = receiveItemDetails.value.find(ri => {
-    const riCode = (ri.item_code || '').trim().toUpperCase()
-    return riCode === itemCode && ri.ri
-  })
-  if (itemMatch?.ri) {
+  // 2. Otherwise return the first matching HRI for THIS HSO and item
+  const firstMatch = hsoMatchingRis[0]
+  if (firstMatch?.ri) {
     return {
-      id: itemMatch.ri.id,
-      number: itemMatch.ri.number,
-      trans_date: itemMatch.ri.trans_date,
-      vendor_name: itemMatch.ri.vendor_name
+      id: firstMatch.ri.id,
+      number: firstMatch.ri.number,
+      trans_date: firstMatch.ri.trans_date,
+      vendor_name: firstMatch.ri.vendor_name
     }
   }
 

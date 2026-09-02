@@ -1,5 +1,13 @@
 [
   {
+    "hash": "2ef9d211d532ed14051d41d1c7063fcd27cf6b68",
+    "shortHash": "2ef9d21",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 19:10:15 2026 +0700",
+    "message": "feat(sales-order): display clickable HRI number link when status is Tiba di Hokiindo"
+  },
+  {
     "hash": "ec7119cbb4edbf9dfe30b6babef4d30645e8529d",
     "shortHash": "ec7119c",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 11:54:29 2026 +0700",
     "message": "feat: sort database mapping table by ACB, MCB, MCCB, RCCB, RCBO, CONTACTOR, CONTACTOR RELAY, and Industrial Control priority"
-  },
-  {
-    "hash": "d90e66e1087ffd716868beecc1958113f688bea0",
-    "shortHash": "d90e66e",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 11:34:50 2026 +0700",
-    "message": "feat: direct database mapping lookup for brand, description, and price without regex guessing"
   }
 ]
