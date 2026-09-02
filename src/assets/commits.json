@@ -1,5 +1,13 @@
 [
   {
+    "hash": "ec7119cbb4edbf9dfe30b6babef4d30645e8529d",
+    "shortHash": "ec7119c",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 18:59:53 2026 +0700",
+    "message": "fix: refine HPO logistics status display and conditionalize unreceived HRI indicator"
+  },
+  {
     "hash": "c5e81456decbc6494de0a1cfece2a3e3766b1e72",
     "shortHash": "c5e8145",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 11:34:50 2026 +0700",
     "message": "feat: direct database mapping lookup for brand, description, and price without regex guessing"
-  },
-  {
-    "hash": "6d8022e8fc3bbc75172ca49838b98526d5fef897",
-    "shortHash": "6d8022e",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 11:31:48 2026 +0700",
-    "message": "fix: integrate custom rules into brand detection and eliminate hardcoded Schneider fallback"
   }
 ]

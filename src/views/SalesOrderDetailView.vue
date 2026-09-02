@@ -69,6 +69,7 @@ const syncProgress = ref(0) // Progress sync HPO 0-100
 const hpoMapping = ref({}) // Mapping item_code -> HPO number dari Accurate PO
 const hpoDetails = ref([]) // Full PO details with quantities
 const forwarderTrackingList = ref([]) // Multi-schedule tracking data from raw_forwarder_tracking
+const receiveItemDetails = ref([]) // Receive Item details for linking HRI
 const hdoMapping = ref({}) // Mapping item_code -> HDO number dari Accurate DO
 const uniqueTrackingCode = ref(null)
 const linkedHpbs = ref([])
@@ -1811,7 +1812,7 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
       console.warn('Error loading accurate PO items from Supabase:', poErr)
     }
 
-    // Load forwarder tracking sub-schedules for items in this SO
+    // Load forwarder tracking sub-schedules & receive items (HRI) for items in this SO
     try {
       const itemCodes = sortedItems.map(i => i.item?.no || i.detailName || i.code).filter(Boolean)
       if (itemCodes.length > 0) {
@@ -1820,17 +1821,29 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
           chunks.push(itemCodes.slice(i, i + 25))
         }
 
-        const trackResults = await Promise.all(chunks.map(chunk => 
-          supabase
-            .from('raw_forwarder_tracking')
-            .select('*')
-            .in('item_code', chunk)
-        ))
+        const [trackResults, riResults] = await Promise.all([
+          Promise.all(chunks.map(chunk => 
+            supabase
+              .from('raw_forwarder_tracking')
+              .select('*')
+              .in('item_code', chunk)
+          )),
+          Promise.all(chunks.map(chunk =>
+            supabase
+              .from('accurate_receive_item_items')
+              .select(`
+                id, receive_item_id, item_code, item_name, quantity, unit_name, detail_notes, hso_number,
+                ri:accurate_receive_items(id, number, vendor_name, trans_date, status_name, po_number)
+              `)
+              .in('item_code', chunk)
+          ))
+        ])
 
         forwarderTrackingList.value = trackResults.flatMap(r => r.data || [])
+        receiveItemDetails.value = riResults.flatMap(r => r.data || [])
       }
     } catch (trackErr) {
-      console.warn('Error loading raw_forwarder_tracking from Supabase:', trackErr)
+      console.warn('Error loading tracking & receive items from Supabase:', trackErr)
     }
 
     // Initialize hpoMapping directly from Supabase shipments & PO items
@@ -2584,6 +2597,67 @@ const getHpoSubSchedules = (item, hpoNumber) => {
   }
 
   return []
+}
+
+// Helper: Get Receive Item (HRI) info matching item and HPO
+const getHriInfo = (item, hpoNumber) => {
+  const itemCode = (item?.code || item?.item_code || '').trim().toUpperCase()
+  const cleanHpo = (hpoNumber || '').trim().toUpperCase().replace(/HP0/gi, 'HPO')
+  const soNumber = (soDetail.value?.number || '').replace(/\//g, '').toUpperCase()
+
+  if (!itemCode || !receiveItemDetails.value || receiveItemDetails.value.length === 0) return null
+
+  // 1. Try match with item_code + po_number
+  if (cleanHpo) {
+    const exactMatch = receiveItemDetails.value.find(ri => {
+      const riCode = (ri.item_code || '').trim().toUpperCase()
+      const riPo = (ri.ri?.po_number || '').trim().toUpperCase().replace(/HP0/gi, 'HPO')
+      if (riCode !== itemCode) return false
+      return riPo === cleanHpo || riPo.includes(cleanHpo) || cleanHpo.includes(riPo)
+    })
+    if (exactMatch?.ri) {
+      return {
+        id: exactMatch.ri.id,
+        number: exactMatch.ri.number,
+        trans_date: exactMatch.ri.trans_date,
+        vendor_name: exactMatch.ri.vendor_name
+      }
+    }
+  }
+
+  // 2. Try match with item_code + hso_number in detail_notes or hso_number column
+  if (soNumber) {
+    const hsoMatch = receiveItemDetails.value.find(ri => {
+      const riCode = (ri.item_code || '').trim().toUpperCase()
+      if (riCode !== itemCode) return false
+      const riHso = (ri.hso_number || ri.detail_notes || '').replace(/\//g, '').toUpperCase()
+      return riHso.includes(soNumber)
+    })
+    if (hsoMatch?.ri) {
+      return {
+        id: hsoMatch.ri.id,
+        number: hsoMatch.ri.number,
+        trans_date: hsoMatch.ri.trans_date,
+        vendor_name: hsoMatch.ri.vendor_name
+      }
+    }
+  }
+
+  // 3. Fallback: match by item_code only
+  const itemMatch = receiveItemDetails.value.find(ri => {
+    const riCode = (ri.item_code || '').trim().toUpperCase()
+    return riCode === itemCode && ri.ri
+  })
+  if (itemMatch?.ri) {
+    return {
+      id: itemMatch.ri.id,
+      number: itemMatch.ri.number,
+      trans_date: itemMatch.ri.trans_date,
+      vendor_name: itemMatch.ri.vendor_name
+    }
+  }
+
+  return null
 }
 
 // Helper: Calculate HPO discrepancy
@@ -3910,12 +3984,24 @@ const downloadAttachment = async (att) => {
                                 </template>
 
                                 <!-- HRI Received Indicator (Hanya muncul saat barang tiba atau sedang dikirim ke Hokiindo) -->
-                                <div v-if="getHpoShipment(item, hpo.poNumber)?.hokiindo_date || getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya'" class="flex items-center gap-1 pt-0.5">
-                                    <template v-if="getHpoShipment(item, hpo.poNumber)?.hokiindo_date">
+                                <div v-if="getHpoShipment(item, hpo.poNumber)?.hokiindo_date || getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya' || getHriInfo(item, hpo.poNumber)" class="flex items-center flex-wrap gap-1 pt-0.5">
+                                    <template v-if="getHpoShipment(item, hpo.poNumber)?.hokiindo_date || getHriInfo(item, hpo.poNumber)">
                                         <!-- Sudah scan HRI -->
                                         <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400 shrink-0" />
                                         <span class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Tiba di Hokiindo</span>
-                                        <span class="text-[10px] text-emerald-500 dark:text-emerald-500 font-normal">({{ formatDateSimple(getHpoShipment(item, hpo.poNumber)?.hokiindo_date) }})</span>
+                                        <span class="text-[10px] text-emerald-500 dark:text-emerald-500 font-normal">
+                                            ({{ formatDateSimple(getHpoShipment(item, hpo.poNumber)?.hokiindo_date || getHriInfo(item, hpo.poNumber)?.trans_date) }})
+                                        </span>
+                                        <!-- Nomor HRI + Link -->
+                                        <RouterLink
+                                            v-if="getHriInfo(item, hpo.poNumber)?.number"
+                                            :to="`/receive-items/${getHriInfo(item, hpo.poNumber).id || encodeURIComponent(getHriInfo(item, hpo.poNumber).number)}`"
+                                            class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 dark:hover:bg-emerald-900 text-[9.5px] font-bold font-mono transition-colors ml-0.5"
+                                            :title="`Lihat Dokumen Penerimaan Barang (${getHriInfo(item, hpo.poNumber).number})`"
+                                        >
+                                            <span>{{ getHriInfo(item, hpo.poNumber).number }}</span>
+                                            <ExternalLink class="w-2.5 h-2.5" />
+                                        </RouterLink>
                                     </template>
                                     <template v-else-if="getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya'">
                                         <!-- Status manual sudah Hokiindo, belum scan HRI -->
@@ -3956,12 +4042,24 @@ const downloadAttachment = async (att) => {
                                     </span>
                                 </div>
                                 <!-- HRI Received Indicator (Hanya muncul saat barang tiba atau sedang dikirim ke Hokiindo) -->
-                                <div v-if="getHpoShipment(item, hpoStr)?.hokiindo_date || getVisualStatus(getHpoShipment(item, hpoStr)) === 'Already in Hokiindo Raya'" class="flex items-center gap-1 pt-0.5">
-                                    <template v-if="getHpoShipment(item, hpoStr)?.hokiindo_date">
+                                <div v-if="getHpoShipment(item, hpoStr)?.hokiindo_date || getVisualStatus(getHpoShipment(item, hpoStr)) === 'Already in Hokiindo Raya' || getHriInfo(item, hpoStr)" class="flex items-center flex-wrap gap-1 pt-0.5">
+                                    <template v-if="getHpoShipment(item, hpoStr)?.hokiindo_date || getHriInfo(item, hpoStr)">
                                         <!-- Sudah scan HRI -->
                                         <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400 shrink-0" />
                                         <span class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Tiba di Hokiindo</span>
-                                        <span class="text-[10px] text-emerald-500 dark:text-emerald-500 font-normal">({{ formatDateSimple(getHpoShipment(item, hpoStr)?.hokiindo_date) }})</span>
+                                        <span class="text-[10px] text-emerald-500 dark:text-emerald-500 font-normal">
+                                            ({{ formatDateSimple(getHpoShipment(item, hpoStr)?.hokiindo_date || getHriInfo(item, hpoStr)?.trans_date) }})
+                                        </span>
+                                        <!-- Nomor HRI + Link -->
+                                        <RouterLink
+                                            v-if="getHriInfo(item, hpoStr)?.number"
+                                            :to="`/receive-items/${getHriInfo(item, hpoStr).id || encodeURIComponent(getHriInfo(item, hpoStr).number)}`"
+                                            class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 dark:hover:bg-emerald-900 text-[9.5px] font-bold font-mono transition-colors ml-0.5"
+                                            :title="`Lihat Dokumen Penerimaan Barang (${getHriInfo(item, hpoStr).number})`"
+                                        >
+                                            <span>{{ getHriInfo(item, hpoStr).number }}</span>
+                                            <ExternalLink class="w-2.5 h-2.5" />
+                                        </RouterLink>
                                     </template>
                                     <template v-else-if="getVisualStatus(getHpoShipment(item, hpoStr)) === 'Already in Hokiindo Raya'">
                                         <!-- Status manual sudah Hokiindo, belum scan HRI -->
@@ -4295,11 +4393,20 @@ const downloadAttachment = async (att) => {
                       </template>
 
                       <!-- Mobile HRI / Hokiindo Arrival Indicator -->
-                      <div v-if="getHpoShipment(item, hpo.poNumber)?.hokiindo_date || getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya'" class="flex items-center gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/60">
-                        <template v-if="getHpoShipment(item, hpo.poNumber)?.hokiindo_date">
+                      <div v-if="getHpoShipment(item, hpo.poNumber)?.hokiindo_date || getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya' || getHriInfo(item, hpo.poNumber)" class="flex items-center flex-wrap gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/60">
+                        <template v-if="getHpoShipment(item, hpo.poNumber)?.hokiindo_date || getHriInfo(item, hpo.poNumber)">
                           <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                           <span class="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Tiba di Hokiindo</span>
-                          <span class="text-xs text-emerald-500 font-normal">({{ formatDateSimple(getHpoShipment(item, hpo.poNumber)?.hokiindo_date) }})</span>
+                          <span class="text-xs text-emerald-500 font-normal">({{ formatDateSimple(getHpoShipment(item, hpo.poNumber)?.hokiindo_date || getHriInfo(item, hpo.poNumber)?.trans_date) }})</span>
+                          <RouterLink
+                            v-if="getHriInfo(item, hpo.poNumber)?.number"
+                            :to="`/receive-items/${getHriInfo(item, hpo.poNumber).id || encodeURIComponent(getHriInfo(item, hpo.poNumber).number)}`"
+                            class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 dark:hover:bg-emerald-900 text-[10px] font-bold font-mono transition-colors ml-0.5"
+                            :title="`Lihat Dokumen Penerimaan Barang (${getHriInfo(item, hpo.poNumber).number})`"
+                          >
+                            <span>{{ getHriInfo(item, hpo.poNumber).number }}</span>
+                            <ExternalLink class="w-3 h-3" />
+                          </RouterLink>
                         </template>
                         <template v-else-if="getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya'">
                           <CheckCircle2 class="w-3.5 h-3.5 text-blue-400 shrink-0" />
@@ -4350,11 +4457,20 @@ const downloadAttachment = async (att) => {
                         </span>
                       </div>
                       <!-- Mobile HRI / Hokiindo Arrival Indicator -->
-                      <div v-if="getHpoShipment(item, hpoStr)?.hokiindo_date || getVisualStatus(getHpoShipment(item, hpoStr)) === 'Already in Hokiindo Raya'" class="flex items-center gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/60 mt-2">
-                        <template v-if="getHpoShipment(item, hpoStr)?.hokiindo_date">
+                      <div v-if="getHpoShipment(item, hpoStr)?.hokiindo_date || getVisualStatus(getHpoShipment(item, hpoStr)) === 'Already in Hokiindo Raya' || getHriInfo(item, hpoStr)" class="flex items-center flex-wrap gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/60 mt-2">
+                        <template v-if="getHpoShipment(item, hpoStr)?.hokiindo_date || getHriInfo(item, hpoStr)">
                           <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                           <span class="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Tiba di Hokiindo</span>
-                          <span class="text-xs text-emerald-500 font-normal">({{ formatDateSimple(getHpoShipment(item, hpoStr)?.hokiindo_date) }})</span>
+                          <span class="text-xs text-emerald-500 font-normal">({{ formatDateSimple(getHpoShipment(item, hpoStr)?.hokiindo_date || getHriInfo(item, hpoStr)?.trans_date) }})</span>
+                          <RouterLink
+                            v-if="getHriInfo(item, hpoStr)?.number"
+                            :to="`/receive-items/${getHriInfo(item, hpoStr).id || encodeURIComponent(getHriInfo(item, hpoStr).number)}`"
+                            class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-100 dark:hover:bg-emerald-900 text-[10px] font-bold font-mono transition-colors ml-0.5"
+                            :title="`Lihat Dokumen Penerimaan Barang (${getHriInfo(item, hpoStr).number})`"
+                          >
+                            <span>{{ getHriInfo(item, hpoStr).number }}</span>
+                            <ExternalLink class="w-3 h-3" />
+                          </RouterLink>
                         </template>
                         <template v-else-if="getVisualStatus(getHpoShipment(item, hpoStr)) === 'Already in Hokiindo Raya'">
                           <CheckCircle2 class="w-3.5 h-3.5 text-blue-400 shrink-0" />
