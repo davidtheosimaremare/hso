@@ -1,5 +1,13 @@
 [
   {
+    "hash": "eeaf4e10e9454a3677ab2fc3d3080f13636625be",
+    "shortHash": "eeaf4e1",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 11:13:45 2026 +0700",
+    "message": "fix: getHpoSubSchedules prioritaskan shipments_data (scan HRI) di atas raw_forwarder_tracking"
+  },
+  {
     "hash": "c4d26f5597312956f56d64d66b68ac59b920be1a",
     "shortHash": "c4d26f5",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 11:07:44 2026 +0700",
     "message": "fix: align database mapping badge count with actual mapped items"
-  },
-  {
-    "hash": "51e6b2dc4d86cef18185cdc8336e74bff7702ea3",
-    "shortHash": "51e6b2d",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 10:57:46 2026 +0700",
-    "message": "feat: implement Cross-Brand Component Converter & Database Mapping with RBAC"
   }
 ]

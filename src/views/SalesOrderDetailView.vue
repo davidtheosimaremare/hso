@@ -3875,6 +3875,19 @@ const downloadAttachment = async (att) => {
                                     🏢 {{ hpo.vendorName }}
                                 </div>
 
+                                <!-- HRI Received Indicator -->
+                                <div class="flex items-center gap-1 pt-0.5">
+                                    <template v-if="getHpoShipment(item, hpo.poNumber)?.hokiindo_date">
+                                        <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400 shrink-0" />
+                                        <span class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Diterima HRI</span>
+                                        <span class="text-[10px] text-emerald-500 dark:text-emerald-500 font-normal">({{ formatDateSimple(getHpoShipment(item, hpo.poNumber)?.hokiindo_date) }})</span>
+                                    </template>
+                                    <template v-else>
+                                        <CheckCircle2 class="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 shrink-0" />
+                                        <span class="text-[10px] text-slate-400 dark:text-slate-600">Belum diterima HRI</span>
+                                    </template>
+                                </div>
+
                                 <!-- Sub-Schedules (Split Deliveries) or Single Status -->
                                 <div v-if="getHpoSubSchedules(item, hpo.poNumber).length > 1" class="space-y-1 pt-1 border-t border-slate-100 dark:border-slate-700/60">
                                     <div v-for="(sub, subIdx) in getHpoSubSchedules(item, hpo.poNumber)" :key="subIdx" class="flex items-center justify-between gap-1.5 text-[10px]">
@@ -3923,6 +3936,18 @@ const downloadAttachment = async (att) => {
                                     <span v-if="getHpoDisplayDate(item, getHpoShipment(item, hpoStr)) && getHpoDisplayDate(item, getHpoShipment(item, hpoStr)) !== '-'" class="opacity-80 font-normal text-[9.5px] whitespace-nowrap">
                                         ({{ getHpoDisplayDate(item, getHpoShipment(item, hpoStr)) }})
                                     </span>
+                                </div>
+                                <!-- HRI Received Indicator -->
+                                <div class="flex items-center gap-1 pt-0.5">
+                                    <template v-if="getHpoShipment(item, hpoStr)?.hokiindo_date">
+                                        <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400 shrink-0" />
+                                        <span class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Diterima HRI</span>
+                                        <span class="text-[10px] text-emerald-500 dark:text-emerald-500 font-normal">({{ formatDateSimple(getHpoShipment(item, hpoStr)?.hokiindo_date) }})</span>
+                                    </template>
+                                    <template v-else>
+                                        <CheckCircle2 class="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 shrink-0" />
+                                        <span class="text-[10px] text-slate-400 dark:text-slate-600">Belum diterima HRI</span>
+                                    </template>
                                 </div>
                             </div>
                         </div>
