@@ -1,5 +1,13 @@
 [
   {
+    "hash": "c4d26f5597312956f56d64d66b68ac59b920be1a",
+    "shortHash": "c4d26f5",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 10:26:35 2026 +0700",
+    "message": "fix: fallback HPO status di keterangan pakai getVisualStatus bukan logistics_status"
+  },
+  {
     "hash": "469b84c267ee5f82a022f5c4fcde4e1b2dae535d",
     "shortHash": "469b84c",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 10:57:46 2026 +0700",
     "message": "feat: implement Cross-Brand Component Converter & Database Mapping with RBAC"
-  },
-  {
-    "hash": "ef40f212e8012893bd4f046e3106cb037cf54f81",
-    "shortHash": "ef40f21",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Aug 19 14:12:53 2026 +0700",
-    "message": "fix: resolve new tab document opening for dataUrl and blob attachments"
   }
 ]

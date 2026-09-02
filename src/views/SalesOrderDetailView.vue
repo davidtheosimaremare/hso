@@ -2507,6 +2507,10 @@ const getHpoSubSchedules = (item, hpoNumber) => {
   const cleanTarget = target.split(/\s+/)[0]
   if (!cleanTarget) return []
 
+  // Cross-check shipments_data (scan HRI) — selalu prioritaskan jika lebih maju
+  const shipment = getHpoShipment(item, hpoNumber)
+  const shipVisualStatus = shipment ? getVisualStatus(shipment) : null
+
   const matchingRaw = (forwarderTrackingList.value || []).filter(r => {
     return isItemMatch(r.item_code, item.code) && isHpoMatch(r.hpo_number, cleanTarget)
   })
@@ -2534,6 +2538,12 @@ const getHpoSubSchedules = (item, hpoNumber) => {
         status = 'Follow up with our forwarder'
       }
 
+      // Override dengan shipments_data jika lebih maju (scan HRI lebih terpercaya)
+      const statusRank = { 'Follow up with our forwarder': 1, 'ETA Port JKT': 2, 'Already in siemens Warehouse': 3, 'Already in Hokiindo Raya': 4 }
+      if (shipVisualStatus && (statusRank[shipVisualStatus] || 0) > (statusRank[status] || 0)) {
+        status = shipVisualStatus
+      }
+
       const displayStatus = status === 'Follow up with our forwarder' ? 'Ex-Works' 
         : status === 'ETA Port JKT' ? 'ETA JKT' 
         : status === 'Already in siemens Warehouse' ? 'Tiba Dunex' 
@@ -2541,7 +2551,9 @@ const getHpoSubSchedules = (item, hpoNumber) => {
         : status
 
       let displayDate = '-'
-      if (r.delivery_date) displayDate = formatDateSimple(r.delivery_date)
+      if (status === 'Already in Hokiindo Raya' && shipment?.hokiindo_date) displayDate = formatDateSimple(shipment.hokiindo_date)
+      else if (status === 'Already in siemens Warehouse' && shipment?.dunex_date) displayDate = formatDateSimple(shipment.dunex_date)
+      else if (r.delivery_date) displayDate = formatDateSimple(r.delivery_date)
       else if (r.eta_date) displayDate = formatDateSimple(r.eta_date)
       else if (r.exwork_date) displayDate = formatDateSimple(r.exwork_date)
       else if (r.exwork_waiting) displayDate = 'Waiting'
@@ -2562,7 +2574,6 @@ const getHpoSubSchedules = (item, hpoNumber) => {
   }
 
   // Fallback to shipments_data if no split tracking found in raw_forwarder_tracking
-  const shipment = getHpoShipment(item, hpoNumber)
   if (shipment && shipment.current_status && shipment.current_status !== 'Pending Process') {
     return [{
       qty: null,
