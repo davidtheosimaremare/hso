@@ -440,21 +440,21 @@ const getVisualStatus = (shipment) => {
     if (shipment.current_status === 'Already in Hokiindo Raya' || shipment.hokiindo_date) return 'Already in Hokiindo Raya'
     if (shipment.current_status === 'Already in siemens Warehouse' || shipment.dunex_date) return 'Already in siemens Warehouse'
     if (shipment.current_status === 'ETA Port JKT' || shipment.eta_date) return 'ETA Port JKT'
-    if (shipment.current_status === 'Follow up with our forwarder' || shipment.exwork_date || shipment.exwork_waiting) return 'Follow up with our forwarder'
-    return shipment.current_status || 'Pending Process'
+    if (shipment.exwork_date || shipment.exwork_waiting) return 'Follow up with our forwarder'
+    return 'Pending Process'
 }
 
 const getVisualStatusDate = (shipment) => {
     if (!shipment) return ''
     const status = getVisualStatus(shipment)
-    if (status === 'Already in Hokiindo Raya') return formatDateSimple(shipment.hokiindo_date || shipment.status_date)
-    if (status === 'Already in siemens Warehouse') return formatDateSimple(shipment.dunex_date || shipment.status_date)
-    if (status === 'ETA Port JKT') return formatDateSimple(shipment.eta_date || shipment.status_date)
+    if (status === 'Already in Hokiindo Raya') return formatDateSimple(shipment.hokiindo_date)
+    if (status === 'Already in siemens Warehouse') return formatDateSimple(shipment.dunex_date)
+    if (status === 'ETA Port JKT') return formatDateSimple(shipment.eta_date)
     if (status === 'Follow up with our forwarder') {
       if (shipment.exwork_waiting) return 'Waiting for confirmation'
-      return formatDateSimple(shipment.exwork_date || shipment.status_date)
+      return formatDateSimple(shipment.exwork_date)
     }
-    return formatDateSimple(shipment.status_date) || ''
+    return ''
 }
 
 import * as XLSX from 'xlsx'
