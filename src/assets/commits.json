@@ -1,5 +1,13 @@
 [
   {
+    "hash": "b7efd86cb995b6e5399b225e2da66fc08a8c158e",
+    "shortHash": "b7efd86",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 21:19:57 2026 +0700",
+    "message": "feat(delivery-orders): enhance DO detail view with project extraction, related HSO/HSQ links, customer PO, and rich items layout"
+  },
+  {
     "hash": "bc93bab7b9e5d78c7f1a1fe869aee724fa30dbc9",
     "shortHash": "bc93bab",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 15:51:32 2026 +0700",
     "message": "fix: resolve order suggestion and add to cart button visibility when HPO is deleted in HSO-26-06-118"
-  },
-  {
-    "hash": "2186da004815127a7c45de735e707a47fe7e7ccd",
-    "shortHash": "2186da0",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 15:46:17 2026 +0700",
-    "message": "fix: resolve sales orders list loading issue by isolating accurate-list-so and correcting PO items table query"
   }
 ]

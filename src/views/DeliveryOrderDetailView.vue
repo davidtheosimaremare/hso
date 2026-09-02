@@ -12,7 +12,8 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import {
   AlertTriangle, Calendar, Building2, User, FileText, ArrowLeft,
   Loader2, Package, Truck, MapPin, ExternalLink, ShoppingCart,
-  Layers, FolderGit2, Search, RefreshCw, CheckCircle2, Info
+  Layers, FolderGit2, Search, RefreshCw, CheckCircle2, Info,
+  Copy, Check
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -25,6 +26,7 @@ const isLoading = ref(true)
 const isRefreshing = ref(false)
 const errorMessage = ref(null)
 const itemSearchQuery = ref('')
+const copiedSku = ref(null)
 
 // --- PROJECT PARSING HELPER ---
 const extractProjectFromText = (text) => {
@@ -278,6 +280,15 @@ const formatHsoUrl = (hsoStr) => {
 const formatHsqUrl = (hsqStr) => {
   if (!hsqStr) return '/hsq'
   return `/hsq/${hsqStr.replace(/\//g, '-')}`
+}
+
+const copySku = (sku) => {
+  if (!sku) return
+  navigator.clipboard.writeText(sku)
+  copiedSku.value = sku
+  setTimeout(() => {
+    if (copiedSku.value === sku) copiedSku.value = null
+  }, 2000)
 }
 </script>
 
@@ -536,84 +547,101 @@ const formatHsqUrl = (hsqStr) => {
             <!-- DESKTOP TABLE -->
             <div class="hidden md:block overflow-x-auto">
               <Table>
-                <TableHeader class="bg-slate-50/80 dark:bg-slate-900/60">
-                  <TableRow class="border-b border-slate-200 dark:border-slate-700">
-                    <TableHead class="w-[50px] font-bold text-slate-700 dark:text-slate-200 text-center">#</TableHead>
-                    <TableHead class="font-bold text-slate-700 dark:text-slate-200">Item Produk & Part Number</TableHead>
-                    <TableHead class="font-bold text-slate-700 dark:text-slate-200">Untuk HSO Mana?</TableHead>
-                    <TableHead class="font-bold text-slate-700 dark:text-slate-200">Quotation (HSQ)</TableHead>
-                    <TableHead class="font-bold text-slate-700 dark:text-slate-200">Catatan Item</TableHead>
-                    <TableHead class="text-right font-bold text-slate-700 dark:text-slate-200 w-[120px]">Qty Kirim</TableHead>
+                <TableHeader class="bg-slate-50/90 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-700">
+                  <TableRow class="hover:bg-transparent">
+                    <TableHead class="w-[50px] font-bold text-slate-700 dark:text-slate-300 text-center">#</TableHead>
+                    <TableHead class="font-bold text-slate-800 dark:text-slate-200 min-w-[320px]">
+                      Part Number (SKU) & Deskripsi Item
+                    </TableHead>
+                    <TableHead class="font-bold text-slate-800 dark:text-slate-200 w-[180px]">Untuk HSO Mana?</TableHead>
+                    <TableHead class="font-bold text-slate-800 dark:text-slate-200 w-[160px]">Quotation (HSQ)</TableHead>
+                    <TableHead class="font-bold text-slate-800 dark:text-slate-200 w-[130px]">Catatan</TableHead>
+                    <TableHead class="text-right font-bold text-slate-800 dark:text-slate-200 w-[130px]">Qty Kirim</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   <TableRow
                     v-for="(item, index) in filteredItems"
                     :key="item.id || index"
-                    class="hover:bg-slate-50/80 dark:hover:bg-slate-700/40 transition-colors border-b border-slate-100 dark:border-slate-700 last:border-0"
+                    class="hover:bg-slate-50/90 dark:hover:bg-slate-700/40 transition-colors border-b border-slate-100 dark:border-slate-700/70 last:border-0"
                   >
-                    <TableCell class="text-center font-medium text-slate-400 py-3.5 text-xs">
+                    <!-- Row Index -->
+                    <TableCell class="text-center font-semibold text-slate-400 dark:text-slate-500 py-4 text-xs">
                       {{ index + 1 }}
                     </TableCell>
 
-                    <!-- Item Name & Code -->
-                    <TableCell class="py-3.5">
-                      <div class="flex flex-col gap-0.5">
-                        <span class="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">{{ item.item_name }}</span>
-                        <span class="text-xs font-mono font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50/70 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded w-fit">
-                          {{ item.item_code }}
-                        </span>
+                    <!-- SKU & Product Description (SKU Prominently Highlighted) -->
+                    <TableCell class="py-4">
+                      <div class="flex flex-col gap-1">
+                        <!-- Prominent SKU -->
+                        <div class="flex items-center gap-2 group">
+                          <span class="font-mono font-black text-sm sm:text-[15px] text-slate-900 dark:text-white tracking-tight bg-slate-100 dark:bg-slate-700/80 text-emerald-950 dark:text-emerald-300 px-2.5 py-0.5 rounded-md border border-slate-200 dark:border-slate-600/80 shadow-xs select-all">
+                            {{ item.item_code }}
+                          </span>
+                          <button
+                            @click="copySku(item.item_code)"
+                            class="p-1 rounded-md opacity-60 hover:opacity-100 hover:bg-slate-200/70 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition-all"
+                            :title="copiedSku === item.item_code ? 'Tersalin!' : 'Salin Part Number'"
+                          >
+                            <Check v-if="copiedSku === item.item_code" class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                            <Copy v-else class="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        <!-- Secondary Description Subtitle -->
+                        <p class="text-xs text-slate-600 dark:text-slate-400 font-normal leading-relaxed pl-0.5">
+                          {{ item.item_name }}
+                        </p>
                       </div>
                     </TableCell>
 
                     <!-- Link HSO -->
-                    <TableCell class="py-3.5">
-                      <div v-if="item.hso_number" class="flex items-center gap-1.5">
-                        <span class="font-bold font-mono text-xs text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-700/60 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-600">
-                          {{ item.hso_number }}
-                        </span>
+                    <TableCell class="py-4">
+                      <div v-if="item.hso_number" class="inline-flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900/80 border border-slate-200 dark:border-slate-700 px-2.5 py-1 rounded-lg">
+                        <FileText class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                        <span class="font-bold font-mono text-xs text-slate-800 dark:text-slate-200">{{ item.hso_number }}</span>
                         <RouterLink
                           :to="`/sales-orders/${item.hso_number.replace(/\//g, '-')}?search=${encodeURIComponent(item.item_code)}&highlight=${encodeURIComponent(item.item_code)}`"
-                          class="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 hover:text-emerald-800 dark:text-emerald-400 dark:hover:text-emerald-300 hover:underline"
+                          class="inline-flex items-center gap-0.5 text-[10.5px] font-bold text-emerald-700 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 hover:underline ml-1"
                           :title="`Buka HSO ${item.hso_number}`"
                         >
                           <span>Buka</span>
-                          <ExternalLink class="w-3 h-3" />
+                          <ExternalLink class="w-2.5 h-2.5" />
                         </RouterLink>
                       </div>
-                      <span v-else class="text-xs text-slate-400 italic">
-                        {{ doDetail.distinct_hsos[0]?.number ? doDetail.distinct_hsos[0].number : '-' }}
+                      <span v-else-if="doDetail.distinct_hsos[0]?.number" class="inline-flex items-center gap-1 text-xs text-slate-500 font-mono">
+                        {{ doDetail.distinct_hsos[0].number }}
                       </span>
+                      <span v-else class="text-xs text-slate-400 italic">-</span>
                     </TableCell>
 
                     <!-- Link HSQ -->
-                    <TableCell class="py-3.5">
-                      <div v-if="item.hsq_number" class="flex items-center gap-1.5">
-                        <span class="font-bold font-mono text-xs text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800">
-                          {{ item.hsq_number }}
-                        </span>
+                    <TableCell class="py-4">
+                      <div v-if="item.hsq_number" class="inline-flex items-center gap-1.5 bg-blue-50/60 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/60 px-2.5 py-1 rounded-lg">
+                        <Layers class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+                        <span class="font-bold font-mono text-xs text-blue-800 dark:text-blue-200">{{ item.hsq_number }}</span>
                         <RouterLink
                           :to="`/hsq/${item.hsq_number.replace(/\//g, '-')}?search=${encodeURIComponent(item.item_code)}&highlight=${encodeURIComponent(item.item_code)}`"
-                          class="inline-flex items-center gap-1 text-[11px] font-bold text-blue-700 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 hover:underline"
+                          class="inline-flex items-center gap-0.5 text-[10.5px] font-bold text-blue-700 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline ml-1"
                           :title="`Buka HSQ ${item.hsq_number}`"
                         >
-                          <ExternalLink class="w-3 h-3" />
+                          <ExternalLink class="w-2.5 h-2.5" />
                         </RouterLink>
                       </div>
-                      <span v-else class="text-xs text-slate-400">-</span>
+                      <span v-else class="text-xs text-slate-400 italic">-</span>
                     </TableCell>
 
                     <!-- Detail Notes -->
-                    <TableCell class="py-3.5">
-                      <span v-if="item.detail_notes" class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                    <TableCell class="py-4">
+                      <span v-if="item.detail_notes" class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
                         {{ item.detail_notes }}
                       </span>
                       <span v-else class="text-xs text-slate-400">-</span>
                     </TableCell>
 
                     <!-- Quantity -->
-                    <TableCell class="text-right py-3.5">
-                      <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800">
+                    <TableCell class="text-right py-4">
+                      <span class="inline-flex items-center justify-center px-3 py-1.5 rounded-lg text-xs font-black font-mono bg-emerald-100 dark:bg-emerald-950/80 text-emerald-900 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 shadow-xs whitespace-nowrap">
                         {{ item.quantity }} {{ item.unit_name }}
                       </span>
                     </TableCell>
@@ -627,33 +655,51 @@ const formatHsqUrl = (hsqStr) => {
               <div
                 v-for="(item, index) in filteredItems"
                 :key="item.id || index"
-                class="p-4 space-y-2.5"
+                class="p-4 space-y-3"
               >
+                <!-- Top Line: Prominent SKU + Qty Badge -->
                 <div class="flex items-start justify-between gap-2">
-                  <div>
+                  <div class="space-y-1">
                     <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Item #{{ index + 1 }}</span>
-                    <h4 class="font-bold text-slate-900 dark:text-white text-sm">{{ item.item_name }}</h4>
-                    <span class="text-xs font-mono text-emerald-700 dark:text-emerald-400 font-semibold">{{ item.item_code }}</span>
+                    <div class="flex items-center gap-1.5">
+                      <span class="font-mono font-black text-sm text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-700/80 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-600">
+                        {{ item.item_code }}
+                      </span>
+                      <button
+                        @click="copySku(item.item_code)"
+                        class="p-1 text-slate-400 hover:text-slate-600"
+                        :title="'Salin SKU'"
+                      >
+                        <Check v-if="copiedSku === item.item_code" class="w-3.5 h-3.5 text-emerald-600" />
+                        <Copy v-else class="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
-                  <span class="font-black text-xs px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800 shrink-0">
+
+                  <span class="font-black font-mono text-xs px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 text-emerald-900 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-800 shrink-0">
                     {{ item.quantity }} {{ item.unit_name }}
                   </span>
                 </div>
 
-                <!-- HSO & HSQ Badges on Mobile -->
-                <div class="flex flex-wrap items-center gap-2 text-xs pt-1 border-t border-slate-100 dark:border-slate-700/60">
-                  <div v-if="item.hso_number" class="flex items-center gap-1 bg-slate-100 dark:bg-slate-700/50 px-2 py-0.5 rounded font-mono">
+                <!-- Product Name -->
+                <p class="text-xs text-slate-600 dark:text-slate-400 font-medium">
+                  {{ item.item_name }}
+                </p>
+
+                <!-- HSO, HSQ & Notes Badges on Mobile -->
+                <div class="flex flex-wrap items-center gap-2 text-xs pt-2 border-t border-slate-100 dark:border-slate-700/60">
+                  <div v-if="item.hso_number" class="flex items-center gap-1 bg-slate-100 dark:bg-slate-700/60 px-2 py-0.5 rounded font-mono text-xs">
                     <span class="text-slate-400 text-[10px]">HSO:</span>
                     <span class="font-bold text-slate-800 dark:text-slate-200">{{ item.hso_number }}</span>
                     <RouterLink :to="formatHsoUrl(item.hso_number)" class="text-emerald-600 ml-1">
                       <ExternalLink class="w-3 h-3" />
                     </RouterLink>
                   </div>
-                  <div v-if="item.hsq_number" class="flex items-center gap-1 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 px-2 py-0.5 rounded font-mono">
+                  <div v-if="item.hsq_number" class="flex items-center gap-1 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 px-2 py-0.5 rounded font-mono text-xs">
                     <span class="text-blue-400 text-[10px]">HSQ:</span>
                     <span class="font-bold">{{ item.hsq_number }}</span>
                   </div>
-                  <div v-if="item.detail_notes" class="bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded text-[11px]">
+                  <div v-if="item.detail_notes" class="bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded text-[11px] font-bold">
                     Note: {{ item.detail_notes }}
                   </div>
                 </div>
@@ -661,13 +707,13 @@ const formatHsqUrl = (hsqStr) => {
             </div>
 
             <!-- TABLE FOOTER -->
-            <div class="flex flex-wrap items-center justify-between gap-3 p-4 bg-slate-50/90 dark:bg-slate-900/60 border-t border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300">
+            <div class="flex flex-wrap items-center justify-between gap-3 p-4 bg-slate-50/90 dark:bg-slate-900/70 border-t border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300">
               <div class="flex items-center gap-4">
                 <span>Total Item: <strong class="text-slate-900 dark:text-white">{{ filteredItems.length }} SKU</strong></span>
               </div>
               <div class="flex items-center gap-2">
                 <span>Total Kuantiti Dikirim:</span>
-                <Badge class="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-3 py-1">
+                <Badge class="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-3 py-1 font-mono">
                   {{ totalQuantity }} Unit
                 </Badge>
               </div>
