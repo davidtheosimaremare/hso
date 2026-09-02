@@ -2,7 +2,10 @@
 import { onMounted, ref, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
-import { Loader2, AlertCircle, Search, FileText, Calendar, Eye, Pin, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { 
+  Loader2, AlertCircle, Search, FileText, Calendar, Eye, Pin, RefreshCw, 
+  ChevronLeft, ChevronRight, Trophy, XCircle, Handshake, CheckCircle2, TrendingUp 
+} from 'lucide-vue-next'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -20,7 +23,7 @@ const endDate = ref('')
 const statusFilter = ref('all')
 const activeDateShortcut = ref('')
 
-// Status options dynamically generated from the fetched data
+// Status options dynamically generated from the fetched data + Stage filters
 const availableStatuses = computed(() => {
   const statuses = new Set()
   hsqList.value.forEach(hsq => {
@@ -30,8 +33,11 @@ const availableStatuses = computed(() => {
   const statusArray = Array.from(statuses).sort()
   
   return [
-    { val: 'all', label: 'Semua Status' },
-    ...statusArray.map(s => ({ val: s, label: s }))
+    { val: 'all', label: 'Semua Status / Stage' },
+    { val: 'STAGE_WON', label: '🏆 Status: WIN / Won' },
+    { val: 'STAGE_NEGOSIASI', label: '🤝 Status: Negosiasi' },
+    { val: 'STAGE_LOST', label: '✕ Status: LOST' },
+    ...statusArray.map(s => ({ val: s, label: `Accurate: ${s}` }))
   ]
 })
 
@@ -162,18 +168,74 @@ onMounted(() => {
     return new Date(parts[2], parts[1] - 1, parts[0])
   }
 
+  // Resolve Stage & Probability with smart fallback (Won / Lost / Negosiasi / Custom)
+  const resolveHsqDisplayProgress = (hsq) => {
+    const customProgress = getHsqProgress(hsq?.number || hsq?.id)
+    if (customProgress && customProgress.stage) {
+      const stage = customProgress.stage
+      let prob = customProgress.probability
+      if (prob === undefined || prob === null) {
+        if (stage === 'Won') prob = 100
+        else if (stage === 'Lost') prob = 0
+        else if (stage.includes('Negosiasi')) prob = 60
+        else if (stage.includes('Dikirim') || stage.includes('Pitching')) prob = 30
+        else prob = 10
+      }
+      return {
+        stage,
+        probability: Number(prob),
+        isWon: stage === 'Won',
+        isLost: stage === 'Lost',
+        isNegosiasi: stage.includes('Negosiasi'),
+        isCustom: true
+      }
+    }
+
+    // Inferred from Accurate statusName if no manual pipeline stage
+    const status = (hsq?.statusName || '').toLowerCase()
+    if (status.includes('terproses') || status.includes('selesai') || status.includes('disetujui') || status.includes('won')) {
+      return {
+        stage: 'Won',
+        probability: 100,
+        isWon: true,
+        isLost: false,
+        isNegosiasi: false,
+        isCustom: false
+      }
+    }
+    if (status.includes('tolak') || status.includes('batal') || status.includes('gagal') || status.includes('lost')) {
+      return {
+        stage: 'Lost',
+        probability: 0,
+        isWon: false,
+        isLost: true,
+        isNegosiasi: false,
+        isCustom: false
+      }
+    }
+
+    // Default: Negosiasi / Dalam Proses (60%)
+    return {
+      stage: 'Negosiasi',
+      probability: 60,
+      isWon: false,
+      isLost: false,
+      isNegosiasi: true,
+      isCustom: false
+    }
+  }
+
   const getStatusPriorityRank = (hsq) => {
-    const progress = getHsqProgress(hsq.number || hsq.id)
-    const stage = (progress?.stage || '').toLowerCase()
+    const prog = resolveHsqDisplayProgress(hsq)
     const status = (hsq.statusName || '').toLowerCase()
 
     // 4. Lost / Gagal / Batal -> Paling bawah (Rank 4)
-    if (stage === 'lost' || status.includes('gagal') || status.includes('batal') || status.includes('lost')) {
+    if (prog.isLost || status.includes('gagal') || status.includes('batal') || status.includes('tolak')) {
       return 4
     }
 
-    // 3. Terproses / Selesai / Disetujui -> Paling bawah (Rank 3)
-    if (status.includes('terproses') || status.includes('selesai') || status.includes('disetujui')) {
+    // 3. Terproses / Selesai / Disetujui / Won -> Di bawah (Rank 3)
+    if (prog.isWon || status.includes('terproses') || status.includes('selesai') || status.includes('disetujui')) {
       return 3
     }
 
@@ -182,7 +244,7 @@ onMounted(() => {
       return 2
     }
 
-    // 1. Menunggu diproses / Outstanding / Default -> Paling Atas (Rank 1)
+    // 1. Negosiasi / Menunggu diproses / In-Progress -> Paling Atas (Rank 1)
     return 1
   }
 
@@ -200,9 +262,17 @@ onMounted(() => {
       })
     }
 
-    // 2. Status Filter
+    // 2. Status / Stage Filter
     if (statusFilter.value !== 'all') {
-      result = result.filter(hsq => hsq.statusName === statusFilter.value)
+      if (statusFilter.value === 'STAGE_WON') {
+        result = result.filter(hsq => resolveHsqDisplayProgress(hsq).isWon)
+      } else if (statusFilter.value === 'STAGE_LOST') {
+        result = result.filter(hsq => resolveHsqDisplayProgress(hsq).isLost)
+      } else if (statusFilter.value === 'STAGE_NEGOSIASI') {
+        result = result.filter(hsq => resolveHsqDisplayProgress(hsq).isNegosiasi)
+      } else {
+        result = result.filter(hsq => hsq.statusName === statusFilter.value)
+      }
     }
 
     // 3. Date Filters
@@ -368,18 +438,37 @@ const getStatusClasses = (status) => {
 }
 
 const getStageBadgeClass = (stage) => {
-  if (!stage || stage === 'Prospecting') return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-  if (stage.includes('Pitching') || stage.includes('Dikirim')) return 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400'
-  if (stage.includes('Negosiasi')) return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/20 dark:text-amber-400'
-  if (stage.includes('Won')) return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:text-emerald-400'
-  if (stage.includes('Lost')) return 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/20 dark:text-red-400'
-  return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+  if (!stage) return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+  const s = String(stage).toLowerCase()
+  if (s === 'won' || s.includes('menang') || s.includes('deal')) {
+    return 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+  }
+  if (s === 'lost' || s.includes('gagal') || s.includes('batal')) {
+    return 'bg-red-50 text-red-700 border-red-300 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800'
+  }
+  if (s.includes('negosiasi')) {
+    return 'bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950/30 dark:text-amber-300 dark:border-amber-800'
+  }
+  if (s.includes('pitching') || s.includes('dikirim')) {
+    return 'bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-800'
+  }
+  return 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
 }
 
-const getProbabilityBarClass = (prob) => {
+const getProbabilityBarClass = (prob, isWon = false, isLost = false) => {
+  if (isWon || prob >= 100) return 'bg-emerald-500'
+  if (isLost || prob <= 0) return 'bg-red-500'
   if (prob >= 70) return 'bg-emerald-500'
   if (prob >= 40) return 'bg-amber-500'
-  return 'bg-red-500'
+  return 'bg-blue-500'
+}
+
+const getProbabilityTextClass = (prob, isWon = false, isLost = false) => {
+  if (isWon || prob >= 100) return 'text-emerald-600 dark:text-emerald-400'
+  if (isLost || prob <= 0) return 'text-red-600 dark:text-red-400'
+  if (prob >= 70) return 'text-emerald-600 dark:text-emerald-400'
+  if (prob >= 40) return 'text-amber-600 dark:text-amber-400'
+  return 'text-blue-600 dark:text-blue-400'
 }
 </script>
 
@@ -488,9 +577,24 @@ const getProbabilityBarClass = (prob) => {
               {{ (currentPage - 1) * itemsPerPage + idx + 1 }}
             </TableCell>
             <TableCell>
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 flex-wrap">
                 <span class="text-sm font-semibold text-slate-900 dark:text-white group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors">
                   {{ hsq.number }}
+                </span>
+                <!-- Mini Stamp indicator if Won / Lost -->
+                <span
+                  v-if="resolveHsqDisplayProgress(hsq).isWon"
+                  class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9.5px] font-black uppercase tracking-wider border border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-600 shadow-2xs rotate-[-1deg]"
+                >
+                  <Trophy class="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
+                  WIN
+                </span>
+                <span
+                  v-else-if="resolveHsqDisplayProgress(hsq).isLost"
+                  class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9.5px] font-black uppercase tracking-wider border border-red-500 bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300 dark:border-red-600 shadow-2xs rotate-[-1deg]"
+                >
+                  <XCircle class="w-2.5 h-2.5 text-red-600 dark:text-red-400" />
+                  LOST
                 </span>
                 <Badge
                   v-if="getHsqPendingTasks(hsq)"
@@ -511,7 +615,7 @@ const getProbabilityBarClass = (prob) => {
               <div class="text-sm font-medium text-slate-900 dark:text-white">{{ hsq.customer?.name || '-' }}</div>
               <div class="text-[10px] text-slate-400">{{ hsq.customer?.customerNo || '' }}</div>
             </TableCell>
-<TableCell>
+            <TableCell>
               <div class="text-sm font-semibold text-slate-900 dark:text-white line-clamp-2 leading-snug">
                 {{ extractProjectName(hsq) || '-' }}
               </div>
@@ -520,25 +624,62 @@ const getProbabilityBarClass = (prob) => {
               {{ formatCurrency(hsq.totalAmount) }}
             </TableCell>
             <TableCell>
-              <div v-if="getHsqProgress(hsq)" class="flex flex-col gap-1.5">
-                <div class="flex items-center justify-center gap-1.5">
-                  <span class="inline-flex px-2 py-0.5 rounded text-[10px] font-medium" :class="getStageBadgeClass(getHsqProgress(hsq).stage)">
-                    {{ getHsqProgress(hsq).stage }}
-                  </span>
-                  <span v-if="getHsqProgress(hsq).probability !== undefined && getHsqProgress(hsq).probability !== null" class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-                    {{ getHsqProgress(hsq).probability }}%
-                  </span>
-                </div>
-                <div class="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                  <div
-                    v-if="getHsqProgress(hsq).probability !== undefined && getHsqProgress(hsq).probability !== null"
-                    class="h-full rounded-full transition-all"
-                    :class="getProbabilityBarClass(getHsqProgress(hsq).probability)"
-                    :style="{ width: getHsqProgress(hsq).probability + '%' }"
-                  ></div>
-                </div>
+              <div class="flex flex-col gap-1.5 min-w-[120px]">
+                <!-- Case 1: WIN / WON Stamp -->
+                <template v-if="resolveHsqDisplayProgress(hsq).isWon">
+                  <div class="flex items-center justify-between gap-1.5">
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border-2 border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-600 shadow-2xs rotate-[-1deg]">
+                      <Trophy class="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                      WIN
+                    </span>
+                    <span class="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                      {{ resolveHsqDisplayProgress(hsq).probability }}%
+                    </span>
+                  </div>
+                  <div class="h-1.5 w-full bg-emerald-100 dark:bg-emerald-950/40 rounded-full overflow-hidden">
+                    <div class="h-full bg-emerald-500 rounded-full transition-all duration-300"
+                         :style="{ width: resolveHsqDisplayProgress(hsq).probability + '%' }"></div>
+                  </div>
+                </template>
+
+                <!-- Case 2: LOST Stamp -->
+                <template v-else-if="resolveHsqDisplayProgress(hsq).isLost">
+                  <div class="flex items-center justify-between gap-1.5">
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border-2 border-red-500 bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300 dark:border-red-600 shadow-2xs rotate-[-1deg]">
+                      <XCircle class="w-3 h-3 text-red-600 dark:text-red-400" />
+                      LOST
+                    </span>
+                    <span class="text-xs font-bold text-red-600 dark:text-red-400">
+                      {{ resolveHsqDisplayProgress(hsq).probability }}%
+                    </span>
+                  </div>
+                  <div class="h-1.5 w-full bg-red-100 dark:bg-red-950/40 rounded-full overflow-hidden">
+                    <div class="h-full bg-red-500 rounded-full transition-all duration-300"
+                         :style="{ width: resolveHsqDisplayProgress(hsq).probability + '%' }"></div>
+                  </div>
+                </template>
+
+                <!-- Case 3: Negosiasi / In-Progress / Other Stages -->
+                <template v-else>
+                  <div class="flex items-center justify-between gap-1.5">
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border shadow-2xs"
+                          :class="getStageBadgeClass(resolveHsqDisplayProgress(hsq).stage)">
+                      <Handshake v-if="resolveHsqDisplayProgress(hsq).isNegosiasi" class="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                      <TrendingUp v-else class="w-3 h-3 text-blue-600 dark:text-blue-400 shrink-0" />
+                      <span>{{ resolveHsqDisplayProgress(hsq).stage }}</span>
+                    </span>
+                    <span class="text-xs font-bold"
+                          :class="getProbabilityTextClass(resolveHsqDisplayProgress(hsq).probability)">
+                      {{ resolveHsqDisplayProgress(hsq).probability }}%
+                    </span>
+                  </div>
+                  <div class="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                    <div class="h-full rounded-full transition-all duration-300"
+                         :class="getProbabilityBarClass(resolveHsqDisplayProgress(hsq).probability)"
+                         :style="{ width: resolveHsqDisplayProgress(hsq).probability + '%' }"></div>
+                  </div>
+                </template>
               </div>
-              <div v-else class="text-xs font-medium text-slate-400 dark:text-slate-600">-</div>
             </TableCell>
             <TableCell class="text-center">
               <Badge variant="outline" :class="getStatusClasses(hsq.statusName)">

@@ -1,5 +1,13 @@
 [
   {
+    "hash": "f051201b00058c4ee67e742d262cd7c5e4a928d2",
+    "shortHash": "f051201",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 20:01:33 2026 +0700",
+    "message": "feat(logistics): implement smart FIFO waterfall allocation for multi-HSO split shipments"
+  },
+  {
     "hash": "a0b80deea3f3628a9e45c4948feba1a4d556ddf2",
     "shortHash": "a0b80de",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 14:31:52 2026 +0700",
     "message": "fix: enforce Google Search Grounding without schema conflict and return authentic commercial SKU order codes"
-  },
-  {
-    "hash": "04a1cd43481af6601b55cb75e0507f09e01b6709",
-    "shortHash": "04a1cd4",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 14:25:58 2026 +0700",
-    "message": "feat: enforce strict tripping curve (Curve B, C, D) and trip unit matching for circuit breakers"
   }
 ]
