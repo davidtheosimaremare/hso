@@ -1,5 +1,13 @@
 [
   {
+    "hash": "4c0d4c81824bec662d6386409b22c925312b6d1e",
+    "shortHash": "4c0d4c8",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 11:56:46 2026 +0700",
+    "message": "feat: tambah indikator centang HRI diterima di setiap HPO card"
+  },
+  {
     "hash": "eeaf4e10e9454a3677ab2fc3d3080f13636625be",
     "shortHash": "eeaf4e1",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 11:13:34 2026 +0700",
     "message": "fix: sanitize mapping count to match exact catalog items"
-  },
-  {
-    "hash": "f93824592c13fde95a72b17b0930f0c2f1d68263",
-    "shortHash": "f938245",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 11:07:44 2026 +0700",
-    "message": "fix: align database mapping badge count with actual mapped items"
   }
 ]

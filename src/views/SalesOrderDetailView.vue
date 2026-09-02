@@ -3878,11 +3878,19 @@ const downloadAttachment = async (att) => {
                                 <!-- HRI Received Indicator -->
                                 <div class="flex items-center gap-1 pt-0.5">
                                     <template v-if="getHpoShipment(item, hpo.poNumber)?.hokiindo_date">
+                                        <!-- Sudah scan HRI -->
                                         <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400 shrink-0" />
-                                        <span class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Diterima HRI</span>
+                                        <span class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Tiba di Hokiindo</span>
                                         <span class="text-[10px] text-emerald-500 dark:text-emerald-500 font-normal">({{ formatDateSimple(getHpoShipment(item, hpo.poNumber)?.hokiindo_date) }})</span>
                                     </template>
+                                    <template v-else-if="getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya'">
+                                        <!-- Status manual sudah Hokiindo, belum scan HRI -->
+                                        <CheckCircle2 class="w-3.5 h-3.5 text-blue-400 dark:text-blue-500 shrink-0" />
+                                        <span class="text-[10px] font-semibold text-blue-500 dark:text-blue-400">Sudah dikirim ke Hokiindo</span>
+                                        <span class="text-[10px] text-blue-400 dark:text-blue-500 font-normal italic">(menunggu konfirmasi HRI)</span>
+                                    </template>
                                     <template v-else>
+                                        <!-- Belum sampai Hokiindo -->
                                         <CheckCircle2 class="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 shrink-0" />
                                         <span class="text-[10px] text-slate-400 dark:text-slate-600">Belum diterima HRI</span>
                                     </template>
@@ -3940,11 +3948,19 @@ const downloadAttachment = async (att) => {
                                 <!-- HRI Received Indicator -->
                                 <div class="flex items-center gap-1 pt-0.5">
                                     <template v-if="getHpoShipment(item, hpoStr)?.hokiindo_date">
+                                        <!-- Sudah scan HRI -->
                                         <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400 shrink-0" />
-                                        <span class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Diterima HRI</span>
+                                        <span class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Tiba di Hokiindo</span>
                                         <span class="text-[10px] text-emerald-500 dark:text-emerald-500 font-normal">({{ formatDateSimple(getHpoShipment(item, hpoStr)?.hokiindo_date) }})</span>
                                     </template>
+                                    <template v-else-if="getVisualStatus(getHpoShipment(item, hpoStr)) === 'Already in Hokiindo Raya'">
+                                        <!-- Status manual sudah Hokiindo, belum scan HRI -->
+                                        <CheckCircle2 class="w-3.5 h-3.5 text-blue-400 dark:text-blue-500 shrink-0" />
+                                        <span class="text-[10px] font-semibold text-blue-500 dark:text-blue-400">Sudah dikirim ke Hokiindo</span>
+                                        <span class="text-[10px] text-blue-400 dark:text-blue-500 font-normal italic">(menunggu konfirmasi HRI)</span>
+                                    </template>
                                     <template v-else>
+                                        <!-- Belum sampai Hokiindo -->
                                         <CheckCircle2 class="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 shrink-0" />
                                         <span class="text-[10px] text-slate-400 dark:text-slate-600">Belum diterima HRI</span>
                                     </template>
