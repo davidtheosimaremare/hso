@@ -1,5 +1,13 @@
 [
   {
+    "hash": "75ae17f58485b5e933dab8b38663e9759df45557",
+    "shortHash": "75ae17f",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 21:05:17 2026 +0700",
+    "message": "fix(logistics): strictly match HRI to its specific HPO number to prevent cross-HPO HRI contamination"
+  },
+  {
     "hash": "fb65fc163dcaf22b61dc54dfbab2a1d090bb20ea",
     "shortHash": "fb65fc1",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 15:45:39 2026 +0700",
     "message": "fix: auto-purge orphan shipment records on HPO sync and enforce PERLU DIPESAN status when HPO is deleted"
-  },
-  {
-    "hash": "f0aef46e15680089ab88f607630c70b831a18da3",
-    "shortHash": "f0aef46",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 15:42:48 2026 +0700",
-    "message": "feat: display multiple linked HPOs across Sales Order list, detail header, table rows, and dashboard priority cards"
   }
 ]

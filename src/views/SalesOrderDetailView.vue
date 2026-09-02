@@ -2802,7 +2802,7 @@ const getHpoSubSchedules = (item, hpoNumber) => {
   }))
 }
 
-// Helper: Get Receive Item (HRI) info matching item and HPO strictly for THIS HSO
+// Helper: Get Receive Item (HRI) info matching item and HPO strictly for THIS HSO (with Quantity & FIFO allocation)
 const getHriInfo = (item, hpoNumber) => {
   const itemCode = (item?.code || item?.item_code || '').trim().toUpperCase()
   const cleanHpo = (hpoNumber || '').trim().toUpperCase().replace(/HP0/gi, 'HPO')
@@ -2810,7 +2810,7 @@ const getHriInfo = (item, hpoNumber) => {
 
   if (!itemCode || !currentHso || !receiveItemDetails.value || receiveItemDetails.value.length === 0) return null
 
-  // STRICT RULE: Only consider HRI items whose detail_notes or hso_number explicitly matches THIS HSO
+  // 1. Filter HRIs matching this item code and carrying this HSO note
   const hsoMatchingRis = receiveItemDetails.value.filter(ri => {
     const riItemCode = (ri.item_code || '').trim().toUpperCase()
     if (riItemCode !== itemCode) return false
@@ -2819,36 +2819,119 @@ const getHriInfo = (item, hpoNumber) => {
 
   if (hsoMatchingRis.length === 0) return null
 
-  // 1. If HPO number is specified, strictly require matching PO
+  // 2. Direct exact PO match if ri has non-null po_number
   if (cleanHpo) {
     const exactPoMatch = hsoMatchingRis.find(ri => {
       const riPo = (ri.ri?.po_number || '').trim().toUpperCase().replace(/HP0/gi, 'HPO')
-      return riPo === cleanHpo || riPo.includes(cleanHpo) || cleanHpo.includes(riPo) || isHpoMatch(riPo, cleanHpo)
+      return riPo && (riPo === cleanHpo || riPo.includes(cleanHpo) || cleanHpo.includes(riPo) || isHpoMatch(riPo, cleanHpo))
     })
     if (exactPoMatch?.ri) {
       return {
         id: exactPoMatch.ri.id,
         number: exactPoMatch.ri.number,
         trans_date: exactPoMatch.ri.trans_date,
+        quantity: exactPoMatch.quantity,
+        unit_name: exactPoMatch.unit_name || item.unit,
         vendor_name: exactPoMatch.ri.vendor_name
       }
     }
-    // STRICT: If cleanHpo is provided but not matched in this HRI, return null (never contaminate with other POs)
+  }
+
+  // 3. FIFO Allocation across competing HPOs of this item
+  const allHpos = getHpoEntries(item)
+  if (allHpos.length === 0) {
+    if (hsoMatchingRis.length > 0 && !cleanHpo) {
+      const match = hsoMatchingRis[0]
+      return {
+        id: match.ri?.id,
+        number: match.ri?.number,
+        trans_date: match.ri?.trans_date,
+        quantity: match.quantity,
+        unit_name: match.unit_name || item.unit,
+        vendor_name: match.ri?.vendor_name
+      }
+    }
     return null
   }
 
-  // 2. Otherwise (when no HPO number was provided), return the first matching HRI
-  const firstMatch = hsoMatchingRis[0]
-  if (firstMatch?.ri) {
-    return {
-      id: firstMatch.ri.id,
-      number: firstMatch.ri.number,
-      trans_date: firstMatch.ri.trans_date,
-      vendor_name: firstMatch.ri.vendor_name
+  // Sort HPOs chronologically (oldest PO first)
+  const sortedHpos = [...allHpos].sort((a, b) => {
+    const timeA = a.poDate ? new Date(a.poDate).getTime() : 0
+    const timeB = b.poDate ? new Date(b.poDate).getTime() : 0
+    if (timeA !== timeB) return timeA - timeB
+    return (a.poNumber || '').localeCompare(b.poNumber || '')
+  })
+
+  // Sort available HRIs chronologically (oldest receipt first)
+  const sortedRis = [...hsoMatchingRis].sort((a, b) => {
+    const timeA = a.ri?.trans_date ? new Date(a.ri.trans_date).getTime() : 0
+    const timeB = b.ri?.trans_date ? new Date(b.ri.trans_date).getTime() : 0
+    return timeA - timeB
+  })
+
+  // Pool of available HRI receipts
+  const riPool = sortedRis.map(r => ({
+    id: r.ri?.id,
+    number: r.ri?.number,
+    trans_date: r.ri?.trans_date,
+    vendor_name: r.ri?.vendor_name,
+    unit_name: r.unit_name || item.unit,
+    qtyRemaining: Number(r.quantity || 0),
+    initialQty: Number(r.quantity || 0)
+  }))
+
+  let matchedHriForTarget = null
+
+  // Allocate FIFO
+  for (const hpo of sortedHpos) {
+    let needed = Number(hpo.quantity || item.qty_to_order || 1)
+    const isTargetHpo = cleanHpo && (
+      hpo.poNumber === cleanHpo ||
+      (hpo.poNumber && cleanHpo.includes(hpo.poNumber)) ||
+      (cleanHpo && hpo.poNumber.includes(cleanHpo))
+    )
+
+    let allocatedQty = 0
+    let lastAllocatedRi = null
+
+    for (const ri of riPool) {
+      if (ri.qtyRemaining <= 0) continue
+
+      // Date integrity: HRI receipt cannot be earlier than PO creation date
+      if (hpo.poDate && ri.trans_date) {
+        const poTime = new Date(hpo.poDate).getTime()
+        const riTime = new Date(ri.trans_date).getTime()
+        // If PO was created > 3 days after HRI, HRI cannot belong to this PO
+        if (poTime - riTime > 3 * 24 * 60 * 60 * 1000) {
+          continue
+        }
+      }
+
+      const take = Math.min(needed, ri.qtyRemaining)
+      ri.qtyRemaining -= take
+      needed -= take
+      allocatedQty += take
+      lastAllocatedRi = ri
+
+      if (needed <= 0) break
+    }
+
+    if (isTargetHpo) {
+      if (allocatedQty > 0 && lastAllocatedRi) {
+        matchedHriForTarget = {
+          id: lastAllocatedRi.id,
+          number: lastAllocatedRi.number,
+          trans_date: lastAllocatedRi.trans_date,
+          quantity: allocatedQty,
+          unit_name: lastAllocatedRi.unit_name,
+          vendor_name: lastAllocatedRi.vendor_name
+        }
+      }
+      break
     }
   }
 
-  return null
+  return matchedHriForTarget
 }
 
 // Helper: Calculate HPO discrepancy
@@ -4175,13 +4258,17 @@ const downloadAttachment = async (att) => {
                                 </template>
 
                                 <!-- HRI Received Indicator (Hanya muncul saat barang tiba atau sedang dikirim ke Hokiindo) -->
-                                <div v-if="getHpoShipment(item, hpo.poNumber)?.hokiindo_date || getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya' || getHriInfo(item, hpo.poNumber)" class="flex items-center flex-wrap gap-1 pt-0.5">
-                                    <template v-if="getHpoShipment(item, hpo.poNumber)?.hokiindo_date || getHriInfo(item, hpo.poNumber)">
+                                <div v-if="getHriInfo(item, hpo.poNumber) || (getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya')" class="flex items-center flex-wrap gap-1 pt-0.5">
+                                    <template v-if="getHriInfo(item, hpo.poNumber)">
                                         <!-- Sudah scan HRI -->
                                         <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400 shrink-0" />
                                         <span class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Tiba di Hokiindo</span>
                                         <span class="text-[10px] text-emerald-500 dark:text-emerald-500 font-normal">
-                                            ({{ formatDateSimple(getHpoShipment(item, hpo.poNumber)?.hokiindo_date || getHriInfo(item, hpo.poNumber)?.trans_date) }})
+                                            ({{ formatDateSimple(getHriInfo(item, hpo.poNumber)?.trans_date || getHpoShipment(item, hpo.poNumber)?.hokiindo_date) }})
+                                        </span>
+                                        <!-- Quantity Received Badge -->
+                                        <span v-if="getHriInfo(item, hpo.poNumber)?.quantity" class="font-bold text-emerald-800 dark:text-emerald-200 bg-emerald-100 dark:bg-emerald-900/80 px-1.5 py-0.5 rounded text-[10px] shrink-0">
+                                            {{ getHriInfo(item, hpo.poNumber).quantity }} {{ item.unit }}
                                         </span>
                                         <!-- Nomor HRI + Link -->
                                         <RouterLink
@@ -4233,13 +4320,17 @@ const downloadAttachment = async (att) => {
                                     </span>
                                 </div>
                                 <!-- HRI Received Indicator (Hanya muncul saat barang tiba atau sedang dikirim ke Hokiindo) -->
-                                <div v-if="getHpoShipment(item, hpoStr)?.hokiindo_date || getVisualStatus(getHpoShipment(item, hpoStr)) === 'Already in Hokiindo Raya' || getHriInfo(item, hpoStr)" class="flex items-center flex-wrap gap-1 pt-0.5">
-                                    <template v-if="getHpoShipment(item, hpoStr)?.hokiindo_date || getHriInfo(item, hpoStr)">
+                                <div v-if="getHriInfo(item, hpoStr) || (getVisualStatus(getHpoShipment(item, hpoStr)) === 'Already in Hokiindo Raya')" class="flex items-center flex-wrap gap-1 pt-0.5">
+                                    <template v-if="getHriInfo(item, hpoStr)">
                                         <!-- Sudah scan HRI -->
                                         <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400 shrink-0" />
                                         <span class="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">Tiba di Hokiindo</span>
                                         <span class="text-[10px] text-emerald-500 dark:text-emerald-500 font-normal">
-                                            ({{ formatDateSimple(getHpoShipment(item, hpoStr)?.hokiindo_date || getHriInfo(item, hpoStr)?.trans_date) }})
+                                            ({{ formatDateSimple(getHriInfo(item, hpoStr)?.trans_date || getHpoShipment(item, hpoStr)?.hokiindo_date) }})
+                                        </span>
+                                        <!-- Quantity Received Badge -->
+                                        <span v-if="getHriInfo(item, hpoStr)?.quantity" class="font-bold text-emerald-800 dark:text-emerald-200 bg-emerald-100 dark:bg-emerald-900/80 px-1.5 py-0.5 rounded text-[10px] shrink-0">
+                                            {{ getHriInfo(item, hpoStr).quantity }} {{ item.unit }}
                                         </span>
                                         <!-- Nomor HRI + Link -->
                                         <RouterLink
@@ -4584,11 +4675,14 @@ const downloadAttachment = async (att) => {
                       </template>
 
                       <!-- Mobile HRI / Hokiindo Arrival Indicator -->
-                      <div v-if="getHpoShipment(item, hpo.poNumber)?.hokiindo_date || getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya' || getHriInfo(item, hpo.poNumber)" class="flex items-center flex-wrap gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/60">
-                        <template v-if="getHpoShipment(item, hpo.poNumber)?.hokiindo_date || getHriInfo(item, hpo.poNumber)">
+                      <div v-if="getHriInfo(item, hpo.poNumber) || (getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya')" class="flex items-center flex-wrap gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/60">
+                        <template v-if="getHriInfo(item, hpo.poNumber)">
                           <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                           <span class="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Tiba di Hokiindo</span>
-                          <span class="text-xs text-emerald-500 font-normal">({{ formatDateSimple(getHpoShipment(item, hpo.poNumber)?.hokiindo_date || getHriInfo(item, hpo.poNumber)?.trans_date) }})</span>
+                          <span class="text-xs text-emerald-500 font-normal">({{ formatDateSimple(getHriInfo(item, hpo.poNumber)?.trans_date || getHpoShipment(item, hpo.poNumber)?.hokiindo_date) }})</span>
+                          <span v-if="getHriInfo(item, hpo.poNumber)?.quantity" class="font-bold text-emerald-800 dark:text-emerald-200 bg-emerald-100 dark:bg-emerald-900/80 px-1.5 py-0.5 rounded text-[10px] shrink-0">
+                            {{ getHriInfo(item, hpo.poNumber).quantity }} {{ item.unit }}
+                          </span>
                           <RouterLink
                             v-if="getHriInfo(item, hpo.poNumber)?.number"
                             :to="`/receive-items/${getHriInfo(item, hpo.poNumber).id || encodeURIComponent(getHriInfo(item, hpo.poNumber).number)}`"
@@ -4648,11 +4742,14 @@ const downloadAttachment = async (att) => {
                         </span>
                       </div>
                       <!-- Mobile HRI / Hokiindo Arrival Indicator -->
-                      <div v-if="getHpoShipment(item, hpoStr)?.hokiindo_date || getVisualStatus(getHpoShipment(item, hpoStr)) === 'Already in Hokiindo Raya' || getHriInfo(item, hpoStr)" class="flex items-center flex-wrap gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/60 mt-2">
-                        <template v-if="getHpoShipment(item, hpoStr)?.hokiindo_date || getHriInfo(item, hpoStr)">
+                      <div v-if="getHriInfo(item, hpoStr) || (getVisualStatus(getHpoShipment(item, hpoStr)) === 'Already in Hokiindo Raya')" class="flex items-center flex-wrap gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/60 mt-2">
+                        <template v-if="getHriInfo(item, hpoStr)">
                           <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500 shrink-0" />
                           <span class="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Tiba di Hokiindo</span>
-                          <span class="text-xs text-emerald-500 font-normal">({{ formatDateSimple(getHpoShipment(item, hpoStr)?.hokiindo_date || getHriInfo(item, hpoStr)?.trans_date) }})</span>
+                          <span class="text-xs text-emerald-500 font-normal">({{ formatDateSimple(getHriInfo(item, hpoStr)?.trans_date || getHpoShipment(item, hpoStr)?.hokiindo_date) }})</span>
+                          <span v-if="getHriInfo(item, hpoStr)?.quantity" class="font-bold text-emerald-800 dark:text-emerald-200 bg-emerald-100 dark:bg-emerald-900/80 px-1.5 py-0.5 rounded text-[10px] shrink-0">
+                            {{ getHriInfo(item, hpoStr).quantity }} {{ item.unit }}
+                          </span>
                           <RouterLink
                             v-if="getHriInfo(item, hpoStr)?.number"
                             :to="`/receive-items/${getHriInfo(item, hpoStr).id || encodeURIComponent(getHriInfo(item, hpoStr).number)}`"
