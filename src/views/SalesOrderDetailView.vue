@@ -2819,11 +2819,11 @@ const getHriInfo = (item, hpoNumber) => {
 
   if (hsoMatchingRis.length === 0) return null
 
-  // 1. If HPO number is specified, prioritize exact matching PO
+  // 1. If HPO number is specified, strictly require matching PO
   if (cleanHpo) {
     const exactPoMatch = hsoMatchingRis.find(ri => {
       const riPo = (ri.ri?.po_number || '').trim().toUpperCase().replace(/HP0/gi, 'HPO')
-      return riPo === cleanHpo || riPo.includes(cleanHpo) || cleanHpo.includes(riPo)
+      return riPo === cleanHpo || riPo.includes(cleanHpo) || cleanHpo.includes(riPo) || isHpoMatch(riPo, cleanHpo)
     })
     if (exactPoMatch?.ri) {
       return {
@@ -2833,9 +2833,11 @@ const getHriInfo = (item, hpoNumber) => {
         vendor_name: exactPoMatch.ri.vendor_name
       }
     }
+    // STRICT: If cleanHpo is provided but not matched in this HRI, return null (never contaminate with other POs)
+    return null
   }
 
-  // 2. Otherwise return the first matching HRI for THIS HSO and item
+  // 2. Otherwise (when no HPO number was provided), return the first matching HRI
   const firstMatch = hsoMatchingRis[0]
   if (firstMatch?.ri) {
     return {

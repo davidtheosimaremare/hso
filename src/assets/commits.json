@@ -1,5 +1,13 @@
 [
   {
+    "hash": "fb65fc163dcaf22b61dc54dfbab2a1d090bb20ea",
+    "shortHash": "fb65fc1",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 20:49:28 2026 +0700",
+    "message": "refactor(hsq): remove quotation stamp badge and customer code for cleaner list layout"
+  },
+  {
     "hash": "d6180971bff139401cca64441d32b585d6f440c5",
     "shortHash": "d618097",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 15:42:48 2026 +0700",
     "message": "feat: display multiple linked HPOs across Sales Order list, detail header, table rows, and dashboard priority cards"
-  },
-  {
-    "hash": "3b510a5f1e50b0410cc667a5abaa135562f0dd13",
-    "shortHash": "3b510a5",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 14:43:28 2026 +0700",
-    "message": "feat: enforce pure live web search queries with Google Search tool and eliminate silent offline fallback"
   }
 ]
