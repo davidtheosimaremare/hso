@@ -1,5 +1,13 @@
 [
   {
+    "hash": "bc93bab7b9e5d78c7f1a1fe869aee724fa30dbc9",
+    "shortHash": "bc93bab",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 21:12:05 2026 +0700",
+    "message": "feat(logistics): implement FIFO HRI allocation, date validation, and display quantity received badge"
+  },
+  {
     "hash": "75ae17f58485b5e933dab8b38663e9759df45557",
     "shortHash": "75ae17f",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 15:46:17 2026 +0700",
     "message": "fix: resolve sales orders list loading issue by isolating accurate-list-so and correcting PO items table query"
-  },
-  {
-    "hash": "abafa3e5155a972ddcd5c25f307944d60ef60bc6",
-    "shortHash": "abafa3e",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 15:45:39 2026 +0700",
-    "message": "fix: auto-purge orphan shipment records on HPO sync and enforce PERLU DIPESAN status when HPO is deleted"
   }
 ]
