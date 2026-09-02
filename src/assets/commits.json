@@ -1,5 +1,13 @@
 [
   {
+    "hash": "dfd441afa30476d464b3b015e5eba08930828d3e",
+    "shortHash": "dfd441a",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 19:18:18 2026 +0700",
+    "message": "fix(sales-order): strictly link HRI only when HRI detail note carries matching HSO number"
+  },
+  {
     "hash": "2ef9d211d532ed14051d41d1c7063fcd27cf6b68",
     "shortHash": "2ef9d21",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 12:04:44 2026 +0700",
     "message": "feat: integrate Google Gemini AI with Google Search Grounding and add Saran AI row buttons"
-  },
-  {
-    "hash": "5b6c5ca4a57e10357fa028dc5b1e2267d7675ea5",
-    "shortHash": "5b6c5ca",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 11:54:29 2026 +0700",
-    "message": "feat: sort database mapping table by ACB, MCB, MCCB, RCCB, RCBO, CONTACTOR, CONTACTOR RELAY, and Industrial Control priority"
   }
 ]

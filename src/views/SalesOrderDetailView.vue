@@ -1779,64 +1779,6 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
     const { data: shipData } = await supabase.from('shipments').select('*').eq('so_id', String(resolvedSoId.value))
     let currentShips = shipData || []
 
-    // Enrich shipments with existing known tracking data in Supabase for items in this SO
-    try {
-      const itemCodes = sortedItems.map(i => i.item?.no || i.detailName || i.code).filter(Boolean)
-      if (itemCodes.length > 0) {
-        const chunks = []
-        for (let i = 0; i < itemCodes.length; i += 25) {
-          chunks.push(itemCodes.slice(i, i + 25))
-        }
-
-        const queryResults = await Promise.all(chunks.map(chunk => 
-          supabase
-            .from('shipments')
-            .select('item_code, hpo_number, current_status, exwork_date, eta_date, dunex_date, hokiindo_date, ready_date, exwork_waiting, status_date, updated_at')
-            .in('item_code', chunk)
-            .neq('current_status', 'Follow up with our forwarder')
-            .order('updated_at', { ascending: false })
-        ))
-
-        const knownTracking = queryResults.flatMap(r => r.data || [])
-
-        if (knownTracking && knownTracking.length > 0) {
-          const trackingMap = new Map()
-          knownTracking.forEach(t => {
-            const keyExact = `${(t.item_code || '').trim().toUpperCase()}||${(t.hpo_number || '').trim().toUpperCase()}`
-            if (!trackingMap.has(keyExact)) trackingMap.set(keyExact, t)
-
-            const keyItem = (t.item_code || '').trim().toUpperCase()
-            if (!trackingMap.has(keyItem)) trackingMap.set(keyItem, t)
-          })
-
-          currentShips = currentShips.map(s => {
-            const hasDates = !!(s.hokiindo_date || s.dunex_date || s.eta_date || s.exwork_date)
-            if (!hasDates && s.current_status === 'Follow up with our forwarder') {
-              const keyExact = `${(s.item_code || '').trim().toUpperCase()}||${(s.hpo_number || '').trim().toUpperCase()}`
-              const keyItem = (s.item_code || '').trim().toUpperCase()
-              const match = trackingMap.get(keyExact) || trackingMap.get(keyItem)
-              if (match) {
-                return {
-                  ...s,
-                  current_status: match.current_status,
-                  exwork_date: match.exwork_date,
-                  eta_date: match.eta_date,
-                  dunex_date: match.dunex_date,
-                  hokiindo_date: match.hokiindo_date,
-                  ready_date: match.ready_date,
-                  exwork_waiting: match.exwork_waiting,
-                  status_date: match.status_date || match.hokiindo_date || match.dunex_date || match.eta_date || match.exwork_date
-                }
-              }
-            }
-            return s
-          })
-        }
-      }
-    } catch (enrichErr) {
-      console.warn('Error enriching shipments from Supabase:', enrichErr)
-    }
-
     shipmentList.value = currentShips
 
     // Load accurate PO items already in Supabase for this SO
@@ -2561,19 +2503,20 @@ const getHpoBreakdown = (item) => {
 // Helper: Get specific shipment record for an HPO
 const getHpoShipment = (item, hpoNumber) => {
   if (!item.shipments_data || item.shipments_data.length === 0) return {}
+  if (!hpoNumber) return item.shipments_data[0] || {}
+
   const target = String(hpoNumber || '').trim().replace(/HP0/gi, 'HPO').toLowerCase()
   const cleanTarget = target.split(/\s+/)[0]
 
-  if (!cleanTarget) return item.shipments_data[0] || {}
-
   const match = item.shipments_data.find(s => {
+    if (!s.hpo_number) return false
     const sPo = String(s.hpo_number || '').trim().replace(/HP0/gi, 'HPO').toLowerCase()
     const cleanSPo = sPo.split(/\s+/)[0]
     if (!cleanSPo) return false
-    return sPo === target || cleanSPo === cleanTarget || (cleanSPo.length >= 5 && cleanTarget.includes(cleanSPo)) || (cleanTarget.length >= 5 && sPo.includes(cleanTarget))
+    return sPo === target || cleanSPo === cleanTarget || (cleanSPo.length >= 5 && cleanTarget.includes(cleanSPo)) || (cleanTarget.length >= 5 && sPo.includes(cleanTarget)) || isHpoMatch(s.hpo_number, cleanTarget)
   })
 
-  return match || item.shipments_data.find(s => s.hpo_number && s.hpo_number.trim()) || item.shipments_data[0] || {}
+  return match || {}
 }
 
 // Helper: Get sub-schedules (split deliveries) for a specific HPO and item
@@ -2649,14 +2592,18 @@ const getHpoSubSchedules = (item, hpoNumber) => {
     return Array.from(groups.values())
   }
 
-  // Fallback to shipments_data if no split tracking found in raw_forwarder_tracking
-  if (shipment && shipment.current_status && shipment.current_status !== 'Pending Process') {
-    return [{
-      qty: null,
-      status: getHpoDisplayStatus(item, shipment),
-      date: getHpoDisplayDate(item, shipment),
-      rawStatus: shipment.current_status
-    }]
+  // Fallback to shipments_data ONLY if this specific shipment has verified dates or manual non-default status
+  if (shipment && shipment.id && (shipment.exwork_date || shipment.exwork_waiting || shipment.eta_date || shipment.dunex_date || shipment.hokiindo_date || (shipment.current_status && !['Follow up with our forwarder', 'Pending Process'].includes(shipment.current_status)))) {
+    const dispStatus = getHpoDisplayStatus(item, shipment)
+    const dispDate = getHpoDisplayDate(item, shipment)
+    if (dispStatus) {
+      return [{
+        qty: null,
+        status: dispStatus,
+        date: dispDate,
+        rawStatus: shipment.current_status
+      }]
+    }
   }
 
   return []
