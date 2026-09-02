@@ -1,5 +1,13 @@
 [
   {
+    "hash": "97cc556ae23f0b6a3d7a1c1b715537ce03214a7c",
+    "shortHash": "97cc556",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 21:22:45 2026 +0700",
+    "message": "refactor(delivery-orders): display HSO in top header, remove HSQ and waktu cetak, simplify items table layout"
+  },
+  {
     "hash": "0935da9a8de5e4f069203ebf52e4e717cc24e852",
     "shortHash": "0935da9",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 16:10:40 2026 +0700",
     "message": "fix: precisely clean up orphan shipments by (itemCode, poNumber) pair so deleted items enter purchase list"
-  },
-  {
-    "hash": "71a1e50b2da554983105c93500cb6dc6a5c2ba2e",
-    "shortHash": "71a1e50",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 15:52:54 2026 +0700",
-    "message": "fix: multi-HPO query matching and accurate arrived status validation based on total quantity"
   }
 ]

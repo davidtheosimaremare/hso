@@ -411,36 +411,15 @@ const copySku = (sku) => {
           </div>
         </div>
 
-        <!-- SHIPPING INFO & NOTES GRID -->
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <!-- Alamat Kirim -->
-          <Card class="border shadow-sm rounded-xl bg-white dark:bg-slate-800 dark:border-slate-700">
-            <CardHeader class="pb-2">
-              <CardTitle class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                <MapPin class="w-4 h-4 text-rose-500" /> Alamat Tujuan Pengiriman
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p class="text-slate-800 dark:text-slate-200 text-sm font-medium whitespace-pre-wrap leading-relaxed">
-                {{ doDetail.ship_to || 'Alamat sesuai data master customer (Kantor / Pabrik Customer).' }}
-              </p>
-            </CardContent>
-          </Card>
-
-          <!-- Catatan / Deskripsi DO -->
-          <Card class="border shadow-sm rounded-xl bg-white dark:bg-slate-800 dark:border-slate-700">
-            <CardHeader class="pb-2">
-              <CardTitle class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                <Info class="w-4 h-4 text-amber-500" /> Memo & Keterangan Pengiriman
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div v-if="doDetail.description" class="bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/70 dark:border-amber-900/40 rounded-lg p-3 text-xs text-amber-900 dark:text-amber-300 font-mono whitespace-pre-wrap">
-                {{ doDetail.description }}
-              </div>
-              <p v-else class="text-xs text-slate-400 italic">Tidak ada catatan memo khusus.</p>
-            </CardContent>
-          </Card>
+        <!-- MEMO / KETERANGAN PENGIRIMAN (IF PRESENT) -->
+        <div v-if="doDetail.description" class="bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-xl p-4 shadow-xs">
+          <div class="flex items-center gap-2 text-amber-800 dark:text-amber-300 text-xs font-bold uppercase tracking-wider mb-1.5">
+            <Info class="w-4 h-4 text-amber-600 dark:text-amber-400" />
+            Memo & Keterangan Pengiriman
+          </div>
+          <div class="text-xs text-amber-950 dark:text-amber-200 font-mono whitespace-pre-wrap leading-relaxed">
+            {{ doDetail.description }}
+          </div>
         </div>
 
         <!-- ITEMS TABLE -->
