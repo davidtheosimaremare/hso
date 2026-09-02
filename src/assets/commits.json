@@ -1,5 +1,13 @@
 [
   {
+    "hash": "a14f6f802dd73f23075d3272d2074000385e16c3",
+    "shortHash": "a14f6f8",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 20:43:22 2026 +0700",
+    "message": "feat(hsq): display progress percentage, WIN stamp, LOST stamp, and default negotiation status"
+  },
+  {
     "hash": "f051201b00058c4ee67e742d262cd7c5e4a928d2",
     "shortHash": "f051201",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 14:35:23 2026 +0700",
     "message": "fix: resolve Google Search Grounding model compatibility and show live search queries in toast feedback"
-  },
-  {
-    "hash": "c676f4e47c0a7c1cf60ef227cafb9e453cab7db4",
-    "shortHash": "c676f4e",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 14:31:52 2026 +0700",
-    "message": "fix: enforce Google Search Grounding without schema conflict and return authentic commercial SKU order codes"
   }
 ]

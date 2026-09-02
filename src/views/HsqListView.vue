@@ -168,7 +168,7 @@ onMounted(() => {
     return new Date(parts[2], parts[1] - 1, parts[0])
   }
 
-  // Resolve Stage & Probability with smart fallback (Won / Lost / Negosiasi / Custom)
+  // Resolve Stage & Probability (Only show if actually updated or won/lost, otherwise empty)
   const resolveHsqDisplayProgress = (hsq) => {
     const customProgress = getHsqProgress(hsq?.number || hsq?.id)
     if (customProgress && customProgress.stage) {
@@ -177,13 +177,12 @@ onMounted(() => {
       if (prob === undefined || prob === null) {
         if (stage === 'Won') prob = 100
         else if (stage === 'Lost') prob = 0
-        else if (stage.includes('Negosiasi')) prob = 60
-        else if (stage.includes('Dikirim') || stage.includes('Pitching')) prob = 30
-        else prob = 10
+        else prob = null
       }
       return {
         stage,
-        probability: Number(prob),
+        probability: prob !== null && prob !== undefined ? Number(prob) : null,
+        hasProgress: true,
         isWon: stage === 'Won',
         isLost: stage === 'Lost',
         isNegosiasi: stage.includes('Negosiasi'),
@@ -191,12 +190,13 @@ onMounted(() => {
       }
     }
 
-    // Inferred from Accurate statusName if no manual pipeline stage
+    // Inferred from Accurate statusName (Terproses/Selesai -> Won 100%, Ditolak/Batal -> Lost 0%)
     const status = (hsq?.statusName || '').toLowerCase()
     if (status.includes('terproses') || status.includes('selesai') || status.includes('disetujui') || status.includes('won')) {
       return {
         stage: 'Won',
         probability: 100,
+        hasProgress: true,
         isWon: true,
         isLost: false,
         isNegosiasi: false,
@@ -207,6 +207,7 @@ onMounted(() => {
       return {
         stage: 'Lost',
         probability: 0,
+        hasProgress: true,
         isWon: false,
         isLost: true,
         isNegosiasi: false,
@@ -214,13 +215,14 @@ onMounted(() => {
       }
     }
 
-    // Default: Negosiasi / Dalam Proses (60%)
+    // If no progress update has been made: Do NOT invent fake percentage!
     return {
-      stage: 'Negosiasi',
-      probability: 60,
+      stage: null,
+      probability: null,
+      hasProgress: false,
       isWon: false,
       isLost: false,
-      isNegosiasi: true,
+      isNegosiasi: false,
       isCustom: false
     }
   }
@@ -659,8 +661,8 @@ const getProbabilityTextClass = (prob, isWon = false, isLost = false) => {
                   </div>
                 </template>
 
-                <!-- Case 3: Negosiasi / In-Progress / Other Stages -->
-                <template v-else>
+                <!-- Case 3: Negosiasi / In-Progress / Other Custom Stages (jika ada update) -->
+                <template v-else-if="resolveHsqDisplayProgress(hsq).hasProgress">
                   <div class="flex items-center justify-between gap-1.5">
                     <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border shadow-2xs"
                           :class="getStageBadgeClass(resolveHsqDisplayProgress(hsq).stage)">
@@ -668,16 +670,23 @@ const getProbabilityTextClass = (prob, isWon = false, isLost = false) => {
                       <TrendingUp v-else class="w-3 h-3 text-blue-600 dark:text-blue-400 shrink-0" />
                       <span>{{ resolveHsqDisplayProgress(hsq).stage }}</span>
                     </span>
-                    <span class="text-xs font-bold"
+                    <span v-if="resolveHsqDisplayProgress(hsq).probability !== null"
+                          class="text-xs font-bold"
                           :class="getProbabilityTextClass(resolveHsqDisplayProgress(hsq).probability)">
                       {{ resolveHsqDisplayProgress(hsq).probability }}%
                     </span>
                   </div>
-                  <div class="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div v-if="resolveHsqDisplayProgress(hsq).probability !== null"
+                       class="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                     <div class="h-full rounded-full transition-all duration-300"
                          :class="getProbabilityBarClass(resolveHsqDisplayProgress(hsq).probability)"
                          :style="{ width: resolveHsqDisplayProgress(hsq).probability + '%' }"></div>
                   </div>
+                </template>
+
+                <!-- Case 4: Belum ada progress update (tampilkan strip bersih) -->
+                <template v-else>
+                  <div class="text-xs font-medium text-slate-400 dark:text-slate-600">-</div>
                 </template>
               </div>
             </TableCell>
