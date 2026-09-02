@@ -1,5 +1,13 @@
 [
   {
+    "hash": "a0b80deea3f3628a9e45c4948feba1a4d556ddf2",
+    "shortHash": "a0b80de",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 19:41:49 2026 +0700",
+    "message": "fix(logistics-db): clean global tracking sync to respect strict HSO and HPO matching"
+  },
+  {
     "hash": "a47d656f8f1fe0005d45a1ea9e1563fe6eb2de73",
     "shortHash": "a47d656",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 14:25:58 2026 +0700",
     "message": "feat: enforce strict tripping curve (Curve B, C, D) and trip unit matching for circuit breakers"
-  },
-  {
-    "hash": "d28296e454ae40b846a831031fcab58336dcb635",
-    "shortHash": "d28296e",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 12:24:19 2026 +0700",
-    "message": "fix: store and sync team-wide Gemini API key in database so all users share the same key"
   }
 ]

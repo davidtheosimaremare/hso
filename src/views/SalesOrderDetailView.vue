@@ -70,6 +70,7 @@ const hpoMapping = ref({}) // Mapping item_code -> HPO number dari Accurate PO
 const hpoDetails = ref([]) // Full PO details with quantities
 const forwarderTrackingList = ref([]) // Multi-schedule tracking data from raw_forwarder_tracking
 const receiveItemDetails = ref([]) // Receive Item details for linking HRI
+const allSiblingPoItems = ref([]) // Sibling PO items across all HSOs sharing linked HPOs (for Smart FIFO allocation)
 const hdoMapping = ref({}) // Mapping item_code -> HDO number dari Accurate DO
 const uniqueTrackingCode = ref(null)
 const linkedHpbs = ref([])
@@ -117,6 +118,35 @@ const isHsoNoteMatch = (noteOrHso, targetHso) => {
   if (targetNoPrefix && nNote.includes(targetNoPrefix)) return true
 
   return false
+}
+
+// Extract HSO number from text / detail notes
+const extractHsoFromNote = (note) => {
+  if (!note) return null
+  const match = String(note).match(/(HSO[\/\-][\w\d\/\-]+)/i)
+  return match ? match[1].trim() : null
+}
+
+// Helper: Extract sequence numbers for natural FIFO comparison of HSO numbers
+const parseHsoSeq = (hsoStr) => {
+  if (!hsoStr) return { year: 99, month: 99, num: 999999 }
+  const match = String(hsoStr).match(/(\d{2})[\/\-](\d{1,2})[\/\-](\d+)/)
+  if (match) {
+    return {
+      year: parseInt(match[1]) || 0,
+      month: parseInt(match[2]) || 0,
+      num: parseInt(match[3]) || 0
+    }
+  }
+  return { year: 99, month: 99, num: 999999 }
+}
+
+const compareHsoFifo = (hsoA, hsoB) => {
+  const a = parseHsoSeq(hsoA)
+  const b = parseHsoSeq(hsoB)
+  if (a.year !== b.year) return a.year - b.year
+  if (a.month !== b.month) return a.month - b.month
+  return a.num - b.num
 }
 
 const fetchCartItems = async () => {
@@ -925,6 +955,33 @@ const fetchHpoInBackground = async (soNumber) => {
     hpoMapping.value = mapping
     hpoDetails.value = items
     console.log(`Background: Found ${Object.keys(mapping).length} HPO mappings, ${items.length} active PO items`)
+
+    // Fetch all sibling items from the same POs for Smart FIFO Waterfall Allocation
+    const uniquePoIds = Array.from(new Set(items.map(i => i.poId).filter(Boolean)))
+    if (uniquePoIds.length > 0) {
+      try {
+        const { data: sibData } = await supabase
+          .from('accurate_purchase_order_items')
+          .select('id, po_id, item_code, item_name, quantity, detail_notes, hso_number, created_at, header:accurate_purchase_orders(id, number, trans_date)')
+          .in('po_id', uniquePoIds)
+        if (sibData) {
+          allSiblingPoItems.value = sibData.map(p => ({
+            id: p.id,
+            poId: p.po_id,
+            poNumber: p.header?.number,
+            poDate: p.header?.trans_date,
+            itemCode: p.item_code,
+            itemName: p.item_name,
+            quantity: p.quantity,
+            description: p.detail_notes,
+            hsoNumber: p.hso_number,
+            createdAt: p.created_at
+          }))
+        }
+      } catch (sibErr) {
+        console.warn('Error loading sibling PO items in background:', sibErr)
+      }
+    }
 
     if (soDetail.value && soDetail.value.items) {
         // Fetch fresh shipment list from DB to ensure local state is 100% up to date with any recent saves
@@ -1810,6 +1867,32 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
             vendorName: item.header?.vendor_name,
             isFromAccurate: true
           }))
+
+          // Fetch all sibling items from the same POs (for Smart FIFO Waterfall Allocation)
+          const uniquePoIds = Array.from(new Set(poItemsData.map(i => i.header?.id || i.po_id).filter(Boolean)))
+          if (uniquePoIds.length > 0) {
+            supabase
+              .from('accurate_purchase_order_items')
+              .select('id, po_id, item_code, item_name, quantity, detail_notes, hso_number, created_at, header:accurate_purchase_orders(id, number, trans_date)')
+              .in('po_id', uniquePoIds)
+              .then(({ data: sibData }) => {
+                if (sibData) {
+                  allSiblingPoItems.value = sibData.map(p => ({
+                    id: p.id,
+                    poId: p.po_id,
+                    poNumber: p.header?.number,
+                    poDate: p.header?.trans_date,
+                    itemCode: p.item_code,
+                    itemName: p.item_name,
+                    quantity: p.quantity,
+                    description: p.detail_notes,
+                    hsoNumber: p.hso_number,
+                    createdAt: p.created_at
+                  }))
+                }
+              })
+              .catch(e => console.warn('Error loading sibling PO items in fetchDetail:', e))
+          }
         }
       }
     } catch (poErr) {
@@ -2519,94 +2602,204 @@ const getHpoShipment = (item, hpoNumber) => {
   return match || {}
 }
 
-// Helper: Get sub-schedules (split deliveries) for a specific HPO and item
+const statusPriorityRank = {
+  'Already in Hokiindo Raya': 4,
+  'Already in siemens Warehouse': 3,
+  'ETA Port JKT': 2,
+  'Follow up with our forwarder': 1,
+  'Pending Process': 0
+}
+
+const parseDateSortKey = (dateStr) => {
+  if (!dateStr || dateStr === '-' || String(dateStr).toLowerCase().includes('waiting')) return '9999-99-99'
+  const dmy = String(dateStr).match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/)
+  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`
+  return String(dateStr)
+}
+
+const compareForwarderBatches = (batchA, batchB) => {
+  const rankA = statusPriorityRank[batchA.rawStatus] || 0
+  const rankB = statusPriorityRank[batchB.rawStatus] || 0
+  if (rankA !== rankB) return rankB - rankA // Higher rank (closer to arrival) first
+  
+  const dateA = parseDateSortKey(batchA.rawDate)
+  const dateB = parseDateSortKey(batchB.rawDate)
+  return dateA.localeCompare(dateB) // Earlier arrival date first
+}
+
+// Helper: Get sub-schedules (split deliveries) using Smart FIFO Waterfall Allocation
 const getHpoSubSchedules = (item, hpoNumber) => {
   if (!hpoNumber) return []
   const target = String(hpoNumber || '').trim().replace(/HP0/gi, 'HPO').toLowerCase()
   const cleanTarget = target.split(/\s+/)[0]
   if (!cleanTarget) return []
 
-  // Cross-check shipments_data (scan HRI) — selalu prioritaskan jika lebih maju
-  const shipment = getHpoShipment(item, hpoNumber)
-  const shipVisualStatus = shipment ? getVisualStatus(shipment) : null
+  const currentHso = (soDetail.value?.number || '').trim()
 
+  // 1. Get raw forwarder tracking rows for this specific SKU & HPO
   const matchingRaw = (forwarderTrackingList.value || []).filter(r => {
     return isItemMatch(r.item_code, item.code) && isHpoMatch(r.hpo_number, cleanTarget)
   })
 
-  if (matchingRaw.length > 0) {
-    const groups = new Map()
-    matchingRaw.forEach(r => {
-      let status = 'Follow up with our forwarder'
-      if (r.status) {
-        const sLower = String(r.status).toLowerCase()
-        if (sLower.includes('delivery') || sLower.includes('done') || sLower.includes('arrived') || sLower.includes('hokiindo') || r.delivery_date) {
-          status = 'Already in Hokiindo Raya'
-        } else if (sLower.includes('dunex') || sLower.includes('warehouse')) {
-          status = 'Already in siemens Warehouse'
-        } else if (sLower.includes('eta') || sLower.includes('port') || r.eta_date) {
-          status = 'ETA Port JKT'
-        } else {
-          status = 'Follow up with our forwarder'
-        }
-      } else if (r.delivery_date) {
+  // Fallback if no raw tracking: check manual shipment
+  if (matchingRaw.length === 0) {
+    const shipment = getHpoShipment(item, hpoNumber)
+    if (shipment && shipment.id && (shipment.exwork_date || shipment.exwork_waiting || shipment.eta_date || shipment.dunex_date || shipment.hokiindo_date || (shipment.current_status && !['Follow up with our forwarder', 'Pending Process'].includes(shipment.current_status)))) {
+      const dispStatus = getHpoDisplayStatus(item, shipment)
+      const dispDate = getHpoDisplayDate(item, shipment)
+      if (dispStatus) {
+        return [{
+          qty: null,
+          status: dispStatus,
+          date: dispDate,
+          rawStatus: shipment.current_status
+        }]
+      }
+    }
+    return []
+  }
+
+  // 2. Normalize and consolidate forwarder batches
+  const rawBatches = []
+  matchingRaw.forEach(r => {
+    let status = 'Follow up with our forwarder'
+    if (r.status) {
+      const sLower = String(r.status).toLowerCase()
+      if (sLower.includes('delivery') || sLower.includes('done') || sLower.includes('arrived') || sLower.includes('hokiindo') || r.delivery_date) {
         status = 'Already in Hokiindo Raya'
-      } else if (r.eta_date) {
+      } else if (sLower.includes('dunex') || sLower.includes('warehouse')) {
+        status = 'Already in siemens Warehouse'
+      } else if (sLower.includes('eta') || sLower.includes('port') || r.eta_date) {
         status = 'ETA Port JKT'
-      } else if (r.exwork_date || r.exwork_waiting) {
+      } else {
         status = 'Follow up with our forwarder'
       }
+    } else if (r.delivery_date) {
+      status = 'Already in Hokiindo Raya'
+    } else if (r.eta_date) {
+      status = 'ETA Port JKT'
+    } else if (r.exwork_date || r.exwork_waiting) {
+      status = 'Follow up with our forwarder'
+    }
 
-      // Override dengan shipments_data jika lebih maju (scan HRI lebih terpercaya)
-      const statusRank = { 'Follow up with our forwarder': 1, 'ETA Port JKT': 2, 'Already in siemens Warehouse': 3, 'Already in Hokiindo Raya': 4 }
-      if (shipVisualStatus && (statusRank[shipVisualStatus] || 0) > (statusRank[status] || 0)) {
-        status = shipVisualStatus
-      }
+    const displayStatus = status === 'Follow up with our forwarder' ? 'Ex-Works' 
+      : status === 'ETA Port JKT' ? 'ETA JKT' 
+      : status === 'Already in siemens Warehouse' ? 'Tiba Dunex' 
+      : status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' 
+      : status
 
-      const displayStatus = status === 'Follow up with our forwarder' ? 'Ex-Works' 
-        : status === 'ETA Port JKT' ? 'ETA JKT' 
-        : status === 'Already in siemens Warehouse' ? 'Tiba Dunex' 
-        : status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' 
-        : status
+    let displayDate = '-'
+    let rawDate = null
+    if (r.delivery_date) { displayDate = formatDateSimple(r.delivery_date); rawDate = r.delivery_date }
+    else if (r.eta_date) { displayDate = formatDateSimple(r.eta_date); rawDate = r.eta_date }
+    else if (r.exwork_date) { displayDate = formatDateSimple(r.exwork_date); rawDate = r.exwork_date }
+    else if (r.exwork_waiting) { displayDate = 'Waiting'; rawDate = 'waiting' }
 
-      let displayDate = '-'
-      if (status === 'Already in Hokiindo Raya' && shipment?.hokiindo_date) displayDate = formatDateSimple(shipment.hokiindo_date)
-      else if (status === 'Already in siemens Warehouse' && shipment?.dunex_date) displayDate = formatDateSimple(shipment.dunex_date)
-      else if (r.delivery_date) displayDate = formatDateSimple(r.delivery_date)
-      else if (r.eta_date) displayDate = formatDateSimple(r.eta_date)
-      else if (r.exwork_date) displayDate = formatDateSimple(r.exwork_date)
-      else if (r.exwork_waiting) displayDate = 'Waiting'
+    rawBatches.push({
+      status: displayStatus,
+      rawStatus: status,
+      date: displayDate,
+      rawDate: rawDate,
+      qty: Number(r.quantity) || 0
+    })
+  })
 
-      const key = `${displayStatus}||${displayDate}`
-      if (!groups.has(key)) {
-        groups.set(key, {
-          qty: 0,
-          status: displayStatus,
-          date: displayDate,
-          rawStatus: status
+  // Group identical status + date batches together
+  const groupedBatchesMap = new Map()
+  rawBatches.forEach(b => {
+    const key = `${b.status}||${b.date}`
+    if (!groupedBatchesMap.has(key)) {
+      groupedBatchesMap.set(key, { ...b, qty: b.qty })
+    } else {
+      groupedBatchesMap.get(key).qty += b.qty
+    }
+  })
+  const sortedBatches = Array.from(groupedBatchesMap.values()).sort(compareForwarderBatches)
+
+  // 3. Find all HSO allocations competing for this PO & SKU
+  const allPoPool = (allSiblingPoItems.value && allSiblingPoItems.value.length > 0 ? allSiblingPoItems.value : hpoDetails.value) || []
+  const competingItems = allPoPool.filter(p => {
+    const pPo = String(p.poNumber || p.header?.number || '').trim().replace(/HP0/gi, 'HPO').toLowerCase()
+    const pCode = (p.itemCode || p.item_code || '').trim().toUpperCase()
+    return isItemMatch(pCode, item.code) && isHpoMatch(pPo, cleanTarget)
+  })
+
+  // Group competing allocations by HSO number
+  const hsoAllocationsMap = new Map()
+  competingItems.forEach(p => {
+    const hso = (p.hsoNumber || extractHsoFromNote(p.description || p.detail_notes) || '').trim()
+    const hsoKey = hso ? hso : 'OTHER'
+    const qty = Number(p.quantity) || 0
+    if (!hsoAllocationsMap.has(hsoKey)) {
+      hsoAllocationsMap.set(hsoKey, { hsoNumber: hsoKey, qty: qty })
+    } else {
+      hsoAllocationsMap.get(hsoKey).qty += qty
+    }
+  })
+
+  // Ensure current HSO is present in the allocation list
+  const currentMatchingKey = Array.from(hsoAllocationsMap.keys()).find(k => isHsoNoteMatch(k, currentHso))
+  if (!currentMatchingKey) {
+    const hpoEntry = getHpoEntries(item).find(e => isHpoMatch(e.poNumber, cleanTarget))
+    const needed = hpoEntry?.quantity || item.qty_to_order || item.qty_order || 0
+    hsoAllocationsMap.set(currentHso, { hsoNumber: currentHso, qty: needed })
+  }
+
+  // Sort competing HSOs in FIFO order (older HSO first)
+  const sortedHsoAllocations = Array.from(hsoAllocationsMap.values()).sort((a, b) => compareHsoFifo(a.hsoNumber, b.hsoNumber))
+
+  // 4. Run Smart FIFO Waterfall Allocation
+  const batchPool = sortedBatches.map(b => ({ ...b, remainingQty: b.qty }))
+  const totalPoolQty = batchPool.reduce((sum, b) => sum + b.remainingQty, 0)
+  
+  // If forwarder batches have no quantities specified (all 0), return all batches with null qty
+  if (totalPoolQty === 0) {
+    return sortedBatches.map(b => ({
+      qty: null,
+      status: b.status,
+      date: b.date,
+      rawStatus: b.rawStatus
+    }))
+  }
+
+  // Waterfall through HSOs in FIFO order
+  const myAllocations = []
+  for (const hsoAlloc of sortedHsoAllocations) {
+    let needed = hsoAlloc.qty
+    const isTarget = isHsoNoteMatch(hsoAlloc.hsoNumber, currentHso)
+
+    for (const batch of batchPool) {
+      if (needed <= 0) break
+      if (batch.remainingQty <= 0) continue
+
+      const take = Math.min(needed, batch.remainingQty)
+      batch.remainingQty -= take
+      needed -= take
+
+      if (isTarget && take > 0) {
+        myAllocations.push({
+          qty: take,
+          status: batch.status,
+          date: batch.date,
+          rawStatus: batch.rawStatus
         })
       }
-      groups.get(key).qty += (r.quantity || 0)
-    })
-
-    return Array.from(groups.values())
-  }
-
-  // Fallback to shipments_data ONLY if this specific shipment has verified dates or manual non-default status
-  if (shipment && shipment.id && (shipment.exwork_date || shipment.exwork_waiting || shipment.eta_date || shipment.dunex_date || shipment.hokiindo_date || (shipment.current_status && !['Follow up with our forwarder', 'Pending Process'].includes(shipment.current_status)))) {
-    const dispStatus = getHpoDisplayStatus(item, shipment)
-    const dispDate = getHpoDisplayDate(item, shipment)
-    if (dispStatus) {
-      return [{
-        qty: null,
-        status: dispStatus,
-        date: dispDate,
-        rawStatus: shipment.current_status
-      }]
     }
+
+    if (isTarget) break
   }
 
-  return []
+  if (myAllocations.length > 0) {
+    return myAllocations
+  }
+
+  // Fallback: show the first batch with null qty
+  return sortedBatches.slice(0, 1).map(b => ({
+    qty: null,
+    status: b.status,
+    date: b.date,
+    rawStatus: b.rawStatus
+  }))
 }
 
 // Helper: Get Receive Item (HRI) info matching item and HPO strictly for THIS HSO
