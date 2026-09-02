@@ -3901,10 +3901,16 @@ const downloadAttachment = async (att) => {
                                             </span>
                                         </span>
                                     </div>
+                                    <div v-else class="flex items-center gap-1 pt-0.5">
+                                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium">
+                                            <Clock class="w-3 h-3 text-slate-400 shrink-0" />
+                                            Menunggu status logistik
+                                        </span>
+                                    </div>
                                 </template>
 
-                                <!-- HRI Received Indicator (satu-satunya tampilan untuk status Hokiindo) -->
-                                <div class="flex items-center gap-1 pt-0.5">
+                                <!-- HRI Received Indicator (Hanya muncul saat barang tiba atau sedang dikirim ke Hokiindo) -->
+                                <div v-if="getHpoShipment(item, hpo.poNumber)?.hokiindo_date || getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya'" class="flex items-center gap-1 pt-0.5">
                                     <template v-if="getHpoShipment(item, hpo.poNumber)?.hokiindo_date">
                                         <!-- Sudah scan HRI -->
                                         <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400 shrink-0" />
@@ -3914,13 +3920,8 @@ const downloadAttachment = async (att) => {
                                     <template v-else-if="getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya'">
                                         <!-- Status manual sudah Hokiindo, belum scan HRI -->
                                         <CheckCircle2 class="w-3.5 h-3.5 text-blue-400 dark:text-blue-500 shrink-0" />
-                                        <span class="text-[10px] font-semibold text-blue-500 dark:text-blue-400">Sudah dikirim ke Hokiindo</span>
-                                        <span class="text-[10px] text-blue-400 dark:text-blue-500 font-normal italic">(menunggu konfirmasi HRI)</span>
-                                    </template>
-                                    <template v-else>
-                                        <!-- Belum sampai Hokiindo -->
-                                        <CheckCircle2 class="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 shrink-0" />
-                                        <span class="text-[10px] text-slate-400 dark:text-slate-600">Belum diterima HRI</span>
+                                        <span class="text-[10px] font-semibold text-blue-500 dark:text-blue-400">Sedang dikirim ke Hokiindo</span>
+                                        <span class="text-[10px] text-slate-400 dark:text-slate-500 font-normal italic">(Belum diterima)</span>
                                     </template>
                                 </div>
                             </div>
@@ -3948,8 +3949,14 @@ const downloadAttachment = async (att) => {
                                         ({{ getHpoDisplayDate(item, getHpoShipment(item, hpoStr)) }})
                                     </span>
                                 </div>
-                                <!-- HRI Received Indicator -->
-                                <div class="flex items-center gap-1 pt-0.5">
+                                <div v-else-if="getVisualStatus(getHpoShipment(item, hpoStr)) !== 'Already in Hokiindo Raya'" class="flex items-center gap-1 pt-0.5">
+                                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium">
+                                        <Clock class="w-3 h-3 text-slate-400 shrink-0" />
+                                        Menunggu status logistik
+                                    </span>
+                                </div>
+                                <!-- HRI Received Indicator (Hanya muncul saat barang tiba atau sedang dikirim ke Hokiindo) -->
+                                <div v-if="getHpoShipment(item, hpoStr)?.hokiindo_date || getVisualStatus(getHpoShipment(item, hpoStr)) === 'Already in Hokiindo Raya'" class="flex items-center gap-1 pt-0.5">
                                     <template v-if="getHpoShipment(item, hpoStr)?.hokiindo_date">
                                         <!-- Sudah scan HRI -->
                                         <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400 shrink-0" />
@@ -3959,13 +3966,8 @@ const downloadAttachment = async (att) => {
                                     <template v-else-if="getVisualStatus(getHpoShipment(item, hpoStr)) === 'Already in Hokiindo Raya'">
                                         <!-- Status manual sudah Hokiindo, belum scan HRI -->
                                         <CheckCircle2 class="w-3.5 h-3.5 text-blue-400 dark:text-blue-500 shrink-0" />
-                                        <span class="text-[10px] font-semibold text-blue-500 dark:text-blue-400">Sudah dikirim ke Hokiindo</span>
-                                        <span class="text-[10px] text-blue-400 dark:text-blue-500 font-normal italic">(menunggu konfirmasi HRI)</span>
-                                    </template>
-                                    <template v-else>
-                                        <!-- Belum sampai Hokiindo -->
-                                        <CheckCircle2 class="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 shrink-0" />
-                                        <span class="text-[10px] text-slate-400 dark:text-slate-600">Belum diterima HRI</span>
+                                        <span class="text-[10px] font-semibold text-blue-500 dark:text-blue-400">Sedang dikirim ke Hokiindo</span>
+                                        <span class="text-[10px] text-slate-400 dark:text-slate-500 font-normal italic">(Belum diterima)</span>
                                     </template>
                                 </div>
                             </div>
@@ -4259,29 +4261,51 @@ const downloadAttachment = async (att) => {
                       </div>
 
                       <!-- Sub-Schedules (Split Deliveries) or Single Status -->
-                      <div v-if="getHpoSubSchedules(item, hpo.poNumber).length > 1" class="space-y-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-700/60">
-                        <div v-for="(sub, subIdx) in getHpoSubSchedules(item, hpo.poNumber)" :key="subIdx" class="flex items-center justify-between gap-2 text-xs">
-                          <span class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                            <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                            {{ sub.qty ? `${sub.qty} ${item.unit}` : '' }}
-                          </span>
+                      <template v-if="getVisualStatus(getHpoShipment(item, hpo.poNumber)) !== 'Already in Hokiindo Raya'">
+                        <div v-if="getHpoSubSchedules(item, hpo.poNumber).length > 1" class="space-y-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-700/60">
+                          <div v-for="(sub, subIdx) in getHpoSubSchedules(item, hpo.poNumber)" :key="subIdx" class="flex items-center justify-between gap-2 text-xs">
+                            <span class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                              <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                              {{ sub.qty ? `${sub.qty} ${item.unit}` : '' }}
+                            </span>
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-semibold border text-xs whitespace-nowrap"
+                                  :class="getLogisticsBadgeClass(sub.status)">
+                              <span>{{ sub.status }}</span>
+                              <span v-if="sub.date && sub.date !== '-'" class="opacity-85 font-medium text-[11px]">
+                                ({{ sub.date }})
+                              </span>
+                            </span>
+                          </div>
+                        </div>
+                        <div v-else-if="getHpoSubSchedules(item, hpo.poNumber).length === 1" class="flex items-center gap-2 pt-1">
                           <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-semibold border text-xs whitespace-nowrap"
-                                :class="getLogisticsBadgeClass(sub.status)">
-                            <span>{{ sub.status }}</span>
-                            <span v-if="sub.date && sub.date !== '-'" class="opacity-85 font-medium text-[11px]">
-                              ({{ sub.date }})
+                                :class="getLogisticsBadgeClass(getHpoSubSchedules(item, hpo.poNumber)[0].status)">
+                            <span>{{ getHpoSubSchedules(item, hpo.poNumber)[0].status }}</span>
+                            <span v-if="getHpoSubSchedules(item, hpo.poNumber)[0].date && getHpoSubSchedules(item, hpo.poNumber)[0].date !== '-'" class="opacity-85 font-medium text-[11px]">
+                              ({{ getHpoSubSchedules(item, hpo.poNumber)[0].date }})
                             </span>
                           </span>
                         </div>
-                      </div>
-                      <div v-else-if="getHpoSubSchedules(item, hpo.poNumber).length === 1" class="flex items-center gap-2 pt-1">
-                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-semibold border text-xs whitespace-nowrap"
-                              :class="getLogisticsBadgeClass(getHpoSubSchedules(item, hpo.poNumber)[0].status)">
-                          <span>{{ getHpoSubSchedules(item, hpo.poNumber)[0].status }}</span>
-                          <span v-if="getHpoSubSchedules(item, hpo.poNumber)[0].date && getHpoSubSchedules(item, hpo.poNumber)[0].date !== '-'" class="opacity-85 font-medium text-[11px]">
-                            ({{ getHpoSubSchedules(item, hpo.poNumber)[0].date }})
+                        <div v-else class="flex items-center gap-1 pt-1">
+                          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium">
+                            <Clock class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            Menunggu status logistik
                           </span>
-                        </span>
+                        </div>
+                      </template>
+
+                      <!-- Mobile HRI / Hokiindo Arrival Indicator -->
+                      <div v-if="getHpoShipment(item, hpo.poNumber)?.hokiindo_date || getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya'" class="flex items-center gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/60">
+                        <template v-if="getHpoShipment(item, hpo.poNumber)?.hokiindo_date">
+                          <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                          <span class="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Tiba di Hokiindo</span>
+                          <span class="text-xs text-emerald-500 font-normal">({{ formatDateSimple(getHpoShipment(item, hpo.poNumber)?.hokiindo_date) }})</span>
+                        </template>
+                        <template v-else-if="getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya'">
+                          <CheckCircle2 class="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                          <span class="text-xs font-semibold text-blue-500 dark:text-blue-400">Sedang dikirim ke Hokiindo</span>
+                          <span class="text-xs text-slate-400 font-normal italic">(Belum diterima)</span>
+                        </template>
                       </div>
                     </div>
                   </div>
@@ -4302,7 +4326,7 @@ const downloadAttachment = async (att) => {
                       </div>
 
                       <!-- Logistics status if exists -->
-                      <div v-if="item.logistics_status && item.logistics_status !== 'Pending Process'" class="mt-2">
+                      <div v-if="getVisualStatus(getHpoShipment(item, hpoStr)) !== 'Already in Hokiindo Raya' && item.logistics_status && item.logistics_status !== 'Pending Process'" class="mt-2">
                         <div class="flex items-center justify-between gap-1.5 px-2 py-1 rounded-lg border text-[10px] whitespace-nowrap"
                              :class="getLogisticsBadgeClass(item.logistics_status)">
                           <div class="flex items-center gap-1 min-w-0">
@@ -4318,6 +4342,25 @@ const downloadAttachment = async (att) => {
                             ⏳ Waiting
                           </span>
                         </div>
+                      </div>
+                      <div v-else-if="getVisualStatus(getHpoShipment(item, hpoStr)) !== 'Already in Hokiindo Raya'" class="mt-2 flex items-center gap-1">
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium">
+                          <Clock class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          Menunggu status logistik
+                        </span>
+                      </div>
+                      <!-- Mobile HRI / Hokiindo Arrival Indicator -->
+                      <div v-if="getHpoShipment(item, hpoStr)?.hokiindo_date || getVisualStatus(getHpoShipment(item, hpoStr)) === 'Already in Hokiindo Raya'" class="flex items-center gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/60 mt-2">
+                        <template v-if="getHpoShipment(item, hpoStr)?.hokiindo_date">
+                          <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                          <span class="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Tiba di Hokiindo</span>
+                          <span class="text-xs text-emerald-500 font-normal">({{ formatDateSimple(getHpoShipment(item, hpoStr)?.hokiindo_date) }})</span>
+                        </template>
+                        <template v-else-if="getVisualStatus(getHpoShipment(item, hpoStr)) === 'Already in Hokiindo Raya'">
+                          <CheckCircle2 class="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                          <span class="text-xs font-semibold text-blue-500 dark:text-blue-400">Sedang dikirim ke Hokiindo</span>
+                          <span class="text-xs text-slate-400 font-normal italic">(Belum diterima)</span>
+                        </template>
                       </div>
                     </div>
                   </div>

@@ -1,5 +1,13 @@
 [
   {
+    "hash": "c5e81456decbc6494de0a1cfece2a3e3766b1e72",
+    "shortHash": "c5e8145",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 18:40:20 2026 +0700",
+    "message": "feat: simplify Accurate sync to fast delta sync only"
+  },
+  {
     "hash": "ca87eeb45d26845c2353a885df9410e0a957380f",
     "shortHash": "ca87eeb",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 11:31:48 2026 +0700",
     "message": "fix: integrate custom rules into brand detection and eliminate hardcoded Schneider fallback"
-  },
-  {
-    "hash": "28bc21c05a3a65ec6cba79f6bd7ed591f53d8234",
-    "shortHash": "28bc21c",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 11:29:11 2026 +0700",
-    "message": "feat: enhance brand auto-detection, brand-specific source descriptions, and enlarge detected brand logo"
   }
 ]
