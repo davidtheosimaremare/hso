@@ -375,12 +375,34 @@ const copySku = (sku) => {
                   <span v-if="doDetail.customer_code" class="text-[10px] text-slate-400 ml-0.5">({{ doDetail.customer_code }})</span>
                 </span>
 
-                <!-- PROMINENT HSO CHIP -->
-                <span v-if="doDetail.distinct_hsos.length > 0" class="flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-950 dark:text-indigo-200 px-2.5 py-1 rounded-md">
-                  <FileText class="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                  Untuk HSO:
-                  <span v-for="hso in doDetail.distinct_hsos" :key="hso.number" class="flex items-center gap-1">
-                    <strong class="font-black font-mono text-indigo-900 dark:text-indigo-100">{{ hso.number }}</strong>
+                <span v-if="doDetail.po_number && doDetail.po_number !== '-'" class="flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300 px-2.5 py-1 rounded-md">
+                  <ShoppingCart class="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  PO Customer: <strong class="font-bold ml-0.5 font-mono">{{ doDetail.po_number }}</strong>
+                </span>
+              </div>
+            </div>
+
+            <!-- PROYEK HIGHLIGHT BOX -->
+            <div class="w-full lg:w-auto bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-slate-700/60 dark:to-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 rounded-xl p-4 min-w-[260px]">
+              <div class="flex items-center gap-2 text-indigo-700 dark:text-indigo-300 text-xs font-bold uppercase tracking-wider mb-1">
+                <FolderGit2 class="w-4 h-4" /> Proyek / Project
+              </div>
+              <p class="text-base font-black text-indigo-950 dark:text-indigo-100">
+                {{ doDetail.project && doDetail.project !== '-' ? doDetail.project : 'Non-Project / Regular Stock' }}
+              </p>
+
+              <!-- HSO Number directly below project name -->
+              <div v-if="doDetail.distinct_hsos.length > 0" class="mt-2.5 pt-2 border-t border-indigo-100/80 dark:border-indigo-800/60">
+                <div class="text-[10.5px] font-bold uppercase tracking-wider text-indigo-600/90 dark:text-indigo-400 mb-1 flex items-center gap-1">
+                  <FileText class="w-3 h-3" /> Untuk Sales Order:
+                </div>
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <span
+                    v-for="hso in doDetail.distinct_hsos"
+                    :key="hso.number"
+                    class="inline-flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-indigo-200 dark:border-indigo-700 rounded-md px-2 py-0.5 shadow-2xs"
+                  >
+                    <strong class="font-bold font-mono text-xs text-indigo-950 dark:text-indigo-200">{{ hso.number }}</strong>
                     <RouterLink
                       :to="formatHsoUrl(hso.number)"
                       class="inline-flex items-center gap-0.5 text-[10.5px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-200 hover:underline"
@@ -390,23 +412,8 @@ const copySku = (sku) => {
                       <ExternalLink class="w-2.5 h-2.5" />
                     </RouterLink>
                   </span>
-                </span>
-
-                <span v-if="doDetail.po_number && doDetail.po_number !== '-'" class="flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 text-emerald-800 dark:text-emerald-300 px-2.5 py-1 rounded-md">
-                  <ShoppingCart class="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  PO Customer: <strong class="font-bold ml-0.5 font-mono">{{ doDetail.po_number }}</strong>
-                </span>
+                </div>
               </div>
-            </div>
-
-            <!-- PROYEK HIGHLIGHT BOX -->
-            <div class="w-full lg:w-auto bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-slate-700/60 dark:to-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 rounded-xl p-4 min-w-[240px]">
-              <div class="flex items-center gap-2 text-indigo-700 dark:text-indigo-300 text-xs font-bold uppercase tracking-wider mb-1">
-                <FolderGit2 class="w-4 h-4" /> Proyek / Project
-              </div>
-              <p class="text-base font-black text-indigo-950 dark:text-indigo-100">
-                {{ doDetail.project && doDetail.project !== '-' ? doDetail.project : 'Non-Project / Regular Stock' }}
-              </p>
             </div>
           </div>
         </div>

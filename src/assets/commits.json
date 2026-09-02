@@ -1,5 +1,13 @@
 [
   {
+    "hash": "ba6dac9ac69249605ef2bdb6cbef39735a7f2b39",
+    "shortHash": "ba6dac9",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 21:23:15 2026 +0700",
+    "message": "refactor(delivery-orders): remove alamat tujuan pengiriman from DO detail"
+  },
+  {
     "hash": "97cc556ae23f0b6a3d7a1c1b715537ce03214a7c",
     "shortHash": "97cc556",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 16:17:28 2026 +0700",
     "message": "fix: enforce strict stock check in isItemArrivedAtHokiindo and clean up all stale shipment rows"
-  },
-  {
-    "hash": "7f095536b2420228c777baaf76b3e7731a49b80e",
-    "shortHash": "7f09553",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 16:10:40 2026 +0700",
-    "message": "fix: precisely clean up orphan shipments by (itemCode, poNumber) pair so deleted items enter purchase list"
   }
 ]
