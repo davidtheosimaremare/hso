@@ -1,5 +1,13 @@
 [
   {
+    "hash": "d6180971bff139401cca64441d32b585d6f440c5",
+    "shortHash": "d618097",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 20:47:50 2026 +0700",
+    "message": "fix(hsq): do not show default percentage if no progress update recorded, show clean hyphen instead"
+  },
+  {
     "hash": "a14f6f802dd73f23075d3272d2074000385e16c3",
     "shortHash": "a14f6f8",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 14:43:28 2026 +0700",
     "message": "feat: enforce pure live web search queries with Google Search tool and eliminate silent offline fallback"
-  },
-  {
-    "hash": "3b211e660a403b4da9efe206bb08f7caddb17edc",
-    "shortHash": "3b211e6",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 14:35:23 2026 +0700",
-    "message": "fix: resolve Google Search Grounding model compatibility and show live search queries in toast feedback"
   }
 ]

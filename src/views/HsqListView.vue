@@ -579,24 +579,9 @@ const getProbabilityTextClass = (prob, isWon = false, isLost = false) => {
               {{ (currentPage - 1) * itemsPerPage + idx + 1 }}
             </TableCell>
             <TableCell>
-              <div class="flex items-center gap-2 flex-wrap">
+              <div class="flex items-center gap-2">
                 <span class="text-sm font-semibold text-slate-900 dark:text-white group-hover:text-red-600 dark:group-hover:text-red-400 transition-colors">
                   {{ hsq.number }}
-                </span>
-                <!-- Mini Stamp indicator if Won / Lost -->
-                <span
-                  v-if="resolveHsqDisplayProgress(hsq).isWon"
-                  class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9.5px] font-black uppercase tracking-wider border border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-600 shadow-2xs rotate-[-1deg]"
-                >
-                  <Trophy class="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
-                  WIN
-                </span>
-                <span
-                  v-else-if="resolveHsqDisplayProgress(hsq).isLost"
-                  class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9.5px] font-black uppercase tracking-wider border border-red-500 bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300 dark:border-red-600 shadow-2xs rotate-[-1deg]"
-                >
-                  <XCircle class="w-2.5 h-2.5 text-red-600 dark:text-red-400" />
-                  LOST
                 </span>
                 <Badge
                   v-if="getHsqPendingTasks(hsq)"
@@ -615,7 +600,6 @@ const getProbabilityTextClass = (prob, isWon = false, isLost = false) => {
             </TableCell>
             <TableCell>
               <div class="text-sm font-medium text-slate-900 dark:text-white">{{ hsq.customer?.name || '-' }}</div>
-              <div class="text-[10px] text-slate-400">{{ hsq.customer?.customerNo || '' }}</div>
             </TableCell>
             <TableCell>
               <div class="text-sm font-semibold text-slate-900 dark:text-white line-clamp-2 leading-snug">
