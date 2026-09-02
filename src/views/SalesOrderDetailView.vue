@@ -3875,7 +3875,35 @@ const downloadAttachment = async (att) => {
                                     🏢 {{ hpo.vendorName }}
                                 </div>
 
-                                <!-- HRI Received Indicator -->
+                                <!-- Sub-Schedules (Split Deliveries) or Single Status — hanya tampil jika bukan status Hokiindo -->
+                                <template v-if="getVisualStatus(getHpoShipment(item, hpo.poNumber)) !== 'Already in Hokiindo Raya'">
+                                    <div v-if="getHpoSubSchedules(item, hpo.poNumber).length > 1" class="space-y-1 pt-1 border-t border-slate-100 dark:border-slate-700/60">
+                                        <div v-for="(sub, subIdx) in getHpoSubSchedules(item, hpo.poNumber)" :key="subIdx" class="flex items-center justify-between gap-1.5 text-[10px]">
+                                            <span class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1 shrink-0">
+                                                <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                                                {{ sub.qty ? `${sub.qty} ${item.unit}` : '' }}
+                                            </span>
+                                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold border text-[9.5px] whitespace-nowrap shrink-0"
+                                                  :class="getLogisticsBadgeClass(sub.status)">
+                                                <span class="whitespace-nowrap">{{ sub.status }}</span>
+                                                <span v-if="sub.date && sub.date !== '-'" class="opacity-85 font-medium text-[9px] whitespace-nowrap">
+                                                    ({{ sub.date }})
+                                                </span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div v-else-if="getHpoSubSchedules(item, hpo.poNumber).length === 1" class="flex items-center gap-1.5 text-[11px] flex-wrap">
+                                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold border text-[10px] whitespace-nowrap shrink-0"
+                                              :class="getLogisticsBadgeClass(getHpoSubSchedules(item, hpo.poNumber)[0].status)">
+                                            <span class="whitespace-nowrap">{{ getHpoSubSchedules(item, hpo.poNumber)[0].status }}</span>
+                                            <span v-if="getHpoSubSchedules(item, hpo.poNumber)[0].date && getHpoSubSchedules(item, hpo.poNumber)[0].date !== '-'" class="opacity-85 font-medium text-[9.5px] whitespace-nowrap">
+                                                ({{ getHpoSubSchedules(item, hpo.poNumber)[0].date }})
+                                            </span>
+                                        </span>
+                                    </div>
+                                </template>
+
+                                <!-- HRI Received Indicator (satu-satunya tampilan untuk status Hokiindo) -->
                                 <div class="flex items-center gap-1 pt-0.5">
                                     <template v-if="getHpoShipment(item, hpo.poNumber)?.hokiindo_date">
                                         <!-- Sudah scan HRI -->
@@ -3895,35 +3923,10 @@ const downloadAttachment = async (att) => {
                                         <span class="text-[10px] text-slate-400 dark:text-slate-600">Belum diterima HRI</span>
                                     </template>
                                 </div>
-
-                                <!-- Sub-Schedules (Split Deliveries) or Single Status -->
-                                <div v-if="getHpoSubSchedules(item, hpo.poNumber).length > 1" class="space-y-1 pt-1 border-t border-slate-100 dark:border-slate-700/60">
-                                    <div v-for="(sub, subIdx) in getHpoSubSchedules(item, hpo.poNumber)" :key="subIdx" class="flex items-center justify-between gap-1.5 text-[10px]">
-                                        <span class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1 shrink-0">
-                                            <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                                            {{ sub.qty ? `${sub.qty} ${item.unit}` : '' }}
-                                        </span>
-                                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold border text-[9.5px] whitespace-nowrap shrink-0"
-                                              :class="getLogisticsBadgeClass(sub.status)">
-                                            <span class="whitespace-nowrap">{{ sub.status }}</span>
-                                            <span v-if="sub.date && sub.date !== '-'" class="opacity-85 font-medium text-[9px] whitespace-nowrap">
-                                                ({{ sub.date }})
-                                            </span>
-                                        </span>
-                                    </div>
-                                </div>
-                                <div v-else-if="getHpoSubSchedules(item, hpo.poNumber).length === 1" class="flex items-center gap-1.5 text-[11px] flex-wrap">
-                                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold border text-[10px] whitespace-nowrap shrink-0"
-                                          :class="getLogisticsBadgeClass(getHpoSubSchedules(item, hpo.poNumber)[0].status)">
-                                        <span class="whitespace-nowrap">{{ getHpoSubSchedules(item, hpo.poNumber)[0].status }}</span>
-                                        <span v-if="getHpoSubSchedules(item, hpo.poNumber)[0].date && getHpoSubSchedules(item, hpo.poNumber)[0].date !== '-'" class="opacity-85 font-medium text-[9.5px] whitespace-nowrap">
-                                            ({{ getHpoSubSchedules(item, hpo.poNumber)[0].date }})
-                                        </span>
-                                    </span>
-                                </div>
                             </div>
                             </template>
                         </div>
+                        
                         
                         <!-- Fallback HPO from DB (only if confirmed active in hpoMapping) -->
                         <div v-else-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && item.logistics_hpo && hpoMapping[item.code]" class="mt-1 space-y-1">
@@ -3937,7 +3940,7 @@ const downloadAttachment = async (att) => {
                                         {{ item.qty_order }} {{ item.unit }}
                                     </span>
                                 </div>
-                                <div v-if="getHpoDisplayStatus(item, getHpoShipment(item, hpoStr)) || (item.logistics_status && item.logistics_status !== 'Pending Process')"
+                                <div v-if="getVisualStatus(getHpoShipment(item, hpoStr)) !== 'Already in Hokiindo Raya' && (getHpoDisplayStatus(item, getHpoShipment(item, hpoStr)) || (item.logistics_status && item.logistics_status !== 'Pending Process'))"
                                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold border text-[10px] whitespace-nowrap shrink-0"
                                      :class="getLogisticsBadgeClass(getHpoDisplayStatus(item, getHpoShipment(item, hpoStr)) || item.logistics_status)">
                                     <span class="whitespace-nowrap">{{ getHpoDisplayStatus(item, getHpoShipment(item, hpoStr)) || (item.logistics_status === 'Follow up with our forwarder' ? 'Ex-Works' : item.logistics_status === 'ETA Port JKT' ? 'ETA JKT' : item.logistics_status === 'Already in siemens Warehouse' ? 'Tiba Dunex' : item.logistics_status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : item.logistics_status) }}</span>

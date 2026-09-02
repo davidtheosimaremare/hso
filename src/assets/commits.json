@@ -1,5 +1,13 @@
 [
   {
+    "hash": "cfb424b81fd67a76955a8be9d7847464f9dccc96",
+    "shortHash": "cfb424b",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 12:22:26 2026 +0700",
+    "message": "feat: indikator HRI 3 kondisi — belum Hokiindo / dikirim / tiba dikonfirmasi HRI"
+  },
+  {
     "hash": "4c0d4c81824bec662d6386409b22c925312b6d1e",
     "shortHash": "4c0d4c8",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 11:15:24 2026 +0700",
     "message": "fix: use converter_custom_rules table and upsertRuleBySiemensMlfb for inline mapping autosave"
-  },
-  {
-    "hash": "18fb47d005b4efa6dac3867bfa84d7f0d0118c01",
-    "shortHash": "18fb47d",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 11:13:34 2026 +0700",
-    "message": "fix: sanitize mapping count to match exact catalog items"
   }
 ]
