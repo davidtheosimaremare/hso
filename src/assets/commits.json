@@ -1,5 +1,37 @@
 [
   {
+    "hash": "ca87eeb45d26845c2353a885df9410e0a957380f",
+    "shortHash": "ca87eeb",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 17:45:20 2026 +0700",
+    "message": "feat(sync): connect sync widget to fast delta sync server engine"
+  },
+  {
+    "hash": "336418adffc41ce46800bcbcce792048793e9475",
+    "shortHash": "336418a",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 15:57:48 2026 +0700",
+    "message": "chore: pindah webhook-server ke repo terpisah (hso-accurate-webhook)"
+  },
+  {
+    "hash": "e3661c9b5367032ba6a39ee9beed40483b8b3740",
+    "shortHash": "e3661c9",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 15:52:32 2026 +0700",
+    "message": "feat: webhook server Accurate → Supabase (HPO, HRI, HDO)"
+  },
+  {
+    "hash": "160bfc61d33792e327caab3e36a7367295654447",
+    "shortHash": "160bfc6",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 14:33:53 2026 +0700",
+    "message": "fix: hapus double status Hokiindo — badge tersembunyi saat status Hokiindo, hanya indikator HRI yang tampil"
+  },
+  {
     "hash": "cfb424b81fd67a76955a8be9d7847464f9dccc96",
     "shortHash": "cfb424b",
     "author": "davidtheosimaremare",
@@ -366,37 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 11:29:11 2026 +0700",
     "message": "feat: enhance brand auto-detection, brand-specific source descriptions, and enlarge detected brand logo"
-  },
-  {
-    "hash": "9f25eae6331cf86bdc5dd28ddf5bc48ee798b545",
-    "shortHash": "9f25eae",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 11:25:59 2026 +0700",
-    "message": "feat: change status to Stock/Indent and update price label to Pricelist"
-  },
-  {
-    "hash": "b5fdf2a305be174e868fad09df80f4c1f62e7ef9",
-    "shortHash": "b5fdf2a",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 11:23:20 2026 +0700",
-    "message": "fix: extract Siemens specifications directly from accurate item description"
-  },
-  {
-    "hash": "eed7a032ada5a97aa9497e254bd61b8ff32b9782",
-    "shortHash": "eed7a03",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 11:19:43 2026 +0700",
-    "message": "feat: show Siemens equivalent result exclusively on converter tool"
-  },
-  {
-    "hash": "a962e46c6968f0030bc3f5ddae8c25c49c1f9831",
-    "shortHash": "a962e46",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 11:15:24 2026 +0700",
-    "message": "fix: use converter_custom_rules table and upsertRuleBySiemensMlfb for inline mapping autosave"
   }
 ]

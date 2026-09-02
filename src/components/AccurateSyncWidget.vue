@@ -2,8 +2,7 @@
 import { computed } from 'vue'
 import { useAccurateSync } from '@/composables/useAccurateSync'
 import { 
-  Database, RefreshCcw, PackageCheck, Truck, ShoppingBag, 
-  CheckCircle, XCircle, Info, X
+  Database, RefreshCcw, CheckCircle, XCircle, Info, X, Zap, Clock
 } from 'lucide-vue-next'
 
 const props = defineProps({
@@ -18,15 +17,13 @@ const isOpen = computed({
 
 const {
   isSyncing, syncStep, syncProgress, syncLog,
-  lastSyncFormatted, shouldAutoSync,
-  syncAll, syncHri, syncHpo, syncHdo
+  lastSyncFormatted,
+  syncDelta
 } = useAccurateSync()
 
 const syncStepLabel = computed(() => {
   switch (syncStep.value) {
-    case 'hri': return 'Menyinkronkan HRI (Penerimaan Barang)...'
-    case 'hpo': return 'Menyinkronkan HPO (Purchase Order)...'
-    case 'hdo': return 'Menyinkronkan HDO (Delivery Order)...'
+    case 'delta': return 'Menyinkronkan data hari ini...'
     case 'done': return 'Selesai!'
     default: return ''
   }
@@ -42,7 +39,7 @@ const syncLogColor = (type) => {
   if (type === 'success') return 'text-emerald-500'
   if (type === 'error') return 'text-red-500'
   if (type === 'warn') return 'text-amber-500'
-  return 'text-red-400'
+  return 'text-slate-400'
 }
 </script>
 
@@ -65,14 +62,14 @@ const syncLogColor = (type) => {
               <Database class="w-3.5 h-3.5 text-white"/>
             </div>
             <div>
-              <h2 class="font-bold text-slate-900 dark:text-white text-sm">Sinkronisasi Accurate</h2>
+              <h2 class="font-bold text-slate-900 dark:text-white text-sm">Sync Cepat Accurate</h2>
               <p class="text-[10px] text-slate-400 dark:text-slate-500">
-                <span v-if="lastSyncFormatted">Sync: <span class="font-semibold text-slate-600 dark:text-slate-300">{{ lastSyncFormatted }}</span></span>
+                <span v-if="lastSyncFormatted">Terakhir: <span class="font-semibold text-slate-600 dark:text-slate-300">{{ lastSyncFormatted }}</span></span>
                 <span v-else class="text-amber-500">Belum pernah sync</span>
               </p>
             </div>
           </div>
-          <button @click="isOpen = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors p-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700">
+          <button @click="isOpen = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors p-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 cursor-pointer">
             <X class="w-4 h-4"/>
           </button>
         </div>
@@ -91,30 +88,26 @@ const syncLogColor = (type) => {
           </div>
         </div>
 
-        <!-- Action Buttons -->
-        <div class="p-4 flex flex-col gap-2 border-b border-slate-100 dark:border-slate-800">
+        <!-- Single Action Button & Info Note -->
+        <div class="p-4 flex flex-col gap-3 border-b border-slate-100 dark:border-slate-800">
           <button
-            @click="syncAll()"
+            @click="syncDelta()"
             :disabled="isSyncing"
-            class="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white shadow-md shadow-violet-500/20 transition-all hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
+            class="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white shadow-md shadow-violet-500/20 transition-all hover:shadow-lg active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
           >
             <RefreshCcw :class="['w-4 h-4', isSyncing && 'animate-spin']"/>
-            {{ isSyncing ? 'Menyinkronkan...' : 'Delta Sync (Hari Ini)' }}
+            {{ isSyncing ? 'Menyinkronkan Data...' : 'Sync Cepat (Data Hari Ini)' }}
           </button>
 
-          <div class="grid grid-cols-3 gap-1.5 mt-1">
-            <button @click="syncHri()" :disabled="isSyncing" class="flex flex-col items-center justify-center gap-1 p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-emerald-50 dark:bg-slate-800/50 dark:hover:bg-emerald-900/20 text-slate-600 hover:text-emerald-700 dark:text-slate-400 dark:hover:text-emerald-400 hover:border-emerald-200 dark:hover:border-emerald-800 transition-all disabled:opacity-50">
-              <PackageCheck class="w-4 h-4"/>
-              <span class="text-[10px] font-semibold">HRI</span>
-            </button>
-            <button @click="syncHpo()" :disabled="isSyncing" class="flex flex-col items-center justify-center gap-1 p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-red-50 dark:bg-slate-800/50 dark:hover:bg-red-900/20 text-slate-600 hover:text-red-700 dark:text-slate-400 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-800 transition-all disabled:opacity-50">
-              <ShoppingBag class="w-4 h-4"/>
-              <span class="text-[10px] font-semibold">HPO</span>
-            </button>
-            <button @click="syncHdo()" :disabled="isSyncing" class="flex flex-col items-center justify-center gap-1 p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 hover:bg-amber-50 dark:bg-slate-800/50 dark:hover:bg-amber-900/20 text-slate-600 hover:text-amber-700 dark:text-slate-400 dark:hover:text-amber-400 hover:border-amber-200 dark:hover:border-amber-800 transition-all disabled:opacity-50">
-              <Truck class="w-4 h-4"/>
-              <span class="text-[10px] font-semibold">HDO</span>
-            </button>
+          <div class="p-2.5 rounded-xl bg-violet-50/70 dark:bg-violet-950/20 border border-violet-100 dark:border-violet-900/30 text-[11px] text-violet-700 dark:text-violet-300 space-y-1">
+            <div class="flex items-start gap-1.5 font-medium">
+              <Zap class="w-3.5 h-3.5 text-violet-600 dark:text-violet-400 shrink-0 mt-0.5" />
+              <span>Sinkronisasi data dokumen yang diperbarui hari ini.</span>
+            </div>
+            <div class="flex items-start gap-1.5 text-[10px] text-slate-500 dark:text-slate-400">
+              <Clock class="w-3 h-3 text-slate-400 shrink-0 mt-0.5" />
+              <span>Sync keseluruhan otomatis berjalan setiap 1 jam di server.</span>
+            </div>
           </div>
         </div>
 
@@ -126,18 +119,18 @@ const syncLogColor = (type) => {
               :key="i"
               class="flex items-start gap-1.5 text-[10px] py-1 px-1.5 rounded-md"
               :class="{
-                'bg-emerald-50 dark:bg-emerald-900/10': log.type === 'success',
-                'bg-red-50 dark:bg-red-900/10': log.type === 'error',
-                'bg-amber-50 dark:bg-amber-900/10': log.type === 'warn',
-                'bg-slate-100 dark:bg-slate-800/40': log.type === 'info',
+                'bg-emerald-50 dark:bg-emerald-900/10 text-emerald-800 dark:text-emerald-300': log.type === 'success',
+                'bg-red-50 dark:bg-red-900/10 text-red-800 dark:text-red-300': log.type === 'error',
+                'bg-amber-50 dark:bg-amber-900/10 text-amber-800 dark:text-amber-300': log.type === 'warn',
+                'bg-slate-100 dark:bg-slate-800/40 text-slate-700 dark:text-slate-300': log.type === 'info',
               }"
             >
               <component :is="syncLogIcon(log.type)" class="w-3 h-3 mt-0.5 flex-shrink-0" :class="syncLogColor(log.type)"/>
-              <span class="text-slate-700 dark:text-slate-300 flex-1 leading-tight">{{ log.message }}</span>
+              <span class="flex-1 leading-tight">{{ log.message }}</span>
             </div>
           </div>
-          <div v-else class="text-[10px] text-slate-400 dark:text-slate-500 italic text-center py-4">
-            Tekan "Delta Sync" untuk sinkronisasi cepat data hari ini.
+          <div v-else class="text-[10px] text-slate-400 dark:text-slate-500 italic text-center py-3">
+            Klik tombol di atas untuk sinkronisasi data hari ini.
           </div>
         </div>
       </div>
