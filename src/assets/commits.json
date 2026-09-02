@@ -1,5 +1,13 @@
 [
   {
+    "hash": "0935da9a8de5e4f069203ebf52e4e717cc24e852",
+    "shortHash": "0935da9",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 2 21:21:14 2026 +0700",
+    "message": "style(delivery-orders): polish DO detail items table with prominent SKU hierarchy, copy button, and clean subtitles"
+  },
+  {
     "hash": "b7efd86cb995b6e5399b225e2da66fc08a8c158e",
     "shortHash": "b7efd86",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 15:52:54 2026 +0700",
     "message": "fix: multi-HPO query matching and accurate arrived status validation based on total quantity"
-  },
-  {
-    "hash": "c57fa13e3052d50e0baa6ea26c7a55c9f2226cad",
-    "shortHash": "c57fa13",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 15:51:32 2026 +0700",
-    "message": "fix: resolve order suggestion and add to cart button visibility when HPO is deleted in HSO-26-06-118"
   }
 ]
