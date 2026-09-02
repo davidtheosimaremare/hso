@@ -108,6 +108,45 @@ serve(async (req) => {
                         return null
                     }
 
+                    // Helper to extract project
+                    const extractProject = (text: string) => {
+                        if (!text) return null
+                        const str = String(text)
+                        const regex = /pro(?:ject|yek)\s*[:\-]?\s*(.*?)(?=\s*(?:>|status|\n|$))/i
+                        const match = str.match(regex)
+                        if (match && match[1] && match[1].trim()) {
+                            return match[1].replace(/[\s\-]+$/, '').trim()
+                        }
+                        return null
+                    }
+
+                    // Helper to extract HSO Number
+                    const extractHso = (note: string) => {
+                        if (!note) return null
+                        const match = note.match(/(HSO[\/-][\w\d\/-]+)/i)
+                        return match ? match[1].replace(/-/g, '/') : null
+                    }
+
+                    const extractedHsoList = new Set<string>()
+                    const sanitizedItems = items.map((item: any, index: number) => {
+                        const hsoNum = item.salesOrder?.number || extractHso(item.detailNotes) || null
+                        if (hsoNum) extractedHsoList.add(hsoNum)
+                        return {
+                            id: safeInt(item.id),
+                            do_id: safeInt(doc.id),
+                            item_code: item.item?.no,
+                            item_name: item.item?.name,
+                            quantity: safeFloat(item.quantity),
+                            unit_name: item.itemUnit?.name,
+                            detail_notes: item.detailNotes,
+                            item_seq: index,
+                            hso_number: hsoNum
+                        }
+                    })
+
+                    const headerHso = extractHso(detailJson.d?.description)
+                    if (headerHso) extractedHsoList.add(headerHso)
+
                     const sanitizedHeader = {
                         id: safeInt(doc.id),
                         number: doc.number || 'UNKNOWN',
@@ -116,27 +155,12 @@ serve(async (req) => {
                         trans_date: formatDate(doc.transDate),
                         status_name: doc.statusName,
                         ship_to: doc.shipTo,
-                        driver_name: doc.driverName
+                        driver_name: doc.driverName,
+                        description: detailJson.d?.description || null,
+                        po_number: detailJson.d?.poNumber || doc.poNumber || null,
+                        project_name: extractProject(detailJson.d?.description) || null,
+                        hso_numbers: Array.from(extractedHsoList).join(', ') || null
                     }
-
-                    // Helper to extract HSO Number
-                    const extractHso = (note: string) => {
-                        if (!note) return null
-                        const match = note.match(/(HSO\/[\w\d\/]+)/i)
-                        return match ? match[1] : null
-                    }
-
-                    const sanitizedItems = items.map((item: any, index: number) => ({
-                        id: safeInt(item.id),
-                        do_id: safeInt(doc.id),
-                        item_code: item.item?.no,
-                        item_name: item.item?.name,
-                        quantity: safeFloat(item.quantity),
-                        unit_name: item.itemUnit?.name,
-                        detail_notes: item.detailNotes,
-                        item_seq: index,
-                        hso_number: extractHso(item.detailNotes)
-                    }))
 
                     return {
                         header: sanitizedHeader,
