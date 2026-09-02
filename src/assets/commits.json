@@ -1,5 +1,13 @@
 [
   {
+    "hash": "469b84c267ee5f82a022f5c4fcde4e1b2dae535d",
+    "shortHash": "469b84c",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Mon Aug 31 16:09:55 2026 +0700",
+    "message": "feat(tools): integrate deep Accurate Online stock & HSO/HPO scan in Product Tracker"
+  },
+  {
     "hash": "85974e89317e358638e24bd4f183a1124e098f59",
     "shortHash": "85974e8",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Wed Aug 19 14:12:53 2026 +0700",
     "message": "fix: resolve new tab document opening for dataUrl and blob attachments"
-  },
-  {
-    "hash": "3ea361b4a6f86ab5ac10982028b630c76eb87563",
-    "shortHash": "3ea361b",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Aug 19 14:11:28 2026 +0700",
-    "message": "fix: resolve image preview rendering with base64 dataUrl in document viewer"
   }
 ]

@@ -3905,12 +3905,12 @@ const downloadAttachment = async (att) => {
                                         {{ item.qty_order }} {{ item.unit }}
                                     </span>
                                 </div>
-                                <div v-if="item.logistics_status && item.logistics_status !== 'Pending Process'" 
+                                <div v-if="getHpoDisplayStatus(item, getHpoShipment(item, hpoStr)) || (item.logistics_status && item.logistics_status !== 'Pending Process')"
                                      class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold border text-[10px] whitespace-nowrap shrink-0"
-                                     :class="getLogisticsBadgeClass(item.logistics_status)">
-                                    <span class="whitespace-nowrap">{{ item.logistics_status === 'Follow up with our forwarder' ? 'Ex-Works' : item.logistics_status === 'ETA Port JKT' ? 'ETA JKT' : item.logistics_status === 'Already in siemens Warehouse' ? 'Tiba Dunex' : item.logistics_status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : item.logistics_status }}</span>
-                                    <span v-if="formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date)" class="opacity-80 font-normal text-[9.5px] whitespace-nowrap">
-                                        ({{ formatDateSimple(item.exwork_date || item.eta_date || item.dunex_date || item.hokiindo_date || item.logistics_date) }})
+                                     :class="getLogisticsBadgeClass(getHpoDisplayStatus(item, getHpoShipment(item, hpoStr)) || item.logistics_status)">
+                                    <span class="whitespace-nowrap">{{ getHpoDisplayStatus(item, getHpoShipment(item, hpoStr)) || (item.logistics_status === 'Follow up with our forwarder' ? 'Ex-Works' : item.logistics_status === 'ETA Port JKT' ? 'ETA JKT' : item.logistics_status === 'Already in siemens Warehouse' ? 'Tiba Dunex' : item.logistics_status === 'Already in Hokiindo Raya' ? 'Tiba Hokiindo' : item.logistics_status) }}</span>
+                                    <span v-if="getHpoDisplayDate(item, getHpoShipment(item, hpoStr)) && getHpoDisplayDate(item, getHpoShipment(item, hpoStr)) !== '-'" class="opacity-80 font-normal text-[9.5px] whitespace-nowrap">
+                                        ({{ getHpoDisplayDate(item, getHpoShipment(item, hpoStr)) }})
                                     </span>
                                 </div>
                             </div>
