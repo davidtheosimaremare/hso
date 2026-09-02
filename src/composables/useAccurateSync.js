@@ -1,79 +1,25 @@
+// src/composables/useAccurateSync.js
+// Composable for triggering fast Delta Sync & scheduled sync from HSO to Sync Engine Server
+
 import { ref, computed } from 'vue'
-import { supabase } from '@/lib/supabase'
 
 // Global sync state (shared across all component instances)
 const isSyncing = ref(false)
-const syncStep = ref('idle') // 'idle' | 'hpo' | 'hri' | 'hdo' | 'done'
+const syncStep = ref('idle') // 'idle' | 'hpo' | 'hri' | 'hdo' | 'delta' | 'done'
 const syncProgress = ref(0)
 const syncLog = ref([]) // [{ type, message, count, timestamp }]
 const lastSyncTime = ref(
   localStorage.getItem('accurate_last_sync')
-    ? parseInt(localStorage.getItem('accurate_last_sync'))
+    ? parseInt(localStorage.getItem('accurate_last_sync'), 10)
     : null
 )
 
-const SYNC_THROTTLE_MINUTES = 30
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const SYNC_THROTTLE_MINUTES = 10
+const syncServerUrl = import.meta.env.VITE_ACCURATE_SYNC_URL || 'http://localhost:3005'
 
 function addLog(type, message, count = null) {
   syncLog.value.unshift({ type, message, count, timestamp: new Date() })
   if (syncLog.value.length > 30) syncLog.value.pop()
-}
-
-async function getAuthHeaders() {
-  const { data: { session } } = await supabase.auth.getSession()
-  return {
-    Authorization: `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-    'Content-Type': 'application/json'
-  }
-}
-
-async function callPagedSync(fnName, { silent = false } = {}) {
-  const headers = await getAuthHeaders()
-  const endpoint = `${supabaseUrl}/functions/v1/${fnName}`
-  let page = 1
-  let hasMore = true
-  let totalProcessed = 0
-  let totalUpdated = 0
-  let errors = 0
-
-  while (hasMore) {
-    try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ page })
-      })
-
-      if (!res.ok) {
-        const text = await res.text()
-        throw new Error(`HTTP ${res.status}: ${text.substring(0, 200)}`)
-      }
-
-      const result = await res.json()
-      totalProcessed += result.processed || 0
-
-      const match = result.message?.match(/(\d+)\s+shipments?\s+updated/i)
-      if (match) totalUpdated += parseInt(match[1])
-
-      if (result.errors?.length) errors += result.errors.length
-
-      hasMore = result.hasMore === true
-      if (hasMore) {
-        page++
-        await new Promise(r => setTimeout(r, 800))
-      }
-    } catch (err) {
-      console.warn(`[AccurateSync] ${fnName} page ${page} error:`, err.message)
-      if (!silent) addLog('warn', `${fnName} hal. ${page}: ${err.message}`)
-      page++
-      if (page > 15) { hasMore = false; break }
-      await new Promise(r => setTimeout(r, 1500))
-    }
-  }
-
-  return { totalProcessed, totalUpdated, errors, pages: page }
 }
 
 export function useAccurateSync() {
@@ -90,102 +36,172 @@ export function useAccurateSync() {
 
   const shouldAutoSync = computed(() => minutesSinceLastSync.value > SYNC_THROTTLE_MINUTES)
 
-  async function syncHri({ silent = false } = {}) {
-    syncStep.value = 'hri'
-    if (!silent) addLog('info', 'Sinkronisasi HRI dimulai...')
-    try {
-      const result = await callPagedSync('sync-accurate-receive-items', { silent })
-      const updatedMsg = result.totalUpdated > 0 ? `, ${result.totalUpdated} status logistik diperbarui` : ''
-      addLog('success', `HRI selesai: ${result.totalProcessed} data diproses${updatedMsg}`, result.totalProcessed)
-      return result
-    } catch (err) {
-      addLog('error', `HRI gagal: ${err.message}`)
-      return { totalProcessed: 0, error: err.message }
-    }
-  }
-
-  async function syncHpo({ silent = false } = {}) {
-    syncStep.value = 'hpo'
-    if (!silent) addLog('info', 'Sinkronisasi HPO dimulai...')
-    try {
-      const result = await callPagedSync('sync-accurate-pos', { silent })
-      addLog('success', `HPO selesai: ${result.totalProcessed} data diproses`, result.totalProcessed)
-      return result
-    } catch (err) {
-      addLog('error', `HPO gagal: ${err.message}`)
-      return { totalProcessed: 0, error: err.message }
-    }
-  }
-
-  async function syncHdo({ silent = false } = {}) {
-    syncStep.value = 'hdo'
-    if (!silent) addLog('info', 'Sinkronisasi HDO dimulai...')
-    try {
-      const result = await callPagedSync('sync-accurate-dos', { silent })
-      addLog('success', `HDO selesai: ${result.totalProcessed} data diproses`, result.totalProcessed)
-      return result
-    } catch (err) {
-      addLog('error', `HDO gagal: ${err.message}`)
-      return { totalProcessed: 0, error: err.message }
-    }
-  }
-
+  /**
+   * Sync Delta (Cepat, data perubahan hari ini)
+   */
   async function syncAll({ silent = false } = {}) {
     if (isSyncing.value) return
     isSyncing.value = true
-    syncProgress.value = 0
+    syncStep.value = 'delta'
+    syncProgress.value = 15
+
     if (!silent) {
-      syncLog.value = []
-      addLog('info', 'Memulai sinkronisasi semua data Accurate...')
+      addLog('info', 'Memulai Delta Sync (perubahan hari ini)...')
     }
+
     try {
-      // 1. HRI first — updates logistics status immediately
-      syncProgress.value = 5
-      await syncHri({ silent })
       syncProgress.value = 40
+      const res = await fetch(`${syncServerUrl}/sync/delta`)
+      
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(`HTTP ${res.status}: ${text.substring(0, 150)}`)
+      }
 
-      // 2. HPO
-      await syncHpo({ silent })
-      syncProgress.value = 72
-
-      // 3. HDO
-      await syncHdo({ silent })
+      const result = await res.json()
       syncProgress.value = 100
+
+      if (result.success) {
+        const shipmentsMsg = result.shipmentsUpdated > 0 ? `, ${result.shipmentsUpdated} status logistik terupdate` : ''
+        const logMsg = `Delta Sync selesai (${result.processed} dokumen${shipmentsMsg}, ${result.durationMs}ms) ✓`
+        addLog('success', logMsg, result.processed)
+      } else {
+        addLog('error', `Sync gagal: ${result.error || 'Terjadi kesalahan'}`)
+      }
 
       lastSyncTime.value = Date.now()
       localStorage.setItem('accurate_last_sync', lastSyncTime.value.toString())
       syncStep.value = 'done'
-      if (!silent) addLog('success', 'Semua sinkronisasi selesai! ✓')
+      return result
     } catch (err) {
-      addLog('error', `Sync gagal: ${err.message}`)
+      console.warn('[AccurateSync] Delta sync error:', err.message)
+      addLog('error', `Gagal terhubung ke Sync Server: ${err.message}`)
+      return { success: false, error: err.message }
     } finally {
       isSyncing.value = false
-      setTimeout(() => { syncStep.value = 'idle'; syncProgress.value = 0 }, 4000)
+      setTimeout(() => {
+        syncStep.value = 'idle'
+        syncProgress.value = 0
+      }, 3500)
     }
   }
 
-  // Silent background sync — only HRI, called on app open
-  async function triggerBackgroundSync() {
+  /**
+   * Sync HRI Saja (Penerimaan Barang)
+   */
+  async function syncHri({ silent = false, days = 7 } = {}) {
     if (isSyncing.value) return
-    if (!shouldAutoSync.value) {
-      console.log('[AccurateSync] Skipped — synced recently')
-      return
-    }
-    console.log('[AccurateSync] Starting background HRI sync...')
     isSyncing.value = true
     syncStep.value = 'hri'
+    syncProgress.value = 20
+
+    if (!silent) addLog('info', `Sync HRI (${days} hari terakhir)...`)
+
     try {
-      await callPagedSync('sync-accurate-receive-items', { silent: true })
+      syncProgress.value = 50
+      const res = await fetch(`${syncServerUrl}/sync/hri?days=${days}`)
+      const result = await res.json()
+      syncProgress.value = 100
+
+      if (result.success) {
+        const shipMsg = (result.shipmentsUpdated || 0) > 0 ? `, ${result.shipmentsUpdated} shipments terupdate` : ''
+        addLog('success', `HRI selesai: ${result.processed || 0} dokumen${shipMsg} (${result.durationMs}ms) ✓`, result.processed)
+      } else {
+        addLog('error', `HRI gagal: ${result.error}`)
+      }
+
       lastSyncTime.value = Date.now()
       localStorage.setItem('accurate_last_sync', lastSyncTime.value.toString())
-      addLog('success', 'Background sync HRI selesai ✓')
-      console.log('[AccurateSync] Background sync done')
+      syncStep.value = 'done'
+      return result
     } catch (err) {
-      console.warn('[AccurateSync] Background sync failed:', err.message)
+      addLog('error', `HRI error: ${err.message}`)
+      return { success: false, error: err.message }
     } finally {
       isSyncing.value = false
-      syncStep.value = 'idle'
+      setTimeout(() => { syncStep.value = 'idle'; syncProgress.value = 0 }, 3000)
     }
+  }
+
+  /**
+   * Sync HPO Saja (Purchase Order)
+   */
+  async function syncHpo({ silent = false, days = 7 } = {}) {
+    if (isSyncing.value) return
+    isSyncing.value = true
+    syncStep.value = 'hpo'
+    syncProgress.value = 20
+
+    if (!silent) addLog('info', `Sync HPO (${days} hari terakhir)...`)
+
+    try {
+      syncProgress.value = 50
+      const res = await fetch(`${syncServerUrl}/sync/hpo?days=${days}`)
+      const result = await res.json()
+      syncProgress.value = 100
+
+      if (result.success) {
+        addLog('success', `HPO selesai: ${result.processed || 0} dokumen (${result.durationMs}ms) ✓`, result.processed)
+      } else {
+        addLog('error', `HPO gagal: ${result.error}`)
+      }
+
+      lastSyncTime.value = Date.now()
+      localStorage.setItem('accurate_last_sync', lastSyncTime.value.toString())
+      syncStep.value = 'done'
+      return result
+    } catch (err) {
+      addLog('error', `HPO error: ${err.message}`)
+      return { success: false, error: err.message }
+    } finally {
+      isSyncing.value = false
+      setTimeout(() => { syncStep.value = 'idle'; syncProgress.value = 0 }, 3000)
+    }
+  }
+
+  /**
+   * Sync HDO Saja (Surat Jalan)
+   */
+  async function syncHdo({ silent = false, days = 7 } = {}) {
+    if (isSyncing.value) return
+    isSyncing.value = true
+    syncStep.value = 'hdo'
+    syncProgress.value = 20
+
+    if (!silent) addLog('info', `Sync HDO (${days} hari terakhir)...`)
+
+    try {
+      syncProgress.value = 50
+      const res = await fetch(`${syncServerUrl}/sync/hdo?days=${days}`)
+      const result = await res.json()
+      syncProgress.value = 100
+
+      if (result.success) {
+        addLog('success', `HDO selesai: ${result.processed || 0} dokumen (${result.durationMs}ms) ✓`, result.processed)
+      } else {
+        addLog('error', `HDO gagal: ${result.error}`)
+      }
+
+      lastSyncTime.value = Date.now()
+      localStorage.setItem('accurate_last_sync', lastSyncTime.value.toString())
+      syncStep.value = 'done'
+      return result
+    } catch (err) {
+      addLog('error', `HDO error: ${err.message}`)
+      return { success: false, error: err.message }
+    } finally {
+      isSyncing.value = false
+      setTimeout(() => { syncStep.value = 'idle'; syncProgress.value = 0 }, 3000)
+    }
+  }
+
+  /**
+   * Background silent sync — dipanggil saat HSO baru dibuka
+   */
+  async function triggerBackgroundSync() {
+    if (isSyncing.value || !shouldAutoSync.value) return
+    console.log('[AccurateSync] Auto Delta Sync triggered in background...')
+    await syncAll({ silent: true })
   }
 
   return {

@@ -99,7 +99,7 @@ const syncLogColor = (type) => {
             class="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white shadow-md shadow-violet-500/20 transition-all hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <RefreshCcw :class="['w-4 h-4', isSyncing && 'animate-spin']"/>
-            {{ isSyncing ? 'Menyinkronkan...' : 'Sync Semua Data' }}
+            {{ isSyncing ? 'Menyinkronkan...' : 'Delta Sync (Hari Ini)' }}
           </button>
 
           <div class="grid grid-cols-3 gap-1.5 mt-1">
@@ -137,7 +137,7 @@ const syncLogColor = (type) => {
             </div>
           </div>
           <div v-else class="text-[10px] text-slate-400 dark:text-slate-500 italic text-center py-4">
-            Tekan "Sync Semua Data" untuk menarik data dari Accurate.
+            Tekan "Delta Sync" untuk sinkronisasi cepat data hari ini.
           </div>
         </div>
       </div>
