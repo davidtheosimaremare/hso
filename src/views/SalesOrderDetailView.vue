@@ -2802,6 +2802,29 @@ const getHpoSubSchedules = (item, hpoNumber) => {
   }))
 }
 
+// Helper: Get non-arrived/pending sub-schedules for an HPO (excluding arrived batches that are represented by HRI)
+const getPendingHpoSubSchedules = (item, hpoNumber) => {
+  const allSub = getHpoSubSchedules(item, hpoNumber)
+  if (!allSub || allSub.length === 0) return []
+
+  const hri = getHriInfo(item, hpoNumber)
+  const isArrived = getVisualStatus(getHpoShipment(item, hpoNumber)) === 'Already in Hokiindo Raya'
+
+  // Filter out the 'Already in Hokiindo Raya' / 'Tiba Hokiindo' batches
+  const nonArrivedSubs = allSub.filter(s => s.rawStatus !== 'Already in Hokiindo Raya' && s.status !== 'Tiba Hokiindo')
+
+  if (nonArrivedSubs.length > 0) {
+    return nonArrivedSubs
+  }
+
+  // If all batches are arrived and HRI (or arrived status) is shown below, return empty so it doesn't duplicate
+  if (hri || isArrived) {
+    return []
+  }
+
+  return allSub
+}
+
 // Helper: Get Receive Item (HRI) info matching item and HPO strictly for THIS HSO (with Quantity & FIFO allocation)
 const getHriInfo = (item, hpoNumber) => {
   const itemCode = (item?.code || item?.item_code || '').trim().toUpperCase()
@@ -4223,39 +4246,41 @@ const downloadAttachment = async (att) => {
                                     🏢 {{ hpo.vendorName }}
                                 </div>
 
-                                <!-- Sub-Schedules (Split Deliveries) or Single Status — hanya tampil jika bukan status Hokiindo -->
-                                <template v-if="getVisualStatus(getHpoShipment(item, hpo.poNumber)) !== 'Already in Hokiindo Raya'">
-                                    <div v-if="getHpoSubSchedules(item, hpo.poNumber).length > 1" class="space-y-1 pt-1 border-t border-slate-100 dark:border-slate-700/60">
-                                        <div v-for="(sub, subIdx) in getHpoSubSchedules(item, hpo.poNumber)" :key="subIdx" class="flex items-center justify-between gap-1.5 text-[10px]">
-                                            <span class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1 shrink-0">
-                                                <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                                                {{ sub.qty ? `${sub.qty} ${item.unit}` : '' }}
-                                            </span>
-                                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold border text-[9.5px] whitespace-nowrap shrink-0"
-                                                  :class="getLogisticsBadgeClass(sub.status)">
-                                                <span class="whitespace-nowrap">{{ sub.status }}</span>
-                                                <span v-if="sub.date && sub.date !== '-'" class="opacity-85 font-medium text-[9px] whitespace-nowrap">
-                                                    ({{ sub.date }})
-                                                </span>
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div v-else-if="getHpoSubSchedules(item, hpo.poNumber).length === 1" class="flex items-center gap-1.5 text-[11px] flex-wrap">
-                                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold border text-[10px] whitespace-nowrap shrink-0"
-                                              :class="getLogisticsBadgeClass(getHpoSubSchedules(item, hpo.poNumber)[0].status)">
-                                            <span class="whitespace-nowrap">{{ getHpoSubSchedules(item, hpo.poNumber)[0].status }}</span>
-                                            <span v-if="getHpoSubSchedules(item, hpo.poNumber)[0].date && getHpoSubSchedules(item, hpo.poNumber)[0].date !== '-'" class="opacity-85 font-medium text-[9.5px] whitespace-nowrap">
-                                                ({{ getHpoSubSchedules(item, hpo.poNumber)[0].date }})
+                                <!-- Sub-Schedules (Split Deliveries) or Single Status -->
+                                <div v-if="getPendingHpoSubSchedules(item, hpo.poNumber).length > 1" class="space-y-1 pt-1 border-t border-slate-100 dark:border-slate-700/60">
+                                    <div v-for="(sub, subIdx) in getPendingHpoSubSchedules(item, hpo.poNumber)" :key="subIdx" class="flex items-center justify-between gap-1.5 text-[10px]">
+                                        <span class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1 shrink-0">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                                            {{ sub.qty ? `${sub.qty} ${item.unit}` : '' }}
+                                        </span>
+                                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold border text-[9.5px] whitespace-nowrap shrink-0"
+                                              :class="getLogisticsBadgeClass(sub.status)">
+                                            <span class="whitespace-nowrap">{{ sub.status }}</span>
+                                            <span v-if="sub.date && sub.date !== '-'" class="opacity-85 font-medium text-[9px] whitespace-nowrap">
+                                                ({{ sub.date }})
                                             </span>
                                         </span>
                                     </div>
-                                    <div v-else class="flex items-center gap-1 pt-0.5">
-                                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium">
-                                            <Clock class="w-3 h-3 text-slate-400 shrink-0" />
-                                            Menunggu status logistik
+                                </div>
+                                <div v-else-if="getPendingHpoSubSchedules(item, hpo.poNumber).length === 1" class="flex items-center justify-between gap-1.5 text-[11px] flex-wrap pt-0.5">
+                                    <span v-if="getPendingHpoSubSchedules(item, hpo.poNumber)[0].qty" class="font-bold text-slate-700 dark:text-slate-300 text-[10px] flex items-center gap-1 shrink-0">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                                        {{ getPendingHpoSubSchedules(item, hpo.poNumber)[0].qty }} {{ item.unit }}
+                                    </span>
+                                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-semibold border text-[10px] whitespace-nowrap shrink-0"
+                                          :class="getLogisticsBadgeClass(getPendingHpoSubSchedules(item, hpo.poNumber)[0].status)">
+                                        <span class="whitespace-nowrap">{{ getPendingHpoSubSchedules(item, hpo.poNumber)[0].status }}</span>
+                                        <span v-if="getPendingHpoSubSchedules(item, hpo.poNumber)[0].date && getPendingHpoSubSchedules(item, hpo.poNumber)[0].date !== '-'" class="opacity-85 font-medium text-[9.5px] whitespace-nowrap">
+                                            ({{ getPendingHpoSubSchedules(item, hpo.poNumber)[0].date }})
                                         </span>
-                                    </div>
-                                </template>
+                                    </span>
+                                </div>
+                                <div v-else-if="!getHriInfo(item, hpo.poNumber) && getVisualStatus(getHpoShipment(item, hpo.poNumber)) !== 'Already in Hokiindo Raya'" class="flex items-center gap-1 pt-0.5">
+                                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium">
+                                        <Clock class="w-3 h-3 text-slate-400 shrink-0" />
+                                        Menunggu status logistik
+                                    </span>
+                                </div>
 
                                 <!-- HRI Received Indicator (Hanya muncul saat barang tiba atau sedang dikirim ke Hokiindo) -->
                                 <div v-if="getHriInfo(item, hpo.poNumber) || (getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya')" class="flex items-center flex-wrap gap-1 pt-0.5">
@@ -4641,38 +4666,40 @@ const downloadAttachment = async (att) => {
                       </div>
 
                       <!-- Sub-Schedules (Split Deliveries) or Single Status -->
-                      <template v-if="getVisualStatus(getHpoShipment(item, hpo.poNumber)) !== 'Already in Hokiindo Raya'">
-                        <div v-if="getHpoSubSchedules(item, hpo.poNumber).length > 1" class="space-y-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-700/60">
-                          <div v-for="(sub, subIdx) in getHpoSubSchedules(item, hpo.poNumber)" :key="subIdx" class="flex items-center justify-between gap-2 text-xs">
-                            <span class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                              <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                              {{ sub.qty ? `${sub.qty} ${item.unit}` : '' }}
-                            </span>
-                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-semibold border text-xs whitespace-nowrap"
-                                  :class="getLogisticsBadgeClass(sub.status)">
-                              <span>{{ sub.status }}</span>
-                              <span v-if="sub.date && sub.date !== '-'" class="opacity-85 font-medium text-[11px]">
-                                ({{ sub.date }})
-                              </span>
-                            </span>
-                          </div>
-                        </div>
-                        <div v-else-if="getHpoSubSchedules(item, hpo.poNumber).length === 1" class="flex items-center gap-2 pt-1">
+                      <div v-if="getPendingHpoSubSchedules(item, hpo.poNumber).length > 1" class="space-y-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-700/60">
+                        <div v-for="(sub, subIdx) in getPendingHpoSubSchedules(item, hpo.poNumber)" :key="subIdx" class="flex items-center justify-between gap-2 text-xs">
+                          <span class="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                            <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                            {{ sub.qty ? `${sub.qty} ${item.unit}` : '' }}
+                          </span>
                           <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-semibold border text-xs whitespace-nowrap"
-                                :class="getLogisticsBadgeClass(getHpoSubSchedules(item, hpo.poNumber)[0].status)">
-                            <span>{{ getHpoSubSchedules(item, hpo.poNumber)[0].status }}</span>
-                            <span v-if="getHpoSubSchedules(item, hpo.poNumber)[0].date && getHpoSubSchedules(item, hpo.poNumber)[0].date !== '-'" class="opacity-85 font-medium text-[11px]">
-                              ({{ getHpoSubSchedules(item, hpo.poNumber)[0].date }})
+                                :class="getLogisticsBadgeClass(sub.status)">
+                            <span>{{ sub.status }}</span>
+                            <span v-if="sub.date && sub.date !== '-'" class="opacity-85 font-medium text-[11px]">
+                              ({{ sub.date }})
                             </span>
                           </span>
                         </div>
-                        <div v-else class="flex items-center gap-1 pt-1">
-                          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium">
-                            <Clock class="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                            Menunggu status logistik
+                      </div>
+                      <div v-else-if="getPendingHpoSubSchedules(item, hpo.poNumber).length === 1" class="flex items-center justify-between gap-2 pt-1">
+                        <span v-if="getPendingHpoSubSchedules(item, hpo.poNumber)[0].qty" class="font-bold text-slate-700 dark:text-slate-300 text-xs flex items-center gap-1.5">
+                          <span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                          {{ getPendingHpoSubSchedules(item, hpo.poNumber)[0].qty }} {{ item.unit }}
+                        </span>
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-semibold border text-xs whitespace-nowrap"
+                              :class="getLogisticsBadgeClass(getPendingHpoSubSchedules(item, hpo.poNumber)[0].status)">
+                          <span>{{ getPendingHpoSubSchedules(item, hpo.poNumber)[0].status }}</span>
+                          <span v-if="getPendingHpoSubSchedules(item, hpo.poNumber)[0].date && getPendingHpoSubSchedules(item, hpo.poNumber)[0].date !== '-'" class="opacity-85 font-medium text-[11px]">
+                            ({{ getPendingHpoSubSchedules(item, hpo.poNumber)[0].date }})
                           </span>
-                        </div>
-                      </template>
+                        </span>
+                      </div>
+                      <div v-else-if="!getHriInfo(item, hpo.poNumber) && getVisualStatus(getHpoShipment(item, hpo.poNumber)) !== 'Already in Hokiindo Raya'" class="flex items-center gap-1 pt-1">
+                        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 font-medium">
+                          <Clock class="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          Menunggu status logistik
+                        </span>
+                      </div>
 
                       <!-- Mobile HRI / Hokiindo Arrival Indicator -->
                       <div v-if="getHriInfo(item, hpo.poNumber) || (getVisualStatus(getHpoShipment(item, hpo.poNumber)) === 'Already in Hokiindo Raya')" class="flex items-center flex-wrap gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/60">

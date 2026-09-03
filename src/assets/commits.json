@@ -1,5 +1,13 @@
 [
   {
+    "hash": "592a1594fc8fb313ad2961f45f309b576f2785e9",
+    "shortHash": "592a159",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Sep 3 10:14:11 2026 +0700",
+    "message": "fix(delivery-orders): restore fast lightweight DO list view with alamat kirim, keep detailed project & HSO in detail view only"
+  },
+  {
     "hash": "0e896263050d625dddf699a3c90e2303ac70795e",
     "shortHash": "0e89626",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 16:27:01 2026 +0700",
     "message": "fix: purge HPO shipments even when 0 POs found (e.g. Keterangan cleared in Accurate)"
-  },
-  {
-    "hash": "f778b3c6cb7414a6a47c51ca5b455a256f9f5670",
-    "shortHash": "f778b3c",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 16:24:51 2026 +0700",
-    "message": "fix: check (item_code, hpo_number) pair in healing logic to prevent re-creating deleted HPO shipments"
   }
 ]
