@@ -24,8 +24,7 @@ import {
   Search, RefreshCw, Loader2, 
   ChevronLeft, ChevronRight, ChevronDown,
   Download, FileSpreadsheet, File as FileIcon, Filter,
-  ChevronsUpDown, ArrowUp, ArrowDown, Check, X, Truck, ArrowRight,
-  FileText
+  ChevronsUpDown, ArrowUp, ArrowDown, Check, X, Truck, ArrowRight
 } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -82,88 +81,29 @@ const updateUrlParams = () => {
   router.replace({ query })
 }
 
-// --- PROJECT & HSO EXTRACTION HELPERS ---
-const extractProjectFromText = (text) => {
-  if (!text) return ''
-  const str = String(text)
-  const regex = /pro(?:ject|yek)\s*[:\-]?\s*(.*?)(?=\s*(?:>|status|\n|$))/i
-  const match = str.match(regex)
-  if (match && match[1] && match[1].trim()) {
-    return match[1].replace(/[\s\-]+$/, '').trim()
-  }
-  return ''
-}
-
-const extractHsoFromText = (text) => {
-  if (!text) return ''
-  const str = String(text)
-  const match = str.match(/(HSO[\/-][\w\d\/-]+)/i)
-  return match ? match[1].replace(/-/g, '/') : ''
-}
-
 // --- DATA FETCHING ---
 const fetchOrders = async () => {
-  // 1. Optimistic Cache Load
-  const cached = localStorage.getItem('delivery_orders_cache')
-  if (cached) {
-    try {
-      const parsed = JSON.parse(cached)
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        deliveryOrders.value = parsed
-        isLoading.value = false
-      }
-    } catch {}
+  isLoading.value = true
+  let query = supabase
+    .from('accurate_delivery_orders')
+    .select('id, number, trans_date, customer_name, status_name, ship_to, driver_name')
+    
+  const { data, error } = await query.order('trans_date', { ascending: false }).limit(2000)
+
+  if (error) {
+    console.error("Error fetching delivery orders:", error)
+  } else if (data) {
+    deliveryOrders.value = data.map(item => ({
+      id_database: item.id,
+      no_do: item.number,
+      customer: item.customer_name || 'Tanpa Nama',
+      date: item.trans_date,
+      status: item.status_name || '',
+      ship_to: item.ship_to,
+      driver: item.driver_name
+    }))
   }
-
-  if (deliveryOrders.value.length === 0) {
-    isLoading.value = true
-  }
-
-  try {
-    // 2. Fetch from Supabase
-    let query = supabase
-      .from('accurate_delivery_orders')
-      .select(`
-        id, number, trans_date, customer_name, status_name, ship_to, driver_name,
-        description, project_name, po_number, hso_numbers,
-        items:accurate_delivery_order_items(id, item_code, item_name, quantity, detail_notes, hso_number)
-      `)
-      
-    const { data, error } = await query.order('trans_date', { ascending: false }).limit(2000)
-
-    if (error) {
-      console.warn("Supabase DO fetch error:", error)
-    } else if (data && data.length > 0) {
-      deliveryOrders.value = data.map(item => {
-        const proj = item.project_name || extractProjectFromText(item.description) || ''
-        const hsoItems = item.items ? item.items.map(i => i.hso_number || extractHsoFromText(i.detail_notes)).filter(Boolean) : []
-        const distinctHso = Array.from(new Set([
-          ...(item.hso_numbers ? item.hso_numbers.split(',').map(s => s.trim()) : []),
-          ...hsoItems,
-          extractHsoFromText(item.description)
-        ].filter(Boolean))).join(', ')
-
-        return {
-          id_database: item.id,
-          no_do: item.number,
-          customer: item.customer_name || 'Tanpa Nama',
-          date: item.trans_date,
-          status: item.status_name || '',
-          project: proj,
-          hso_number: distinctHso,
-          po_number: item.po_number || '',
-          driver: item.driver_name,
-          ship_to: item.ship_to
-        }
-      })
-
-      localStorage.setItem('delivery_orders_cache', JSON.stringify(deliveryOrders.value))
-    }
-  } catch (err) {
-    console.error("Error fetching delivery orders:", err)
-  } finally {
-    isLoading.value = false
-  }
+  isLoading.value = false
 }
 
 // --- SYNC ACTION ---
@@ -356,9 +296,7 @@ const filteredAndSortedOrders = computed(() => {
     result = result.filter(doItem => 
       doItem.customer.toLowerCase().includes(query) || 
       doItem.no_do.toLowerCase().includes(query) ||
-      (doItem.project && doItem.project.toLowerCase().includes(query)) ||
-      (doItem.hso_number && doItem.hso_number.toLowerCase().includes(query)) ||
-      (doItem.po_number && doItem.po_number.toLowerCase().includes(query))
+      (doItem.ship_to && doItem.ship_to.toLowerCase().includes(query))
     )
   }
 
@@ -438,13 +376,7 @@ const getFilename = (ext) => `Laporan_DeliveryOrder_${new Date().toISOString().s
 
 const exportToExcel = () => {
   const dataToExport = filteredAndSortedOrders.value.map(item => ({
-    "No DO": item.no_do,
-    "Customer": item.customer,
-    "Proyek": item.project || '-',
-    "No HSO": item.hso_number || '-',
-    "PO Customer": item.po_number || '-',
-    "Tanggal": item.date,
-    "Status": item.status
+    "No DO": item.no_do, "Customer": item.customer, "Tanggal": item.date, "Status": item.status, "Alamat Kirim": item.ship_to
   }))
   const ws = XLSX.utils.json_to_sheet(dataToExport)
   const wb = XLSX.utils.book_new()
@@ -455,19 +387,8 @@ const exportToExcel = () => {
 const exportToPDF = () => {
   const doc = new jsPDF()
   doc.text("Laporan Delivery Order", 14, 15)
-  const rows = filteredAndSortedOrders.value.map(item => [
-    item.no_do,
-    item.customer,
-    item.project || item.hso_number || '-',
-    item.date,
-    item.status
-  ])
-  autoTable(doc, {
-    head: [["No DO", "Customer", "Proyek / HSO", "Tanggal", "Status"]],
-    body: rows,
-    startY: 25,
-    headStyles: { fillColor: [185, 28, 28] }
-  })
+  const rows = filteredAndSortedOrders.value.map(item => [item.no_do, item.customer, item.date, item.status])
+  autoTable(doc, { head: [["No DO", "Customer", "Tanggal", "Status"]], body: rows, startY: 25, headStyles: { fillColor: [185, 28, 28] } })
   doc.save(getFilename('pdf'))
 }
 
@@ -563,7 +484,7 @@ const hasActiveFilters = computed(() => {
           <input
             v-model="searchQuery"
             type="text"
-            placeholder="Cari No. DO, Customer, Proyek, atau HSO..."
+            placeholder="Cari No. DO, Customer, atau Alamat Kirim..."
             class="w-full bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 pl-10 pr-4 py-2 rounded-xl text-sm outline-none focus:ring-2 focus:ring-red-500/60 focus:border-transparent transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 font-sans"
           />
         </div>
@@ -626,28 +547,21 @@ const hasActiveFilters = computed(() => {
         <TableHeader class="bg-slate-50/80 dark:bg-slate-900/80 border-b border-slate-200/80 dark:border-slate-800">
           <TableRow class="hover:bg-transparent border-none">
             
-            <TableHead class="text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white py-3.5 px-4 w-[190px]" @click="toggleSort('no_do')">
+            <TableHead class="text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white py-3.5 px-4 w-[200px]" @click="toggleSort('no_do')">
                 <div class="flex items-center gap-1.5">
                   No. DO 
                   <component :is="sortKey==='no_do' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='no_do' ? 'text-red-600' : 'opacity-30'"/>
                 </div>
             </TableHead>
 
-            <TableHead class="text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white py-3.5 px-4 min-w-[200px]" @click="toggleSort('customer')">
+            <TableHead class="text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white py-3.5 px-4" @click="toggleSort('customer')">
                 <div class="flex items-center gap-1.5">
                   Customer 
                   <component :is="sortKey==='customer' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='customer' ? 'text-red-600' : 'opacity-30'"/>
                 </div>
             </TableHead>
 
-            <TableHead class="text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white py-3.5 px-4 min-w-[220px]" @click="toggleSort('project')">
-                <div class="flex items-center gap-1.5">
-                  Proyek / HSO
-                  <component :is="sortKey==='project' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='project' ? 'text-red-600' : 'opacity-30'"/>
-                </div>
-            </TableHead>
-
-            <TableHead class="hidden md:table-cell text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[130px] py-3.5 px-4" @click="toggleSort('date')">
+            <TableHead class="hidden md:table-cell text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider cursor-pointer hover:text-slate-900 dark:hover:text-white w-[140px] py-3.5 px-4" @click="toggleSort('date')">
                 <div class="flex items-center gap-1.5">
                   Tanggal 
                   <component :is="sortKey==='date' ? (sortOrder==='asc' ? ArrowUp : ArrowDown) : ChevronsUpDown" class="w-4 h-4" :class="sortKey==='date' ? 'text-red-600' : 'opacity-30'"/>
@@ -661,7 +575,11 @@ const hasActiveFilters = computed(() => {
                 </div>
             </TableHead>
 
-            <TableHead class="w-[45px]"></TableHead>
+            <TableHead class="hidden md:table-cell text-slate-500 dark:text-slate-400 font-bold text-xs uppercase tracking-wider py-3.5 px-4 w-[280px]">
+                <div class="flex items-center gap-1.5">Alamat Kirim</div>
+            </TableHead>
+
+            <TableHead class="w-[50px]"></TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -693,68 +611,39 @@ const hasActiveFilters = computed(() => {
             class="group cursor-pointer hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors border-b border-slate-100 dark:border-slate-800/80 last:border-0" 
             @click="router.push(`/delivery-orders/${doItem.id_database}`)"
           >
-            <!-- No. DO -->
-            <TableCell class="py-3.5 px-4 align-middle whitespace-nowrap">
+            <TableCell class="py-4 px-4 align-middle whitespace-nowrap">
               <div class="flex items-center gap-2.5">
                 <div class="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400 group-hover:bg-red-50 group-hover:text-red-600 dark:group-hover:bg-red-950/30 dark:group-hover:text-red-400 transition-colors">
                   <Truck class="w-4 h-4" />
                 </div>
-                <div class="flex flex-col">
-                  <span class="text-xs md:text-sm font-bold text-slate-900 dark:text-slate-100 font-sans">
-                    {{ doItem.no_do }}
-                  </span>
-                  <span v-if="doItem.po_number && doItem.po_number !== '-'" class="text-[10.5px] font-mono text-slate-400">
-                    PO: {{ doItem.po_number }}
-                  </span>
-                </div>
+                <span class="text-xs md:text-sm font-bold text-slate-900 dark:text-slate-100 font-sans">
+                  {{ doItem.no_do }}
+                </span>
               </div>
             </TableCell>
 
-            <!-- Customer -->
-            <TableCell class="py-3.5 px-4 align-middle whitespace-nowrap">
+            <TableCell class="py-4 px-4 align-middle whitespace-nowrap">
               <div class="flex flex-col">
                 <span class="text-xs md:text-sm font-bold text-slate-900 dark:text-slate-100 font-sans truncate max-w-[250px]" :title="doItem.customer">{{ doItem.customer }}</span>
                 <span class="text-[11px] text-slate-400 md:hidden mt-0.5 font-medium">{{ formatShortDate(doItem.date) }}</span>
               </div>
             </TableCell>
 
-            <!-- Proyek / HSO Column (Replaced Alamat Kirim) -->
-            <TableCell class="py-3.5 px-4 align-middle">
-              <div class="flex flex-col min-w-[160px]">
-                <!-- If project exists, display project name on top -->
-                <span v-if="doItem.project && doItem.project !== '-'" class="text-xs md:text-sm font-bold text-slate-900 dark:text-slate-100 truncate max-w-[260px]" :title="doItem.project">
-                  {{ doItem.project }}
-                </span>
-
-                <!-- HSO below project (or as primary if no project) -->
-                <div v-if="doItem.hso_number" :class="{ 'mt-0.5': doItem.project && doItem.project !== '-' }">
-                  <span class="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/60">
-                    <FileText class="w-2.5 h-2.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                    <span>{{ doItem.hso_number }}</span>
-                  </span>
-                </div>
-
-                <!-- If neither project nor HSO exists -->
-                <span v-else-if="!doItem.project || doItem.project === '-'" class="text-xs text-slate-400 italic">
-                  -
-                </span>
-              </div>
-            </TableCell>
-
-            <!-- Tanggal -->
-            <TableCell class="hidden md:table-cell py-3.5 px-4 align-middle whitespace-nowrap">
+            <TableCell class="hidden md:table-cell py-4 px-4 align-middle whitespace-nowrap">
               <span class="text-xs md:text-sm font-medium text-slate-600 dark:text-slate-400 font-sans">{{ formatShortDate(doItem.date) }}</span>
             </TableCell>
 
-            <!-- Status -->
-            <TableCell class="py-3.5 px-4 align-middle whitespace-nowrap">
+            <TableCell class="py-4 px-4 align-middle whitespace-nowrap">
               <Badge variant="outline" class="transition-all font-semibold px-2.5 py-0.5 rounded-lg text-xs border shadow-2xs" :class="getStatusColor(doItem.status)">
                 {{ doItem.status }}
               </Badge>
             </TableCell>
 
-            <!-- Action Arrow -->
-            <TableCell class="py-3.5 px-4 align-middle text-right">
+            <TableCell class="hidden md:table-cell py-4 px-4 align-middle text-xs text-slate-600 dark:text-slate-400 font-sans">
+              <div class="truncate max-w-[280px]" :title="doItem.ship_to">{{ doItem.ship_to || '-' }}</div>
+            </TableCell>
+
+            <TableCell class="py-4 px-4 align-middle text-right">
               <ArrowRight class="w-4 h-4 text-slate-300 dark:text-slate-600 group-hover:text-red-600 dark:group-hover:text-red-400 group-hover:translate-x-1 transition-all" />
             </TableCell>
 
@@ -801,3 +690,4 @@ const hasActiveFilters = computed(() => {
     </div>
   </div>
 </template>
+
