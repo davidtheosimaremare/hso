@@ -467,9 +467,15 @@ const formatDateSimple = (dateStr) => {
 const getVisualStatus = (shipment) => {
     if (!shipment || Object.keys(shipment).length === 0) return 'Pending Process'
     if (shipment.current_status === 'Hold by Customer') return 'Hold by Customer'
-    if (shipment.current_status === 'Already in Hokiindo Raya' || shipment.hokiindo_date) return 'Already in Hokiindo Raya'
-    if (shipment.current_status === 'Already in siemens Warehouse' || shipment.dunex_date) return 'Already in siemens Warehouse'
-    if (shipment.current_status === 'ETA Port JKT' || shipment.eta_date) return 'ETA Port JKT'
+    if (shipment.current_status === 'Already in Hokiindo Raya') return 'Already in Hokiindo Raya'
+    if (shipment.current_status === 'Already in siemens Warehouse') return 'Already in siemens Warehouse'
+    if (shipment.current_status === 'ETA Port JKT') return 'ETA Port JKT'
+    if (shipment.current_status === 'Follow up with our forwarder') return 'Follow up with our forwarder'
+    
+    // Fallbacks based on recorded dates if current_status is empty or unknown
+    if (shipment.hokiindo_date) return 'Already in Hokiindo Raya'
+    if (shipment.dunex_date) return 'Already in siemens Warehouse'
+    if (shipment.eta_date) return 'ETA Port JKT'
     if (shipment.exwork_date || shipment.exwork_waiting) return 'Follow up with our forwarder'
     return 'Pending Process'
 }
@@ -477,12 +483,12 @@ const getVisualStatus = (shipment) => {
 const getVisualStatusDate = (shipment) => {
     if (!shipment) return ''
     const status = getVisualStatus(shipment)
-    if (status === 'Already in Hokiindo Raya') return formatDateSimple(shipment.hokiindo_date)
-    if (status === 'Already in siemens Warehouse') return formatDateSimple(shipment.dunex_date)
-    if (status === 'ETA Port JKT') return formatDateSimple(shipment.eta_date)
+    if (status === 'Already in Hokiindo Raya') return formatDateSimple(shipment.hokiindo_date || shipment.status_date || shipment.dunex_date)
+    if (status === 'Already in siemens Warehouse') return formatDateSimple(shipment.dunex_date || shipment.status_date)
+    if (status === 'ETA Port JKT') return formatDateSimple(shipment.eta_date || shipment.status_date)
     if (status === 'Follow up with our forwarder') {
       if (shipment.exwork_waiting) return 'Waiting for confirmation'
-      return formatDateSimple(shipment.exwork_date)
+      return formatDateSimple(shipment.exwork_date || shipment.status_date)
     }
     return ''
 }
@@ -1630,8 +1636,9 @@ const applyExcelUpdates = async () => {
           if (item.excelStatus === 'Already in Hokiindo Raya') {
             insertPayload.hokiindo_date = item.excelDelivery
             insertPayload.dunex_date = item.excelDelivery
-          } else {
+          } else if (item.excelStatus === 'Already in siemens Warehouse') {
             insertPayload.dunex_date = item.excelDelivery
+            insertPayload.hokiindo_date = null
           }
         }
         
@@ -1653,17 +1660,16 @@ const applyExcelUpdates = async () => {
           updateData.current_status = item.excelStatus
           updateData.status_date = new Date().toISOString().split('T')[0]
           
-          // Clear future dates if we go back to an earlier stage,
-          // BUT only if they are not explicitly provided in the Excel row!
+          // Clear future dates if we go back to an earlier stage
           if (item.excelStatus === 'Follow up with our forwarder') {
             updateData.eta_date = item.excelEta || null
-            updateData.dunex_date = item.excelDelivery || null
-            updateData.hokiindo_date = item.excelDelivery || null
+            updateData.dunex_date = null
+            updateData.hokiindo_date = null
           } else if (item.excelStatus === 'ETA Port JKT') {
-            updateData.dunex_date = item.excelDelivery || null
-            updateData.hokiindo_date = item.excelDelivery || null
+            updateData.dunex_date = null
+            updateData.hokiindo_date = null
           } else if (item.excelStatus === 'Already in siemens Warehouse') {
-            updateData.hokiindo_date = item.excelDelivery || null
+            updateData.hokiindo_date = null
           }
         }
         
@@ -1689,10 +1695,9 @@ const applyExcelUpdates = async () => {
             if (!item.dbDelivery || item.dbDelivery === '-') {
               updateData.dunex_date = item.excelDelivery
             }
-          } else {
-            if (!item.dbDelivery || item.dbDelivery === '-') {
-              updateData.dunex_date = item.excelDelivery
-            }
+          } else if (item.excelStatus === 'Already in siemens Warehouse') {
+            updateData.dunex_date = item.excelDelivery
+            updateData.hokiindo_date = null
           }
         }
         
