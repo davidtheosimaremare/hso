@@ -2670,10 +2670,10 @@ const getHpoSubSchedules = (item, hpoNumber) => {
     let status = 'Follow up with our forwarder'
     if (r.status) {
       const sLower = String(r.status).toLowerCase()
-      if (sLower.includes('delivery') || sLower.includes('done') || sLower.includes('arrived') || sLower.includes('hokiindo') || r.delivery_date) {
-        status = 'Already in Hokiindo Raya'
-      } else if (sLower.includes('dunex') || sLower.includes('warehouse')) {
+      if (sLower.includes('dunex') || sLower.includes('warehouse') || sLower.includes('siemens wh') || sLower.includes('our wh')) {
         status = 'Already in siemens Warehouse'
+      } else if (sLower.includes('delivery') || sLower.includes('done') || sLower.includes('delivered') || sLower.includes('customer') || sLower.includes('hokiindo') || r.delivery_date) {
+        status = 'Already in Hokiindo Raya'
       } else if (sLower.includes('eta') || sLower.includes('port') || r.eta_date) {
         status = 'ETA Port JKT'
       } else {
@@ -2695,10 +2695,18 @@ const getHpoSubSchedules = (item, hpoNumber) => {
 
     let displayDate = '-'
     let rawDate = null
-    if (r.delivery_date) { displayDate = formatDateSimple(r.delivery_date); rawDate = r.delivery_date }
-    else if (r.eta_date) { displayDate = formatDateSimple(r.eta_date); rawDate = r.eta_date }
-    else if (r.exwork_date) { displayDate = formatDateSimple(r.exwork_date); rawDate = r.exwork_date }
-    else if (r.exwork_waiting) { displayDate = 'Waiting'; rawDate = 'waiting' }
+    if (status === 'Already in siemens Warehouse') {
+      const dDate = r.dunex_date || r.delivery_date || r.eta_date || (r.updated_at ? r.updated_at.split('T')[0] : null)
+      if (dDate) { displayDate = formatDateSimple(dDate); rawDate = dDate }
+    } else if (r.delivery_date) { 
+      displayDate = formatDateSimple(r.delivery_date); rawDate = r.delivery_date 
+    } else if (r.eta_date) { 
+      displayDate = formatDateSimple(r.eta_date); rawDate = r.eta_date 
+    } else if (r.exwork_date) { 
+      displayDate = formatDateSimple(r.exwork_date); rawDate = r.exwork_date 
+    } else if (r.exwork_waiting) { 
+      displayDate = 'Waiting'; rawDate = 'waiting' 
+    }
 
     rawBatches.push({
       status: displayStatus,

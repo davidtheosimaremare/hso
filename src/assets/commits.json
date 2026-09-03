@@ -1,5 +1,13 @@
 [
   {
+    "hash": "ecf8df0add92c5c3ac451f4280a5b942ca285ddf",
+    "shortHash": "ecf8df0",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Sep 3 14:02:04 2026 +0700",
+    "message": "fix(logistics): prioritize current_status in getVisualStatus and prevent Dunex status from falsely populating hokiindo_date"
+  },
+  {
     "hash": "a29341f12d23e93769f86f173e26a807db48c647",
     "shortHash": "a29341f",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 16:40:29 2026 +0700",
     "message": "fix: remove circular Step-2 HPO re-fetch that recreated shipments after Keterangan cleared"
-  },
-  {
-    "hash": "c92e99b11f18f4f2e1694bd4c7724aef3b368e62",
-    "shortHash": "c92e99b",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 16:31:22 2026 +0700",
-    "message": "ui: remove HPO badges from SO list view (visible in detail view only)"
   }
 ]
