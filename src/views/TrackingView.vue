@@ -329,19 +329,30 @@ const syncHpoInBackground = async (soNumbers) => {
                     }
                 }
                 
+                const isInvalidPo = (poNumber, statusName) => {
+                    const num = (poNumber || '').trim().toUpperCase()
+                    const st = (statusName || '').trim().toLowerCase()
+                    if (!num) return true
+                    if (num.startsWith('DFT.') || num.includes('DFT.') || num.startsWith('DRAFT') || num.includes('[DRAFT]')) return true
+                    if (['ditutup', 'ditolak', 'draf', 'draft', 'diajukan', 'unapproved', 'rejected', 'closed'].includes(st)) return true
+                    return false
+                }
+
                 const poData = { d: null }
                 if (!error && dbItems.length > 0) {
-                    poData.d = dbItems.map(item => ({
-                        poId: item.header?.id,
-                        poNumber: item.header?.number,
-                        poDate: item.header?.trans_date,
-                        poStatus: item.header?.status_name || 'Open',
-                        itemCode: item.item_code,
-                        itemName: item.item_name,
-                        quantity: item.quantity,
-                        description: item.detail_notes,
-                        vendorName: item.header?.vendor_name
-                    }))
+                    poData.d = dbItems
+                        .filter(item => !isInvalidPo(item.header?.number, item.header?.status_name))
+                        .map(item => ({
+                            poId: item.header?.id,
+                            poNumber: item.header?.number,
+                            poDate: item.header?.trans_date,
+                            poStatus: item.header?.status_name || 'Open',
+                            itemCode: item.item_code,
+                            itemName: item.item_name,
+                            quantity: item.quantity,
+                            description: item.detail_notes,
+                            vendorName: item.header?.vendor_name
+                        }))
                 }
                 
                 if (!error && poData?.d) {

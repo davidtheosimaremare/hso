@@ -208,7 +208,7 @@ const fetchOrders = async () => {
       const [poItemsRes, shipmentsRes] = await Promise.all([
         supabase
           .from('accurate_purchase_order_items')
-          .select('hso_number, header:accurate_purchase_orders(number)')
+          .select('hso_number, header:accurate_purchase_orders(number, status_name)')
           .not('hso_number', 'is', null),
         supabase
           .from('shipments')
@@ -216,9 +216,18 @@ const fetchOrders = async () => {
           .not('hpo_number', 'is', null)
       ])
 
+      const isInvalidPo = (poNumber, statusName) => {
+        const num = (poNumber || '').trim().toUpperCase()
+        const st = (statusName || '').trim().toLowerCase()
+        if (!num) return true
+        if (num.startsWith('DFT.') || num.includes('DFT.') || num.startsWith('DRAFT') || num.includes('[DRAFT]')) return true
+        if (['ditutup', 'ditolak', 'draf', 'draft', 'diajukan', 'unapproved', 'rejected', 'closed'].includes(st)) return true
+        return false
+      }
+
       const poItems = poItemsRes?.data || []
       poItems.forEach(p => {
-        if (p.hso_number && p.header?.number) {
+        if (p.hso_number && p.header?.number && !isInvalidPo(p.header.number, p.header.status_name)) {
           const hso = p.hso_number.trim().toUpperCase()
           if (!soHpoMap[hso]) soHpoMap[hso] = new Set()
           soHpoMap[hso].add(p.header.number.trim())
@@ -231,7 +240,7 @@ const fetchOrders = async () => {
           const soKey = String(s.so_id).trim().toUpperCase()
           if (!soHpoMap[soKey]) soHpoMap[soKey] = new Set()
           s.hpo_number.split(',').forEach(num => {
-            if (num.trim()) soHpoMap[soKey].add(num.trim())
+            if (num.trim() && !isInvalidPo(num.trim())) soHpoMap[soKey].add(num.trim())
           })
         }
       })

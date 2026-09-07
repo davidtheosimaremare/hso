@@ -849,6 +849,23 @@ const exportFullHsoExcel = () => {
     XLSX.writeFile(wb, `HSO_DETAIL_${safeSoNumber}.xlsx`);
 };
 
+// Helper: Detect draft, unapproved, rejected, or closed POs
+const isInvalidPo = (poNumberOrObj, statusName) => {
+  let num = ''
+  let st = ''
+  if (typeof poNumberOrObj === 'object' && poNumberOrObj !== null) {
+    num = (poNumberOrObj.number || poNumberOrObj.poNumber || poNumberOrObj.hpo_number || '').trim().toUpperCase()
+    st = (poNumberOrObj.status_name || poNumberOrObj.poStatus || poNumberOrObj.statusName || statusName || '').trim().toLowerCase()
+  } else {
+    num = (poNumberOrObj || '').trim().toUpperCase()
+    st = (statusName || '').trim().toLowerCase()
+  }
+  if (!num) return true
+  if (num.startsWith('DFT.') || num.includes('DFT.') || num.startsWith('DRAFT') || num.includes('[DRAFT]')) return true
+  if (['ditutup', 'ditolak', 'draf', 'draft', 'diajukan', 'unapproved', 'rejected', 'closed'].includes(st)) return true
+  return false
+}
+
 // --- BACKGROUND HPO FETCH ---
 const fetchHpoInBackground = async (soNumber) => {
   try {
@@ -927,18 +944,20 @@ const fetchHpoInBackground = async (soNumber) => {
 
     const poData = { d: null }
     if (!poError && dbItems.length > 0) {
-      poData.d = dbItems.map(item => ({
-        poId: item.header?.id,
-        poNumber: item.header?.number,
-        poDate: item.header?.trans_date,
-        poStatus: item.header?.status_name || 'Open',
-        itemCode: item.item_code,
-        itemName: item.item_name,
-        quantity: item.quantity,
-        description: item.detail_notes,
-        hsoNumber: item.hso_number,
-        vendorName: item.header?.vendor_name
-      }))
+      poData.d = dbItems
+        .filter(item => !isInvalidPo(item.header?.number, item.header?.status_name))
+        .map(item => ({
+          poId: item.header?.id,
+          poNumber: item.header?.number,
+          poDate: item.header?.trans_date,
+          poStatus: item.header?.status_name || 'Open',
+          itemCode: item.item_code,
+          itemName: item.item_name,
+          quantity: item.quantity,
+          description: item.detail_notes,
+          hsoNumber: item.hso_number,
+          vendorName: item.header?.vendor_name
+        }))
     }
     
     syncProgress.value = 60
@@ -948,7 +967,7 @@ const fetchHpoInBackground = async (soNumber) => {
     const totalItems = items.length
     
     items.forEach((item, idx) => {
-      if (item.itemCode && item.poNumber) {
+      if (item.itemCode && item.poNumber && !isInvalidPo(item.poNumber, item.poStatus)) {
         if (mapping[item.itemCode] && !mapping[item.itemCode].includes(item.poNumber)) {
           mapping[item.itemCode] += `, ${item.poNumber}`
         } else if (!mapping[item.itemCode]) {
@@ -993,14 +1012,14 @@ const fetchHpoInBackground = async (soNumber) => {
         // Fetch fresh shipment list from DB to ensure local state is 100% up to date with any recent saves
         const { data: freshShips } = await supabase.from('shipments').select('*').eq('so_id', String(resolvedSoId.value || soDetail.value.id))
         if (freshShips) {
-          shipmentList.value = freshShips
+          shipmentList.value = freshShips.filter(s => !isInvalidPo(s.hpo_number))
         }
 
         const missingShipments = []
         soDetail.value.items.forEach(item => {
           const hasHpo = mapping[item.code]
           if (hasHpo) {
-            const hpos = hasHpo.split(',').map(x => x.trim())
+            const hpos = hasHpo.split(',').map(x => x.trim()).filter(h => h && !isInvalidPo(h))
             hpos.forEach(hpo => {
               // Only create if no shipment exists for this specific (item_code, hpo_number) pair
               const hasShipment = shipmentList.value.some(s => s.item_code === item.code && s.hpo_number === hpo)
@@ -1026,7 +1045,7 @@ const fetchHpoInBackground = async (soNumber) => {
             .select()
             
           if (!insertErr && newShips) {
-            shipmentList.value = [...shipmentList.value, ...newShips]
+            shipmentList.value = [...shipmentList.value, ...newShips.filter(s => !isInvalidPo(s.hpo_number))]
             console.log('Successfully healed missing shipments')
           } else if (insertErr) {
             console.warn('Healing error:', insertErr)
@@ -1034,8 +1053,9 @@ const fetchHpoInBackground = async (soNumber) => {
         }
 
         // Re-sync items with cleaned shipmentList
+        const cleanShipments = shipmentList.value.filter(s => !isInvalidPo(s.hpo_number))
         soDetail.value.items.forEach(item => {
-          const myShipments = shipmentList.value.filter(s => s.item_code === item.code && (s.item_seq === item.seq || s.item_seq == null))
+          const myShipments = cleanShipments.filter(s => s.item_code === item.code && (s.item_seq === item.seq || s.item_seq == null))
           const sortedMyShipments = [...myShipments].sort((a, b) => {
             const aHasHpo = a.hpo_number ? 1 : 0
             const bHasHpo = b.hpo_number ? 1 : 0
@@ -1047,7 +1067,7 @@ const fetchHpoInBackground = async (soNumber) => {
           const myShipment = sortedMyShipments[0] || {}
           item.shipments_data = myShipments
           item.logistics_status = myShipment.current_status || 'Pending Process'
-          item.logistics_hpo = myShipment.hpo_number || null
+          item.logistics_hpo = (myShipment.hpo_number && !isInvalidPo(myShipment.hpo_number)) ? myShipment.hpo_number : null
           item.logistics_date = myShipment.status_date || myShipment.updated_at || null
           item.logistics_id = myShipment.id || null
           item.exwork_date = myShipment.exwork_date || null
@@ -1841,7 +1861,7 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
     const { data: shipData } = await supabase.from('shipments').select('*').eq('so_id', String(resolvedSoId.value))
     let currentShips = shipData || []
 
-    shipmentList.value = currentShips
+    shipmentList.value = currentShips.filter(s => !isInvalidPo(s.hpo_number))
 
     // Load accurate PO items already in Supabase for this SO
     try {
@@ -1859,19 +1879,21 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
           .or(orClauses.join(','))
 
         if (poItemsData && poItemsData.length > 0) {
-          hpoDetails.value = poItemsData.map(item => ({
-            poId: item.header?.id,
-            poNumber: item.header?.number,
-            poDate: item.header?.trans_date,
-            poStatus: item.header?.status_name || 'Open',
-            itemCode: item.item_code,
-            itemName: item.item_name,
-            quantity: item.quantity,
-            description: item.detail_notes,
-            hsoNumber: item.hso_number,
-            vendorName: item.header?.vendor_name,
-            isFromAccurate: true
-          }))
+          hpoDetails.value = poItemsData
+            .filter(item => !isInvalidPo(item.header?.number, item.header?.status_name))
+            .map(item => ({
+              poId: item.header?.id,
+              poNumber: item.header?.number,
+              poDate: item.header?.trans_date,
+              poStatus: item.header?.status_name || 'Open',
+              itemCode: item.item_code,
+              itemName: item.item_name,
+              quantity: item.quantity,
+              description: item.detail_notes,
+              hsoNumber: item.hso_number,
+              vendorName: item.header?.vendor_name,
+              isFromAccurate: true
+            }))
 
           // Fetch all sibling items from the same POs (for Smart FIFO Waterfall Allocation)
           const uniquePoIds = Array.from(new Set(poItemsData.map(i => i.header?.id || i.po_id).filter(Boolean)))
@@ -1941,7 +1963,7 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
     // Initialize hpoMapping directly from Supabase shipments & PO items
     const directMapping = {}
     ;(shipData || []).forEach(s => {
-      if (s.item_code && s.hpo_number) {
+      if (s.item_code && s.hpo_number && !isInvalidPo(s.hpo_number)) {
         if (directMapping[s.item_code] && !directMapping[s.item_code].includes(s.hpo_number)) {
           directMapping[s.item_code] += `, ${s.hpo_number}`
         } else if (!directMapping[s.item_code]) {
@@ -1950,7 +1972,7 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
       }
     })
     ;(hpoDetails.value || []).forEach(p => {
-      if (p.itemCode && p.poNumber) {
+      if (p.itemCode && p.poNumber && !isInvalidPo(p.poNumber, p.poStatus)) {
         if (directMapping[p.itemCode] && !directMapping[p.itemCode].includes(p.poNumber)) {
           directMapping[p.itemCode] += `, ${p.poNumber}`
         } else if (!directMapping[p.itemCode]) {
@@ -2000,12 +2022,14 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
       items: sortedItems.map(item => {
         const code = item.item?.no || '-'
         const seq = item.seq || 0
-        // Find by code AND sequence to avoid split row overlap
-        const myShipments = shipmentList.value.filter(s => {
-          const sCode = (s.item_code || '').trim().toUpperCase()
-          const targetCode = (code || '').trim().toUpperCase()
-          return sCode === targetCode && (s.item_seq === seq || s.item_seq == null)
-        })
+        // Find by code AND sequence to avoid split row overlap (ignore invalid/draft PO shipments)
+        const myShipments = shipmentList.value
+          .filter(s => !isInvalidPo(s.hpo_number))
+          .filter(s => {
+            const sCode = (s.item_code || '').trim().toUpperCase()
+            const targetCode = (code || '').trim().toUpperCase()
+            return sCode === targetCode && (s.item_seq === seq || s.item_seq == null)
+          })
         
         const qty_order = item.quantity || 0
         const qty_shipped = item.shipQuantity || 0
@@ -2074,7 +2098,7 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
           shipments_data: myShipments, // Array of all shipments for this item (multi-PO support)
           
           logistics_status: myShipment.current_status || 'Pending Process', 
-          logistics_hpo: myShipment.hpo_number || null,
+          logistics_hpo: (myShipment.hpo_number && !isInvalidPo(myShipment.hpo_number)) ? myShipment.hpo_number : null,
           logistics_date: myShipment.status_date || myShipment.updated_at || null, 
           logistics_id: myShipment.id || null,
           logistics_hdo: myShipment.hpo_number && ['On Delivery','Completed'].includes(myShipment.current_status) ? myShipment.hpo_number : null,
@@ -2509,7 +2533,7 @@ const getHpoEntries = (item) => {
   
   // 1. If hpoDetails is available (e.g. from manual HPO sync)
   if (hpoDetails.value && hpoDetails.value.length > 0) {
-    const poItems = hpoDetails.value.filter(p => p.itemCode === item.code)
+    const poItems = hpoDetails.value.filter(p => p.itemCode === item.code && !isInvalidPo(p.poNumber, p.poStatus))
     if (poItems.length > 0) {
       return poItems.map(p => ({
         poNumber: p.poNumber,
@@ -2525,7 +2549,7 @@ const getHpoEntries = (item) => {
 
   // 2. Direct from item.shipments_data (loaded immediately from Supabase)
   if (item.shipments_data && item.shipments_data.length > 0) {
-    const validShips = item.shipments_data.filter(s => s.hpo_number && s.hpo_number.trim())
+    const validShips = item.shipments_data.filter(s => s.hpo_number && s.hpo_number.trim() && !isInvalidPo(s.hpo_number))
     if (validShips.length > 0) {
       const shipCount = validShips.length
       return validShips.map(s => ({
@@ -2993,7 +3017,7 @@ const allLinkedHpos = computed(() => {
   // 1. From hpoDetails (Accurate PO items matching items of this HSO) - PRIMARY TRUTH
   if (hpoDetails.value && hpoDetails.value.length > 0) {
     hpoDetails.value.forEach(p => {
-      if (p.poNumber && p.poNumber.trim()) {
+      if (p.poNumber && p.poNumber.trim() && !isInvalidPo(p.poNumber, p.poStatus)) {
         hpos.add(p.poNumber.trim())
       }
     })
@@ -3005,7 +3029,7 @@ const allLinkedHpos = computed(() => {
     Object.values(hpoMapping.value).forEach(str => {
       if (str) {
         str.split(',').forEach(n => {
-          if (n.trim()) hpos.add(n.trim())
+          if (n.trim() && !isInvalidPo(n.trim())) hpos.add(n.trim())
         })
       }
     })
@@ -3063,7 +3087,8 @@ const groupedShipments = computed(() => {
             // B. Handle HPO (Pesanan Pembelian)
             const hpos = getHpoEntries(item);
             hpos.forEach(hpo => {
-                const poNum = hpo.poNumber.trim();
+                const poNum = (hpo.poNumber || '').trim();
+                if (!poNum || isInvalidPo(poNum, hpo.poStatus)) return;
                 const key = poNum.toLowerCase();
                 let doc = hpoMap.get(key);
                 if (!doc) {
@@ -4339,8 +4364,8 @@ const downloadAttachment = async (att) => {
                         
                         
                         <!-- Fallback HPO from DB (only if confirmed active in hpoMapping) -->
-                        <div v-else-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && item.logistics_hpo && hpoMapping[item.code]" class="mt-1 space-y-1">
-                            <div v-for="hpoStr in item.logistics_hpo.split(',').map(s => s.trim()).filter(Boolean)" :key="hpoStr" class="bg-white dark:bg-slate-800/80 border border-dashed border-slate-300 dark:border-slate-700 rounded-md p-1.5 px-2 space-y-1 font-sans">
+                        <div v-else-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && item.logistics_hpo && !isInvalidPo(item.logistics_hpo) && hpoMapping[item.code]" class="mt-1 space-y-1">
+                            <div v-for="hpoStr in item.logistics_hpo.split(',').map(s => s.trim()).filter(s => s && !isInvalidPo(s))" :key="hpoStr" class="bg-white dark:bg-slate-800/80 border border-dashed border-slate-300 dark:border-slate-700 rounded-md p-1.5 px-2 space-y-1 font-sans">
                                 <div class="flex items-center justify-between gap-1 text-xs">
                                     <div class="flex items-center gap-1 min-w-0">
                                         <ShoppingCart class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -4753,8 +4778,8 @@ const downloadAttachment = async (att) => {
 
                   <!-- Fallback HPO from DB (imported status/manual PO) -->
                   <!-- Only show if item has remaining qty to ship and confirmed active in hpoMapping -->
-                  <div v-else-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && item.logistics_hpo && hpoMapping[item.code]" class="space-y-2">
-                    <div v-for="hpoStr in item.logistics_hpo.split(',').map(s => s.trim()).filter(Boolean)" :key="hpoStr" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
+                  <div v-else-if="getDisplayedQtyRemaining(item) > 0 && (getNoteType(item.admin_note) !== 'stock' || item.qty_to_order > 0) && item.logistics_hpo && !isInvalidPo(item.logistics_hpo) && hpoMapping[item.code]" class="space-y-2">
+                    <div v-for="hpoStr in item.logistics_hpo.split(',').map(s => s.trim()).filter(s => s && !isInvalidPo(s))" :key="hpoStr" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
                       <div class="flex items-center gap-2 mb-2 pb-2 border-b border-dashed border-slate-100 dark:border-slate-700">
                         <ShoppingCart class="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
                         <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">PO Siemens</span>
@@ -5137,11 +5162,11 @@ const downloadAttachment = async (att) => {
                           <CheckCircle2 class="w-7 h-7 text-green-600 shrink-0" />
                           <div class="flex-1 min-w-0">
                               <p class="text-xs font-bold text-green-700 dark:text-green-400 uppercase tracking-wider mb-1">
-                                Purchase Order Terikat ({{ hpoMapping[selectedItem.code].split(',').map(s => s.trim()).filter(Boolean).length }})
+                                Purchase Order Terikat ({{ hpoMapping[selectedItem.code].split(',').map(s => s.trim()).filter(s => s && !isInvalidPo(s)).length }})
                               </p>
                               <div class="flex flex-wrap gap-2">
                                 <span 
-                                  v-for="hpoNum in hpoMapping[selectedItem.code].split(',').map(s => s.trim()).filter(Boolean)" 
+                                  v-for="hpoNum in hpoMapping[selectedItem.code].split(',').map(s => s.trim()).filter(s => s && !isInvalidPo(s))" 
                                   :key="hpoNum"
                                   class="text-lg font-mono font-bold text-green-800 dark:text-green-200 bg-white/80 dark:bg-green-950/60 px-2.5 py-0.5 rounded-lg border border-green-300 dark:border-green-800 shadow-2xs"
                                 >

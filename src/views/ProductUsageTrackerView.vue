@@ -96,6 +96,23 @@ const isValidHsoNumber = (number) => {
   return /^HSO\/\d{2}\/\d{2}\/\d+/i.test(number.trim())
 }
 
+// Helper: Detect draft, unapproved, rejected, or closed POs
+const isInvalidPo = (poNumberOrObj, statusName) => {
+  let num = ''
+  let st = ''
+  if (typeof poNumberOrObj === 'object' && poNumberOrObj !== null) {
+    num = (poNumberOrObj.number || poNumberOrObj.poNumber || poNumberOrObj.hpo_number || '').trim().toUpperCase()
+    st = (poNumberOrObj.status_name || poNumberOrObj.poStatus || poNumberOrObj.statusName || statusName || '').trim().toLowerCase()
+  } else {
+    num = (poNumberOrObj || '').trim().toUpperCase()
+    st = (statusName || '').trim().toLowerCase()
+  }
+  if (!num) return true
+  if (num.startsWith('DFT.') || num.includes('DFT.') || num.startsWith('DRAFT') || num.includes('[DRAFT]')) return true
+  if (['ditutup', 'ditolak', 'draf', 'draft', 'diajukan', 'unapproved', 'rejected', 'closed'].includes(st)) return true
+  return false
+}
+
 // Helper: Extract project from description or SQ
 const extractProjectName = (soObj) => {
   if (!soObj) return '-'
@@ -398,7 +415,8 @@ const groupedHsoList = computed(() => {
 
       if (ship.hpo_number) {
         ship.hpo_number.split(',').forEach(h => {
-          if (h.trim()) map[targetKey].hpos.add(h.trim())
+          const trimmed = h.trim()
+          if (trimmed && !isInvalidPo(trimmed)) map[targetKey].hpos.add(trimmed)
         })
       }
       map[targetKey].shipments.push(ship)
@@ -410,7 +428,7 @@ const groupedHsoList = computed(() => {
     if (poItem.hso_number && isValidHsoNumber(poItem.hso_number)) {
       const hsoNum = poItem.hso_number.trim()
       const existing = map[hsoNum] || Object.values(map).find(m => m.so_number.toLowerCase().includes(hsoNum.toLowerCase()))
-      if (existing && poItem.po?.number) {
+      if (existing && poItem.po?.number && !isInvalidPo(poItem.po.number, poItem.po.status_name)) {
         existing.hpos.add(poItem.po.number)
       }
     }
@@ -514,7 +532,7 @@ const groupedHpoList = computed(() => {
   // C. From PO Items table
   poItemsResults.value.forEach(item => {
     const hpoNum = item.po?.number
-    if (!hpoNum) return
+    if (!hpoNum || isInvalidPo(hpoNum, item.po?.status_name)) return
 
     const isPoClosed = item.po?.status_name === 'Terproses' || item.po?.status_name === 'Ditutup'
     const itemQty = Number(item.quantity || 0)

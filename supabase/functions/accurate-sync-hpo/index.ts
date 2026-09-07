@@ -178,21 +178,31 @@ serve(async (req) => {
                         hso_number: extractHso(item.detailNotes ?? null)
                     }))
                     
-                    await supabase.from('accurate_purchase_order_items').delete().eq('po_id', poHeader.id)
-                    if (poItemsSanitized.length > 0) {
-                        const { error: iErr } = await supabase.from('accurate_purchase_order_items').insert(poItemsSanitized)
-                        if (iErr) console.error(`[sync-hpo] Items insert error: ${iErr.message}`)
-                    }
+                    const poStatusClean = (po.statusName || fullPo?.statusName || '').toLowerCase().trim()
+                    const poNumberClean = (po.number || fullPo?.number || '').trim()
+                    const isDraftOrClosed = Boolean(
+                        fullPo?.manualClosed ||
+                        fullPo?.approvalStatus === 'REJECTED' ||
+                        fullPo?.approvalStatus === 'UNAPPROVED' ||
+                        poNumberClean.startsWith('DFT.') ||
+                        poNumberClean.includes('DFT.') ||
+                        ['ditutup', 'ditolak', 'draf', 'draft', 'diajukan', 'unapproved', 'rejected', 'closed'].includes(poStatusClean)
+                    )
 
-                    const isClosed = Boolean(fullPo?.manualClosed || fullPo?.approvalStatus === 'REJECTED' || po.statusName === 'Ditutup' || po.statusName === 'Ditolak')
-                    if (isClosed) {
-                        console.log(`[sync-hpo] PO ${po.number} is closed/rejected (${fullPo?.closeReason || po.statusName}), removing unfulfilled shipments and skipping`)
+                    await supabase.from('accurate_purchase_order_items').delete().eq('po_id', poHeader.id)
+
+                    if (isDraftOrClosed) {
+                        console.log(`[sync-hpo] PO ${po.number} is closed/draft/unapproved/rejected (${fullPo?.closeReason || po.statusName}), removing unfulfilled shipments and skipping`)
                         await supabase.from('shipments')
                             .delete()
                             .eq('so_id', String(soId))
-                            .eq('hpo_number', po.number)
-                            .in('current_status', ['Follow up with our forwarder', 'Follow up to factory', 'Pending Process'])
+                            .or(`hpo_number.eq.${po.number},hpo_number.ilike.%${po.number}%`)
                         continue
+                    }
+
+                    if (poItemsSanitized.length > 0) {
+                        const { error: iErr } = await supabase.from('accurate_purchase_order_items').insert(poItemsSanitized)
+                        if (iErr) console.error(`[sync-hpo] Items insert error: ${iErr.message}`)
                     }
 
                     poItems.forEach((item: any) => {

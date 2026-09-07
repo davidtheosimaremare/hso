@@ -1,5 +1,13 @@
 [
   {
+    "hash": "b227f8159af548daa501f45995588ade36e95c76",
+    "shortHash": "b227f81",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Mon Sep 7 11:41:35 2026 +0700",
+    "message": "feat(tracking): redesign public tracking with Geist typography, PT Hokiindo Raya branding, and accurate logistics status"
+  },
+  {
     "hash": "5e76c6f767d170d7c9ff5f1a9f448bb1e8dea037",
     "shortHash": "5e76c6f",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 17:14:19 2026 +0700",
     "message": "fix: skip saving HPO shipment rows that have no DB record and were not modified by user, preventing status overwrite on multi-HPO items"
-  },
-  {
-    "hash": "993abb43f3d272847b9e214d757d093cf831ae3c",
-    "shortHash": "993abb4",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 16:43:52 2026 +0700",
-    "message": "ui: remove HPO Terikat badges from SO detail page header"
   }
 ]

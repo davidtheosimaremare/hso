@@ -94,18 +94,29 @@ serve(async (req) => {
 
         if (queryError) throw queryError
 
-        // Transform to expected format
-        const hsoMappings = items.map((item: any) => ({
-            poId: item.header?.id,
-            poNumber: item.header?.number,
-            poDate: item.header?.trans_date,
-            poStatus: item.header?.status_name || 'Open',
-            itemCode: item.item_code,
-            itemName: item.item_name,
-            quantity: item.quantity,
-            description: item.detail_notes,
-            vendorName: item.header?.vendor_name
-        }))
+        const isInvalidPoHeader = (header: any) => {
+            const num = (header?.number || '').trim().toUpperCase()
+            const st = (header?.status_name || '').trim().toLowerCase()
+            if (!num) return true
+            if (num.startsWith('DFT.') || num.includes('DFT.') || num.startsWith('DRAFT') || num.includes('[DRAFT]')) return true
+            if (['ditutup', 'ditolak', 'draf', 'draft', 'diajukan', 'unapproved', 'rejected', 'closed'].includes(st)) return true
+            return false
+        }
+
+        // Transform to expected format (excluding draft/closed POs)
+        const hsoMappings = items
+            .filter((item: any) => !isInvalidPoHeader(item.header))
+            .map((item: any) => ({
+                poId: item.header?.id,
+                poNumber: item.header?.number,
+                poDate: item.header?.trans_date,
+                poStatus: item.header?.status_name || 'Open',
+                itemCode: item.item_code,
+                itemName: item.item_name,
+                quantity: item.quantity,
+                description: item.detail_notes,
+                vendorName: item.header?.vendor_name
+            }))
 
         console.log(`Found ${hsoMappings.length} matches from DB`)
 
