@@ -4,7 +4,8 @@ import { useRoute } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { 
     Loader2, AlertCircle, ChevronDown, ChevronUp, 
-    Truck, Package, Clock, MessageCircle, Send, Download 
+    Truck, Package, Clock, MessageCircle, Send, Download,
+    CheckCircle2, Search, Copy, Check, Calendar, ArrowRight, ShieldCheck, Box
 } from 'lucide-vue-next'
 import * as XLSX from 'xlsx'
 import { Button } from '@/components/ui/button'
@@ -17,16 +18,24 @@ const soHeader = ref(null)
 const soItems = ref([])         
 const isLoading = ref(true)
 const fetchError = ref(null)
+const searchQuery = ref('')
+const isCopied = ref(false)
 
 // State untuk Collapse/Expand Section
 const expandedSections = ref({
     shipped: true,
     pending: true
-    // HPO dynamic keys akan ditambahkan saat data load
 })
 
 const toggleSection = (key) => {
     expandedSections.value[key] = !expandedSections.value[key]
+}
+
+const copySoNumber = () => {
+    if (!soHeader.value?.number) return
+    navigator.clipboard.writeText(soHeader.value.number)
+    isCopied.value = true
+    setTimeout(() => { isCopied.value = false }, 2000)
 }
 
 // --- CONFIG STATUS TEXT ---
@@ -34,25 +43,42 @@ const getStatusText = (item, type) => {
     if (type === 'shipped') return 'Barang Sedang Dikirim / Diterima'
     if (type === 'pending') return 'Menunggu Proses Antrian'
     
+    const status = item?.status || ''
+    if (status === 'Follow up with our forwarder') {
+        if (item?.exwork_waiting || !item?.exwork_date) {
+            return 'Ex-Works - Waiting Confirmation'
+        }
+        return 'Ex-Works'
+    }
+    
     const map = {
         'Follow up to factory': 'Produksi di Pabrik',
-        'Follow up with our forwarder': 'Di Forwarder (Menunggu Kapal)',
         'ETA Port JKT': 'ETA Port Jakarta',
         'Already in siemens Warehouse': 'Tiba di Gudang Dunex',
         'Already in Hokiindo Raya': 'Ready Stock',
         'Completed': 'Selesai',
-        'NO ACTION': 'Menunggu Proses',
-        'Pending Process': 'Menunggu Proses'
+        'NO ACTION': 'Ex-Works - Waiting Confirmation',
+        'Pending Process': 'Ex-Works - Waiting Confirmation',
+        'Diproses': 'Ex-Works - Waiting Confirmation'
     }
-    return map[item.status] || item.status
+    return map[status] || (status ? status : 'Ex-Works - Waiting Confirmation')
 }
 
-const getStatusColor = (status) => {
-    if (['Completed', 'Already in Hokiindo Raya'].includes(status)) return 'text-green-600 bg-green-50 border-green-200'
-    if (['ETA Port JKT', 'Follow up with our forwarder'].includes(status)) return 'text-red-600 bg-red-50 border-red-200'
-    if (['Already in siemens Warehouse'].includes(status)) return 'text-cyan-600 bg-cyan-50 border-cyan-200'
-    if (['Follow up to factory'].includes(status)) return 'text-amber-600 bg-amber-50 border-amber-200'
-    return 'text-slate-600 bg-slate-100 border-slate-200'
+const getStatusBadgeClass = (status) => {
+    if (['Completed', 'Already in Hokiindo Raya', 'Ready Stock'].includes(status)) {
+        return 'text-emerald-700 bg-emerald-50/90 border-emerald-200/90'
+    }
+    if (['ETA Port JKT'].includes(status)) {
+        return 'text-blue-700 bg-blue-50/90 border-blue-200/90'
+    }
+    if (['Already in siemens Warehouse'].includes(status)) {
+        return 'text-cyan-700 bg-cyan-50/90 border-cyan-200/90'
+    }
+    if (['Follow up to factory'].includes(status)) {
+        return 'text-amber-700 bg-amber-50/90 border-amber-200/90'
+    }
+    // Follow up with our forwarder, NO ACTION, Pending Process, default
+    return 'text-amber-800 bg-amber-50/90 border-amber-200'
 }
 
 // Format date helper
@@ -96,39 +122,41 @@ const fetchTrackingData = async () => {
     try {
         const { data: linkData, error: linkError } = await supabase
             .from('so_tracking_links').select('so_id').eq('unique_code', uniqueCode).maybeSingle()
-        if (linkError || !linkData) throw new Error("Link tracking tidak valid.")
+        if (linkError || !linkData) throw new Error("Link tracking tidak valid atau sudah kadaluarsa.")
         
         const soId = linkData.so_id
 
         const { data: accData, error: accError } = await supabase.functions.invoke('accurate-detail-so', {
             body: { id: parseInt(soId), type: 'sales-order' }
         })
-        if (accError || !accData?.s) throw new Error("Gagal mengambil data Accurate.")
+        if (accError || !accData?.s) throw new Error("Gagal mengambil data pesanan dari Accurate.")
         const d = accData.d
 
         const { data: shipData } = await supabase
             .from('shipments')
-            .select('item_code, current_status, hpo_number, exwork_date, eta_date, dunex_date, hokiindo_date, status_date')
+            .select('item_code, current_status, hpo_number, exwork_date, exwork_waiting, eta_date, dunex_date, hokiindo_date, status_date')
             .eq('so_id', String(soId))
 
         // Cross-SO fallback for items without specific shipment dates in this SO
+        // MUST ONLY match exact HPO numbers (keyExact), NEVER cross-match different HPOs by item_code alone!
         let crossSoTrackingMap = new Map()
         try {
             const itemCodes = (d.detailItem || []).map(i => i.item?.no || i.detailName).filter(Boolean)
             if (itemCodes.length > 0) {
                 const { data: knownTracking } = await supabase
                     .from('shipments')
-                    .select('item_code, hpo_number, current_status, exwork_date, eta_date, dunex_date, hokiindo_date, status_date, updated_at')
+                    .select('item_code, hpo_number, current_status, exwork_date, exwork_waiting, eta_date, dunex_date, hokiindo_date, status_date, updated_at')
                     .in('item_code', itemCodes)
                     .neq('current_status', 'Follow up with our forwarder')
                     .order('updated_at', { ascending: false })
 
                 if (knownTracking) {
                     knownTracking.forEach(t => {
-                        const keyExact = `${(t.item_code || '').trim().toUpperCase()}||${(t.hpo_number || '').trim().toUpperCase()}`
-                        if (!crossSoTrackingMap.has(keyExact)) crossSoTrackingMap.set(keyExact, t)
-                        const keyItem = (t.item_code || '').trim().toUpperCase()
-                        if (!crossSoTrackingMap.has(keyItem)) crossSoTrackingMap.set(keyItem, t)
+                        const cleanHpo = (t.hpo_number || '').trim().toUpperCase()
+                        if (cleanHpo) {
+                            const keyExact = `${(t.item_code || '').trim().toUpperCase()}||${cleanHpo}`
+                            if (!crossSoTrackingMap.has(keyExact)) crossSoTrackingMap.set(keyExact, t)
+                        }
                     })
                 }
             }
@@ -142,8 +170,17 @@ const fetchTrackingData = async () => {
             number: d.number,
             client: d.customer?.name || '-',
             po_number: d.poNumber || '-',
-            do_list: (d.processHistory || []).filter(h => h.historyType === 'DO').map(h => h.no).join(', '),
+            order_date: d.transDate || null,
+            do_list: (d.processHistory || [])
+                .filter(h => h.historyType === 'DO')
+                .map(h => h.historyNumber || h.no)
+                .filter(Boolean)
+                .join(', '),
             items_raw: d.detailItem
+        }
+
+        if (typeof document !== 'undefined') {
+            document.title = `${d.number || 'Tracking'} | PT Hokiindo Raya`
         }
 
         soItems.value = (d.detailItem || []).map(item => {
@@ -178,33 +215,47 @@ const fetchTrackingData = async () => {
                 isReadyToShip = true
                 logistik = { status: 'Ready Stock' }
             } else if (inProgressShipments.length > 0) {
-                // Sisa barang sedang dalam proses pengiriman HPO aktif (Ex-Works, ETA, Dunex, dll)
-                logistik = inProgressShipments[0]
+                // Sisa barang sedang dalam proses pengiriman HPO aktif
+                const sortedInProgress = [...inProgressShipments].sort((a, b) => {
+                    const tA = new Date(a.status_date || a.updated_at || 0).getTime()
+                    const tB = new Date(b.status_date || b.updated_at || 0).getTime()
+                    return tB - tA
+                })
+                logistik = sortedInProgress[0]
                 isReadyToShip = false
             } else if (qtyShipped === 0 && arrivedShipments.length > 0) {
-                // Belum ada yg dikirim sama sekali ke customer, dan barang PO sudah tiba di gudang
                 logistik = arrivedShipments[0]
                 isReadyToShip = true
             } else {
-                // Tidak ada PO in-progress, dan stok tidak ada / sudah terpakai
                 logistik = {}
                 isReadyToShip = false
             }
 
-            // Fallback cross-SO tracking if inProgressShipments has missing dates
+            // Fallback cross-SO tracking HANYA jika HPO number persis sama (keyExact)
             let exwork = logistik.exwork_date
             let eta = logistik.eta_date
             let dunex = logistik.dunex_date
             let hokiindo = logistik.hokiindo_date
 
-            if (logistik.hpo_number && !exwork && !eta && !dunex && !hokiindo && crossSoTrackingMap.has(codeKey)) {
-                const fallback = crossSoTrackingMap.get(codeKey)
-                if (fallback) {
-                    exwork = fallback.exwork_date || exwork
-                    eta = fallback.eta_date || eta
-                    dunex = fallback.dunex_date || dunex
-                    hokiindo = fallback.hokiindo_date || hokiindo
+            const cleanHpo = (logistik.hpo_number || '').trim().toUpperCase()
+            if (cleanHpo && !exwork && !eta && !dunex && !hokiindo) {
+                const keyExact = `${codeKey}||${cleanHpo}`
+                if (crossSoTrackingMap.has(keyExact)) {
+                    const fallback = crossSoTrackingMap.get(keyExact)
+                    if (fallback) {
+                        exwork = fallback.exwork_date || exwork
+                        eta = fallback.eta_date || eta
+                        dunex = fallback.dunex_date || dunex
+                        if (['Already in Hokiindo Raya', 'Completed'].includes(fallback.current_status)) {
+                            hokiindo = fallback.hokiindo_date || hokiindo
+                        }
+                    }
                 }
+            }
+
+            // PENTING: Jika barang berstatus in-progress, jangan pernah set hokiindo_date
+            if (inProgressShipments.length > 0) {
+                hokiindo = null
             }
 
             return {
@@ -214,9 +265,9 @@ const fetchTrackingData = async () => {
                 qty_shipped: qtyShipped,
                 qty_remaining: qtyRemaining,
                 is_ready: isReadyToShip,
-                hpo: logistik.hpo_number || null,
                 status: isReadyToShip ? 'Ready Stock' : (logistik.current_status || 'Pending Process'),
                 exwork_date: exwork || null,
+                exwork_waiting: logistik.exwork_waiting || false,
                 eta_date: eta || null,
                 dunex_date: dunex || null,
                 hokiindo_date: hokiindo || null
@@ -232,12 +283,12 @@ const fetchTrackingData = async () => {
 
 onMounted(() => {
     if (uniqueCode) fetchTrackingData()
-    else fetchError.value = "Kode tracking hilang."
+    else fetchError.value = "Kode tracking tidak valid atau hilang."
 })
 
 // --- COMPUTED GROUPING ---
 const groupedData = computed(() => {
-    if (!soItems.value.length) return { shipped: [], processing: [], percentage: 0, countShipped: 0, countProcessing: 0 };
+    if (!soItems.value.length) return { shipped: [], processing: [], percentage: 0, countShipped: 0, countProcessing: 0, totalItems: 0 };
 
     const shipped = [];
     const processing = [];
@@ -265,8 +316,27 @@ const groupedData = computed(() => {
         processing,
         percentage: totalItems === 0 ? 0 : Math.round((totalShipped / totalItems) * 100),
         countShipped: shipped.reduce((acc, i) => acc + i.displayQty, 0),
-        countProcessing: processing.reduce((acc, i) => acc + i.displayQty, 0)
+        countProcessing: processing.reduce((acc, i) => acc + i.displayQty, 0),
+        totalItems
     };
+})
+
+const filteredProcessing = computed(() => {
+    const q = searchQuery.value.trim().toLowerCase()
+    if (!q) return groupedData.value.processing
+    return groupedData.value.processing.filter(i => 
+        (i.name && i.name.toLowerCase().includes(q)) || 
+        (i.code && i.code.toLowerCase().includes(q))
+    )
+})
+
+const filteredShipped = computed(() => {
+    const q = searchQuery.value.trim().toLowerCase()
+    if (!q) return groupedData.value.shipped
+    return groupedData.value.shipped.filter(i => 
+        (i.name && i.name.toLowerCase().includes(q)) || 
+        (i.code && i.code.toLowerCase().includes(q))
+    )
 })
 
 const exportToExcel = () => {
@@ -278,7 +348,7 @@ const exportToExcel = () => {
             "Total Order": item.qty_order,
             "Total Terkirim": item.qty_shipped,
             "Sisa/Proses": item.qty_order - item.qty_shipped,
-            "Status Logistik": item.status,
+            "Status Logistik": getStatusText(item, 'process'),
             "Ex-Work Date": formatDate(item.exwork_date) || '-',
             "ETA Port": formatDate(item.eta_date) || '-',
             "Tiba di DUNEX": formatDate(item.dunex_date) || '-',
@@ -289,182 +359,352 @@ const exportToExcel = () => {
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Tracking Status");
-    XLSX.writeFile(wb, `Tracking_${soHeader.value?.number || 'Data'}.xlsx`);
+    XLSX.writeFile(wb, `Tracking_${soHeader.value?.number || 'Data'}_PT_Hokiindo_Raya.xlsx`);
 }
 </script>
 
 <template>
-    <div class="min-h-screen bg-slate-50 text-slate-800 pb-24" style="font-family: 'Plus Jakarta Sans', sans-serif;">
+    <div class="tracking-root min-h-screen bg-zinc-50/70 text-zinc-900 pb-28 antialiased selection:bg-zinc-900 selection:text-white">
         
-        <div v-if="isLoading" class="h-screen flex flex-col items-center justify-center bg-white">
-            <Loader2 class="w-12 h-12 animate-spin text-red-600 mb-4"/>
-            <p class="text-sm font-semibold tracking-widest text-slate-500 animate-pulse">LOADING DATA...</p>
+        <!-- Loading State -->
+        <div v-if="isLoading" class="h-screen flex flex-col items-center justify-center bg-white px-4">
+            <div class="relative flex items-center justify-center w-16 h-16 rounded-2xl bg-zinc-50 border border-zinc-200/80 shadow-xs mb-4">
+                <Loader2 class="w-8 h-8 animate-spin text-zinc-900"/>
+            </div>
+            <p class="text-xs font-semibold tracking-wider text-zinc-500 uppercase">Memuat data pengiriman...</p>
+            <p class="text-xs text-zinc-400 mt-1">Sinkronisasi status real-time</p>
         </div>
 
-        <div v-else-if="fetchError" class="h-screen flex flex-col items-center justify-center p-6 text-red-600 bg-red-50">
-            <AlertCircle class="w-12 h-12 mb-4"/>
-            <h3 class="text-xl font-bold">Terjadi Kesalahan</h3>
-            <p class="mt-2">{{ fetchError }}</p>
+        <!-- Error State -->
+        <div v-else-if="fetchError" class="h-screen flex flex-col items-center justify-center p-6 text-center bg-zinc-50">
+            <div class="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 mb-4 shadow-xs">
+                <AlertCircle class="w-8 h-8"/>
+            </div>
+            <h3 class="text-lg font-semibold text-zinc-900 tracking-tight">Terjadi Kesalahan</h3>
+            <p class="mt-1 text-sm text-zinc-500 max-w-md">{{ fetchError }}</p>
+            <Button variant="outline" class="mt-6 text-xs h-9 rounded-lg border-zinc-300" @click="fetchTrackingData">
+                Coba Lagi
+            </Button>
         </div>
 
-        <div v-else class="max-w-3xl mx-auto px-4 pt-8 md:pt-12">
+        <!-- Main Tracking Content -->
+        <div v-else class="max-w-4xl mx-auto px-4 sm:px-6 pt-6 sm:pt-10">
             
-            <div class="text-center md:text-left mb-8 border-b-2 border-slate-200 pb-6 flex flex-col md:flex-row md:justify-between md:items-end gap-4">
-                <div>
-                    <div class="inline-flex items-center gap-3 mb-4">
-                        <img src="https://shop.hokiindo.co.id/favicon.ico" alt="Hokiindo Logo" class="w-12 h-12 rounded-lg shadow bg-white"/>
-                        <h2 class="text-2xl md:text-3xl font-black text-slate-900 tracking-tight">HSO Tracking</h2>
+            <!-- Top Navbar / Brand -->
+            <header class="bg-white rounded-2xl border border-zinc-200/80 p-5 sm:p-7 shadow-[0_1px_3px_rgba(0,0,0,0.03)] mb-6 transition-all">
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-5 border-b border-zinc-100 pb-6">
+                    <div class="flex items-center gap-3.5">
+                        <div class="w-12 h-12 rounded-xl bg-white border border-zinc-200/80 shadow-2xs flex items-center justify-center overflow-hidden p-1.5 shrink-0">
+                            <img src="https://shop.hokiindo.co.id/favicon.ico" alt="PT Hokiindo Raya" class="w-full h-full object-contain"/>
+                        </div>
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs font-semibold tracking-wide uppercase text-zinc-500">PT Hokiindo Raya</span>
+                                <span class="inline-flex items-center gap-1.5 text-[10px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200/60">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                    Live Status
+                                </span>
+                            </div>
+                            <h1 class="text-xl sm:text-2xl font-bold tracking-tight text-zinc-950 mt-0.5">{{ soHeader?.client }}</h1>
+                        </div>
                     </div>
-                    <h1 class="text-3xl md:text-4xl font-bold mt-2 text-slate-900">{{ soHeader?.client }}</h1>
-                    <div class="flex flex-col md:flex-row md:items-center gap-2 md:gap-6 mt-3 text-sm text-slate-500 font-medium">
-                        <span>SO #: <span class="text-slate-900">{{ soHeader?.number }}</span></span>
-                        <span class="hidden md:inline text-slate-300">|</span>
-                        <span>PO Cust: <span class="text-slate-900">{{ soHeader?.po_number }}</span></span>
+
+                    <div class="flex items-center gap-2.5">
+                        <Button variant="outline" class="h-9 px-3.5 text-xs font-medium border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 rounded-lg shadow-2xs gap-1.5 transition-colors" @click="exportToExcel">
+                            <Download class="w-3.5 h-3.5 text-zinc-500" />
+                            <span>Export Excel</span>
+                        </Button>
                     </div>
                 </div>
-                <Button variant="outline" class="gap-2 border-slate-300 w-full md:w-auto" @click="exportToExcel">
-                    <Download class="w-4 h-4" /> Export Excel
-                </Button>
+
+                <!-- Metadata Row -->
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-5 text-xs">
+                    <!-- SO Number -->
+                    <div class="bg-zinc-50/70 border border-zinc-200/60 rounded-xl p-3 relative group">
+                        <p class="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">No. Sales Order</p>
+                        <div class="flex items-center justify-between mt-1">
+                            <span class="font-mono font-semibold text-zinc-900 text-xs sm:text-[13px] truncate">{{ soHeader?.number }}</span>
+                            <button 
+                                @click="copySoNumber" 
+                                class="text-zinc-400 hover:text-zinc-700 p-1 rounded transition-colors" 
+                                :title="isCopied ? 'Tersalin!' : 'Salin nomor SO'">
+                                <Check v-if="isCopied" class="w-3.5 h-3.5 text-emerald-600" />
+                                <Copy v-else class="w-3.5 h-3.5" />
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Customer PO -->
+                    <div class="bg-zinc-50/70 border border-zinc-200/60 rounded-xl p-3">
+                        <p class="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">No. PO Customer</p>
+                        <p class="font-mono font-semibold text-zinc-900 text-xs sm:text-[13px] mt-1 truncate">{{ soHeader?.po_number || '-' }}</p>
+                    </div>
+
+                    <!-- Total Items -->
+                    <div class="bg-zinc-50/70 border border-zinc-200/60 rounded-xl p-3">
+                        <p class="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">Total Pesanan</p>
+                        <p class="font-semibold text-zinc-900 text-xs sm:text-[13px] mt-1">{{ groupedData.totalItems }} Unit</p>
+                    </div>
+
+                    <!-- DO Reference -->
+                    <div class="bg-zinc-50/70 border border-zinc-200/60 rounded-xl p-3">
+                        <p class="text-[11px] font-medium text-zinc-400 uppercase tracking-wider">Surat Jalan (DO)</p>
+                        <p class="font-mono font-semibold text-emerald-700 text-xs sm:text-[13px] mt-1 truncate" :title="soHeader?.do_list || '-'">
+                            {{ soHeader?.do_list || 'Belum ada' }}
+                        </p>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Metrics Bento Grid -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                <!-- Card 1: Delivered -->
+                <div class="bg-white rounded-2xl border border-zinc-200/80 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.03)] flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Sudah Dikirim</span>
+                        <div class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100">
+                            <CheckCircle2 class="w-4 h-4" />
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <div class="flex items-baseline gap-2">
+                            <span class="text-3xl font-bold tracking-tight text-zinc-950 font-mono">{{ groupedData.countShipped }}</span>
+                            <span class="text-xs font-medium text-zinc-400">Unit</span>
+                        </div>
+                        <p class="text-[11px] text-emerald-600 font-medium mt-1">Selesai terkirim ke customer</p>
+                    </div>
+                </div>
+
+                <!-- Card 2: In Process -->
+                <div class="bg-white rounded-2xl border border-zinc-200/80 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.03)] flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Dalam Proses</span>
+                        <div class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100">
+                            <Clock class="w-4 h-4" />
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <div class="flex items-baseline gap-2">
+                            <span class="text-3xl font-bold tracking-tight text-zinc-950 font-mono">{{ groupedData.countProcessing }}</span>
+                            <span class="text-xs font-medium text-zinc-400">Unit</span>
+                        </div>
+                        <p class="text-[11px] text-amber-600 font-medium mt-1">Sedang logistik / pengadaan</p>
+                    </div>
+                </div>
+
+                <!-- Card 3: Fulfillment Progress -->
+                <div class="bg-white rounded-2xl border border-zinc-200/80 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.03)] flex flex-col justify-between">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Fulfillment Rate</span>
+                        <span class="font-mono text-xs font-bold text-zinc-900 bg-zinc-100 px-2 py-0.5 rounded-md">
+                            {{ groupedData.percentage }}%
+                        </span>
+                    </div>
+                    <div class="mt-4">
+                        <div class="h-2.5 w-full bg-zinc-100 rounded-full overflow-hidden p-0.5 border border-zinc-200/60">
+                            <div class="h-full bg-zinc-900 rounded-full transition-all duration-700 ease-out" 
+                                 :style="{ width: `${groupedData.percentage}%` }"></div>
+                        </div>
+                        <p class="text-[11px] text-zinc-400 font-medium mt-2 flex justify-between">
+                            <span>{{ groupedData.countShipped }} dari {{ groupedData.totalItems }} unit</span>
+                            <span>{{ groupedData.percentage }}% Lengkap</span>
+                        </p>
+                    </div>
+                </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-                <!-- Card Sudah Dikirim -->
-                <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group">
-                    <div class="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                        <Truck class="w-16 h-16 text-green-600"/>
-                    </div>
-                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Barang Sudah Dikirim</p>
-                    <p class="text-3xl font-bold text-slate-800 mt-1">{{ groupedData.countShipped }} <span class="text-sm text-slate-400">Unit</span></p>
-                </div>
-                <!-- Card Dalam Proses -->
-                 <div class="bg-white p-5 rounded-xl border border-slate-200 shadow-sm relative overflow-hidden group">
-                     <div class="absolute right-0 top-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
-                        <Clock class="w-16 h-16 text-red-600"/>
-                    </div>
-                    <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Barang Dalam Proses</p>
-                    <p class="text-3xl font-bold text-slate-800 mt-1">{{ groupedData.countProcessing }} <span class="text-sm text-slate-400">Unit</span></p>
+            <!-- Search Filter Bar (if items exist) -->
+            <div v-if="soItems.length > 2" class="mb-5">
+                <div class="relative">
+                    <Search class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                    <input 
+                        v-model="searchQuery" 
+                        type="text" 
+                        placeholder="Cari berdasarkan kode part atau nama barang..."
+                        class="w-full pl-10 pr-4 py-2.5 bg-white border border-zinc-200/90 rounded-xl text-xs sm:text-sm text-zinc-800 placeholder-zinc-400 shadow-2xs focus:outline-hidden focus:border-zinc-400 transition-colors"
+                    />
                 </div>
             </div>
 
-            <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-10">
-                <div class="flex justify-between items-end mb-2">
-                    <span class="text-xs font-bold text-slate-500 uppercase">Fulfillment Rate</span>
-                    <span class="text-lg font-bold text-red-600">{{ groupedData.percentage }}%</span>
-                </div>
-                <div class="h-3 w-full bg-slate-100 rounded-full overflow-hidden">
-                    <div class="h-full bg-gradient-to-r from-red-500 to-red-600 rounded-full transition-all duration-1000 ease-out" 
-                         :style="{ width: groupedData.percentage + '%' }"></div>
-                </div>
-            </div>
-
+            <!-- Sections Container -->
             <div class="space-y-6">
 
-                <div v-if="groupedData.shipped.length > 0" class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                    <div @click="toggleSection('shipped')" class="cursor-pointer bg-slate-50 p-4 flex justify-between items-center border-b border-slate-100 select-none">
+                <!-- SECTION 1: SUDAH DIKIRIM (COMPLETED) -->
+                <section v-if="groupedData.shipped.length > 0" class="bg-white border border-zinc-200/80 rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
+                    <!-- Header -->
+                    <div @click="toggleSection('shipped')" class="cursor-pointer bg-zinc-50/50 p-4 sm:p-5 flex justify-between items-center border-b border-zinc-100 select-none hover:bg-zinc-50 transition-colors">
                         <div class="flex items-center gap-3">
-                            <div class="bg-green-100 p-2 rounded-lg text-green-700">
-                                <Truck class="w-5 h-5" />
+                            <div class="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center border border-emerald-100 shrink-0">
+                                <Truck class="w-4 h-4" />
                             </div>
                             <div>
-                                <h3 class="font-bold text-slate-800 text-sm md:text-base">SUDAH DIKIRIM (COMPLETED)</h3>
-                                <p class="text-xs text-slate-500 mt-0.5" v-if="soHeader.do_list">DO No: {{ soHeader.do_list }}</p>
-                            </div>
-                        </div>
-                        <component :is="expandedSections.shipped ? ChevronUp : ChevronDown" class="w-5 h-5 text-slate-400"/>
-                    </div>
-                    
-                    <div v-show="expandedSections.shipped" class="divide-y divide-slate-100">
-                        <div v-for="(item, idx) in groupedData.shipped" :key="idx" class="p-4 hover:bg-slate-50 transition-colors flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
-                            <div class="flex-1">
-                                <p class="font-bold text-sm text-slate-800">{{ item.name }}</p>
-                                <p class="text-xs text-slate-400 mt-1 font-mono">{{ item.code }}</p>
-                            </div>
-                            <div class="flex items-center gap-4">
-                                <span class="bg-green-100 text-green-700 px-3 py-1 rounded text-xs font-bold">
-                                    {{ item.displayQty }} Unit
-                                </span>
-                                <div class="text-right">
-                                    <p class="text-xs font-bold text-green-700">SUDAH DIKIRIM</p>
-                                    <p class="text-[10px] text-slate-400">Ke Alamat Anda</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- SECTION 2: PROSES -->
-                <div v-if="groupedData.processing.length > 0" class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-                    
-                    <div @click="toggleSection('pending')" class="cursor-pointer bg-slate-50 p-4 flex justify-between items-center border-b border-slate-100 select-none">
-                        <div class="flex items-center gap-3">
-                            <div class="bg-red-100 p-2 rounded-lg text-red-700">
-                                <Clock class="w-5 h-5" />
-                            </div>
-                            <div>
-                                <h3 class="font-bold text-slate-800 text-sm md:text-base">BARANG DALAM PROSES (IN PROCESS)</h3>
-                                <p class="text-xs text-slate-500 mt-0.5">Produksi, Ex-Works, ETA, Dunex</p>
-                            </div>
-                        </div>
-                        <component :is="expandedSections.pending ? ChevronUp : ChevronDown" class="w-5 h-5 text-slate-400"/>
-                    </div>
-                    
-                    <div v-show="expandedSections.pending" class="divide-y divide-slate-100">
-                        <div v-for="(item, idx) in groupedData.processing" :key="idx" class="p-4 hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-b-0">
-                            <div class="flex justify-between items-start gap-4">
-                                <!-- Product Info -->
-                                <div class="flex-1">
-                                    <p class="font-bold text-sm text-slate-800">{{ item.name }}</p>
-                                    <p class="text-xs text-slate-400 font-mono mt-0.5">{{ item.code }}</p>
-                                    <span class="inline-block mt-2 bg-red-50 text-red-700 px-2 py-0.5 rounded text-xs font-bold">
-                                        Qty: {{ item.displayQty }} Unit
+                                <div class="flex items-center gap-2">
+                                    <h2 class="font-semibold text-zinc-900 text-sm sm:text-base tracking-tight">BARANG SUDAH DIKIRIM</h2>
+                                    <span class="text-[10px] font-semibold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                                        {{ groupedData.countShipped }} Unit
                                     </span>
                                 </div>
-                                
-                                <!-- Dates Timeline -->
-                                <div class="text-right text-xs space-y-1">
-                                    <div v-if="item.is_ready" class="flex items-center justify-end gap-2 mb-2">
-                                        <span class="inline-block bg-emerald-100 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded font-bold uppercase tracking-wider shadow-xs">Siap Dikirim</span>
+                                <p class="text-xs text-zinc-500 mt-0.5" v-if="soHeader.do_list">Surat Jalan: {{ soHeader.do_list }}</p>
+                            </div>
+                        </div>
+                        <component :is="expandedSections.shipped ? ChevronUp : ChevronDown" class="w-4 h-4 text-zinc-400"/>
+                    </div>
+                    
+                    <!-- Items List -->
+                    <div v-show="expandedSections.shipped" class="divide-y divide-zinc-100">
+                        <div v-if="filteredShipped.length === 0" class="p-6 text-center text-xs text-zinc-400 italic">
+                            Tidak ada barang terkirim yang cocok dengan pencarian.
+                        </div>
+                        <div v-for="(item, idx) in filteredShipped" :key="idx" class="p-4 sm:p-5 hover:bg-zinc-50/50 transition-colors flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3">
+                            <div class="flex-1 min-w-0">
+                                <p class="font-medium text-sm text-zinc-900 leading-snug">{{ item.name }}</p>
+                                <div class="flex flex-wrap items-center gap-2 mt-1.5">
+                                    <span class="font-mono text-xs font-medium text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded-md">
+                                        {{ item.code }}
+                                    </span>
+                                    <span class="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-2.5 py-0.5 rounded-md">
+                                        {{ item.displayQty }} Unit
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-3 sm:text-right shrink-0">
+                                <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                                    <CheckCircle2 class="w-3.5 h-3.5 text-emerald-600" />
+                                    <span>Terkirim</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- SECTION 2: DALAM PROSES (IN PROCESS) -->
+                <section v-if="groupedData.processing.length > 0" class="bg-white border border-zinc-200/80 rounded-2xl overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.03)]">
+                    <!-- Header -->
+                    <div @click="toggleSection('pending')" class="cursor-pointer bg-zinc-50/50 p-4 sm:p-5 flex justify-between items-center border-b border-zinc-100 select-none hover:bg-zinc-50 transition-colors">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center border border-amber-100 shrink-0">
+                                <Clock class="w-4 h-4" />
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <h2 class="font-semibold text-zinc-900 text-sm sm:text-base tracking-tight">BARANG DALAM PROSES</h2>
+                                    <span class="text-[10px] font-semibold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
+                                        {{ groupedData.countProcessing }} Unit
+                                    </span>
+                                </div>
+                                <p class="text-xs text-zinc-500 mt-0.5">Status tahapan logistik & pengadaan</p>
+                            </div>
+                        </div>
+                        <component :is="expandedSections.pending ? ChevronUp : ChevronDown" class="w-4 h-4 text-zinc-400"/>
+                    </div>
+                    
+                    <!-- Items List -->
+                    <div v-show="expandedSections.pending" class="divide-y divide-zinc-100">
+                        <div v-if="filteredProcessing.length === 0" class="p-6 text-center text-xs text-zinc-400 italic">
+                            Tidak ada barang proses yang cocok dengan pencarian.
+                        </div>
+                        <div v-for="(item, idx) in filteredProcessing" :key="idx" class="p-4 sm:p-5 hover:bg-zinc-50/50 transition-colors">
+                            <div class="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+                                <!-- Product Info -->
+                                <div class="flex-1 min-w-0">
+                                    <p class="font-medium text-sm text-zinc-900 leading-snug">{{ item.name }}</p>
+                                    <div class="flex flex-wrap items-center gap-2 mt-2">
+                                        <span class="font-mono text-xs font-medium text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded-md">
+                                            {{ item.code }}
+                                        </span>
+                                        <span class="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200/80 px-2.5 py-0.5 rounded-md">
+                                            Qty: {{ item.displayQty }} Unit
+                                        </span>
                                     </div>
-                                    <div v-else-if="item.hpo" class="space-y-1">
-                                        <div v-if="item.hokiindo_date" class="flex items-center justify-end gap-2">
-                                            <span class="text-slate-500 font-medium">Tiba di Hokiindo</span>
-                                            <span class="font-bold text-emerald-700">{{ formatDate(item.hokiindo_date) }}</span>
+                                </div>
+                                
+                                <!-- Logistics Timeline & Status Badge -->
+                                <div class="sm:text-right space-y-2 shrink-0">
+                                    <div v-if="item.is_ready" class="flex items-center sm:justify-end">
+                                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                            <CheckCircle2 class="w-3.5 h-3.5 text-emerald-600" />
+                                            <span>Siap Dikirim</span>
+                                        </span>
+                                    </div>
+                                    <div v-else class="space-y-2">
+                                        <!-- Primary Status Badge -->
+                                        <div class="flex items-center sm:justify-end">
+                                            <span class="inline-block px-3 py-1 rounded-lg text-xs font-medium border" :class="getStatusBadgeClass(item.status)">
+                                                {{ getStatusText(item, 'process') }}
+                                            </span>
                                         </div>
-                                        <div v-if="item.dunex_date" class="flex items-center justify-end gap-2">
-                                            <span class="text-slate-500 font-medium">Tiba di DUNEX</span>
-                                            <span class="font-bold text-cyan-700">{{ formatDate(item.dunex_date) }}</span>
+
+                                        <!-- Milestone Dates Card / Timeline -->
+                                        <div v-if="item.hokiindo_date || item.dunex_date || item.eta_date || item.exwork_date" 
+                                             class="bg-zinc-50/80 border border-zinc-200/60 rounded-xl p-2.5 text-xs space-y-1.5 sm:min-w-[200px]">
+                                            <div v-if="item.hokiindo_date" class="flex items-center justify-between gap-3">
+                                                <span class="text-zinc-500 font-medium">Tiba di Hokiindo</span>
+                                                <span class="font-mono font-semibold text-emerald-700">{{ formatDate(item.hokiindo_date) }}</span>
+                                            </div>
+                                            <div v-if="item.dunex_date" class="flex items-center justify-between gap-3">
+                                                <span class="text-zinc-500 font-medium">Tiba di DUNEX</span>
+                                                <span class="font-mono font-semibold text-cyan-700">{{ formatDate(item.dunex_date) }}</span>
+                                            </div>
+                                            <div v-if="item.eta_date" class="flex items-center justify-between gap-3">
+                                                <span class="text-zinc-500 font-medium">ETA Port JKT</span>
+                                                <span class="font-mono font-semibold text-blue-700">{{ formatDate(item.eta_date) }}</span>
+                                            </div>
+                                            <div v-if="item.exwork_date" class="flex items-center justify-between gap-3">
+                                                <span class="text-zinc-500 font-medium">Ex-Works</span>
+                                                <span class="font-mono font-semibold text-amber-700">{{ formatDate(item.exwork_date) }}</span>
+                                            </div>
                                         </div>
-                                        <div v-if="item.eta_date" class="flex items-center justify-end gap-2">
-                                            <span class="text-slate-500 font-medium">ETA PORT JKT</span>
-                                            <span class="font-bold text-blue-700">{{ formatDate(item.eta_date) }}</span>
-                                        </div>
-                                        <div v-if="item.exwork_date" class="flex items-center justify-end gap-2">
-                                            <span class="text-slate-500 font-medium">EXWORK</span>
-                                            <span class="font-bold text-amber-700">{{ formatDate(item.exwork_date) }}</span>
+
+                                        <!-- If no dates are set yet -->
+                                        <div v-else class="flex items-center sm:justify-end gap-1.5 text-[11px] text-zinc-400">
+                                            <Clock class="w-3 h-3 text-zinc-400" />
+                                            <span>Jadwal pengiriman sedang dikoordinasikan</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                </div>
+                </section>
 
             </div>
+
+            <!-- Footer note -->
+            <footer class="mt-12 text-center text-xs text-zinc-400 pb-4">
+                <p class="font-medium text-zinc-600">PT Hokiindo Raya</p>
+                <p class="mt-0.5 text-[11px] text-zinc-400">Portal Tracking & Informasi Pengiriman Pesanan</p>
+                <p class="mt-0.5 text-[10px] text-zinc-300">Informasi diperbarui otomatis secara real-time</p>
+            </footer>
+
         </div>
 
+        <!-- Floating WhatsApp Contact -->
         <a href="https://wa.me/6282112564252" target="_blank" 
-           class="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-3 rounded-full shadow-xl transition-transform hover:scale-105 active:scale-95 group">
-            <div class="relative">
-                 <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-200 opacity-75"></span>
-                 <MessageCircle class="w-6 h-6 relative z-10" />
+           class="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 bg-zinc-950 hover:bg-zinc-800 text-white pl-4 pr-5 py-3 rounded-full shadow-lg hover:shadow-xl transition-all hover:scale-105 active:scale-95 border border-zinc-800 group">
+            <div class="relative flex items-center justify-center">
+                <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60"></span>
+                <div class="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center text-white relative z-10">
+                    <MessageCircle class="w-3.5 h-3.5 fill-current" />
+                </div>
             </div>
-            <span class="font-bold text-sm hidden md:inline group-hover:inline transition-all duration-300">Hubungi Admin</span>
+            <span class="font-medium text-xs sm:text-sm tracking-tight text-zinc-100">Bantuan Admin</span>
         </a>
 
     </div>
 </template>
 
 <style>
-/* Import Font Langsung di Style agar aman */
-@import url('https://fonts.googleapis.com/css2?family=Source+Code+Pro:ital,wght@0,300;0,400;0,600;0,700;1,400&display=swap');
+/* Geist & Geist Mono Minimalist Typography */
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&family=Geist+Mono:wght@400;500;600&display=swap');
+
+.tracking-root {
+    font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    letter-spacing: -0.011em;
+}
+
+.tracking-root code,
+.tracking-root .font-mono {
+    font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    letter-spacing: -0.02em;
+}
 </style>

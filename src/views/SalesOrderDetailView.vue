@@ -2007,21 +2007,28 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
           return sCode === targetCode && (s.item_seq === seq || s.item_seq == null)
         })
         
-        // Sort myShipments to prioritize shipments with a non-null HPO number, then by updated_at descending
+        const qty_order = item.quantity || 0
+        const qty_shipped = item.shipQuantity || 0
+        const qty_remaining = qty_order - qty_shipped
+
+        // Sort myShipments to prioritize shipments with a non-null HPO number.
+        // If qty_remaining > 0, prioritize active in-progress shipments over already-arrived ones!
         const sortedMyShipments = [...myShipments].sort((a, b) => {
           const aHasHpo = a.hpo_number ? 1 : 0
           const bHasHpo = b.hpo_number ? 1 : 0
           if (aHasHpo !== bHasHpo) return bHasHpo - aHasHpo // non-null HPO first
-          
+
+          if (qty_remaining > 0) {
+            const aIsActive = !['Already in Hokiindo Raya', 'Completed'].includes(a.current_status) && !a.hokiindo_date ? 1 : 0
+            const bIsActive = !['Already in Hokiindo Raya', 'Completed'].includes(b.current_status) && !b.hokiindo_date ? 1 : 0
+            if (aIsActive !== bIsActive) return bIsActive - aIsActive // active in-progress shipment first!
+          }
+
           const aTime = a.updated_at ? new Date(a.updated_at).getTime() : 0
           const bTime = b.updated_at ? new Date(b.updated_at).getTime() : 0
           return bTime - aTime // latest updated first
         })
-        const myShipment = sortedMyShipments[0] || {}
-        
-        const qty_order = item.quantity || 0
-        const qty_shipped = item.shipQuantity || 0
-        const qty_remaining = qty_order - qty_shipped 
+        const myShipment = sortedMyShipments[0] || {} 
         
         // --- LOGIC PERHITUNGAN STOCK & TO ORDER (REVISI) ---
         const note = item.detailNotes || ''

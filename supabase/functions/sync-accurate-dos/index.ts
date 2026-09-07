@@ -127,10 +127,18 @@ serve(async (req) => {
                         return match ? match[1].replace(/-/g, '/') : null
                     }
 
+                    const projName = extractProject(detailJson.d?.description)
                     const extractedHsoList = new Set<string>()
+
                     const sanitizedItems = items.map((item: any, index: number) => {
                         const hsoNum = item.salesOrder?.number || extractHso(item.detailNotes) || null
                         if (hsoNum) extractedHsoList.add(hsoNum)
+
+                        const noteParts = []
+                        if (hsoNum) noteParts.push(`HSO: ${hsoNum}`)
+                        if (projName) noteParts.push(`Project: ${projName}`)
+                        if (item.detailNotes) noteParts.push(item.detailNotes)
+
                         return {
                             id: safeInt(item.id),
                             do_id: safeInt(doc.id),
@@ -138,9 +146,8 @@ serve(async (req) => {
                             item_name: item.item?.name,
                             quantity: safeFloat(item.quantity),
                             unit_name: item.itemUnit?.name,
-                            detail_notes: item.detailNotes,
-                            item_seq: index,
-                            hso_number: hsoNum
+                            detail_notes: noteParts.length > 0 ? noteParts.join(' | ') : null,
+                            item_seq: index
                         }
                     })
 
@@ -155,11 +162,7 @@ serve(async (req) => {
                         trans_date: formatDate(doc.transDate),
                         status_name: doc.statusName,
                         ship_to: doc.shipTo,
-                        driver_name: doc.driverName,
-                        description: detailJson.d?.description || null,
-                        po_number: detailJson.d?.poNumber || doc.poNumber || null,
-                        project_name: extractProject(detailJson.d?.description) || null,
-                        hso_numbers: Array.from(extractedHsoList).join(', ') || null
+                        driver_name: doc.driverName
                     }
 
                     return {

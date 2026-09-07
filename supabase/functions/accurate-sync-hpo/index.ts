@@ -184,6 +184,17 @@ serve(async (req) => {
                         if (iErr) console.error(`[sync-hpo] Items insert error: ${iErr.message}`)
                     }
 
+                    const isClosed = Boolean(fullPo?.manualClosed || fullPo?.approvalStatus === 'REJECTED' || po.statusName === 'Ditutup' || po.statusName === 'Ditolak')
+                    if (isClosed) {
+                        console.log(`[sync-hpo] PO ${po.number} is closed/rejected (${fullPo?.closeReason || po.statusName}), removing unfulfilled shipments and skipping`)
+                        await supabase.from('shipments')
+                            .delete()
+                            .eq('so_id', String(soId))
+                            .eq('hpo_number', po.number)
+                            .in('current_status', ['Follow up with our forwarder', 'Follow up to factory', 'Pending Process'])
+                        continue
+                    }
+
                     poItems.forEach((item: any) => {
                         const itemCode = item.item?.no || ''
                         const description = item.detailNotes || ''

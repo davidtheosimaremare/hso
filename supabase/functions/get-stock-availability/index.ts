@@ -163,6 +163,12 @@ serve(async (req) => {
             const matchingItems = itemsList.filter((item: any) => item.item?.no === item_code)
             if (matchingItems.length > 0) {
               const totalQty = matchingItems.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
+              const remainingQty = matchingItems.reduce((sum: number, item: any) => {
+                if (item.closed) return sum
+                if (typeof item.availableQuantity === 'number') return sum + item.availableQuantity
+                return sum + (item.quantity || 0)
+              }, 0)
+              const isFulfilled = matchingItems.every((item: any) => item.closed || item.availableQuantity === 0 || so.statusName === 'Terproses' || so.statusName === 'Closed')
               const shipDate = matchingItems[0]?.shipDate || so.transDate
 
               return {
@@ -171,7 +177,10 @@ serve(async (req) => {
                 tgl_estimasi: shipDate,
                 nama_referensi: so.customer?.name || '-',
                 dipesan: 0,
-                dijual: totalQty
+                dijual: totalQty,
+                sisa_alokasi: remainingQty,
+                is_fulfilled: isFulfilled,
+                status_item: isFulfilled ? 'Sudah Terkirim' : (remainingQty > 0 ? `Alokasi Aktif (${remainingQty})` : 'Sedang Diproses')
               }
             }
           }
@@ -195,8 +204,10 @@ serve(async (req) => {
     const { data: poItems, error: poErr } = await supabase
       .from('accurate_purchase_order_items')
       .select(`
+        id,
         quantity,
-        po:accurate_purchase_orders!inner(number, trans_date, vendor_name, status_name)
+        po_id,
+        po:accurate_purchase_orders!inner(id, number, trans_date, vendor_name, status_name)
       `)
       .eq('item_code', item_code)
       .in('po.status_name', ['Menunggu diproses', 'Sebagian diproses'])
@@ -206,7 +217,9 @@ serve(async (req) => {
       throw new Error(`Database error fetching PO items: ${poErr.message}`)
     }
 
-    const activePos = (poItems || []).map((poi: any) => {
+    // Inspect live PO fulfillment from Accurate
+    const rawPoList = poItems || []
+    const activePos = await limitConcurrency(rawPoList, 6, async (poi: any) => {
       let formattedDate = '-'
       if (poi.po?.trans_date) {
         const parts = poi.po.trans_date.split('-')
@@ -215,27 +228,83 @@ serve(async (req) => {
         }
       }
 
+      let isFulfilled = poi.po?.status_name === 'Terproses' || poi.po?.status_name === 'Ditutup'
+      let activeDipesan = Number(poi.quantity || 0)
+      let receivedQty = 0
+
+      // Try fetching live PO detail from Accurate to inspect item closed & processQuantityDesc
+      try {
+        const poKey = poi.po?.id || poi.po_id || poi.po?.number
+        if (poKey) {
+          const detailUrl = `${BASE_API}/purchase-order/detail.do?${isNaN(Number(poKey)) ? `number=${encodeURIComponent(poKey)}` : `id=${poKey}`}`
+          const detailRes = await fetch(detailUrl, { headers: authHeaders })
+          if (detailRes.ok) {
+            const detailJson = await detailRes.json()
+            const matchingItems = (detailJson.d?.detailItem || []).filter((it: any) => it.item?.no === item_code)
+            if (matchingItems.length > 0) {
+              const allClosed = matchingItems.every((it: any) => it.closed)
+              isFulfilled = allClosed || detailJson.d?.statusName === 'Terproses'
+              if (isFulfilled) {
+                activeDipesan = 0
+                receivedQty = Number(poi.quantity || 0)
+              } else {
+                activeDipesan = matchingItems.reduce((sum: number, it: any) => it.closed ? sum : sum + (it.quantity || 0), 0)
+                receivedQty = matchingItems.reduce((sum: number, it: any) => it.closed ? sum + (it.quantity || 0) : sum, 0)
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`Could not fetch detail for PO ${poi.po?.number}:`, err)
+      }
+
       return {
         type: 'PO',
         no_referensi: poi.po?.number || '-',
         tgl_estimasi: formattedDate,
         nama_referensi: poi.po?.vendor_name || '-',
-        dipesan: Number(poi.quantity || 0),
+        dipesan: activeDipesan,
+        dipesan_total: Number(poi.quantity || 0),
+        sudah_diterima: receivedQty,
+        is_fulfilled: isFulfilled,
+        status_item: isFulfilled ? 'Sudah Diterima (Selesai)' : 'Sedang Dipesan',
         dijual: 0
       }
     })
 
     const references = [...activeSos, ...activePos]
 
-    // Calculate totals
-    const stock_ordered = references.filter(r => r.type === 'PO').reduce((sum, po) => sum + po.dipesan, 0)
-    const stock_sold = references.filter(r => r.type === 'SO').reduce((sum, so) => sum + so.dijual, 0)
-    const stock_available = Math.max(0, stock_warehouse + stock_ordered - stock_sold)
+    // Calculate totals - Exactly matching Accurate Online inventory values
+    const accurateAvailable = itemData.availableToSell !== undefined && itemData.availableToSell !== null 
+      ? Number(itemData.availableToSell) 
+      : null
 
-    // Sort references by date descending
-    references.sort((a, b) => parseDate(b.tgl_estimasi).getTime() - parseDate(a.tgl_estimasi).getTime())
+    const sumActiveSoReserved = activeSos.reduce((sum, so) => sum + (so.sisa_alokasi ?? (so.is_fulfilled ? 0 : so.dijual)), 0)
+    
+    // Accurate column "Dipesan": Reserved by customer Sales Orders
+    const stock_sold = accurateAvailable !== null 
+      ? Math.max(0, stock_warehouse - accurateAvailable)
+      : sumActiveSoReserved
 
-    console.log(`Success fetching availability for SKU: ${item_code}. Stock Warehouse: ${stock_warehouse}, Ordered: ${stock_ordered}, Sold: ${stock_sold}, Available: ${stock_available}`)
+    // Accurate column "Stok dapat dijual": Available to Sell (ATS)
+    const stock_available = accurateAvailable !== null 
+      ? accurateAvailable 
+      : Math.max(0, stock_warehouse - stock_sold)
+
+    // Accurate PO "Sedang Dipesan" (only unfulfilled POs)
+    const stock_ordered = activePos.reduce((sum, po) => sum + (po.is_fulfilled ? 0 : po.dipesan), 0)
+    const stock_ordered_total = activePos.reduce((sum, po) => sum + (po.dipesan_total || po.dipesan), 0)
+    const stock_received = activePos.reduce((sum, po) => sum + (po.sudah_diterima || 0), 0)
+
+    // Sort references by date descending (terbaru ke terlama), fallback to document number descending
+    references.sort((a, b) => {
+      const dateA = parseDate(a.tgl_estimasi).getTime()
+      const dateB = parseDate(b.tgl_estimasi).getTime()
+      if (dateB !== dateA) return dateB - dateA
+      return (b.no_referensi || '').localeCompare(a.no_referensi || '', undefined, { numeric: true })
+    })
+
+    console.log(`Success fetching availability for SKU: ${item_code}. Stock Warehouse: ${stock_warehouse}, Ordered Active: ${stock_ordered}, Ordered Total: ${stock_ordered_total}, Received: ${stock_received}, Sold/Dipesan: ${stock_sold}, Available: ${stock_available}`)
 
     return new Response(JSON.stringify({
       s: true,
@@ -245,6 +314,8 @@ serve(async (req) => {
         unit_name,
         stock_warehouse,
         stock_ordered,
+        stock_ordered_total,
+        stock_received,
         stock_sold,
         stock_available,
         references

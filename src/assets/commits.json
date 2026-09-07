@@ -1,5 +1,13 @@
 [
   {
+    "hash": "5e76c6f767d170d7c9ff5f1a9f448bb1e8dea037",
+    "shortHash": "5e76c6f",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Sep 3 14:10:34 2026 +0700",
+    "message": "fix(logistics): correctly parse 'Already arrived in our warehouse' as Dunex warehouse rather than Hokiindo"
+  },
+  {
     "hash": "ecf8df0add92c5c3ac451f4280a5b942ca285ddf",
     "shortHash": "ecf8df0",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 16:43:52 2026 +0700",
     "message": "ui: remove HPO Terikat badges from SO detail page header"
-  },
-  {
-    "hash": "729fe00e0a5cab2307d3a4772a6255bedfdbf201",
-    "shortHash": "729fe00",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 16:40:29 2026 +0700",
-    "message": "fix: remove circular Step-2 HPO re-fetch that recreated shipments after Keterangan cleared"
   }
 ]
