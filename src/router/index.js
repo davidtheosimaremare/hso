@@ -29,6 +29,7 @@ import NotificationsView from '@/views/NotificationsView.vue'
 import ToolsView from '@/views/ToolsView.vue'
 import ProductUsageTrackerView from '@/views/ProductUsageTrackerView.vue'
 import SalesLeadsView from '@/views/SalesLeadsView.vue'
+import PoSiemensSinovaView from '@/views/PoSiemensSinovaView.vue'
 
 
 // Import Public
@@ -67,6 +68,7 @@ const router = createRouter({
         { path: '/hsq/:id', component: HsqDetailView },
         { path: '/sales-leads', component: SalesLeadsView },
         { path: '/settings', component: SettingsView },
+        { path: '/po-siemens-sinova', component: PoSiemensSinovaView },
         { path: '/sop-guide', component: SopGuideView },
         { path: '/development', component: DevUpdatesView },
         { path: '/collaborate', component: PermintaanView },
@@ -120,7 +122,7 @@ function getRequiredModule(path) {
   if (path.startsWith('/delivery-orders')) return 'delivery-orders'
   if (path.startsWith('/logistics-db')) return 'logistics-db'
   if (path.startsWith('/sop-guide')) return 'sop-guide'
-  if (path.startsWith('/settings') || path.startsWith('/development')) return 'settings'
+  if (path.startsWith('/settings') || path.startsWith('/development') || path.startsWith('/po-siemens-sinova')) return 'settings'
   return null
 }
 
@@ -225,6 +227,15 @@ router.beforeEach(async (to, from, next) => {
     if (userAccess.role === 'ADMIN') {
       next()
       return
+    }
+
+    // Khusus modul PO Siemens Sinova: izinkan jika user memiliki settings:read atau purchase-orders:read
+    if (to.path.startsWith('/po-siemens-sinova')) {
+      const canAccess = userAccess.allowed_modules?.includes('settings:read') || userAccess.allowed_modules?.includes('purchase-orders:read')
+      if (canAccess) {
+        next()
+        return
+      }
     }
 
     // Cek modul spesifik (harus memiliki permission :read)

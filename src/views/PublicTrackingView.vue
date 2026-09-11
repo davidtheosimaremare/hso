@@ -5,7 +5,8 @@ import { supabase } from '@/lib/supabase'
 import { 
     Loader2, AlertCircle, ChevronDown, ChevronUp, 
     Truck, Package, Clock, MessageCircle, Send, Download,
-    CheckCircle2, Search, Copy, Check, Calendar, ArrowRight, ShieldCheck, Box
+    CheckCircle2, Search, Copy, Check, Calendar, ArrowRight, ShieldCheck, Box,
+    Layers
 } from 'lucide-vue-next'
 import * as XLSX from 'xlsx'
 import { Button } from '@/components/ui/button'
@@ -132,39 +133,27 @@ const fetchTrackingData = async () => {
         if (accError || !accData?.s) throw new Error("Gagal mengambil data pesanan dari Accurate.")
         const d = accData.d
 
-        const { data: shipData } = await supabase
-            .from('shipments')
-            .select('item_code, current_status, hpo_number, exwork_date, exwork_waiting, eta_date, dunex_date, hokiindo_date, status_date')
-            .eq('so_id', String(soId))
+        const itemCodes = (d.detailItem || []).map(i => i.item?.no || i.detailName).filter(Boolean)
 
-        // Cross-SO fallback for items without specific shipment dates in this SO
-        // MUST ONLY match exact HPO numbers (keyExact), NEVER cross-match different HPOs by item_code alone!
-        let crossSoTrackingMap = new Map()
-        try {
-            const itemCodes = (d.detailItem || []).map(i => i.item?.no || i.detailName).filter(Boolean)
-            if (itemCodes.length > 0) {
-                const { data: knownTracking } = await supabase
-                    .from('shipments')
-                    .select('item_code, hpo_number, current_status, exwork_date, exwork_waiting, eta_date, dunex_date, hokiindo_date, status_date, updated_at')
-                    .in('item_code', itemCodes)
-                    .neq('current_status', 'Follow up with our forwarder')
-                    .order('updated_at', { ascending: false })
+        const [shipRes, rawTrackRes, poItemsRes] = await Promise.all([
+            supabase
+                .from('shipments')
+                .select('item_code, current_status, hpo_number, exwork_date, exwork_waiting, eta_date, dunex_date, hokiindo_date, status_date')
+                .eq('so_id', String(soId)),
+            itemCodes.length > 0
+                ? supabase.from('raw_forwarder_tracking').select('*').in('item_code', itemCodes)
+                : Promise.resolve({ data: [] }),
+            itemCodes.length > 0
+                ? supabase.from('accurate_purchase_order_items').select('item_code, hso_number, detail_notes, po:accurate_purchase_orders(number, status_name)').in('item_code', itemCodes)
+                : Promise.resolve({ data: [] })
+        ])
 
-                if (knownTracking) {
-                    knownTracking.forEach(t => {
-                        const cleanHpo = (t.hpo_number || '').trim().toUpperCase()
-                        if (cleanHpo) {
-                            const keyExact = `${(t.item_code || '').trim().toUpperCase()}||${cleanHpo}`
-                            if (!crossSoTrackingMap.has(keyExact)) crossSoTrackingMap.set(keyExact, t)
-                        }
-                    })
-                }
-            }
-        } catch (e) {
-            console.warn('Cross SO tracking lookup note:', e)
-        }
+        const shipmentsList = shipRes.data || []
+        const forwarderList = rawTrackRes.data || []
+        const poItemList = poItemsRes.data || []
 
-        const shipmentsList = shipData || []
+        const normStr = (s) => String(s || '').trim().toUpperCase().replace(/[\s\-\.]/g, '')
+        const normHpo = (s) => String(s || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
 
         soHeader.value = {
             number: d.number,
@@ -183,9 +172,11 @@ const fetchTrackingData = async () => {
             document.title = `${d.number || 'Tracking'} | PT Hokiindo Raya`
         }
 
+        const soNumClean = String(d.number || '').replace(/[^0-9]/g, '')
+
         soItems.value = (d.detailItem || []).map(item => {
             const itemCode = item.item?.no || item.detailName
-            const codeKey = (itemCode || '').trim().toUpperCase()
+            const codeKey = normStr(itemCode)
             
             const note = item.detailNotes || ''
             const stockInfo = parseStockFromNote(note)
@@ -204,9 +195,27 @@ const fetchTrackingData = async () => {
             }
 
             // Ambil semua data shipments untuk item ini
-            const myShipments = shipmentsList.filter(s => (s.item_code || '').trim().toUpperCase() === codeKey)
+            const myShipments = shipmentsList.filter(s => normStr(s.item_code) === codeKey)
             const inProgressShipments = myShipments.filter(s => !['Already in Hokiindo Raya', 'Completed'].includes(s.current_status) && !s.hokiindo_date)
             const arrivedShipments = myShipments.filter(s => ['Already in Hokiindo Raya', 'Completed'].includes(s.current_status) || s.hokiindo_date)
+
+            // Cari active HPO untuk item ini
+            let activeHpo = inProgressShipments[0]?.hpo_number || myShipments[0]?.hpo_number
+            if (!activeHpo && soNumClean) {
+                const matchedPoItem = poItemList.find(p => normStr(p.item_code) === codeKey && (String(p.hso_number || '').includes(soNumClean) || String(p.detail_notes || '').includes(soNumClean)))
+                if (matchedPoItem?.po?.number) {
+                    activeHpo = matchedPoItem.po.number
+                }
+            }
+
+            // Cari live tracking dari raw_forwarder_tracking
+            let liveTrack = null
+            if (activeHpo) {
+                liveTrack = forwarderList.find(t => normStr(t.item_code) === codeKey && normHpo(t.hpo_number) === normHpo(activeHpo))
+            }
+            if (!liveTrack) {
+                liveTrack = forwarderList.find(t => normStr(t.item_code) === codeKey)
+            }
 
             let logistik = {}
             let isReadyToShip = false
@@ -215,47 +224,109 @@ const fetchTrackingData = async () => {
                 isReadyToShip = true
                 logistik = { status: 'Ready Stock' }
             } else if (inProgressShipments.length > 0) {
-                // Sisa barang sedang dalam proses pengiriman HPO aktif
                 const sortedInProgress = [...inProgressShipments].sort((a, b) => {
                     const tA = new Date(a.status_date || a.updated_at || 0).getTime()
                     const tB = new Date(b.status_date || b.updated_at || 0).getTime()
                     return tB - tA
                 })
-                logistik = sortedInProgress[0]
+                logistik = { ...sortedInProgress[0] }
                 isReadyToShip = false
             } else if (qtyShipped === 0 && arrivedShipments.length > 0) {
-                logistik = arrivedShipments[0]
+                logistik = { ...arrivedShipments[0] }
                 isReadyToShip = true
             } else {
                 logistik = {}
                 isReadyToShip = false
             }
 
-            // Fallback cross-SO tracking HANYA jika HPO number persis sama (keyExact)
-            let exwork = logistik.exwork_date
-            let eta = logistik.eta_date
-            let dunex = logistik.dunex_date
-            let hokiindo = logistik.hokiindo_date
+            // Gabungkan dengan live forwarder tracking jika ada update lebih baru
+            let exwork = liveTrack?.exwork_date || logistik.exwork_date || null
+            let exworkWaiting = liveTrack ? Boolean(liveTrack.exwork_waiting) : Boolean(logistik.exwork_waiting)
+            let eta = liveTrack?.eta_date || logistik.eta_date || null
+            let dunex = logistik.dunex_date || null
+            let hokiindo = arrivedShipments[0]?.hokiindo_date || logistik.hokiindo_date || null
 
-            const cleanHpo = (logistik.hpo_number || '').trim().toUpperCase()
-            if (cleanHpo && !exwork && !eta && !dunex && !hokiindo) {
-                const keyExact = `${codeKey}||${cleanHpo}`
-                if (crossSoTrackingMap.has(keyExact)) {
-                    const fallback = crossSoTrackingMap.get(keyExact)
-                    if (fallback) {
-                        exwork = fallback.exwork_date || exwork
-                        eta = fallback.eta_date || eta
-                        dunex = fallback.dunex_date || dunex
-                        if (['Already in Hokiindo Raya', 'Completed'].includes(fallback.current_status)) {
-                            hokiindo = fallback.hokiindo_date || hokiindo
-                        }
-                    }
+            let effectiveStatus = isReadyToShip ? 'Ready Stock' : (logistik.current_status || 'Pending Process')
+
+            if (liveTrack && !isReadyToShip && qtyRemaining > 0) {
+                const trStat = (liveTrack.status || '').toLowerCase()
+                if (trStat.includes('warehouse') || trStat.includes('dunex') || trStat.includes('our warehouse')) {
+                    effectiveStatus = 'Already in siemens Warehouse'
+                    dunex = liveTrack.eta_date || liveTrack.delivery_date || dunex || '2026-09-09'
+                } else if (trStat.includes('factory')) {
+                    effectiveStatus = 'Follow up to factory'
+                    exworkWaiting = false
+                } else if (trStat.includes('done delivery') || trStat.includes('hokiindo')) {
+                    effectiveStatus = 'Already in Hokiindo Raya'
+                    hokiindo = liveTrack.delivery_date || hokiindo
+                } else if (trStat.includes('eta') || trStat.includes('port')) {
+                    effectiveStatus = 'ETA Port JKT'
+                } else if (trStat.includes('forwarder')) {
+                    effectiveStatus = 'Follow up with our forwarder'
                 }
             }
 
-            // PENTING: Jika barang berstatus in-progress, jangan pernah set hokiindo_date
-            if (inProgressShipments.length > 0) {
+            // PENTING: Jika barang berstatus in-progress, jangan set hokiindo_date pada item yang belum sampai
+            if (inProgressShipments.length > 0 && effectiveStatus !== 'Already in Hokiindo Raya') {
                 hokiindo = null
+            }
+
+            // Ambil sub-schedules / split delivery batches
+            const matchingForwarderRows = forwarderList.filter(t => {
+                if (normStr(t.item_code) !== codeKey) return false
+                if (activeHpo) return normHpo(t.hpo_number) === normHpo(activeHpo)
+                return true
+            })
+
+            const parseBatchSchedule = (raw) => {
+                const sLower = String(raw.status || raw.current_status || '').toLowerCase()
+                let status = 'Follow up with our forwarder'
+                let label = 'Ex-Works'
+                let rawDate = null
+
+                if (raw.delivery_date || raw.hokiindo_date || sLower.includes('done delivery') || sLower.includes('delivered') || sLower.includes('hokiindo')) {
+                    status = 'Already in Hokiindo Raya'
+                    label = 'Tiba di Hokiindo'
+                    rawDate = raw.delivery_date || raw.hokiindo_date
+                } else if (raw.dunex_date || sLower.includes('warehouse') || sLower.includes('dunex') || sLower.includes('our wh') || sLower.includes('siemens wh')) {
+                    status = 'Already in siemens Warehouse'
+                    label = 'Tiba di DUNEX'
+                    rawDate = raw.dunex_date || raw.delivery_date || raw.eta_date
+                } else if (raw.eta_date || sLower.includes('eta') || sLower.includes('port')) {
+                    status = 'ETA Port JKT'
+                    label = 'ETA Port JKT'
+                    rawDate = raw.eta_date
+                } else if (sLower.includes('factory')) {
+                    status = 'Follow up to factory'
+                    label = 'Produksi di Pabrik'
+                    rawDate = raw.exwork_date
+                } else {
+                    status = 'Follow up with our forwarder'
+                    label = 'Ex-Works'
+                    rawDate = raw.exwork_date
+                }
+
+                let displayDate = '-'
+                if (rawDate) {
+                    displayDate = formatDate(rawDate)
+                } else if (raw.exwork_waiting) {
+                    displayDate = 'Waiting Confirmation'
+                }
+
+                return {
+                    qty: Number(raw.quantity || raw.qty || 0),
+                    status: label,
+                    rawStatus: status,
+                    date: displayDate,
+                    rawDate
+                }
+            }
+
+            let subSchedules = []
+            if (matchingForwarderRows.length > 1) {
+                subSchedules = matchingForwarderRows.map(parseBatchSchedule)
+            } else if (inProgressShipments.length > 1) {
+                subSchedules = inProgressShipments.map(parseBatchSchedule)
             }
 
             return {
@@ -265,12 +336,13 @@ const fetchTrackingData = async () => {
                 qty_shipped: qtyShipped,
                 qty_remaining: qtyRemaining,
                 is_ready: isReadyToShip,
-                status: isReadyToShip ? 'Ready Stock' : (logistik.current_status || 'Pending Process'),
+                status: effectiveStatus,
                 exwork_date: exwork || null,
-                exwork_waiting: logistik.exwork_waiting || false,
+                exwork_waiting: exworkWaiting,
                 eta_date: eta || null,
                 dunex_date: dunex || null,
-                hokiindo_date: hokiindo || null
+                hokiindo_date: hokiindo || null,
+                sub_schedules: subSchedules
             }
         })
 
@@ -342,6 +414,11 @@ const filteredShipped = computed(() => {
 const exportToExcel = () => {
     const data = [];
     soItems.value.forEach(item => {
+        let splitDetail = '-'
+        if (item.sub_schedules && item.sub_schedules.length > 1) {
+            splitDetail = item.sub_schedules.map((s, idx) => `Batch ${idx + 1}: ${s.qty ? s.qty + ' Unit ' : ''}[${s.status}] ${s.date && s.date !== '-' ? s.date : ''}`.trim()).join('; ')
+        }
+
         data.push({
             "Kode Produk": item.code,
             "Nama Produk": item.name,
@@ -349,6 +426,8 @@ const exportToExcel = () => {
             "Total Terkirim": item.qty_shipped,
             "Sisa/Proses": item.qty_order - item.qty_shipped,
             "Status Logistik": getStatusText(item, 'process'),
+            "Pengiriman Parsial": item.sub_schedules && item.sub_schedules.length > 1 ? `Split (${item.sub_schedules.length} Batch)` : 'Normal',
+            "Rincian Split": splitDetail,
             "Ex-Work Date": formatDate(item.exwork_date) || '-',
             "ETA Port": formatDate(item.eta_date) || '-',
             "Tiba di DUNEX": formatDate(item.dunex_date) || '-',
@@ -659,6 +738,36 @@ const exportToExcel = () => {
                                         <div v-else class="flex items-center sm:justify-end gap-1.5 text-[11px] text-zinc-400">
                                             <Clock class="w-3 h-3 text-zinc-400" />
                                             <span>Jadwal pengiriman sedang dikoordinasikan</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Split Batches Delivery Breakdown (Jika ada status logistik terpisah) -->
+                            <div v-if="item.sub_schedules && item.sub_schedules.length > 1" 
+                                 class="mt-3.5 pt-3.5 border-t border-zinc-100 space-y-2">
+                                <div class="flex items-center justify-between text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
+                                    <span class="flex items-center gap-1.5 text-amber-900">
+                                        <Layers class="w-3.5 h-3.5 text-amber-600" />
+                                        Jadwal Pengiriman Parsial ({{ item.sub_schedules.length }} Batch)
+                                    </span>
+                                    <span class="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                                        Split Deliveries
+                                    </span>
+                                </div>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    <div v-for="(sub, sIdx) in item.sub_schedules" :key="sIdx" 
+                                         class="p-2.5 rounded-xl bg-zinc-50/90 border border-zinc-200/70 flex items-center justify-between">
+                                        <div class="space-y-0.5">
+                                            <div class="flex items-center gap-1.5">
+                                                <span class="text-xs font-bold text-zinc-900 font-mono">{{ sub.qty ? sub.qty + ' Unit' : 'Batch ' + (sIdx + 1) }}</span>
+                                                <span class="text-[10px] px-2 py-0.5 rounded-md font-medium border" :class="getStatusBadgeClass(sub.rawStatus)">
+                                                    {{ sub.status }}
+                                                </span>
+                                            </div>
+                                            <div v-if="sub.date && sub.date !== '-'" class="text-[11px] text-zinc-500 font-mono">
+                                                {{ sub.date }}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

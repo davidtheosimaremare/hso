@@ -359,6 +359,7 @@ const menuGroups = [
           { name: 'Manage Account', path: '/settings', moduleKey: 'settings' }
         ]
       },
+      { type: 'item', name: 'PO Siemens Sinova', path: '/po-siemens-sinova', icon: Boxes, moduleKey: 'settings' },
       { type: 'item', name: 'Development', path: '/development', icon: Code, moduleKey: 'settings' }
     ]
   }
@@ -368,7 +369,9 @@ const filteredMenuGroups = computed(() => {
   return menuGroups.map(category => {
     const items = category.items.map(item => {
       if (item.type === 'item') {
-        const isAllowed = userRole.value === 'ADMIN' || allowedModules.value.includes(`${item.moduleKey}:read`)
+        const isAllowed = userRole.value === 'ADMIN' || 
+          allowedModules.value.includes(`${item.moduleKey}:read`) ||
+          (item.path === '/po-siemens-sinova' && allowedModules.value.includes('purchase-orders:read'))
         return isAllowed ? item : null
       } else {
         const allowedChildren = item.children.filter(child => {
