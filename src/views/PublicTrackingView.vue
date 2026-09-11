@@ -56,13 +56,14 @@ const getStatusText = (item, type) => {
         'Follow up to factory': 'Produksi di Pabrik',
         'ETA Port JKT': 'ETA Port Jakarta',
         'Already in siemens Warehouse': 'Tiba di Gudang Dunex',
-        'Already in Hokiindo Raya': 'Ready Stock',
+        'Already in Hokiindo Raya': 'Siap Dikirim',
+        'Ready Stock': 'Siap Dikirim',
         'Completed': 'Selesai',
         'NO ACTION': 'Ex-Works - Waiting Confirmation',
-        'Pending Process': 'Ex-Works - Waiting Confirmation',
-        'Diproses': 'Ex-Works - Waiting Confirmation'
+        'Pending Process': 'Menunggu Jadwal Pengiriman',
+        'Diproses': 'Menunggu Jadwal Pengiriman'
     }
-    return map[status] || (status ? status : 'Ex-Works - Waiting Confirmation')
+    return map[status] || (status ? status : 'Menunggu Jadwal Pengiriman')
 }
 
 const getStatusBadgeClass = (status) => {
@@ -91,6 +92,30 @@ const formatDate = (dateStr) => {
     } catch {
         return dateStr
     }
+}
+
+// Helper: Active milestone date for single status display
+const getItemActiveDate = (item) => {
+    if (!item) return null
+    if (item.is_ready || item.status === 'Already in Hokiindo Raya' || item.status === 'Ready Stock') {
+        return item.hokiindo_date ? `Tiba: ${formatDate(item.hokiindo_date)}` : null
+    }
+    if (item.status === 'Already in siemens Warehouse') {
+        return item.dunex_date ? `Tiba DUNEX: ${formatDate(item.dunex_date)}` : null
+    }
+    if (item.status === 'ETA Port JKT') {
+        return item.eta_date ? `ETA: ${formatDate(item.eta_date)}` : null
+    }
+    if (item.status === 'Follow up to factory' || item.status === 'Follow up with our forwarder') {
+        if (item.exwork_date && !item.exwork_waiting) {
+            return `Ex-Works: ${formatDate(item.exwork_date)}`
+        }
+        if (item.exwork_waiting) {
+            return 'Menunggu konfirmasi jadwal'
+        }
+        return null
+    }
+    return null
 }
 
 // Helper: Parse stock info from admin note
@@ -231,7 +256,7 @@ const fetchTrackingData = async () => {
                 })
                 logistik = { ...sortedInProgress[0] }
                 isReadyToShip = false
-            } else if (qtyShipped === 0 && arrivedShipments.length > 0) {
+            } else if (arrivedShipments.length > 0) {
                 logistik = { ...arrivedShipments[0] }
                 isReadyToShip = true
             } else {
@@ -258,6 +283,7 @@ const fetchTrackingData = async () => {
                     exworkWaiting = false
                 } else if (trStat.includes('done delivery') || trStat.includes('hokiindo')) {
                     effectiveStatus = 'Already in Hokiindo Raya'
+                    isReadyToShip = true
                     hokiindo = liveTrack.delivery_date || hokiindo
                 } else if (trStat.includes('eta') || trStat.includes('port')) {
                     effectiveStatus = 'ETA Port JKT'
@@ -267,7 +293,7 @@ const fetchTrackingData = async () => {
             }
 
             // PENTING: Jika barang berstatus in-progress, jangan set hokiindo_date pada item yang belum sampai
-            if (inProgressShipments.length > 0 && effectiveStatus !== 'Already in Hokiindo Raya') {
+            if (!isReadyToShip && effectiveStatus !== 'Already in Hokiindo Raya') {
                 hokiindo = null
             }
 
@@ -714,48 +740,32 @@ const exportToExcel = () => {
                                     </div>
                                 </div>
                                 
-                                <!-- Logistics Timeline & Status Badge -->
-                                <div class="sm:text-right space-y-2 shrink-0">
-                                    <div v-if="item.is_ready" class="flex items-center sm:justify-end">
+                                <!-- Logistics Status (Single Badge & Milestone Date) -->
+                                <div class="sm:text-right shrink-0">
+                                    <div v-if="item.is_ready" class="flex flex-col sm:items-end gap-1">
                                         <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                             <CheckCircle2 class="w-3.5 h-3.5 text-emerald-600" />
                                             <span>Siap Dikirim</span>
                                         </span>
+                                        <span v-if="item.hokiindo_date" class="text-[11px] font-mono text-zinc-500 sm:text-right">
+                                            Tiba: {{ formatDate(item.hokiindo_date) }}
+                                        </span>
                                     </div>
-                                    <div v-else class="space-y-2">
+                                    <div v-else class="flex flex-col sm:items-end gap-1">
                                         <!-- Primary Status Badge -->
                                         <div class="flex items-center sm:justify-end">
                                             <span class="inline-block px-3 py-1 rounded-lg text-xs font-medium border" :class="getStatusBadgeClass(item.status)">
                                                 {{ getStatusText(item, 'process') }}
                                             </span>
                                         </div>
-
-                                        <!-- Milestone Dates Card / Timeline -->
-                                        <div v-if="item.hokiindo_date || item.dunex_date || item.eta_date || item.exwork_date" 
-                                             class="bg-zinc-50/80 border border-zinc-200/60 rounded-xl p-2.5 text-xs space-y-1.5 sm:min-w-[200px]">
-                                            <div v-if="item.hokiindo_date" class="flex items-center justify-between gap-3">
-                                                <span class="text-zinc-500 font-medium">Tiba di Hokiindo</span>
-                                                <span class="font-mono font-semibold text-emerald-700">{{ formatDate(item.hokiindo_date) }}</span>
-                                            </div>
-                                            <div v-if="item.dunex_date" class="flex items-center justify-between gap-3">
-                                                <span class="text-zinc-500 font-medium">Tiba di DUNEX</span>
-                                                <span class="font-mono font-semibold text-cyan-700">{{ formatDate(item.dunex_date) }}</span>
-                                            </div>
-                                            <div v-if="item.eta_date" class="flex items-center justify-between gap-3">
-                                                <span class="text-zinc-500 font-medium">ETA Port JKT</span>
-                                                <span class="font-mono font-semibold text-blue-700">{{ formatDate(item.eta_date) }}</span>
-                                            </div>
-                                            <div v-if="item.exwork_date" class="flex items-center justify-between gap-3">
-                                                <span class="text-zinc-500 font-medium">Ex-Works</span>
-                                                <span class="font-mono font-semibold text-amber-700">{{ formatDate(item.exwork_date) }}</span>
-                                            </div>
-                                        </div>
-
-                                        <!-- If no dates are set yet -->
-                                        <div v-else class="flex items-center sm:justify-end gap-1.5 text-[11px] text-zinc-400">
+                                        <!-- Single Active Milestone Date -->
+                                        <span v-if="getItemActiveDate(item)" class="text-[11px] font-mono text-zinc-500 sm:text-right">
+                                            {{ getItemActiveDate(item) }}
+                                        </span>
+                                        <span v-else class="text-[11px] text-zinc-400 flex items-center sm:justify-end gap-1">
                                             <Clock class="w-3 h-3 text-zinc-400" />
-                                            <span>Jadwal pengiriman sedang dikoordinasikan</span>
-                                        </div>
+                                            <span>Jadwal sedang dikoordinasikan</span>
+                                        </span>
                                     </div>
                                 </div>
                             </div>

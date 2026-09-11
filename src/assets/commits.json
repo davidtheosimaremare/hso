@@ -1,5 +1,13 @@
 [
   {
+    "hash": "8c6071946b9d928550ed61a5a791bbfac74b9cf1",
+    "shortHash": "8c60719",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Sep 11 14:51:27 2026 +0700",
+    "message": "refactor(tracking): display split delivery schedules as vertical list instead of grid cards"
+  },
+  {
     "hash": "36c024f9a36090296d771e03a96cde7d0f935729",
     "shortHash": "36c024f",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 22:35:23 2026 +0700",
     "message": "feat: eliminate auto background sync, separate manual sync into HPO, HDO, and HRI on demand"
-  },
-  {
-    "hash": "fc63f310a26136e83fe5ea949d8b27cabae7b4dd",
-    "shortHash": "fc63f31",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 22:27:16 2026 +0700",
-    "message": "feat: auto-populate current date on status selection in edit modal and ensure flawless persistence"
   }
 ]
