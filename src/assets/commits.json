@@ -1,5 +1,13 @@
 [
   {
+    "hash": "d9a4fbc407eecf953b262540ac2880da4e470d24",
+    "shortHash": "d9a4fbc",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Sep 11 15:05:42 2026 +0700",
+    "message": "fix(tracking): simplify item logistics status to single active stage and fix ready stock detection for partial shipments"
+  },
+  {
     "hash": "8c6071946b9d928550ed61a5a791bbfac74b9cf1",
     "shortHash": "8c60719",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 23:52:32 2026 +0700",
     "message": "fix: restore clean logistics sync UX, cross-SO tracking enrichment, and prevent destructive purge [skip vercel] [skip ci]"
-  },
-  {
-    "hash": "3217c4bd1e5463e825889f81ec9b08da1306d544",
-    "shortHash": "3217c4b",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 22:35:23 2026 +0700",
-    "message": "feat: eliminate auto background sync, separate manual sync into HPO, HDO, and HRI on demand"
   }
 ]

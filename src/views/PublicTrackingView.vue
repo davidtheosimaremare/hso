@@ -45,7 +45,7 @@ const getStatusText = (item, type) => {
     if (type === 'pending') return 'Menunggu Proses Antrian'
     
     const status = item?.status || ''
-    if (status === 'Follow up with our forwarder') {
+    if (['Follow up with our forwarder', 'Follow up to factory', 'Follow up to our factory', 'Ex-Works'].includes(status)) {
         if (item?.exwork_waiting || !item?.exwork_date) {
             return 'Ex-Works - Waiting Confirmation'
         }
@@ -53,7 +53,9 @@ const getStatusText = (item, type) => {
     }
     
     const map = {
-        'Follow up to factory': 'Produksi di Pabrik',
+        'Follow up to factory': item?.exwork_waiting || !item?.exwork_date ? 'Ex-Works - Waiting Confirmation' : 'Ex-Works',
+        'Follow up to our factory': item?.exwork_waiting || !item?.exwork_date ? 'Ex-Works - Waiting Confirmation' : 'Ex-Works',
+        'Ex-Works': item?.exwork_waiting || !item?.exwork_date ? 'Ex-Works - Waiting Confirmation' : 'Ex-Works',
         'ETA Port JKT': 'ETA Port Jakarta',
         'Already in siemens Warehouse': 'Tiba di Gudang Dunex',
         'Already in Hokiindo Raya': 'Siap Dikirim',
@@ -76,10 +78,7 @@ const getStatusBadgeClass = (status) => {
     if (['Already in siemens Warehouse'].includes(status)) {
         return 'text-cyan-700 bg-cyan-50/90 border-cyan-200/90'
     }
-    if (['Follow up to factory'].includes(status)) {
-        return 'text-amber-700 bg-amber-50/90 border-amber-200/90'
-    }
-    // Follow up with our forwarder, NO ACTION, Pending Process, default
+    // Ex-Works (Follow up with our forwarder, Follow up to factory, NO ACTION, Pending Process, default)
     return 'text-amber-800 bg-amber-50/90 border-amber-200'
 }
 
@@ -101,12 +100,12 @@ const getItemActiveDate = (item) => {
         return item.hokiindo_date ? `Tiba: ${formatDate(item.hokiindo_date)}` : null
     }
     if (item.status === 'Already in siemens Warehouse') {
-        return item.dunex_date ? `Tiba DUNEX: ${formatDate(item.dunex_date)}` : null
+        return item.dunex_date ? `Tiba: ${formatDate(item.dunex_date)}` : null
     }
     if (item.status === 'ETA Port JKT') {
         return item.eta_date ? `ETA: ${formatDate(item.eta_date)}` : null
     }
-    if (item.status === 'Follow up to factory' || item.status === 'Follow up with our forwarder') {
+    if (['Follow up to factory', 'Follow up to our factory', 'Follow up with our forwarder', 'Ex-Works'].includes(item.status)) {
         if (item.exwork_date && !item.exwork_waiting) {
             return `Ex-Works: ${formatDate(item.exwork_date)}`
         }
@@ -324,7 +323,7 @@ const fetchTrackingData = async () => {
                     rawDate = raw.eta_date
                 } else if (sLower.includes('factory')) {
                     status = 'Follow up to factory'
-                    label = 'Produksi di Pabrik'
+                    label = 'Ex-Works'
                     rawDate = raw.exwork_date
                 } else {
                     status = 'Follow up with our forwarder'
