@@ -323,10 +323,27 @@ const fetchTrackingData = async () => {
             }
 
             let subSchedules = []
+            let rawBatchesList = []
             if (matchingForwarderRows.length > 1) {
-                subSchedules = matchingForwarderRows.map(parseBatchSchedule)
+                rawBatchesList = matchingForwarderRows.map(parseBatchSchedule)
             } else if (inProgressShipments.length > 1) {
-                subSchedules = inProgressShipments.map(parseBatchSchedule)
+                rawBatchesList = inProgressShipments.map(parseBatchSchedule)
+            }
+
+            if (rawBatchesList.length > 0) {
+                const batchMap = new Map()
+                rawBatchesList.forEach(b => {
+                    const key = `${b.status}__${b.date}`
+                    if (!batchMap.has(key)) {
+                        batchMap.set(key, { ...b })
+                    } else {
+                        const existing = batchMap.get(key)
+                        if (b.qty && existing.qty) {
+                            existing.qty += b.qty
+                        }
+                    }
+                })
+                subSchedules = Array.from(batchMap.values())
             }
 
             return {
@@ -743,11 +760,11 @@ const exportToExcel = () => {
                                 </div>
                             </div>
 
-                            <!-- Split Batches Delivery Breakdown (Jika ada status logistik terpisah) -->
+                            <!-- Split Batches Delivery Breakdown (List Kebawah Rapi) -->
                             <div v-if="item.sub_schedules && item.sub_schedules.length > 1" 
-                                 class="mt-3.5 pt-3.5 border-t border-zinc-100 space-y-2">
-                                <div class="flex items-center justify-between text-[11px] font-semibold text-zinc-500 uppercase tracking-wider">
-                                    <span class="flex items-center gap-1.5 text-amber-900">
+                                 class="mt-3.5 pt-3 border-t border-zinc-100">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider flex items-center gap-1.5">
                                         <Layers class="w-3.5 h-3.5 text-amber-600" />
                                         Jadwal Pengiriman Parsial ({{ item.sub_schedules.length }} Batch)
                                     </span>
@@ -755,19 +772,19 @@ const exportToExcel = () => {
                                         Split Deliveries
                                     </span>
                                 </div>
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                <div class="divide-y divide-zinc-100 border border-zinc-200/80 rounded-xl bg-zinc-50/50 overflow-hidden">
                                     <div v-for="(sub, sIdx) in item.sub_schedules" :key="sIdx" 
-                                         class="p-2.5 rounded-xl bg-zinc-50/90 border border-zinc-200/70 flex items-center justify-between">
-                                        <div class="space-y-0.5">
-                                            <div class="flex items-center gap-1.5">
-                                                <span class="text-xs font-bold text-zinc-900 font-mono">{{ sub.qty ? sub.qty + ' Unit' : 'Batch ' + (sIdx + 1) }}</span>
-                                                <span class="text-[10px] px-2 py-0.5 rounded-md font-medium border" :class="getStatusBadgeClass(sub.rawStatus)">
-                                                    {{ sub.status }}
-                                                </span>
-                                            </div>
-                                            <div v-if="sub.date && sub.date !== '-'" class="text-[11px] text-zinc-500 font-mono">
-                                                {{ sub.date }}
-                                            </div>
+                                         class="px-3.5 py-2 flex items-center justify-between gap-3 hover:bg-zinc-50 transition-colors">
+                                        <div class="flex items-center gap-2.5 min-w-0">
+                                            <span class="text-xs font-bold text-zinc-900 font-mono shrink-0">
+                                                Batch {{ sIdx + 1 }}<span v-if="sub.qty" class="text-zinc-500 font-normal"> ({{ sub.qty }} Unit)</span>
+                                            </span>
+                                            <span class="text-[10px] px-2 py-0.5 rounded-md font-medium border shrink-0" :class="getStatusBadgeClass(sub.rawStatus)">
+                                                {{ sub.status }}
+                                            </span>
+                                        </div>
+                                        <div v-if="sub.date && sub.date !== '-'" class="text-xs font-mono font-semibold text-zinc-700 shrink-0 text-right">
+                                            {{ sub.date }}
                                         </div>
                                     </div>
                                 </div>

@@ -1,5 +1,13 @@
 [
   {
+    "hash": "36c024f9a36090296d771e03a96cde7d0f935729",
+    "shortHash": "36c024f",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Sep 11 14:46:28 2026 +0700",
+    "message": "feat(po): add PO Siemens Sinova page and support split deliveries tracking"
+  },
+  {
     "hash": "4b82730f8902481655bb52dfe95d6c6f33ac5662",
     "shortHash": "4b82730",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 21 22:27:16 2026 +0700",
     "message": "feat: auto-populate current date on status selection in edit modal and ensure flawless persistence"
-  },
-  {
-    "hash": "4c05923201f6d4c32f7da6a5e8d6108c50f40798",
-    "shortHash": "4c05923",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 17:22:51 2026 +0700",
-    "message": "fix: remove destructive orphanShipments auto-delete on background fetch and ensure saveUpdate persists all HPO changes"
   }
 ]
