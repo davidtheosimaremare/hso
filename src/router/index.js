@@ -30,6 +30,8 @@ import ToolsView from '@/views/ToolsView.vue'
 import ProductUsageTrackerView from '@/views/ProductUsageTrackerView.vue'
 import SalesLeadsView from '@/views/SalesLeadsView.vue'
 import PoSiemensSinovaView from '@/views/PoSiemensSinovaView.vue'
+import Hsq3vjView from '@/views/Hsq3vjView.vue'
+import Hso3vjView from '@/views/Hso3vjView.vue'
 
 
 // Import Public
@@ -69,6 +71,8 @@ const router = createRouter({
         { path: '/sales-leads', component: SalesLeadsView },
         { path: '/settings', component: SettingsView },
         { path: '/po-siemens-sinova', component: PoSiemensSinovaView },
+        { path: '/hsq-3vj', component: Hsq3vjView },
+        { path: '/hso-3vj', component: Hso3vjView },
         { path: '/sop-guide', component: SopGuideView },
         { path: '/development', component: DevUpdatesView },
         { path: '/collaborate', component: PermintaanView },
@@ -122,7 +126,7 @@ function getRequiredModule(path) {
   if (path.startsWith('/delivery-orders')) return 'delivery-orders'
   if (path.startsWith('/logistics-db')) return 'logistics-db'
   if (path.startsWith('/sop-guide')) return 'sop-guide'
-  if (path.startsWith('/settings') || path.startsWith('/development') || path.startsWith('/po-siemens-sinova')) return 'settings'
+  if (path.startsWith('/settings') || path.startsWith('/development') || path.startsWith('/po-siemens-sinova') || path.startsWith('/hsq-3vj') || path.startsWith('/hso-3vj')) return 'settings'
   return null
 }
 

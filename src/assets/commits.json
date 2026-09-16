@@ -1,5 +1,13 @@
 [
   {
+    "hash": "3571f73d1f74492ef4eadbd82eb38cbe9389e80d",
+    "shortHash": "3571f73",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Sep 11 15:13:22 2026 +0700",
+    "message": "fix(tracking): restore standard Ex-Works wording for factory and forwarder statuses"
+  },
+  {
     "hash": "d9a4fbc407eecf953b262540ac2880da4e470d24",
     "shortHash": "d9a4fbc",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Wed Aug 26 11:08:34 2026 +0700",
     "message": "fix(tracking): correct partial shipments and PO logistics status handling"
-  },
-  {
-    "hash": "837e5dd34ffc6c7014c6ff3ee100309b549db184",
-    "shortHash": "837e5dd",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 21 23:52:32 2026 +0700",
-    "message": "fix: restore clean logistics sync UX, cross-SO tracking enrichment, and prevent destructive purge [skip vercel] [skip ci]"
   }
 ]

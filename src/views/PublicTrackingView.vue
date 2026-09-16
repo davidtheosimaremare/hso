@@ -237,65 +237,6 @@ const fetchTrackingData = async () => {
             if (activeHpo) {
                 liveTrack = forwarderList.find(t => normStr(t.item_code) === codeKey && normHpo(t.hpo_number) === normHpo(activeHpo))
             }
-            if (!liveTrack) {
-                liveTrack = forwarderList.find(t => normStr(t.item_code) === codeKey)
-            }
-
-            let logistik = {}
-            let isReadyToShip = false
-
-            if (isRemainingStockReady) {
-                isReadyToShip = true
-                logistik = { status: 'Ready Stock' }
-            } else if (inProgressShipments.length > 0) {
-                const sortedInProgress = [...inProgressShipments].sort((a, b) => {
-                    const tA = new Date(a.status_date || a.updated_at || 0).getTime()
-                    const tB = new Date(b.status_date || b.updated_at || 0).getTime()
-                    return tB - tA
-                })
-                logistik = { ...sortedInProgress[0] }
-                isReadyToShip = false
-            } else if (arrivedShipments.length > 0) {
-                logistik = { ...arrivedShipments[0] }
-                isReadyToShip = true
-            } else {
-                logistik = {}
-                isReadyToShip = false
-            }
-
-            // Gabungkan dengan live forwarder tracking jika ada update lebih baru
-            let exwork = liveTrack?.exwork_date || logistik.exwork_date || null
-            let exworkWaiting = liveTrack ? Boolean(liveTrack.exwork_waiting) : Boolean(logistik.exwork_waiting)
-            let eta = liveTrack?.eta_date || logistik.eta_date || null
-            let dunex = logistik.dunex_date || null
-            let hokiindo = arrivedShipments[0]?.hokiindo_date || logistik.hokiindo_date || null
-
-            let effectiveStatus = isReadyToShip ? 'Ready Stock' : (logistik.current_status || 'Pending Process')
-
-            if (liveTrack && !isReadyToShip && qtyRemaining > 0) {
-                const trStat = (liveTrack.status || '').toLowerCase()
-                if (trStat.includes('warehouse') || trStat.includes('dunex') || trStat.includes('our warehouse')) {
-                    effectiveStatus = 'Already in siemens Warehouse'
-                    dunex = liveTrack.eta_date || liveTrack.delivery_date || dunex || '2026-09-09'
-                } else if (trStat.includes('factory')) {
-                    effectiveStatus = 'Follow up to factory'
-                    exworkWaiting = false
-                } else if (trStat.includes('done delivery') || trStat.includes('hokiindo')) {
-                    effectiveStatus = 'Already in Hokiindo Raya'
-                    isReadyToShip = true
-                    hokiindo = liveTrack.delivery_date || hokiindo
-                } else if (trStat.includes('eta') || trStat.includes('port')) {
-                    effectiveStatus = 'ETA Port JKT'
-                } else if (trStat.includes('forwarder')) {
-                    effectiveStatus = 'Follow up with our forwarder'
-                }
-            }
-
-            // PENTING: Jika barang berstatus in-progress, jangan set hokiindo_date pada item yang belum sampai
-            if (!isReadyToShip && effectiveStatus !== 'Already in Hokiindo Raya') {
-                hokiindo = null
-            }
-
             // Ambil sub-schedules / split delivery batches
             const matchingForwarderRows = forwarderList.filter(t => {
                 if (normStr(t.item_code) !== codeKey) return false
@@ -349,12 +290,25 @@ const fetchTrackingData = async () => {
 
             let subSchedules = []
             let rawBatchesList = []
-            if (matchingForwarderRows.length > 1) {
+            if (matchingForwarderRows.length > 0) {
                 rawBatchesList = matchingForwarderRows.map(parseBatchSchedule)
-            } else if (inProgressShipments.length > 1) {
-                rawBatchesList = inProgressShipments.map(parseBatchSchedule)
+            } else if (myShipments.length > 0) {
+                rawBatchesList = myShipments.map(parseBatchSchedule)
             }
 
+            // Hitung total kuantitas yang berstatus tiba di Hokiindo
+            const arrivedBatches = rawBatchesList.filter(b => 
+                b.rawStatus === 'Already in Hokiindo Raya' || b.status === 'Tiba di Hokiindo'
+            )
+            let totalArrivedQty = arrivedBatches.reduce((acc, b) => acc + (b.qty || 0), 0)
+            if (totalArrivedQty === 0 && arrivedShipments.length > 0 && rawBatchesList.length <= 1) {
+                totalArrivedQty = qtyOrder
+            }
+
+            // Sisa fisik barang tiba yang belum terkirim via Surat Jalan (HDO)
+            const physicalArrivedRemaining = Math.max(0, totalArrivedQty - qtyShipped)
+
+            // Hitung sub_schedules untuk tampilan split delivery
             if (rawBatchesList.length > 0) {
                 const batchMap = new Map()
                 rawBatchesList.forEach(b => {
@@ -368,7 +322,82 @@ const fetchTrackingData = async () => {
                         }
                     }
                 })
-                subSchedules = Array.from(batchMap.values())
+                let runningShipped = qtyShipped
+                subSchedules = Array.from(batchMap.values()).map(b => {
+                    let isShipped = false
+                    if (b.rawStatus === 'Already in Hokiindo Raya' || b.status === 'Tiba di Hokiindo') {
+                        if (runningShipped > 0 && b.qty && runningShipped >= b.qty) {
+                            isShipped = true
+                            runningShipped -= b.qty
+                        }
+                    }
+                    return { ...b, isShipped }
+                })
+            }
+
+            let logistik = {}
+            let isReadyToShip = false
+
+            if (isRemainingStockReady) {
+                isReadyToShip = true
+                logistik = { status: 'Ready Stock' }
+            } else if (physicalArrivedRemaining >= qtyRemaining && qtyRemaining > 0) {
+                // Semua sisa barang sudah ada secara fisik di gudang Hokiindo (belum dikirim)
+                isReadyToShip = true
+                logistik = {
+                    current_status: 'Already in Hokiindo Raya',
+                    hokiindo_date: arrivedBatches[0]?.rawDate || arrivedShipments[0]?.hokiindo_date || null
+                }
+            } else {
+                // Sisa barang belum siap (sebagian/semua barang yang pernah tiba sudah dikirim ke customer)
+                isReadyToShip = false
+
+                const pendingBatches = rawBatchesList.filter(b => 
+                    b.rawStatus !== 'Already in Hokiindo Raya' && b.status !== 'Tiba di Hokiindo'
+                )
+
+                if (pendingBatches.length > 0) {
+                    // Urutkan prioritas batch yang sedang berjalan: Dunex (3) -> Port JKT (2) -> Factory/Exwork (1)
+                    const getWeight = (st) => {
+                        const s = String(st || '').toLowerCase()
+                        if (s.includes('warehouse') || s.includes('dunex')) return 3
+                        if (s.includes('eta') || s.includes('port')) return 2
+                        if (s.includes('factory') || s.includes('forwarder') || s.includes('exwork') || s.includes('ex-works')) return 1
+                        return 0
+                    }
+                    const sortedPending = [...pendingBatches].sort((a, b) => getWeight(b.rawStatus) - getWeight(a.rawStatus))
+                    const topBatch = sortedPending[0]
+
+                    logistik = {
+                        current_status: topBatch.rawStatus,
+                        exwork_date: (topBatch.rawStatus.includes('factory') || topBatch.rawStatus.includes('forwarder') || topBatch.rawStatus === 'Ex-Works') ? topBatch.rawDate : null,
+                        exwork_waiting: topBatch.date === 'Waiting Confirmation',
+                        eta_date: topBatch.rawStatus === 'ETA Port JKT' ? topBatch.rawDate : null,
+                        dunex_date: topBatch.rawStatus === 'Already in siemens Warehouse' ? topBatch.rawDate : null,
+                        hokiindo_date: null
+                    }
+                } else if (inProgressShipments.length > 0) {
+                    const sortedInProgress = [...inProgressShipments].sort((a, b) => {
+                        const tA = new Date(a.status_date || a.updated_at || 0).getTime()
+                        const tB = new Date(b.status_date || b.updated_at || 0).getTime()
+                        return tB - tA
+                    })
+                    logistik = { ...sortedInProgress[0] }
+                } else {
+                    logistik = {}
+                }
+            }
+
+            let exwork = logistik.exwork_date || null
+            let exworkWaiting = Boolean(logistik.exwork_waiting)
+            let eta = logistik.eta_date || null
+            let dunex = logistik.dunex_date || null
+            let hokiindo = isReadyToShip ? (logistik.hokiindo_date || null) : null
+
+            let effectiveStatus = isReadyToShip ? 'Ready Stock' : (logistik.current_status || 'Pending Process')
+
+            if (!isReadyToShip) {
+                hokiindo = null
             }
 
             return {
@@ -790,6 +819,7 @@ const exportToExcel = () => {
                                             </span>
                                             <span class="text-[10px] px-2 py-0.5 rounded-md font-medium border shrink-0" :class="getStatusBadgeClass(sub.rawStatus)">
                                                 {{ sub.status }}
+                                                <span v-if="sub.isShipped" class="ml-1 text-[9px] font-bold opacity-90">(Terkirim)</span>
                                             </span>
                                         </div>
                                         <div v-if="sub.date && sub.date !== '-'" class="text-xs font-mono font-semibold text-zinc-700 shrink-0 text-right">

@@ -360,6 +360,8 @@ const menuGroups = [
         ]
       },
       { type: 'item', name: 'PO Siemens Sinova', path: '/po-siemens-sinova', icon: Boxes, moduleKey: 'settings' },
+      { type: 'item', name: 'HSQ Sinova 3VJ', path: '/hsq-3vj', icon: Package, moduleKey: 'settings' },
+      { type: 'item', name: 'HSO Sinova 3VJ', path: '/hso-3vj', icon: ShoppingBag, moduleKey: 'settings' },
       { type: 'item', name: 'Development', path: '/development', icon: Code, moduleKey: 'settings' }
     ]
   }
@@ -371,7 +373,9 @@ const filteredMenuGroups = computed(() => {
       if (item.type === 'item') {
         const isAllowed = userRole.value === 'ADMIN' || 
           allowedModules.value.includes(`${item.moduleKey}:read`) ||
-          (item.path === '/po-siemens-sinova' && allowedModules.value.includes('purchase-orders:read'))
+          (item.path === '/po-siemens-sinova' && allowedModules.value.includes('purchase-orders:read')) ||
+          (item.path === '/hsq-3vj' && (allowedModules.value.includes('hsq:read') || allowedModules.value.includes('sales-orders:read') || allowedModules.value.includes('settings:read'))) ||
+          (item.path === '/hso-3vj' && (allowedModules.value.includes('sales-orders:read') || allowedModules.value.includes('settings:read')))
         return isAllowed ? item : null
       } else {
         const allowedChildren = item.children.filter(child => {
