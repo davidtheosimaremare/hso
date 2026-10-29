@@ -327,6 +327,123 @@ const resetBoardDateFilter = () => {
   filterTasksByPeriod()
 }
 
+// ---- DONE Column Month Switcher ----
+const nowInit = new Date()
+const currentMonthPeriod = `${nowInit.getFullYear()}-${String(nowInit.getMonth() + 1).padStart(2, '0')}`
+const selectedDonePeriod = ref(currentMonthPeriod)
+
+const getTaskDonePeriod = (t) => {
+  const dateStr = t.done_at || t.target_date || t.created_at
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return ''
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+const formatPeriodMonthYear = (periodStr) => {
+  if (!periodStr || periodStr === 'ALL') return 'Semua Bulan'
+  const [year, month] = periodStr.split('-')
+  const monthNames = [
+    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+  ]
+  const mIdx = Number(month) - 1
+  return `${monthNames[mIdx] || month} ${year}`
+}
+
+const formatShortPeriodMonthYear = (periodStr) => {
+  if (!periodStr || periodStr === 'ALL') return 'Semua Bulan'
+  const [year, month] = periodStr.split('-')
+  const shortMonthNames = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+    'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'
+  ]
+  const mIdx = Number(month) - 1
+  return `${shortMonthNames[mIdx] || month} ${year}`
+}
+
+const availableDonePeriods = computed(() => {
+  const doneItems = allTasksRaw.value.filter(t => t.status === 'DONE')
+  const periodMap = new Map()
+
+  // Always include current month
+  const now = new Date()
+  const curPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  periodMap.set(curPeriod, 0)
+
+  doneItems.forEach(t => {
+    const p = getTaskDonePeriod(t)
+    if (p) {
+      periodMap.set(p, (periodMap.get(p) || 0) + 1)
+    }
+  })
+
+  // Sort descending: newest month first
+  const sortedPeriods = Array.from(periodMap.keys()).sort((a, b) => b.localeCompare(a))
+
+  const list = sortedPeriods.map(p => ({
+    value: p,
+    label: formatPeriodMonthYear(p),
+    shortLabel: formatShortPeriodMonthYear(p),
+    count: periodMap.get(p) || 0
+  }))
+
+  list.push({
+    value: 'ALL',
+    label: 'Semua Bulan',
+    shortLabel: 'Semua',
+    count: doneItems.length
+  })
+
+  return list
+})
+
+const sortedOnlyDoneMonthPeriods = computed(() => {
+  return availableDonePeriods.value.filter(p => p.value !== 'ALL').map(p => p.value)
+})
+
+const hasPrevDoneMonth = computed(() => {
+  if (selectedDonePeriod.value === 'ALL') return false
+  const list = sortedOnlyDoneMonthPeriods.value
+  const idx = list.indexOf(selectedDonePeriod.value)
+  return idx !== -1 && idx < list.length - 1
+})
+
+const hasNextDoneMonth = computed(() => {
+  if (selectedDonePeriod.value === 'ALL') return false
+  const list = sortedOnlyDoneMonthPeriods.value
+  const idx = list.indexOf(selectedDonePeriod.value)
+  return idx !== -1 && idx > 0
+})
+
+const prevDoneMonth = () => {
+  const list = sortedOnlyDoneMonthPeriods.value
+  if (selectedDonePeriod.value === 'ALL') {
+    if (list.length > 0) selectedDonePeriod.value = list[0]
+    return
+  }
+  const idx = list.indexOf(selectedDonePeriod.value)
+  if (idx !== -1 && idx < list.length - 1) {
+    selectedDonePeriod.value = list[idx + 1]
+  }
+}
+
+const nextDoneMonth = () => {
+  const list = sortedOnlyDoneMonthPeriods.value
+  if (selectedDonePeriod.value === 'ALL') {
+    if (list.length > 0) selectedDonePeriod.value = list[0]
+    return
+  }
+  const idx = list.indexOf(selectedDonePeriod.value)
+  if (idx !== -1 && idx > 0) {
+    selectedDonePeriod.value = list[idx - 1]
+  }
+}
+
+watch(selectedDonePeriod, () => {
+  filterTasksByPeriod()
+})
+
 const filterTasksByPeriod = () => {
   const base = activePeriod.value === 'ALL'
     ? allTasksRaw.value
@@ -352,7 +469,17 @@ const filterTasksByPeriod = () => {
 
   todoTasks.value = filtered.filter(t => t.status === 'TODO')
   inProgressTasks.value = filtered.filter(t => t.status === 'IN_PROGRESS')
-  doneTasks.value = filtered.filter(t => t.status === 'DONE')
+
+  // Khusus status DONE: Disaring sesuai bulan yang dipilih (default: bulan berjalan, misal Oktober)
+  const allDone = filtered.filter(t => t.status === 'DONE')
+
+  if (tableFilters.value.search) {
+    doneTasks.value = allDone
+  } else if (selectedDonePeriod.value === 'ALL') {
+    doneTasks.value = allDone
+  } else {
+    doneTasks.value = allDone.filter(t => getTaskDonePeriod(t) === selectedDonePeriod.value)
+  }
 }
 const getLocalMeta = (id) => {
   if (!id) return null
@@ -469,97 +596,167 @@ const getWeekOfYear = (d = new Date()) => {
 }
 
 // Auto-Generator Engine for Recurring Monthly & Weekly Tasks
+let isProcessingRecurring = false
 const processRecurringTasks = async (tasks) => {
+  if (isProcessingRecurring) return
   if (!Array.isArray(tasks) || tasks.length === 0) return
 
-  const now = new Date()
-  const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  const currentWeek = getWeekOfYear(now)
-  const currentDayOfMonth = now.getDate()
-  const currentDayOfWeek = now.getDay() // 0 = Minggu, 1 = Senin, ... 6 = Sabtu
+  isProcessingRecurring = true
+  try {
+    const now = new Date()
+    const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    const currentWeek = getWeekOfYear(now)
+    const currentDayOfMonth = now.getDate()
+    const currentDayOfWeek = now.getDay() // 0 = Minggu, 1 = Senin, ... 6 = Sabtu
 
-  const recurringTemplates = tasks.filter(t => {
-    const meta = parseMeta(t.metadata)
-    if (!meta.is_recurring) return false
-    if (meta.recurrence_type === 'WEEKLY') {
-      return meta.last_generated_week !== currentWeek
-    }
-    return meta.last_generated_period !== currentPeriod
-  })
-
-  if (recurringTemplates.length === 0) return
-
-  for (const t of recurringTemplates) {
-    const meta = parseMeta(t.metadata)
-    const type = meta.recurrence_type || 'MONTHLY'
-    let shouldGenerate = false
-    let newTargetDate = now.toISOString().split('T')[0]
-
-    if (type === 'WEEKLY') {
-      const reqWeekday = meta.recurrence_weekday !== undefined ? Number(meta.recurrence_weekday) : 1
-      if (currentDayOfWeek === reqWeekday) {
-        shouldGenerate = true
+    // Only genuine master recurring templates (NOT generated instances) should generate next tasks
+    const recurringTemplates = tasks.filter(t => {
+      const meta = parseMeta(t.metadata)
+      // Must be marked is_recurring: true, and must NOT be an instance generated by a template
+      if (!meta.is_recurring || meta.is_recurring_instance) return false
+      if (meta.recurrence_type === 'WEEKLY') {
+        return meta.last_generated_week !== currentWeek
       }
-    } else {
-      const reqDay = Number(meta.recurrence_day) || 1
-      if (currentDayOfMonth >= reqDay) {
-        shouldGenerate = true
-        const targetYear = now.getFullYear()
-        const targetMonth = now.getMonth()
-        const lastDayOfCurMonth = new Date(targetYear, targetMonth + 1, 0).getDate()
-        const actualDay = Math.min(reqDay, lastDayOfCurMonth)
-        newTargetDate = new Date(targetYear, targetMonth, actualDay).toISOString().split('T')[0]
+      return meta.last_generated_period !== currentPeriod
+    })
+
+    if (recurringTemplates.length === 0) return
+
+    // Deduplicate templates by ID / title to ensure we never run duplicate templates for the same task
+    const seenTemplates = new Set()
+    const uniqueTemplates = []
+    for (const t of recurringTemplates) {
+      const key = `${t.title}_${parseMeta(t.metadata).recurrence_type || 'MONTHLY'}`
+      if (!seenTemplates.has(key)) {
+        seenTemplates.add(key)
+        uniqueTemplates.push(t)
       }
     }
 
-    if (shouldGenerate) {
-      try {
-        const resetSubtasks = Array.isArray(meta.subtasks)
-          ? meta.subtasks.map(st => ({ ...st, completed: false }))
-          : []
+    for (const t of uniqueTemplates) {
+      const meta = parseMeta(t.metadata)
+      const type = meta.recurrence_type || 'MONTHLY'
+      let shouldGenerate = false
+      let newTargetDate = now.toISOString().split('T')[0]
 
-        const newMeta = {
-          ...meta,
-          subtasks: resetSubtasks,
-          last_generated_period: currentPeriod,
-          last_generated_week: currentWeek
+      if (type === 'WEEKLY') {
+        const reqWeekday = meta.recurrence_weekday !== undefined ? Number(meta.recurrence_weekday) : 1
+        // Generate once target weekday in current week is reached or passed
+        const curDayNorm = currentDayOfWeek === 0 ? 7 : currentDayOfWeek
+        const reqDayNorm = reqWeekday === 0 ? 7 : reqWeekday
+        if (curDayNorm >= reqDayNorm) {
+          shouldGenerate = true
+          const d = new Date(now)
+          d.setDate(d.getDate() + (reqDayNorm - curDayNorm))
+          newTargetDate = d.toISOString().split('T')[0]
         }
-
-        const newTaskPayload = {
-          title: t.title,
-          project_name: t.project_name || '',
-          customer_name: t.customer_name || '',
-          pic_name: t.pic_name || '',
-          description: t.description || '',
-          assignee: t.assignee || '',
-          target_date: newTargetDate,
-          status: 'TODO',
-          created_by: 'SISTEM (Tugas Rutin)',
-          file_url: t.file_url || null,
-          file_name: t.file_name || null,
-          file_link: t.file_link || null,
-          metadata: newMeta
+      } else {
+        const reqDay = Number(meta.recurrence_day) || 1
+        if (currentDayOfMonth >= reqDay) {
+          shouldGenerate = true
+          const targetYear = now.getFullYear()
+          const targetMonth = now.getMonth()
+          const lastDayOfCurMonth = new Date(targetYear, targetMonth + 1, 0).getDate()
+          const actualDay = Math.min(reqDay, lastDayOfCurMonth)
+          newTargetDate = new Date(targetYear, targetMonth, actualDay).toISOString().split('T')[0]
         }
+      }
 
-        const { data: createdTasks, error: insErr } = await supabase
-          .from('boq_requests')
-          .insert([newTaskPayload])
-          .select()
+      if (shouldGenerate) {
+        // IDEMPOTENCY CHECK: Check if an instance for this cycle already exists in memory or in DB!
+        const alreadyExistsInMemory = tasks.some(existing => {
+          if (existing.id === t.id) return false
+          if (existing.title !== t.title) return false
+          const exMeta = parseMeta(existing.metadata)
+          if (type === 'WEEKLY') {
+            return exMeta.generated_for_week === currentWeek ||
+                   exMeta.last_generated_week === currentWeek ||
+                   existing.target_date === newTargetDate
+          } else {
+            return exMeta.generated_for_period === currentPeriod ||
+                   exMeta.last_generated_period === currentPeriod ||
+                   existing.target_date === newTargetDate
+          }
+        })
 
-        if (!insErr && createdTasks && createdTasks[0]) {
+        if (alreadyExistsInMemory) {
           meta.last_generated_period = currentPeriod
           meta.last_generated_week = currentWeek
-          await supabase
-            .from('boq_requests')
-            .update({ metadata: meta })
-            .eq('id', t.id)
-
-          sendMultiChannelTaskNotification(createdTasks[0], 'ASSIGNED')
+          await supabase.from('boq_requests').update({ metadata: meta }).eq('id', t.id)
+          continue
         }
-      } catch (err) {
-        console.warn('Error generating recurring task:', err)
+
+        // DB safety check to prevent race condition across multiple browser tabs
+        const { data: dbExisting } = await supabase
+          .from('boq_requests')
+          .select('id, metadata')
+          .eq('title', t.title)
+          .eq('target_date', newTargetDate)
+
+        if (dbExisting && dbExisting.length > 0) {
+          meta.last_generated_period = currentPeriod
+          meta.last_generated_week = currentWeek
+          await supabase.from('boq_requests').update({ metadata: meta }).eq('id', t.id)
+          continue
+        }
+
+        try {
+          const resetSubtasks = Array.isArray(meta.subtasks)
+            ? meta.subtasks.map(st => ({ ...st, completed: false }))
+            : []
+
+          // IMPORTANT: The newly generated instance MUST NOT act as a recurring generator!
+          const newMeta = {
+            ...meta,
+            is_recurring: false,          // NOT a generator!
+            is_recurring_template: false, // Explicitly false
+            is_recurring_instance: true,  // Marked as instance for UI badge
+            recurring_template_id: t.id,
+            subtasks: resetSubtasks,
+            generated_for_period: currentPeriod,
+            generated_for_week: currentWeek,
+            last_generated_period: currentPeriod,
+            last_generated_week: currentWeek
+          }
+
+          const newTaskPayload = {
+            title: t.title,
+            project_name: t.project_name || '',
+            customer_name: t.customer_name || '',
+            pic_name: t.pic_name || '',
+            description: t.description || '',
+            assignee: t.assignee || '',
+            target_date: newTargetDate,
+            status: 'TODO',
+            created_by: 'SISTEM (Tugas Rutin)',
+            file_url: t.file_url || null,
+            file_name: t.file_name || null,
+            file_link: t.file_link || null,
+            metadata: newMeta
+          }
+
+          const { data: createdTasks, error: insErr } = await supabase
+            .from('boq_requests')
+            .insert([newTaskPayload])
+            .select()
+
+          if (!insErr && createdTasks && createdTasks[0]) {
+            meta.last_generated_period = currentPeriod
+            meta.last_generated_week = currentWeek
+            await supabase
+              .from('boq_requests')
+              .update({ metadata: meta })
+              .eq('id', t.id)
+
+            sendMultiChannelTaskNotification(createdTasks[0], 'ASSIGNED')
+          }
+        } catch (err) {
+          console.warn('Error generating recurring task:', err)
+        }
       }
     }
+  } finally {
+    isProcessingRecurring = false
   }
 }
 
@@ -1304,6 +1501,8 @@ const submitForm = async () => {
         subtasks: formData.value.subtasks || [],
         attachments: formData.value.attachments || [],
         is_recurring: formData.value.is_recurring || false,
+        is_recurring_template: formData.value.is_recurring || false,
+        is_recurring_instance: false,
         recurrence_type: formData.value.is_recurring ? (formData.value.recurrence_type || 'MONTHLY') : 'NONE',
         recurrence_day: formData.value.is_recurring ? (Number(formData.value.recurrence_day) || 1) : 1,
         recurrence_weekday: formData.value.is_recurring ? (formData.value.recurrence_weekday !== undefined ? Number(formData.value.recurrence_weekday) : 1) : 1,
@@ -1830,7 +2029,7 @@ const deleteTask = async (taskId) => {
                   <span v-if="getDisplayAssignees(task).includes(currentUserEmail)" class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-red-600 text-white text-[9px] font-black shadow-2xs">
                     ✦ TUGAS ANDA
                   </span>
-                  <span v-if="parseMeta(task.metadata).is_recurring" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[9px] font-bold border border-slate-200 dark:border-slate-700">
+                  <span v-if="parseMeta(task.metadata).is_recurring || parseMeta(task.metadata).is_recurring_instance" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[9px] font-bold border border-slate-200 dark:border-slate-700">
                     <Repeat class="w-2.5 h-2.5" /> Rutin
                   </span>
                 </div>
@@ -1929,7 +2128,7 @@ const deleteTask = async (taskId) => {
                   <span v-if="getDisplayAssignees(task).includes(currentUserEmail)" class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-red-600 text-white text-[9px] font-black shadow-2xs">
                     ✦ TUGAS ANDA
                   </span>
-                  <span v-if="parseMeta(task.metadata).is_recurring" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[9px] font-bold border border-slate-200 dark:border-slate-700">
+                  <span v-if="parseMeta(task.metadata).is_recurring || parseMeta(task.metadata).is_recurring_instance" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[9px] font-bold border border-slate-200 dark:border-slate-700">
                     <Repeat class="w-2.5 h-2.5" /> Rutin
                   </span>
                 </div>
@@ -1992,12 +2191,58 @@ const deleteTask = async (taskId) => {
           @dragleave="onDragLeave($event, 'DONE')"
           @drop="onDrop($event, 'DONE')"
         >
-          <div class="px-3 py-2.5 flex items-center justify-between border-b border-emerald-200/50 dark:border-emerald-900/30 shrink-0">
-            <div class="flex items-center gap-2">
+          <div class="px-3 py-2 flex items-center justify-between border-b border-emerald-200/50 dark:border-emerald-900/30 shrink-0 gap-1.5">
+            <div class="flex items-center gap-1.5 shrink-0">
               <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
               <span class="text-xs font-black uppercase tracking-wide text-emerald-700 dark:text-emerald-400">Done</span>
             </div>
-            <span class="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400">{{ doneTasks.length }}</span>
+
+            <!-- Switcher Bulan Khusus DONE -->
+            <div class="flex items-center gap-1.5 shrink-0">
+              <div class="inline-flex items-center bg-white/90 dark:bg-slate-900/80 border border-emerald-200/80 dark:border-emerald-800/60 rounded-lg shadow-2xs p-0.5">
+                <button
+                  type="button"
+                  @click.stop="prevDoneMonth"
+                  :disabled="!hasPrevDoneMonth"
+                  class="p-0.5 rounded hover:bg-emerald-100/70 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                  title="Bulan sebelumnya"
+                >
+                  <ChevronLeft class="w-3.5 h-3.5" />
+                </button>
+
+                <div class="relative flex items-center">
+                  <select
+                    v-model="selectedDonePeriod"
+                    class="appearance-none bg-transparent text-[10.5px] font-bold text-emerald-800 dark:text-emerald-200 pl-1.5 pr-4 py-0.5 cursor-pointer focus:outline-none"
+                    title="Pilih Bulan Selesai"
+                  >
+                    <option
+                      v-for="p in availableDonePeriods"
+                      :key="p.value"
+                      :value="p.value"
+                      class="text-slate-800 dark:text-slate-100 bg-white dark:bg-slate-800 font-medium"
+                    >
+                      {{ p.shortLabel }} ({{ p.count }})
+                    </option>
+                  </select>
+                  <ChevronDown class="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400 absolute right-1 pointer-events-none" />
+                </div>
+
+                <button
+                  type="button"
+                  @click.stop="nextDoneMonth"
+                  :disabled="!hasNextDoneMonth"
+                  class="p-0.5 rounded hover:bg-emerald-100/70 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
+                  title="Bulan berikutnya"
+                >
+                  <ChevronRight class="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              <span class="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 shrink-0">
+                {{ doneTasks.length }}
+              </span>
+            </div>
           </div>
           <div class="flex-1 overflow-y-auto p-2 space-y-2 sidebar-thin">
             <div v-if="doneTasks.length === 0" class="flex flex-col items-center justify-center h-24 text-center">
@@ -2122,7 +2367,7 @@ const deleteTask = async (taskId) => {
                       <span v-if="getDisplayAssignees(task).includes(currentUserEmail)" class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-red-600 text-white text-[9px] font-black shrink-0 shadow-2xs">
                         ✦ TUGAS ANDA
                       </span>
-                      <span v-if="parseMeta(task.metadata).is_recurring" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[9px] font-bold border border-slate-200 dark:border-slate-700">
+                      <span v-if="parseMeta(task.metadata).is_recurring || parseMeta(task.metadata).is_recurring_instance" class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[9px] font-bold border border-slate-200 dark:border-slate-700">
                         <Repeat class="w-2.5 h-2.5" /> Rutin
                       </span>
                     </div>

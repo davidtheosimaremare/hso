@@ -516,6 +516,8 @@ const saveEditTask = async () => {
       subtasks: editForm.value.subtasks || [],
       attachments: editForm.value.attachments || [],
       is_recurring: editForm.value.is_recurring || false,
+      is_recurring_template: editForm.value.is_recurring || false,
+      is_recurring_instance: editForm.value.is_recurring ? false : (existingMeta.is_recurring_instance || false),
       recurrence_type: editForm.value.is_recurring ? (editForm.value.recurrence_type || 'MONTHLY') : 'NONE',
       recurrence_day: editForm.value.is_recurring ? (Number(editForm.value.recurrence_day) || 1) : 1,
       recurrence_weekday: editForm.value.is_recurring ? (editForm.value.recurrence_weekday !== undefined ? Number(editForm.value.recurrence_weekday) : 1) : 1
@@ -951,7 +953,7 @@ const taskSubtasks = computed(() => {
 const recurringInfo = computed(() => {
   if (!task.value) return null
   const meta = parseMeta(task.value.metadata)
-  if (!meta.is_recurring) return null
+  if (!meta.is_recurring && !meta.is_recurring_instance) return null
   if (meta.recurrence_type === 'WEEKLY') {
     const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu']
     return `Mingguan • Setiap ${dayNames[meta.recurrence_weekday !== undefined ? Number(meta.recurrence_weekday) : 1]}`
