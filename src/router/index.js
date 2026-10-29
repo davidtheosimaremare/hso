@@ -29,7 +29,6 @@ import NotificationsView from '@/views/NotificationsView.vue'
 import ToolsView from '@/views/ToolsView.vue'
 import ProductUsageTrackerView from '@/views/ProductUsageTrackerView.vue'
 import SalesLeadsView from '@/views/SalesLeadsView.vue'
-import SalesEmailView from '@/views/SalesEmailView.vue'
 
 
 // Import Public
@@ -67,7 +66,6 @@ const router = createRouter({
         { path: '/hsq', component: HsqListView },
         { path: '/hsq/:id', component: HsqDetailView },
         { path: '/sales-leads', component: SalesLeadsView },
-        { path: '/sales-emails', component: SalesEmailView },
         { path: '/settings', component: SettingsView },
         { path: '/sop-guide', component: SopGuideView },
         { path: '/development', component: DevUpdatesView },

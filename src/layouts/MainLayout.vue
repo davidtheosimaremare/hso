@@ -367,8 +367,7 @@ const filteredMenuGroups = computed(() => {
     const items = category.items.map(item => {
       if (item.type === 'item') {
         const isAllowed = userRole.value === 'ADMIN' || 
-          allowedModules.value.includes(`${item.moduleKey}:read`) ||
-          (item.path === '/sales-emails' && (allowedModules.value.includes('sales-emails:read') || allowedModules.value.includes('hsq:read') || allowedModules.value.includes('sales-orders:read')))
+          allowedModules.value.includes(`${item.moduleKey}:read`)
         return isAllowed ? item : null
       } else {
         const allowedChildren = item.children.filter(child => {
