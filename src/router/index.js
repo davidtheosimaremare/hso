@@ -29,9 +29,7 @@ import NotificationsView from '@/views/NotificationsView.vue'
 import ToolsView from '@/views/ToolsView.vue'
 import ProductUsageTrackerView from '@/views/ProductUsageTrackerView.vue'
 import SalesLeadsView from '@/views/SalesLeadsView.vue'
-import PoSiemensSinovaView from '@/views/PoSiemensSinovaView.vue'
-import Hsq3vjView from '@/views/Hsq3vjView.vue'
-import Hso3vjView from '@/views/Hso3vjView.vue'
+import SalesEmailView from '@/views/SalesEmailView.vue'
 
 
 // Import Public
@@ -69,10 +67,8 @@ const router = createRouter({
         { path: '/hsq', component: HsqListView },
         { path: '/hsq/:id', component: HsqDetailView },
         { path: '/sales-leads', component: SalesLeadsView },
+        { path: '/sales-emails', component: SalesEmailView },
         { path: '/settings', component: SettingsView },
-        { path: '/po-siemens-sinova', component: PoSiemensSinovaView },
-        { path: '/hsq-3vj', component: Hsq3vjView },
-        { path: '/hso-3vj', component: Hso3vjView },
         { path: '/sop-guide', component: SopGuideView },
         { path: '/development', component: DevUpdatesView },
         { path: '/collaborate', component: PermintaanView },
@@ -126,7 +122,7 @@ function getRequiredModule(path) {
   if (path.startsWith('/delivery-orders')) return 'delivery-orders'
   if (path.startsWith('/logistics-db')) return 'logistics-db'
   if (path.startsWith('/sop-guide')) return 'sop-guide'
-  if (path.startsWith('/settings') || path.startsWith('/development') || path.startsWith('/po-siemens-sinova') || path.startsWith('/hsq-3vj') || path.startsWith('/hso-3vj')) return 'settings'
+  if (path.startsWith('/settings') || path.startsWith('/development')) return 'settings'
   return null
 }
 
@@ -231,15 +227,6 @@ router.beforeEach(async (to, from, next) => {
     if (userAccess.role === 'ADMIN') {
       next()
       return
-    }
-
-    // Khusus modul PO Siemens Sinova: izinkan jika user memiliki settings:read atau purchase-orders:read
-    if (to.path.startsWith('/po-siemens-sinova')) {
-      const canAccess = userAccess.allowed_modules?.includes('settings:read') || userAccess.allowed_modules?.includes('purchase-orders:read')
-      if (canAccess) {
-        next()
-        return
-      }
     }
 
     // Cek modul spesifik (harus memiliki permission :read)
