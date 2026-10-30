@@ -29,6 +29,7 @@ import NotificationsView from '@/views/NotificationsView.vue'
 import ToolsView from '@/views/ToolsView.vue'
 import ProductUsageTrackerView from '@/views/ProductUsageTrackerView.vue'
 import SalesLeadsView from '@/views/SalesLeadsView.vue'
+import PriceAdjustmentView from '@/views/PriceAdjustmentView.vue'
 
 
 // Import Public
@@ -66,6 +67,8 @@ const router = createRouter({
         { path: '/hsq', component: HsqListView },
         { path: '/hsq/:id', component: HsqDetailView },
         { path: '/sales-leads', component: SalesLeadsView },
+        { path: '/penyesuaian-harga', component: PriceAdjustmentView },
+        { path: '/price-adjustment', redirect: '/penyesuaian-harga' },
         { path: '/settings', component: SettingsView },
         { path: '/sop-guide', component: SopGuideView },
         { path: '/development', component: DevUpdatesView },
@@ -112,7 +115,7 @@ function getRequiredModule(path) {
   if (path.startsWith('/dashboard')) return 'dashboard'
   if (path.startsWith('/collaborate') || path.startsWith('/permintaan')) return 'permintaan'
   if (path.startsWith('/sales-orders')) return 'sales-orders'
-  if (path.startsWith('/hsq') || path.startsWith('/tools') || path.startsWith('/sales-leads')) return 'hsq'
+  if (path.startsWith('/hsq') || path.startsWith('/tools') || path.startsWith('/sales-leads') || path.startsWith('/penyesuaian-harga')) return 'hsq'
   if (path.startsWith('/marketing-hub')) return 'marketing-hub'
   if (path.startsWith('/cart') || path.startsWith('/hpb')) return 'cart'
   if (path.startsWith('/purchase-orders')) return 'purchase-orders'

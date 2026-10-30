@@ -12,14 +12,17 @@ export function cleanPartNumber(str) {
   return str.toString().trim().toUpperCase().replace(/[\s\-_.\/]/g, '')
 }
 
-// Format IDR Currency
+// Format IDR Currency (Exact price without unwanted rounding)
 export function formatRupiah(num) {
   if (num === null || num === undefined || isNaN(num)) return 'Rp 0'
+  const val = Number(num)
+  const hasDecimals = val % 1 !== 0
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
     currency: 'IDR',
-    maximumFractionDigits: 0
-  }).format(num)
+    minimumFractionDigits: hasDecimals ? 2 : 0,
+    maximumFractionDigits: 4
+  }).format(val)
 }
 
 /**

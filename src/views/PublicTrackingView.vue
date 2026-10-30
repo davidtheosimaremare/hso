@@ -62,6 +62,7 @@ const getStatusText = (item, type) => {
         'Ready Stock': 'Siap Dikirim',
         'Completed': 'Selesai',
         'NO ACTION': 'Ex-Works - Waiting Confirmation',
+        'Indent (Belum PO)': 'Indent (Belum PO)',
         'Pending Process': 'Menunggu Jadwal Pengiriman',
         'Diproses': 'Menunggu Jadwal Pengiriman'
     }
@@ -71,6 +72,9 @@ const getStatusText = (item, type) => {
 const getStatusBadgeClass = (status) => {
     if (['Completed', 'Already in Hokiindo Raya', 'Ready Stock'].includes(status)) {
         return 'text-emerald-700 bg-emerald-50/90 border-emerald-200/90'
+    }
+    if (['Indent (Belum PO)'].includes(status)) {
+        return 'text-rose-700 bg-rose-50/90 border-rose-200/90'
     }
     if (['ETA Port JKT'].includes(status)) {
         return 'text-blue-700 bg-blue-50/90 border-blue-200/90'
@@ -141,6 +145,69 @@ const parseStockFromNote = (note) => {
     return { qty: 0, isReady: false, hasInfo: false }
 }
 
+// Status ranking for logistics batches (closer to arrival = higher rank)
+const statusPriorityRank = {
+    'Already in Hokiindo Raya': 4,
+    'Already in siemens Warehouse': 3,
+    'ETA Port JKT': 2,
+    'Follow up with our forwarder': 1,
+    'Follow up to factory': 1,
+    'Follow up to our factory': 1,
+    'Ex-Works': 1,
+    'Pending Process': 0
+}
+
+const parseDateSortKey = (dateStr) => {
+    if (!dateStr || dateStr === '-' || String(dateStr).toLowerCase().includes('waiting')) return '9999-99-99'
+    const dmy = String(dateStr).match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/)
+    if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`
+    return String(dateStr)
+}
+
+const compareForwarderBatches = (batchA, batchB) => {
+    const rankA = statusPriorityRank[batchA.rawStatus] || 0
+    const rankB = statusPriorityRank[batchB.rawStatus] || 0
+    if (rankA !== rankB) return rankB - rankA // Higher rank (closer to arrival) first
+    
+    const dateA = parseDateSortKey(batchA.rawDate)
+    const dateB = parseDateSortKey(batchB.rawDate)
+    return dateA.localeCompare(dateB) // Earlier arrival date first
+}
+
+const parseHsoSeq = (hsoStr) => {
+    if (!hsoStr) return { year: 99, month: 99, num: 999999 }
+    const match = String(hsoStr).match(/(\d{2})[\/\-](\d{1,2})[\/\-](\d+)/)
+    if (match) {
+        return {
+            year: parseInt(match[1]) || 0,
+            month: parseInt(match[2]) || 0,
+            num: parseInt(match[3]) || 0
+        }
+    }
+    return { year: 99, month: 99, num: 999999 }
+}
+
+const compareHsoFifo = (hsoA, hsoB) => {
+    const a = parseHsoSeq(hsoA)
+    const b = parseHsoSeq(hsoB)
+    if (a.year !== b.year) return a.year - b.year
+    if (a.month !== b.month) return a.month - b.month
+    return a.num - b.num
+}
+
+const extractHsoFromNote = (note) => {
+    if (!note) return null
+    const match = String(note).match(/(HSO[\/\-][\w\d\/\-]+)/i)
+    return match ? match[1].trim() : null
+}
+
+const isHsoMatch = (hsoA, hsoB) => {
+    if (!hsoA || !hsoB) return false
+    const cleanA = String(hsoA).trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+    const cleanB = String(hsoB).trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
+    return cleanA === cleanB || cleanA.includes(cleanB) || cleanB.includes(cleanA)
+}
+
 // --- DATA FETCHING ---
 const fetchTrackingData = async () => {
     isLoading.value = true
@@ -168,7 +235,7 @@ const fetchTrackingData = async () => {
                 ? supabase.from('raw_forwarder_tracking').select('*').in('item_code', itemCodes)
                 : Promise.resolve({ data: [] }),
             itemCodes.length > 0
-                ? supabase.from('accurate_purchase_order_items').select('item_code, hso_number, detail_notes, po:accurate_purchase_orders(number, status_name)').in('item_code', itemCodes)
+                ? supabase.from('accurate_purchase_order_items').select('item_code, quantity, hso_number, detail_notes, po:accurate_purchase_orders(number, status_name)').in('item_code', itemCodes)
                 : Promise.resolve({ data: [] })
         ])
 
@@ -225,8 +292,8 @@ const fetchTrackingData = async () => {
 
             // Cari active HPO untuk item ini
             let activeHpo = inProgressShipments[0]?.hpo_number || myShipments[0]?.hpo_number
-            if (!activeHpo && soNumClean) {
-                const matchedPoItem = poItemList.find(p => normStr(p.item_code) === codeKey && (String(p.hso_number || '').includes(soNumClean) || String(p.detail_notes || '').includes(soNumClean)))
+            if (!activeHpo && d.number) {
+                const matchedPoItem = poItemList.find(p => normStr(p.item_code) === codeKey && (isHsoMatch(p.hso_number, d.number) || isHsoMatch(p.detail_notes, d.number)))
                 if (matchedPoItem?.po?.number) {
                     activeHpo = matchedPoItem.po.number
                 }
@@ -237,11 +304,11 @@ const fetchTrackingData = async () => {
             if (activeHpo) {
                 liveTrack = forwarderList.find(t => normStr(t.item_code) === codeKey && normHpo(t.hpo_number) === normHpo(activeHpo))
             }
-            // Ambil sub-schedules / split delivery batches
+            // Ambil sub-schedules / split delivery batches (Hanya jika item memiliki PO/HPO aktif)
             const matchingForwarderRows = forwarderList.filter(t => {
                 if (normStr(t.item_code) !== codeKey) return false
-                if (activeHpo) return normHpo(t.hpo_number) === normHpo(activeHpo)
-                return true
+                if (!activeHpo) return false
+                return normHpo(t.hpo_number) === normHpo(activeHpo)
             })
 
             const parseBatchSchedule = (raw) => {
@@ -296,34 +363,95 @@ const fetchTrackingData = async () => {
                 rawBatchesList = myShipments.map(parseBatchSchedule)
             }
 
-            // Hitung total kuantitas yang berstatus tiba di Hokiindo
-            const arrivedBatches = rawBatchesList.filter(b => 
-                b.rawStatus === 'Already in Hokiindo Raya' || b.status === 'Tiba di Hokiindo'
-            )
-            let totalArrivedQty = arrivedBatches.reduce((acc, b) => acc + (b.qty || 0), 0)
-            if (totalArrivedQty === 0 && arrivedShipments.length > 0 && rawBatchesList.length <= 1) {
-                totalArrivedQty = qtyOrder
-            }
-
-            // Sisa fisik barang tiba yang belum terkirim via Surat Jalan (HDO)
-            const physicalArrivedRemaining = Math.max(0, totalArrivedQty - qtyShipped)
-
-            // Hitung sub_schedules untuk tampilan split delivery
+            // Hitung sub_schedules untuk tampilan split delivery menggunakan Smart FIFO Waterfall Allocation
             if (rawBatchesList.length > 0) {
-                const batchMap = new Map()
+                const groupedBatchesMap = new Map()
                 rawBatchesList.forEach(b => {
                     const key = `${b.status}__${b.date}`
-                    if (!batchMap.has(key)) {
-                        batchMap.set(key, { ...b })
+                    if (!groupedBatchesMap.has(key)) {
+                        groupedBatchesMap.set(key, { ...b })
                     } else {
-                        const existing = batchMap.get(key)
+                        const existing = groupedBatchesMap.get(key)
                         if (b.qty && existing.qty) {
                             existing.qty += b.qty
                         }
                     }
                 })
+                const sortedBatches = Array.from(groupedBatchesMap.values()).sort(compareForwarderBatches)
+
+                // Kumpulkan alokasi HSO yang bersaing untuk item & PO ini
+                const currentHso = (d.number || '').trim()
+                const competingPoItems = poItemList.filter(p => {
+                    const pPo = String(p.po?.number || '').trim().replace(/HP0/gi, 'HPO').toLowerCase()
+                    return normStr(p.item_code) === codeKey && (!activeHpo || normHpo(pPo) === normHpo(activeHpo))
+                })
+
+                const hsoAllocationsMap = new Map()
+                competingPoItems.forEach(p => {
+                    const hso = (p.hso_number || extractHsoFromNote(p.detail_notes) || '').trim()
+                    const hsoKey = hso ? hso : 'OTHER'
+                    const qty = Number(p.quantity) || 0
+                    if (!hsoAllocationsMap.has(hsoKey)) {
+                        hsoAllocationsMap.set(hsoKey, { hsoNumber: hsoKey, qty })
+                    } else {
+                        hsoAllocationsMap.get(hsoKey).qty += qty
+                    }
+                })
+
+                const currentMatchingKey = Array.from(hsoAllocationsMap.keys()).find(k => isHsoMatch(k, currentHso))
+                if (!currentMatchingKey) {
+                    hsoAllocationsMap.set(currentHso, { hsoNumber: currentHso, qty: qtyOrder })
+                } else {
+                    const entry = hsoAllocationsMap.get(currentMatchingKey)
+                    if (qtyOrder > 0) {
+                        entry.qty = Math.max(entry.qty || 0, qtyOrder)
+                    }
+                }
+
+                const sortedHsoAllocations = Array.from(hsoAllocationsMap.values()).sort((a, b) => compareHsoFifo(a.hsoNumber, b.hsoNumber))
+
+                // FIFO Waterfall: alokasikan batch ke HSO yang lebih awal terlebih dahulu
+                const batchPool = sortedBatches.map(b => ({ ...b, remainingQty: b.qty || 0 }))
+                const totalPoolQty = batchPool.reduce((sum, b) => sum + b.remainingQty, 0)
+
+                let allocatedBatches = []
+                if (totalPoolQty === 0) {
+                    allocatedBatches = sortedBatches.map(b => ({ ...b, qty: null }))
+                } else {
+                    for (const hsoAlloc of sortedHsoAllocations) {
+                        let needed = hsoAlloc.qty
+                        const isTarget = isHsoMatch(hsoAlloc.hsoNumber, currentHso)
+
+                        for (const batch of batchPool) {
+                            if (needed <= 0) break
+                            if (batch.remainingQty <= 0) continue
+
+                            const take = Math.min(needed, batch.remainingQty)
+                            batch.remainingQty -= take
+                            needed -= take
+
+                            if (isTarget && take > 0) {
+                                allocatedBatches.push({
+                                    ...batch,
+                                    qty: take
+                                })
+                            }
+                        }
+
+                        if (isTarget) break
+                    }
+
+                    // Fallback jika tidak ada alokasi yang tersisa (kuota pool habis terserap oleh HSO yang lebih dulu dalam FIFO)
+                    if (allocatedBatches.length === 0 && sortedBatches.length > 0) {
+                        allocatedBatches = sortedBatches.slice(0, 1).map(b => ({
+                            ...b,
+                            qty: null
+                        }))
+                    }
+                }
+
                 let runningShipped = qtyShipped
-                subSchedules = Array.from(batchMap.values()).map(b => {
+                subSchedules = allocatedBatches.map(b => {
                     let isShipped = false
                     if (b.rawStatus === 'Already in Hokiindo Raya' || b.status === 'Tiba di Hokiindo') {
                         if (runningShipped > 0 && b.qty && runningShipped >= b.qty) {
@@ -335,14 +463,34 @@ const fetchTrackingData = async () => {
                 })
             }
 
+            // Hitung total kuantitas yang berstatus tiba di Hokiindo khusus alokasi SO ini
+            const arrivedBatches = subSchedules.filter(b => 
+                b.rawStatus === 'Already in Hokiindo Raya' || b.status === 'Tiba di Hokiindo'
+            )
+            let totalArrivedQty = arrivedBatches.reduce((acc, b) => acc + (b.qty || 0), 0)
+            if (totalArrivedQty === 0 && arrivedShipments.length > 0 && subSchedules.length <= 1) {
+                totalArrivedQty = qtyOrder
+            }
+
+            // Sisa fisik barang tiba yang belum terkirim via Surat Jalan (HDO)
+            const physicalArrivedRemaining = Math.max(0, totalArrivedQty - qtyShipped)
+            const isNoStock = stockInfo.hasInfo && !stockInfo.isReady && stockInfo.qty === 0
+
             let logistik = {}
             let isReadyToShip = false
 
             if (isRemainingStockReady) {
                 isReadyToShip = true
                 logistik = { status: 'Ready Stock' }
-            } else if (physicalArrivedRemaining >= qtyRemaining && qtyRemaining > 0) {
+            } else if (!isNoStock && physicalArrivedRemaining >= qtyRemaining && qtyRemaining > 0) {
                 // Semua sisa barang sudah ada secara fisik di gudang Hokiindo (belum dikirim)
+                isReadyToShip = true
+                logistik = {
+                    current_status: 'Already in Hokiindo Raya',
+                    hokiindo_date: arrivedBatches[0]?.rawDate || arrivedShipments[0]?.hokiindo_date || null
+                }
+            } else if (isNoStock && activeHpo && physicalArrivedRemaining >= qtyRemaining && qtyRemaining > 0) {
+                // Barang no stock tapi SUDAH dibuatkan HPO dan barang fisik dari HPO tersebut sudah tiba di Hokiindo
                 isReadyToShip = true
                 logistik = {
                     current_status: 'Already in Hokiindo Raya',
@@ -352,9 +500,9 @@ const fetchTrackingData = async () => {
                 // Sisa barang belum siap (sebagian/semua barang yang pernah tiba sudah dikirim ke customer)
                 isReadyToShip = false
 
-                const pendingBatches = rawBatchesList.filter(b => 
-                    b.rawStatus !== 'Already in Hokiindo Raya' && b.status !== 'Tiba di Hokiindo'
-                )
+                const pendingBatches = subSchedules.length > 0
+                    ? subSchedules.filter(b => b.rawStatus !== 'Already in Hokiindo Raya' && b.status !== 'Tiba di Hokiindo')
+                    : rawBatchesList.filter(b => b.rawStatus !== 'Already in Hokiindo Raya' && b.status !== 'Tiba di Hokiindo')
 
                 if (pendingBatches.length > 0) {
                     // Urutkan prioritas batch yang sedang berjalan: Dunex (3) -> Port JKT (2) -> Factory/Exwork (1)
@@ -394,7 +542,12 @@ const fetchTrackingData = async () => {
             let dunex = logistik.dunex_date || null
             let hokiindo = isReadyToShip ? (logistik.hokiindo_date || null) : null
 
-            let effectiveStatus = isReadyToShip ? 'Ready Stock' : (logistik.current_status || 'Pending Process')
+            let defaultPendingStatus = 'Pending Process'
+            if (isNoStock && !activeHpo && myShipments.length === 0) {
+                defaultPendingStatus = 'Indent (Belum PO)'
+            }
+
+            let effectiveStatus = isReadyToShip ? 'Ready Stock' : (logistik.current_status || defaultPendingStatus)
 
             if (!isReadyToShip) {
                 hokiindo = null
@@ -792,7 +945,7 @@ const exportToExcel = () => {
                                         </span>
                                         <span v-else class="text-[11px] text-zinc-400 flex items-center sm:justify-end gap-1">
                                             <Clock class="w-3 h-3 text-zinc-400" />
-                                            <span>Jadwal sedang dikoordinasikan</span>
+                                            <span>{{ item.status === 'Indent (Belum PO)' ? 'Belum dibuatkan PO' : 'Jadwal sedang dikoordinasikan' }}</span>
                                         </span>
                                     </div>
                                 </div>

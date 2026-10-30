@@ -142,6 +142,80 @@ try {
   console.warn('Initial cache load error:', e)
 }
 
+// Helper to get active price: uses adjusted_price if exists, otherwise fallback to default unit_price in Accurate
+export function getItemActivePrice(item) {
+  if (!item) return 0
+  const details = getItemPriceDetails(item)
+  return details.activePrice
+}
+
+// Helper to get complete price resolution breakdown
+export function getItemPriceDetails(item) {
+  if (!item) {
+    return {
+      activePrice: 0,
+      defaultPrice: 0,
+      adjustedPrice: null,
+      hasAdjustment: false,
+      diffAmount: 0,
+      diffPercent: 0,
+      priceSource: 'NONE'
+    }
+  }
+
+  // 1. Ambil Harga Satuan Master (Sebelum Penyesuaian) dari base_price atau specs
+  const rawBase = Number(item.base_price) || Number(item.specs?.base_price) || 0
+  const rawUnit = Number(item.unit_price) || 0
+  const rawAdjusted = Number(item.specs?.adjusted_price) || Number(item.adjusted_price) || 0
+
+  let defaultPrice = 0
+  let adjustedPrice = null
+  let hasAdjustment = false
+
+  if (rawAdjusted > 0 && rawBase > 0 && rawAdjusted !== rawBase) {
+    defaultPrice = rawBase
+    adjustedPrice = rawAdjusted
+    hasAdjustment = true
+  } else if (rawBase > 0 && rawUnit > 0 && rawBase !== rawUnit) {
+    defaultPrice = rawBase
+    adjustedPrice = rawUnit
+    hasAdjustment = true
+  } else if (rawAdjusted > 0 && rawUnit > 0 && rawAdjusted !== rawUnit) {
+    defaultPrice = rawUnit
+    adjustedPrice = rawAdjusted
+    hasAdjustment = true
+  } else {
+    // Tidak ada penyesuaian: murni harga satuan master default Accurate
+    defaultPrice = rawBase > 0 ? rawBase : rawUnit
+    adjustedPrice = null
+    hasAdjustment = false
+  }
+
+  // 2. Harga dasar sebelum markup aktif
+  const baseActive = hasAdjustment ? adjustedPrice : defaultPrice
+
+  // 3. Kenaikan 4,545% untuk harga aktif yang ditampilkan (sesuai instruksi user)
+  // Kecualikan jika item sudah pernah disimpan dengan markup HSO agar tidak terkompon ganda
+  const isAlreadyMarkedUp = item.specs?.has_hso_markup === true
+  const ACTIVE_MARKUP_RATE = isAlreadyMarkedUp ? 0 : 0.04545
+  const activePrice = baseActive > 0 ? Math.round(baseActive * (1 + ACTIVE_MARKUP_RATE)) : 0
+
+  const diffAmount = activePrice - defaultPrice
+  const diffPercent = (defaultPrice > 0) 
+    ? Math.round(((activePrice - defaultPrice) / defaultPrice) * 1000) / 10 
+    : 0
+
+  return {
+    activePrice,
+    defaultPrice,
+    adjustedPrice,
+    hasAdjustment,
+    diffAmount,
+    diffPercent,
+    priceSource: hasAdjustment ? 'PENYESUAIAN_HARGA' : 'HARGA_DEFAULT_ACCURATE'
+  }
+}
+
 export function useAccurateItems() {
   // Load cache helper
   const loadCache = () => {
@@ -197,7 +271,7 @@ export function useAccurateItems() {
         promises.push(
           supabase
             .from('accurate_items')
-            .select('id, item_no, item_name, description, long_description, unit_price, category, brand, stock_status, stock_quantity, available_to_sell, unit_name')
+            .select('id, item_no, item_name, description, long_description, unit_price, base_price, category, brand, stock_status, stock_quantity, available_to_sell, unit_name, specs')
             .order('item_no', { ascending: true })
             .range(from, from + step - 1)
         )
@@ -707,6 +781,8 @@ export function useAccurateItems() {
     deleteCustomRule,
     importShopProducts,
     syncFromShopApi,
-    syncItems
+    syncItems,
+    getItemActivePrice,
+    getItemPriceDetails
   }
 }

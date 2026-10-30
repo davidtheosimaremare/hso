@@ -103,3 +103,9 @@ entrypoint = "./functions/upload-to-drive/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/upload-to-drive/*.html" ]
+
+[functions.accurate-create-spa]
+enabled = true
+verify_jwt = false
+import_map = "./functions/accurate-create-spa/deno.json"
+entrypoint = "./functions/accurate-create-spa/index.ts"

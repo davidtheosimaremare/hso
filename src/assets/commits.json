@@ -1,5 +1,37 @@
 [
   {
+    "hash": "6dd5687f6e63b3f82ab4c6f89733bbad981615ec",
+    "shortHash": "6dd5687",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Oct 29 14:51:17 2026 +0700",
+    "message": "feat(navigation): remove sales-emails route and references to fix deployment build"
+  },
+  {
+    "hash": "235396b70281408a91e0337768a625612abaf27c",
+    "shortHash": "235396b",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Oct 29 14:37:18 2026 +0700",
+    "message": "feat(navigation): remove unused PO Siemens Sinova, HSQ Sinova 3VJ, and HSO Sinova 3VJ modules"
+  },
+  {
+    "hash": "0e6c9d48642124af5212d92d1327629b967fae27",
+    "shortHash": "0e6c9d4",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Oct 29 14:23:17 2026 +0700",
+    "message": "fix(tasks): prevent recurring task duplicate cascade and add monthly switcher for done column"
+  },
+  {
+    "hash": "9c801784d72a732f77c3978798fa339374b3a7ad",
+    "shortHash": "9c80178",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Wed Sep 16 10:04:15 2026 +0700",
+    "message": "feat: add HSQ & HSO Sinova 3VJ views with Excel export and fix split deliveries tracking status"
+  },
+  {
     "hash": "3571f73d1f74492ef4eadbd82eb38cbe9389e80d",
     "shortHash": "3571f73",
     "author": "davidtheosimaremare",
@@ -366,37 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Thu Aug 27 17:37:33 2026 +0700",
     "message": "refactor(sales-order): embed project into No. SO cell and optimize table columns width"
-  },
-  {
-    "hash": "8cd2d6500d22411b0c101ccccf7f9b22be8dace3",
-    "shortHash": "8cd2d65",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Aug 26 14:16:15 2026 +0700",
-    "message": "fix(hso-detail): fix getHpoShipment matching to properly resolve ETA Port JKT"
-  },
-  {
-    "hash": "8a4eb714c173c93782ffa60a0b7ce391ba848353",
-    "shortHash": "8a4eb71",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Aug 26 11:20:45 2026 +0700",
-    "message": "fix(tracking): correctly isolate in-progress PO for remaining quantities against partially shipped items"
-  },
-  {
-    "hash": "7c4b575a0607e51c78cbb9ab4d5d5fe01d4d5309",
-    "shortHash": "7c4b575",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Aug 26 11:15:55 2026 +0700",
-    "message": "fix(tracking): remove pending text and leave un-PO items blank"
-  },
-  {
-    "hash": "0b652c2a2e825d1dd5b80b7096cee8c0111f031e",
-    "shortHash": "0b652c2",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Aug 26 11:08:34 2026 +0700",
-    "message": "fix(tracking): correct partial shipments and PO logistics status handling"
   }
 ]
