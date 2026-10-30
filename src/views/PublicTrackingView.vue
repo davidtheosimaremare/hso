@@ -62,7 +62,7 @@ const getStatusText = (item, type) => {
         'Ready Stock': 'Siap Dikirim',
         'Completed': 'Selesai',
         'NO ACTION': 'Ex-Works - Waiting Confirmation',
-        'Indent (Belum PO)': 'Indent (Belum PO)',
+        'Indent (Belum PO)': 'Menunggu Status Logistik (Siemens)',
         'Pending Process': 'Menunggu Jadwal Pengiriman',
         'Diproses': 'Menunggu Jadwal Pengiriman'
     }
@@ -73,16 +73,13 @@ const getStatusBadgeClass = (status) => {
     if (['Completed', 'Already in Hokiindo Raya', 'Ready Stock'].includes(status)) {
         return 'text-emerald-700 bg-emerald-50/90 border-emerald-200/90'
     }
-    if (['Indent (Belum PO)'].includes(status)) {
-        return 'text-rose-700 bg-rose-50/90 border-rose-200/90'
-    }
     if (['ETA Port JKT'].includes(status)) {
         return 'text-blue-700 bg-blue-50/90 border-blue-200/90'
     }
     if (['Already in siemens Warehouse'].includes(status)) {
         return 'text-cyan-700 bg-cyan-50/90 border-cyan-200/90'
     }
-    // Ex-Works (Follow up with our forwarder, Follow up to factory, NO ACTION, Pending Process, default)
+    // Ex-Works (Follow up with our forwarder, Follow up to factory, NO ACTION, Indent/Siemens, Pending Process, default)
     return 'text-amber-800 bg-amber-50/90 border-amber-200'
 }
 
@@ -945,7 +942,7 @@ const exportToExcel = () => {
                                         </span>
                                         <span v-else class="text-[11px] text-zinc-400 flex items-center sm:justify-end gap-1">
                                             <Clock class="w-3 h-3 text-zinc-400" />
-                                            <span>{{ item.status === 'Indent (Belum PO)' ? 'Belum dibuatkan PO' : 'Jadwal sedang dikoordinasikan' }}</span>
+                                            <span>{{ item.status === 'Indent (Belum PO)' ? 'Konfirmasi jadwal dari Siemens' : 'Jadwal sedang dikoordinasikan' }}</span>
                                         </span>
                                     </div>
                                 </div>

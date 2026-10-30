@@ -1,5 +1,13 @@
 [
   {
+    "hash": "9f3f3e6a1613d8da4ea247b450f68d1bd9df91e4",
+    "shortHash": "9f3f3e6",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Oct 30 16:55:54 2026 +0700",
+    "message": "fix(tracking): fix NO STOCK status & FIFO allocation in public tracking, add price adjustment feature"
+  },
+  {
     "hash": "6dd5687f6e63b3f82ab4c6f89733bbad981615ec",
     "shortHash": "6dd5687",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Thu Aug 27 17:50:23 2026 +0700",
     "message": "feat(sales-order): format project info as default styled badge 'Project: {nama project}'"
-  },
-  {
-    "hash": "935b5e035964101f92687658b55074156b8fb3d4",
-    "shortHash": "935b5e0",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Thu Aug 27 17:37:33 2026 +0700",
-    "message": "refactor(sales-order): embed project into No. SO cell and optimize table columns width"
   }
 ]
