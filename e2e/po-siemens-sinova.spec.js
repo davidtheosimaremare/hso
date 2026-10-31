@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('PO Siemens Sinova Product-First E2E Test Suite', () => {
-  const email = process.env.TEST_USER_EMAIL || 'admin@hokiindo.co.id';
-  const password = process.env.TEST_USER_PASSWORD || 'akucintayesus';
+  const email = process.env.TEST_USER_EMAIL || '';
+  const password = process.env.TEST_USER_PASSWORD || '';
 
   test('Sidebar Menu & PO Siemens Sinova Products View Functional Test', async ({ page }) => {
     // 1. Login

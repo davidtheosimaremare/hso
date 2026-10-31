@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('HSQ Sinova 3VJ Product E2E Test Suite', () => {
-  const email = process.env.TEST_USER_EMAIL || 'davidtheo@hokiindo.co.id';
-  const password = process.env.TEST_USER_PASSWORD || 'akucintayesus';
+  const email = process.env.TEST_USER_EMAIL || '';
+  const password = process.env.TEST_USER_PASSWORD || '';
 
   test('Sidebar Menu & HSQ 3VJ Products View Functional Test', async ({ page }) => {
     // 1. Login

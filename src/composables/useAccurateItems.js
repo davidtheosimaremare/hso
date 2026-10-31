@@ -605,7 +605,7 @@ export function useAccurateItems() {
     syncProgress.value = 5
 
     const endpoint = customUrl || import.meta.env.VITE_SHOP_API_URL || 'https://shop.hokiindo.co.id/api/v1/sync/siemens'
-    const apiKey = import.meta.env.VITE_SHOP_SYNC_API_KEY || 'hso_sync_siemens_9a7d3b5c1e2f4088'
+    const apiKey = import.meta.env.VITE_SHOP_SYNC_API_KEY || ''
 
     const reqHeaders = {
       'Content-Type': 'application/json',

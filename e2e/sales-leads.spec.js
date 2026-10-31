@@ -2,8 +2,8 @@ import { test, expect } from '@playwright/test';
 
 test.describe('HIR Workspace Real Login & Sales Leads E2E Suite', () => {
 
-  const email = process.env.TEST_USER_EMAIL || 'admin@hokiindo.co.id';
-  const password = process.env.TEST_USER_PASSWORD || 'akucintayesus';
+  const email = process.env.TEST_USER_EMAIL || '';
+  const password = process.env.TEST_USER_PASSWORD || '';
 
   test('1. Real Supabase Login Test', async ({ page }) => {
     await page.goto('/');

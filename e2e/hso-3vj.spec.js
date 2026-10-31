@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('HSO Sinova 3VJ Product E2E Test Suite', () => {
-  const email = process.env.TEST_USER_EMAIL || 'davidtheo@hokiindo.co.id';
-  const password = process.env.TEST_USER_PASSWORD || 'akucintayesus';
+  const email = process.env.TEST_USER_EMAIL || '';
+  const password = process.env.TEST_USER_PASSWORD || '';
 
   test('Sidebar Menu & HSO 3VJ Products View Functional Test', async ({ page }) => {
     page.on('dialog', async dialog => {

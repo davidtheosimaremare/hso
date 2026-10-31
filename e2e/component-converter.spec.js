@@ -2,8 +2,8 @@ import { test, expect } from '@playwright/test';
 
 test.describe('HIR Component Converter Suite (Schneider & ABB to Siemens)', () => {
 
-  const email = process.env.TEST_USER_EMAIL || 'admin@hokiindo.co.id';
-  const password = process.env.TEST_USER_PASSWORD || 'akucintayesus';
+  const email = process.env.TEST_USER_EMAIL || '';
+  const password = process.env.TEST_USER_PASSWORD || '';
 
   test.beforeEach(async ({ page }) => {
     // Login
