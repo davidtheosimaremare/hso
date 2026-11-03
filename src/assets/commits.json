@@ -1,5 +1,13 @@
 [
   {
+    "hash": "40b457530ba164e034a946da84e699acecd4fcc8",
+    "shortHash": "40b4575",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Sat Oct 31 14:00:19 2026 +0700",
+    "message": "security: remove hardcoded fallback credentials and api keys from e2e tests and composables"
+  },
+  {
     "hash": "6d123a5bbcbda40bbdc4af37d612f1312aa25334",
     "shortHash": "6d123a5",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 28 17:04:48 2026 +0700",
     "message": "fix(sync-logistics): fix variable scope and display split schedules in bulk sync modal"
-  },
-  {
-    "hash": "2566bbc75d19fb20bc7ce6b048d316df1c84c789",
-    "shortHash": "2566bbc",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 28 16:57:36 2026 +0700",
-    "message": "feat(logistics): support split sub-schedules per HPO with exact HSO-HPO matching"
   }
 ]

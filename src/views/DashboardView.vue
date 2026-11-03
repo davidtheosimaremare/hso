@@ -270,9 +270,11 @@ const summaryData = computed(() => {
            s.includes('ditutup') || 
            s.includes('sebagian')
   })
-  const winRatePercent = filteredSQ.length > 0 
-    ? Math.min(100, Math.round((sqProcessed.length / filteredSQ.length) * 100))
-    : (filteredSO.length > 0 ? 100 : 0)
+  // Rasio Konversi Nominal: Persentase Total Omzet SO terhadap Nominal Total Penawaran SQ
+  const rawWinRate = sqNominal > 0 
+    ? (soNominal / sqNominal) * 100 
+    : (soNominal > 0 ? 100 : 0)
+  const winRatePercent = Number(rawWinRate.toFixed(1))
 
   // Average SO Value
   const avgSoValue = filteredSO.length > 0 ? Math.round(soNominal / filteredSO.length) : 0
@@ -658,8 +660,12 @@ onUnmounted(() => {
             <div v-else class="grid grid-cols-2 gap-4">
               <div class="space-y-1">
                 <p class="text-xs font-medium text-muted-foreground">Win Rate Konversi</p>
-                <p class="text-2xl font-bold tracking-tight text-foreground">{{ summaryData.pipeline.winRate }}%</p>
-                <p class="text-xs text-muted-foreground">{{ summaryData.pipeline.sqProcessedQty }} Deal / {{ summaryData.pipeline.sqQty }} SQ</p>
+                <p class="text-2xl font-bold tracking-tight text-foreground" :title="`Rasio Nominal: ${formatCurrency(summaryData.sales.nominal)} dari ${formatCurrency(summaryData.pipeline.sqNominal)}`">
+                  {{ summaryData.pipeline.winRate }}%
+                </p>
+                <p class="text-xs text-muted-foreground" :title="`${summaryData.pipeline.sqProcessedQty} Deal dari ${summaryData.pipeline.sqQty} SQ`">
+                  {{ summaryData.pipeline.sqProcessedQty }} Deal / {{ summaryData.pipeline.sqQty }} SQ
+                </p>
               </div>
               <div class="space-y-1">
                 <p class="text-xs font-medium text-muted-foreground">Total Penawaran</p>
