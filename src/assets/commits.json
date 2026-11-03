@@ -1,5 +1,13 @@
 [
   {
+    "hash": "3799277b5e7d99ad9dc30cd21b6ce54d3b92abf3",
+    "shortHash": "3799277",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Nov 3 20:56:01 2026 +0700",
+    "message": "feat(dashboard): calculate win rate percentage based on total omzet and total quotation nominal"
+  },
+  {
     "hash": "40b457530ba164e034a946da84e699acecd4fcc8",
     "shortHash": "40b4575",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Fri Aug 28 17:09:38 2026 +0700",
     "message": "fix(hso-detail): fix 400 Bad Request URL limit via chunking and declare matching helpers globally"
-  },
-  {
-    "hash": "d3221c49039e5046fb798ded5f0c3f04b073d2e0",
-    "shortHash": "d3221c4",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 28 17:04:48 2026 +0700",
-    "message": "fix(sync-logistics): fix variable scope and display split schedules in bulk sync modal"
   }
 ]

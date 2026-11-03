@@ -447,6 +447,9 @@ const navigateToHso = (hsoNumber) => {
                   <span :class="['text-[9px] font-black px-1.5 py-0.5 rounded border uppercase', getOverdueBadgeClass(getOverdueDays(item.dueDate))]">
                     {{ getOverdueLabel(getOverdueDays(item.dueDate)) }}
                   </span>
+                  <span v-if="(item.paidAmount || 0) > 0" class="text-[9px] font-bold px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/40">
+                    Terbayar {{ Math.round(((item.paidAmount || 0) / (item.totalAmount || 1)) * 100) }}%
+                  </span>
                 </div>
                 <p class="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">{{ item.customer }}</p>
                 <div class="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400 flex-wrap">
@@ -464,7 +467,7 @@ const navigateToHso = (hsoNumber) => {
                   </div>
                 </div>
               </div>
-              <div class="flex flex-col items-end shrink-0">
+              <div class="flex flex-col items-end shrink-0" :title="`Total Tagihan: ${formatCurrency(item.totalAmount)} | Terbayar via Penerimaan Penjualan: ${formatCurrency(item.paidAmount)} | Sisa Piutang: ${formatCurrency(item.outstandingAmount)}`">
                 <span class="text-xs font-black text-amber-600 dark:text-amber-400">{{ formatCurrency(item.outstandingAmount) }}</span>
                 <span class="text-[9px] text-slate-400 mt-0.5">dari {{ formatCurrencyShort(item.totalAmount) }}</span>
               </div>

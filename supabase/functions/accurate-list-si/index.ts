@@ -29,7 +29,7 @@ serve(async (req) => {
 
     const { fields, limit, sort, filterNumber, filterOutstanding, filterOverdue } = await req.json().catch(() => ({}))
 
-    const fieldsParam = fields || 'id,number,transDate,customer,totalAmount,statusName,dueDate,salesman'
+    const fieldsParam = fields || 'id,number,transDate,customer,totalAmount,statusName,dueDate,salesman,primeOwing,primeReceipt'
     const limitParam = limit || 10000
     const sortParam = sort || 'transDate|desc'
 

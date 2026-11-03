@@ -100,7 +100,7 @@ const fetchData = async () => {
         body: { fields: 'id,number,transDate,customer,totalAmount,statusName,description,salesman' }
       }),
       supabase.functions.invoke('accurate-list-si', {
-        body: { fields: 'id,number,transDate,customer,totalAmount,statusName,dueDate,description,salesman', limit: 10000 }
+        body: { fields: 'id,number,transDate,customer,totalAmount,statusName,dueDate,description,salesman,primeOwing,primeReceipt', limit: 10000 }
       })
     ])
 
@@ -135,14 +135,23 @@ const fetchData = async () => {
       const data = siRes.value.data
       siList.value = (data?.d || []).map(si => {
         const s = (si.statusName || '').toLowerCase().trim()
-        const isUnpaid = s.includes('belum') || (s !== 'lunas' && s !== 'paid')
+        const isPaid = s === 'lunas' || s === 'paid'
         
         let outstandingVal = 0
-        if (si.outstandingAmount !== undefined && si.outstandingAmount !== null) {
+        if (isPaid) {
+          outstandingVal = 0
+        } else if (si.primeOwing !== undefined && si.primeOwing !== null) {
+          outstandingVal = Number(si.primeOwing) || 0
+        } else if (si.outstandingAmount !== undefined && si.outstandingAmount !== null) {
           outstandingVal = Number(si.outstandingAmount) || 0
         } else {
+          const isUnpaid = s.includes('belum') || (!isPaid)
           outstandingVal = isUnpaid ? (Number(si.totalAmount) || 0) : 0
         }
+
+        const paidVal = si.primeReceipt !== undefined && si.primeReceipt !== null
+          ? Number(si.primeReceipt) || 0
+          : Math.max(0, (Number(si.totalAmount) || 0) - outstandingVal)
 
         return {
           id: si.id,
@@ -154,6 +163,7 @@ const fetchData = async () => {
           dueDate: si.dueDate,
           description: si.description || '',
           outstandingAmount: outstandingVal,
+          paidAmount: paidVal,
           salesmanName: si.salesman?.name || '-'
         }
       })
