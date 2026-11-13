@@ -202,7 +202,17 @@ const isHsoMatch = (hsoA, hsoB) => {
     if (!hsoA || !hsoB) return false
     const cleanA = String(hsoA).trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
     const cleanB = String(hsoB).trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
-    return cleanA === cleanB || cleanA.includes(cleanB) || cleanB.includes(cleanA)
+    if (cleanA === cleanB) return true
+
+    // Compare parsed components if available to avoid 17 matching 173
+    const matchA = String(hsoA).match(/(\d{2})[\/\-](\d{1,2})[\/\-](\d+)(?!\d)/)
+    const matchB = String(hsoB).match(/(\d{2})[\/\-](\d{1,2})[\/\-](\d+)(?!\d)/)
+    if (matchA && matchB) {
+        return parseInt(matchA[1]) === parseInt(matchB[1]) &&
+               parseInt(matchA[2]) === parseInt(matchB[2]) &&
+               parseInt(matchA[3]) === parseInt(matchB[3])
+    }
+    return false
 }
 
 // --- DATA FETCHING ---

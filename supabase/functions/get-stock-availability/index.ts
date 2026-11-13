@@ -62,7 +62,23 @@ serve(async (req) => {
       throw new Error(`Accurate API error fetching item detail: ${await itemRes.text()}`)
     }
     const itemJson = await itemRes.json()
-    const itemData = itemJson.d?.[0]
+    let itemData = itemJson.d?.[0]
+
+    // Fallback: If not found with EQUAL, try START_WITH or CONTAIN (helps with prefix searches like HSB)
+    if (!itemData) {
+      console.log(`Item not found with EQUAL, trying START_WITH fallback for: ${item_code}`)
+      const fallbackUrl = new URL(`${BASE_API}/item/list.do`)
+      fallbackUrl.searchParams.append('fields', 'id,no,name,unit,quantity,availableToSell')
+      fallbackUrl.searchParams.append('filter.no.op', 'START_WITH')
+      fallbackUrl.searchParams.append('filter.no.val', item_code)
+      fallbackUrl.searchParams.append('sp.pageSize', '5')
+
+      const fallbackRes = await fetch(fallbackUrl.toString(), { headers: authHeaders })
+      if (fallbackRes.ok) {
+        const fallbackJson = await fallbackRes.json()
+        itemData = fallbackJson.d?.[0]
+      }
+    }
 
     if (!itemData) {
       return new Response(JSON.stringify({ s: false, message: `Barang dengan kode ${item_code} tidak ditemukan di Accurate!` }), {
@@ -71,6 +87,7 @@ serve(async (req) => {
       })
     }
 
+    const item_no = itemData.no || item_code
     const item_name = itemData.name
     const unit_name = itemData.unit?.name || 'Pcs'
     const stock_warehouse = Number(itemData.quantity || 0)
@@ -160,7 +177,15 @@ serve(async (req) => {
             const detailJson = await detailRes.json()
             const itemsList = detailJson.d?.detailItem || []
             
-            const matchingItems = itemsList.filter((item: any) => item.item?.no === item_code)
+            const targetCodes = Array.from(new Set([
+              String(item_code || '').trim().toUpperCase(),
+              String(item_no || '').trim().toUpperCase()
+            ].filter(Boolean)))
+
+            const matchingItems = itemsList.filter((item: any) => {
+              const currentNo = String(item.item?.no || '').trim().toUpperCase()
+              return targetCodes.includes(currentNo)
+            })
             if (matchingItems.length > 0) {
               const totalQty = matchingItems.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
               const remainingQty = matchingItems.reduce((sum: number, item: any) => {
@@ -201,15 +226,21 @@ serve(async (req) => {
 
     // 3. Fetch active Purchase Orders (Dipesan) containing this item from Supabase DB (last 6 months)
     console.log(`Fetching active HPOs from database for: ${item_code} (since ${dbCutoffDate})`)
+    const targetPoCodes = Array.from(new Set([
+      String(item_code || '').trim(),
+      String(item_no || '').trim()
+    ].filter(Boolean)))
+
     const { data: poItems, error: poErr } = await supabase
       .from('accurate_purchase_order_items')
       .select(`
         id,
         quantity,
         po_id,
+        item_code,
         po:accurate_purchase_orders!inner(id, number, trans_date, vendor_name, status_name)
       `)
-      .eq('item_code', item_code)
+      .in('item_code', targetPoCodes)
       .in('po.status_name', ['Menunggu diproses', 'Sebagian diproses'])
       .gte('po.trans_date', dbCutoffDate)
 
@@ -309,7 +340,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({
       s: true,
       data: {
-        item_code,
+        item_code: item_no || item_code,
         item_name,
         unit_name,
         stock_warehouse,

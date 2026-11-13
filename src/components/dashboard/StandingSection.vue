@@ -27,12 +27,12 @@ defineEmits(['refresh'])
     </div>
 
     <!-- HSO Priority (Full Width) -->
-    <div class="w-full">
+    <div id="section-priority" class="w-full scroll-mt-20">
       <HSOPriorityCard :soList="soList" :shipmentsList="shipmentsList" :poList="poList" :isLoading="isLoading" :targetYear="targetYear" @refresh="$emit('refresh')" />
     </div>
 
     <!-- Invoice Priority / Tagihan Belum Dibayar (Full Width) -->
-    <div class="w-full">
+    <div id="section-invoicing" class="w-full scroll-mt-20">
       <InvoicePriorityCard :soList="soList" :siList="siList" :isLoading="isLoading" :targetYear="targetYear" />
     </div>
   </div>

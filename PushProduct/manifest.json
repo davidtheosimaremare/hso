@@ -1,0 +1,70 @@
+{
+  "manifest_version": 3,
+  "name": "PushProduct - SiePortal to Accurate",
+  "version": "1.0.0",
+  "description": "Ekstrak produk Siemens dari SiePortal dan isi otomatis ke modul Barang & Jasa Accurate Online dengan 1-klik.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    },
+    "default_title": "PushProduct - SiePortal to Accurate"
+  },
+  "permissions": [
+    "storage",
+    "tabs",
+    "activeTab",
+    "clipboardWrite",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://sieportal.siemens.com/*",
+    "https://accurate.id/*",
+    "https://*.accurate.id/*",
+    "https://zeus.accurate.id/*",
+    "http://accurate.id/*",
+    "http://*.accurate.id/*",
+    "https://generativelanguage.googleapis.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://sieportal.siemens.com/*"
+      ],
+      "js": [
+        "parser.js",
+        "geminiService.js",
+        "content-sieportal.js"
+      ],
+      "css": [
+        "content-sieportal.css"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://accurate.id/*",
+        "https://*.accurate.id/*",
+        "http://accurate.id/*",
+        "http://*.accurate.id/*"
+      ],
+      "js": [
+        "content-accurate.js"
+      ],
+      "css": [
+        "content-accurate.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

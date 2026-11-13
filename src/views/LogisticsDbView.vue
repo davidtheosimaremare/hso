@@ -387,7 +387,21 @@ const handleExcelUpload = async (e) => {
       const workbook = XLSX.read(data, { type: 'array' })
       const firstSheetName = workbook.SheetNames[0]
       const worksheet = workbook.Sheets[firstSheetName]
-      const rows = XLSX.utils.sheet_to_json(worksheet, { defval: '' })
+      
+      // Robust table header detection (supports Siemens summary block templates)
+      const rawMatrix = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
+      let headerRowIdx = 0
+      for (let i = 0; i < Math.min(30, rawMatrix.length); i++) {
+        const r = rawMatrix[i] || []
+        const rowStr = r.map(c => String(c).toLowerCase().replace(/[\s\_\-]/g, '')).join(' ')
+        if ((rowStr.includes('customerpo') || rowStr.includes('hpo') || rowStr.includes('ponumber') || rowStr.includes('nopembelian')) && 
+            (rowStr.includes('mlfb') || rowStr.includes('sku') || rowStr.includes('itemcode') || rowStr.includes('productcode') || rowStr.includes('nomorproduct'))) {
+          headerRowIdx = i
+          break
+        }
+      }
+
+      const rows = XLSX.utils.sheet_to_json(worksheet, { range: headerRowIdx, defval: '' })
       
       if (rows.length === 0) {
         alert("File Excel tidak berisi data.")
@@ -402,9 +416,9 @@ const handleExcelUpload = async (e) => {
       headers.forEach(header => {
         const h = header.toLowerCase().replace(/[\s\_\-]/g, '')
         if (h.includes('status') || h.includes('logistic') || h.includes('kondisi') || h.includes('keterangan')) statusCol = header
-        else if (h.includes('exwork') || h.includes('exworkdate')) exworkCol = header
+        else if (h.includes('exw') || h.includes('exwork') || h.includes('exworkdate')) exworkCol = header
         else if (h.includes('eta') || h.includes('etajakarta')) etaCol = header
-        else if (h.includes('deliverydate') || h.includes('tanggaldo') || h.includes('delivery')) deliveryCol = header
+        else if ((h.includes('deliverydate') || h.includes('tanggaldo') || h.includes('delivery')) && !h.includes('no') && !h.includes('nomor') && !h.includes('resi')) deliveryCol = header
         else if (h.includes('hpo') || h.includes('customerpo') || h.includes('nopembelian') || (h.includes('po') && !h.includes('product'))) hpoCol = header
         else if (h.includes('mlfb') || h.includes('sku') || h.includes('nomorproduct') || h.includes('itemcode') || h.includes('productcode')) itemCol = header
         else if (h.includes('item') || h.includes('code')) itemCol = header
@@ -791,10 +805,10 @@ const startGlobalSync = async () => {
     const mapStatusLocal = (excelStatus) => {
       if (!excelStatus) return 'Follow up with our forwarder'
       const s = String(excelStatus).trim().toLowerCase()
-      if (s.includes('done delivery') || s.includes('delivered') || s.includes('customer') || s.includes('hokiindo')) return 'Already in Hokiindo Raya'
+      if (s.includes('done delivery') || s.includes('delivered') || s.includes('billed') || s.includes('customer') || s.includes('hokiindo')) return 'Already in Hokiindo Raya'
       if (s.includes('siemens') || s.includes('dunex') || s.includes('warehouse') || s.includes('tiba gudang dunex') || s.includes('our warehouse') || s.includes('our wh')) return 'Already in siemens Warehouse'
       if (s.includes('transit') || s.includes('eta') || s.includes('port') || s.includes('jkt') || s.includes('jkt port')) return 'ETA Port JKT'
-      if (s.includes('forwarder') || s.includes('ex-works') || s.includes('exwork') || s.includes('ready') || s.includes('factory') || s.includes('production')) return 'Follow up with our forwarder'
+      if (s.includes('forwarder') || s.includes('ex-works') || s.includes('exwork') || s.includes('ready') || s.includes('factory') || s.includes('production') || s.includes('hold')) return 'Follow up with our forwarder'
       const exact = ['follow up with our forwarder', 'eta port jkt', 'already in siemens warehouse', 'already in hokiindo raya']
       const matched = exact.find(e => e.toLowerCase() === s)
       if (matched) return matched

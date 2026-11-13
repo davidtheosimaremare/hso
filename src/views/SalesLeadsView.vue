@@ -313,7 +313,7 @@ const deleteLead = async (id) => {
   leads.value = leads.value.filter(l => l.id !== id)
   localStorage.setItem('sales_leads_cache', JSON.stringify(leads.value))
 
-  supabase.from('sales_leads').delete().eq('id', id).catch(e => console.warn('Supabase delete notice:', e))
+  supabase.from('sales_leads').delete().eq('id', id).then(null, e => console.warn('Supabase delete notice:', e))
 }
 
 // Open Activity Modal

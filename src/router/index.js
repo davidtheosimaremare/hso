@@ -30,6 +30,7 @@ import ToolsView from '@/views/ToolsView.vue'
 import ProductUsageTrackerView from '@/views/ProductUsageTrackerView.vue'
 import SalesLeadsView from '@/views/SalesLeadsView.vue'
 import PriceAdjustmentView from '@/views/PriceAdjustmentView.vue'
+import WeeklyTaskRecapView from '@/views/WeeklyTaskRecapView.vue'
 
 
 // Import Public
@@ -70,6 +71,8 @@ const router = createRouter({
         { path: '/penyesuaian-harga', component: PriceAdjustmentView },
         { path: '/price-adjustment', redirect: '/penyesuaian-harga' },
         { path: '/settings', component: SettingsView },
+        { path: '/weekly-task-recap', component: WeeklyTaskRecapView },
+        { path: '/settings/weekly-tasks', redirect: '/weekly-task-recap' },
         { path: '/sop-guide', component: SopGuideView },
         { path: '/development', component: DevUpdatesView },
         { path: '/collaborate', component: PermintaanView },
@@ -123,7 +126,7 @@ function getRequiredModule(path) {
   if (path.startsWith('/delivery-orders')) return 'delivery-orders'
   if (path.startsWith('/logistics-db')) return 'logistics-db'
   if (path.startsWith('/sop-guide')) return 'sop-guide'
-  if (path.startsWith('/settings') || path.startsWith('/development')) return 'settings'
+  if (path.startsWith('/settings') || path.startsWith('/development') || path.startsWith('/weekly-task-recap')) return 'settings'
   return null
 }
 

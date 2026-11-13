@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ExternalLink, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { ExternalLink, ChevronLeft, ChevronRight, Search, X } from 'lucide-vue-next'
 
 const router = useRouter()
 
@@ -13,6 +13,8 @@ const props = defineProps({
 })
 
 const selectedYear = ref(props.targetYear)
+const searchQuery = ref('')
+const agingFilter = ref('all') // 'all', 'safe', '1_30', '31_60', 'gt_60'
 const currentPage = ref(1)
 const pageSize = ref(5)
 const currentPageUnshipped = ref(1)
@@ -75,10 +77,10 @@ const getOverdueDays = (dueDateStr) => {
 }
 
 const getOverdueBadgeClass = (days) => {
-  if (days <= 0) return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/40'
-  if (days <= 14) return 'bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 border-amber-200 dark:border-amber-900/40'
-  if (days <= 30) return 'bg-orange-50 text-orange-700 dark:bg-orange-950/30 dark:text-orange-400 border-orange-200 dark:border-orange-900/40'
-  return 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400 border-rose-200 dark:border-rose-900/40'
+  if (days <= 0) return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+  if (days <= 30) return 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border-amber-300 dark:border-amber-900/60'
+  if (days <= 60) return 'bg-orange-100 text-orange-800 dark:bg-orange-950/40 dark:text-orange-300 border-orange-300 dark:border-orange-900/60'
+  return 'bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300 border-rose-300 dark:border-rose-900 font-black'
 }
 
 const getOverdueLabel = (days) => {
@@ -150,23 +152,82 @@ const unshippedList = computed(() => {
     .sort((a, b) => (Number(b.totalAmount) || 0) - (Number(a.totalAmount) || 0))
 })
 
+const countSafe = computed(() => priorityList.value.filter(i => getOverdueDays(i.dueDate) <= 0).length)
+const count1_30 = computed(() => priorityList.value.filter(i => { const d = getOverdueDays(i.dueDate); return d > 0 && d <= 30 }).length)
+const count31_60 = computed(() => priorityList.value.filter(i => { const d = getOverdueDays(i.dueDate); return d > 30 && d <= 60 }).length)
+const countGt60 = computed(() => priorityList.value.filter(i => getOverdueDays(i.dueDate) > 60).length)
+
+// Filtered Unshipped & Priority computations
+const filteredUnshippedList = computed(() => {
+  let list = unshippedList.value
+  if (searchQuery.value.trim()) {
+    const q = searchQuery.value.toLowerCase().trim()
+    list = list.filter(so => {
+      const numMatch = (so.number || '').toLowerCase().includes(q)
+      const custMatch = (so.customer || '').toLowerCase().includes(q)
+      return numMatch || custMatch
+    })
+  }
+  return list
+})
+
+const filteredPriorityList = computed(() => {
+  let list = priorityList.value
+
+  // Aging Bucket
+  if (agingFilter.value === 'safe') {
+    list = list.filter(i => getOverdueDays(i.dueDate) <= 0)
+  } else if (agingFilter.value === '1_30') {
+    list = list.filter(i => {
+      const d = getOverdueDays(i.dueDate)
+      return d > 0 && d <= 30
+    })
+  } else if (agingFilter.value === '31_60') {
+    list = list.filter(i => {
+      const d = getOverdueDays(i.dueDate)
+      return d > 30 && d <= 60
+    })
+  } else if (agingFilter.value === 'gt_60') {
+    list = list.filter(i => getOverdueDays(i.dueDate) > 60)
+  }
+
+  // Search
+  if (searchQuery.value.trim()) {
+    const q = searchQuery.value.toLowerCase().trim()
+    list = list.filter(i => {
+      const numMatch = (i.number || '').toLowerCase().includes(q)
+      const custMatch = (i.customer || '').toLowerCase().includes(q)
+      const hsoRef = (getHsoRef(i) || '').toLowerCase()
+      const descMatch = (i.description || '').toLowerCase().includes(q)
+      return numMatch || custMatch || hsoRef.includes(q) || descMatch
+    })
+  }
+
+  return list
+})
+
+watch([searchQuery, agingFilter], () => {
+  currentPage.value = 1
+  currentPageUnshipped.value = 1
+})
+
 // Pagination unshipped
-const totalPagesUnshipped = computed(() => Math.ceil(unshippedList.value.length / pageSizeUnshipped.value) || 1)
+const totalPagesUnshipped = computed(() => Math.ceil(filteredUnshippedList.value.length / pageSizeUnshipped.value) || 1)
 const paginatedUnshipped = computed(() => {
   const start = (currentPageUnshipped.value - 1) * pageSizeUnshipped.value
-  return unshippedList.value.slice(start, start + pageSizeUnshipped.value)
+  return filteredUnshippedList.value.slice(start, start + pageSizeUnshipped.value)
 })
 const prevPageUnshipped = () => { if (currentPageUnshipped.value > 1) currentPageUnshipped.value-- }
 const nextPageUnshipped = () => { if (currentPageUnshipped.value < totalPagesUnshipped.value) currentPageUnshipped.value++ }
 
-// Pagination computations
+// Pagination priority
 const totalPages = computed(() => {
-  return Math.ceil(priorityList.value.length / pageSize.value) || 1
+  return Math.ceil(filteredPriorityList.value.length / pageSize.value) || 1
 })
 
 const paginatedList = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
-  return priorityList.value.slice(start, start + pageSize.value)
+  return filteredPriorityList.value.slice(start, start + pageSize.value)
 })
 
 const prevPage = () => {
@@ -235,34 +296,54 @@ const navigateToHso = (hsoNumber) => {
 
 <template>
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 flex flex-col h-full shadow-xs space-y-4">
-    <!-- Header (Tanpa Icon, Judul + Filter Tahun 2024, 2025, 2026) -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 gap-3">
+    <!-- Header (Judul + Quick Search + Filter Tahun 2024, 2025, 2026) -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 gap-3">
       <div>
-        <h3 class="font-extrabold text-slate-800 dark:text-slate-200 text-sm">Invoice Priority (Realisasi & Status Tagihan)</h3>
-        <p class="text-xs text-muted-foreground">Rincian status pengiriman, tagihan terbit, dan piutang tahun {{ selectedYear }}</p>
+        <h3 class="font-extrabold text-slate-800 dark:text-slate-200 text-sm">Status Realisasi, Pengiriman & Piutang HSO</h3>
+        <p class="text-xs text-muted-foreground">Rincian pesanan perlu dikirim, piutang faktur belum dibayar, dan pembayaran lunas tahun {{ selectedYear }}</p>
       </div>
 
-      <!-- Filter Tahun (2024, 2025, 2026) -->
-      <div class="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg shrink-0 self-start sm:self-auto">
-        <button 
-          v-for="yr in availableYears" 
-          :key="yr"
-          @click="selectedYear = yr"
-          :class="[
-            'px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer',
-            selectedYear === yr 
-              ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs' 
-              : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-          ]"
-        >
-          {{ yr }}
-        </button>
+      <div class="flex items-center gap-2 flex-wrap">
+        <!-- Quick Search Input -->
+        <div class="relative min-w-[200px]">
+          <Search class="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input 
+            v-model="searchQuery"
+            type="text"
+            placeholder="Cari Order / Faktur..."
+            class="w-full h-8 pl-8 pr-7 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-emerald-500 shadow-2xs"
+          />
+          <button 
+            v-if="searchQuery" 
+            @click="searchQuery = ''"
+            class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+          >
+            <X class="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <!-- Filter Tahun (2024, 2025, 2026) -->
+        <div class="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg shrink-0">
+          <button 
+            v-for="yr in availableYears" 
+            :key="yr"
+            @click="selectedYear = yr"
+            :class="[
+              'px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer',
+              selectedYear === yr 
+                ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 shadow-xs' 
+                : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+            ]"
+          >
+            {{ yr }}
+          </button>
+        </div>
       </div>
     </div>
 
     <!-- Ringkasan Angka Status Realisasi & Piutang HSO -->
     <div v-if="!isLoading" class="bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 rounded-xl p-4 space-y-3">
-      <!-- 4 Stat Box Grid — urutan: Total Omzet | Belum Kirim | Perlu Ditagih | Lunas -->
+      <!-- 4 Stat Box Grid — urutan: Total Omzet | Perlu Dikirim | Perlu Ditagih (Piutang) | Sudah Dibayar (Lunas) -->
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-center sm:text-left">
         <!-- 1. Total Omzet HSO -->
         <div class="bg-white dark:bg-slate-900/60 p-2.5 rounded-lg border border-slate-200/60 dark:border-slate-800">
@@ -271,90 +352,90 @@ const navigateToHso = (hsoNumber) => {
           <span class="text-[10px] text-slate-400 block mt-0.5">{{ yearSOs.length }} Pesanan HSO</span>
         </div>
 
-        <!-- 2. Belum Kirim (rose/merah) -->
+        <!-- 2. Perlu Dikirim (rose/merah) -->
         <div class="bg-white dark:bg-slate-900/60 p-2.5 rounded-lg border border-rose-100 dark:border-rose-950">
-          <span class="text-xs text-rose-600 dark:text-rose-400 font-medium block">Belum Kirim</span>
+          <span class="text-xs text-rose-600 dark:text-rose-400 font-medium block">Perlu Dikirim</span>
           <span class="text-base font-extrabold text-rose-600 dark:text-rose-400">{{ formatCurrency(totalUnshippedHsoNominal) }}</span>
-          <span class="text-[10px] text-rose-600/80 dark:text-rose-400/80 font-bold block mt-0.5">{{ unshippedPercent }}% Pending Pengiriman</span>
+          <span class="text-[10px] text-rose-600/80 dark:text-rose-400/80 font-bold block mt-0.5">{{ unshippedPercent }}% Pesanan Belum Dikirim</span>
         </div>
 
         <!-- 3. Perlu Ditagih / Piutang (amber/kuning) -->
         <div class="bg-white dark:bg-slate-900/60 p-2.5 rounded-lg border border-amber-100 dark:border-amber-950">
-          <span class="text-xs text-amber-600 dark:text-amber-400 font-medium block">Perlu Ditagih</span>
+          <span class="text-xs text-amber-600 dark:text-amber-400 font-medium block">Perlu Ditagih (Piutang)</span>
           <span class="text-base font-extrabold text-amber-600 dark:text-amber-400">{{ formatCurrency(totalUnpaidHsiNominal) }}</span>
-          <span class="text-[10px] text-amber-600/80 dark:text-amber-400/80 font-bold block mt-0.5">{{ unpaidPercent }}% Tertunggak ({{ priorityList.length }} HSI)</span>
+          <span class="text-[10px] text-amber-600/80 dark:text-amber-400/80 font-bold block mt-0.5">{{ unpaidPercent }}% Belum Dibayar ({{ priorityList.length }} HSI)</span>
         </div>
 
-        <!-- 4. Lunas (emerald) -->
+        <!-- 4. Sudah Dibayar / Lunas (emerald) -->
         <div class="bg-white dark:bg-slate-900/60 p-2.5 rounded-lg border border-emerald-100 dark:border-emerald-950">
-          <span class="text-xs text-emerald-600 dark:text-emerald-400 font-medium block">Lunas</span>
+          <span class="text-xs text-emerald-600 dark:text-emerald-400 font-medium block">Sudah Dibayar (Lunas)</span>
           <span class="text-base font-extrabold text-emerald-600 dark:text-emerald-400">{{ formatCurrency(totalPaidHsiNominal) }}</span>
-          <span class="text-[10px] text-emerald-600/80 dark:text-emerald-400/80 font-bold block mt-0.5">{{ paidPercent }}% Realisasi Pembayaran</span>
+          <span class="text-[10px] text-emerald-600/80 dark:text-emerald-400/80 font-bold block mt-0.5">{{ paidPercent }}% Pembayaran Diterima</span>
         </div>
       </div>
 
       <!-- Presentase Bar dengan Keterangan Presisi Tepat Di Atas Masing-Masing Warna Bar -->
       <div class="space-y-1.5 pt-1">
         <div class="w-full flex items-center text-[10px] font-extrabold overflow-hidden">
-          <!-- Belum Kirim (rose) - kiri -->
+          <!-- Perlu Dikirim (rose) - kiri -->
           <div 
             v-if="unshippedPercent > 0" 
             :style="{ width: `${unshippedPercent}%` }" 
             class="text-rose-600 dark:text-rose-400 truncate pr-1 transition-all duration-500 shrink-0"
-            :title="`Belum Kirim: ${unshippedPercent}%`"
+            :title="`Perlu Dikirim: ${unshippedPercent}%`"
           >
-            {{ unshippedPercent < 14 ? `Blm Kirim: ${unshippedPercent}%` : `Belum Kirim: ${unshippedPercent}%` }}
+            {{ unshippedPercent < 14 ? `Perlu Kirim: ${unshippedPercent}%` : `Perlu Dikirim: ${unshippedPercent}%` }}
           </div>
-          <!-- Perlu Ditagih (amber) - tengah -->
+          <!-- Perlu Ditagih / Piutang (amber) - tengah -->
           <div 
             v-if="unpaidPercent > 0" 
             :style="{ width: `${unpaidPercent}%` }" 
             class="text-amber-600 dark:text-amber-400 truncate px-1 transition-all duration-500 shrink-0"
-            :title="`Perlu Ditagih: ${unpaidPercent}%`"
+            :title="`Piutang: ${unpaidPercent}%`"
           >
-            {{ unpaidPercent < 14 ? `Ditagih: ${unpaidPercent}%` : `Perlu Ditagih: ${unpaidPercent}%` }}
+            {{ unpaidPercent < 14 ? `Piutang: ${unpaidPercent}%` : `Piutang: ${unpaidPercent}%` }}
           </div>
-          <!-- Lunas (emerald) - kanan -->
+          <!-- Sudah Dibayar (emerald) - kanan -->
           <div 
             v-if="paidPercent > 0" 
             :style="{ width: `${paidPercent}%` }" 
             class="text-emerald-600 dark:text-emerald-400 truncate pl-1 text-right transition-all duration-500 shrink-0 ml-auto"
-            :title="`Lunas: ${paidPercent}%`"
+            :title="`Sudah Dibayar: ${paidPercent}%`"
           >
-            {{ `Lunas: ${paidPercent}%` }}
+            {{ `Sudah Dibayar: ${paidPercent}%` }}
           </div>
         </div>
 
         <div class="w-full h-3 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden flex shadow-inner">
-          <!-- Belum Kirim (rose) -->
+          <!-- Perlu Dikirim (rose) -->
           <div 
             class="bg-rose-500 h-full transition-all duration-500" 
             :style="{ width: `${unshippedPercent}%` }"
-            :title="`Belum Kirim: ${unshippedPercent}% (${formatCurrency(totalUnshippedHsoNominal)})`"
+            :title="`Perlu Dikirim: ${unshippedPercent}% (${formatCurrency(totalUnshippedHsoNominal)})`"
           ></div>
-          <!-- Perlu Ditagih (amber) -->
+          <!-- Perlu Ditagih / Piutang (amber) -->
           <div 
             class="bg-amber-500 h-full transition-all duration-500" 
             :style="{ width: `${unpaidPercent}%` }"
-            :title="`Perlu Ditagih: ${unpaidPercent}% (${formatCurrency(totalUnpaidHsiNominal)})`"
+            :title="`Piutang: ${unpaidPercent}% (${formatCurrency(totalUnpaidHsiNominal)})`"
           ></div>
-          <!-- Lunas (emerald) -->
+          <!-- Sudah Dibayar (emerald) -->
           <div 
             class="bg-emerald-500 h-full transition-all duration-500" 
             :style="{ width: `${paidPercent}%` }"
-            :title="`Lunas: ${paidPercent}% (${formatCurrency(totalPaidHsiNominal)})`"
+            :title="`Sudah Dibayar (Lunas): ${paidPercent}% (${formatCurrency(totalPaidHsiNominal)})`"
           ></div>
         </div>
       </div>
     </div>
 
-    <!-- Body / Dua Tabel: Belum Kirim + Perlu Ditagih -->
+    <!-- Body / Dua Tabel: Perlu Dikirim + Piutang (Faktur Belum Lunas) -->
     <div class="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-      <!-- === TABEL 1: BELUM KIRIM === -->
+      <!-- === TABEL 1: PERLU DIKIRIM === -->
       <div class="flex flex-col">
         <div class="flex items-center justify-between mb-2">
-          <h4 class="text-xs font-bold text-rose-700 dark:text-rose-400">Belum Kirim</h4>
+          <h4 class="text-xs font-bold text-rose-700 dark:text-rose-400">Perlu Dikirim (Pesanan)</h4>
           <span class="text-[11px] font-extrabold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded border border-rose-200/50">
             {{ formatCurrency(totalUnshippedHsoNominal) }}
           </span>
@@ -367,9 +448,13 @@ const navigateToHso = (hsoNumber) => {
         </div>
 
         <!-- Empty -->
-        <div v-else-if="unshippedList.length === 0" class="flex-1 flex flex-col justify-center items-center py-8 text-slate-400 text-center">
-          <p class="text-xs font-bold text-slate-400">Semua Pesanan Sudah Terkirim 🎉</p>
-          <p class="text-[10px] text-slate-500 mt-0.5">Tidak ada pending pengiriman di tahun {{ selectedYear }}</p>
+        <div v-else-if="filteredUnshippedList.length === 0" class="flex-1 flex flex-col justify-center items-center py-8 text-slate-400 text-center">
+          <p class="text-xs font-bold text-slate-400">
+            {{ searchQuery ? 'Tidak Ada Pesanan yang Cocok' : 'Semua Pesanan Sudah Dikirim 🎉' }}
+          </p>
+          <p class="text-[10px] text-slate-500 mt-0.5">
+            {{ searchQuery ? 'Coba ubah kata kunci pencarian Anda' : `Tidak ada pesanan yang perlu dikirim di tahun ${selectedYear}` }}
+          </p>
         </div>
 
         <!-- List -->
@@ -396,9 +481,9 @@ const navigateToHso = (hsoNumber) => {
             </div>
           </div>
 
-          <!-- Pagination Belum Kirim -->
-          <div v-if="unshippedList.length > pageSizeUnshipped" class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] gap-2">
-            <span class="text-slate-500 font-medium">{{ (currentPageUnshipped - 1) * pageSizeUnshipped + 1 }}–{{ Math.min(currentPageUnshipped * pageSizeUnshipped, unshippedList.length) }} dari {{ unshippedList.length }}</span>
+          <!-- Pagination Perlu Dikirim -->
+          <div v-if="filteredUnshippedList.length > pageSizeUnshipped" class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] gap-2">
+            <span class="text-slate-500 font-medium">{{ (currentPageUnshipped - 1) * pageSizeUnshipped + 1 }}–{{ Math.min(currentPageUnshipped * pageSizeUnshipped, filteredUnshippedList.length) }} dari {{ filteredUnshippedList.length }}</span>
             <div class="flex items-center gap-1.5">
               <button @click="prevPageUnshipped" :disabled="currentPageUnshipped === 1" class="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all inline-flex items-center gap-0.5 shadow-2xs">
                 <ChevronLeft class="w-3 h-3" />
@@ -412,13 +497,74 @@ const navigateToHso = (hsoNumber) => {
         </div>
       </div>
 
-      <!-- === TABEL 2: PERLU DITAGIH (Piutang) === -->
+      <!-- === TABEL 2: PIUTANG (FAKTUR BELUM LUNAS) === -->
       <div class="flex flex-col">
-        <div class="flex items-center justify-between mb-2">
-          <h4 class="text-xs font-bold text-amber-700 dark:text-amber-400">Perlu Ditagih (Piutang)</h4>
-          <span class="text-[11px] font-extrabold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200/50">
-            {{ formatCurrency(totalUnpaidHsiNominal) }}
-          </span>
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+          <div class="flex items-center gap-2">
+            <h4 class="text-xs font-bold text-amber-700 dark:text-amber-400">Piutang (Faktur Belum Lunas)</h4>
+            <span class="text-[11px] font-extrabold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200/50">
+              {{ formatCurrency(totalUnpaidHsiNominal) }}
+            </span>
+          </div>
+
+          <!-- Aging Filter Pills -->
+          <div class="flex items-center gap-1 overflow-x-auto no-scrollbar text-[10px]">
+            <button 
+              @click="agingFilter = 'all'"
+              :class="[
+                'px-2 py-0.5 rounded font-bold transition-all cursor-pointer border shrink-0',
+                agingFilter === 'all'
+                  ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
+              ]"
+            >
+              Semua ({{ priorityList.length }})
+            </button>
+            <button 
+              @click="agingFilter = 'safe'"
+              :class="[
+                'px-2 py-0.5 rounded font-bold transition-all cursor-pointer border shrink-0',
+                agingFilter === 'safe'
+                  ? 'bg-slate-700 text-white border-slate-700 shadow-2xs'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-200'
+              ]"
+            >
+              Belum JT ({{ countSafe }})
+            </button>
+            <button 
+              @click="agingFilter = '1_30'"
+              :class="[
+                'px-2 py-0.5 rounded font-bold transition-all cursor-pointer border shrink-0',
+                agingFilter === '1_30'
+                  ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
+                  : 'bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-900/40 hover:bg-amber-100'
+              ]"
+            >
+              1–30 Hr ({{ count1_30 }})
+            </button>
+            <button 
+              @click="agingFilter = '31_60'"
+              :class="[
+                'px-2 py-0.5 rounded font-bold transition-all cursor-pointer border shrink-0',
+                agingFilter === '31_60'
+                  ? 'bg-orange-600 text-white border-orange-600 shadow-2xs'
+                  : 'bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400 border-orange-200 dark:border-orange-900/40 hover:bg-orange-100'
+              ]"
+            >
+              31–60 Hr ({{ count31_60 }})
+            </button>
+            <button 
+              @click="agingFilter = 'gt_60'"
+              :class="[
+                'px-2 py-0.5 rounded font-bold transition-all cursor-pointer border shrink-0',
+                agingFilter === 'gt_60'
+                  ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
+                  : 'bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400 border-rose-200 dark:border-rose-900/40 hover:bg-rose-100'
+              ]"
+            >
+              > 60 Hr ({{ countGt60 }})
+            </button>
+          </div>
         </div>
 
         <!-- Loading -->
@@ -428,9 +574,13 @@ const navigateToHso = (hsoNumber) => {
         </div>
 
         <!-- Empty -->
-        <div v-else-if="priorityList.length === 0" class="flex-1 flex flex-col justify-center items-center py-8 text-slate-400 text-center">
-          <p class="text-xs font-bold text-slate-400">Semua Tagihan Terbit Sudah Lunas 🎉</p>
-          <p class="text-[10px] text-slate-500 mt-0.5">Tidak ada piutang tertunggak di tahun {{ selectedYear }}</p>
+        <div v-else-if="filteredPriorityList.length === 0" class="flex-1 flex flex-col justify-center items-center py-8 text-slate-400 text-center">
+          <p class="text-xs font-bold text-slate-400">
+            {{ searchQuery || agingFilter !== 'all' ? 'Tidak Ada Piutang yang Cocok' : 'Semua Tagihan Sudah Lunas 🎉' }}
+          </p>
+          <p class="text-[10px] text-slate-500 mt-0.5">
+            {{ searchQuery || agingFilter !== 'all' ? 'Coba sesuaikan filter aging atau pencarian Anda' : `Tidak ada piutang belum dibayar di tahun ${selectedYear}` }}
+          </p>
         </div>
 
         <!-- List -->
@@ -458,7 +608,7 @@ const navigateToHso = (hsoNumber) => {
                     <span>•</span>
                     <button 
                       @click.stop="navigateToHso(getHsoRef(item))" 
-                      class="font-extrabold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/60 px-1.5 py-0.5 rounded border border-red-200/60 dark:border-red-900/60 transition-colors inline-flex items-center gap-1"
+                      class="font-extrabold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/60 px-1.5 py-0.5 rounded border border-red-200/60 dark:border-red-900/60 transition-colors inline-flex items-center gap-1 cursor-pointer"
                       :title="`Buka detail ${getHsoRef(item)}`"
                     >
                       <span>{{ getHsoRef(item) }}</span>
@@ -475,14 +625,14 @@ const navigateToHso = (hsoNumber) => {
           </div>
 
           <!-- Pagination Perlu Ditagih -->
-          <div v-if="priorityList.length > pageSize" class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] gap-2">
-            <span class="text-slate-500 font-medium">{{ (currentPage - 1) * pageSize + 1 }}–{{ Math.min(currentPage * pageSize, priorityList.length) }} dari {{ priorityList.length }} HSI</span>
+          <div v-if="filteredPriorityList.length > pageSize" class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-[10px] gap-2">
+            <span class="text-slate-500 font-medium">{{ (currentPage - 1) * pageSize + 1 }}–{{ Math.min(currentPage * pageSize, filteredPriorityList.length) }} dari {{ filteredPriorityList.length }} HSI</span>
             <div class="flex items-center gap-1.5">
-              <button @click="prevPage" :disabled="currentPage === 1" class="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all inline-flex items-center shadow-2xs">
+              <button @click="prevPage" :disabled="currentPage === 1" class="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all inline-flex items-center shadow-2xs cursor-pointer">
                 <ChevronLeft class="w-3 h-3" />
               </button>
               <span class="font-extrabold text-slate-600 dark:text-slate-300">{{ currentPage }}/{{ totalPages }}</span>
-              <button @click="nextPage" :disabled="currentPage >= totalPages" class="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all inline-flex items-center shadow-2xs">
+              <button @click="nextPage" :disabled="currentPage >= totalPages" class="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all inline-flex items-center shadow-2xs cursor-pointer">
                 <ChevronRight class="w-3 h-3" />
               </button>
             </div>

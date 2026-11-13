@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Package, Eye, AlertTriangle, Clock, ArrowUpCircle, ChevronDown, ChevronUp, Pin, X, RotateCcw, RefreshCw, CheckSquare, ChevronLeft, ChevronRight } from 'lucide-vue-next'
+import { Package, Eye, AlertTriangle, Clock, ArrowUpCircle, ChevronDown, ChevronUp, Pin, X, RotateCcw, RefreshCw, CheckSquare, ChevronLeft, ChevronRight, Search, PackageCheck, Truck } from 'lucide-vue-next'
 import { supabase } from '@/lib/supabase'
 
 const props = defineProps({
@@ -636,21 +636,61 @@ const hasCustomState = computed(() => {
   return dismissedOrders.value.length > 0 || lowPriorityOrders.value.length > 0 || pinnedOrders.value.length > 0
 })
 
+// Quick Filters & Search
+const searchQuery = ref('')
+const filterStatus = ref('all') // 'all', 'ready', 'exwork', 'stuck_po', 'no_po'
+
+const countAll = computed(() => priorityList.value.length)
+const countReady = computed(() => priorityList.value.filter(i => (i.countReady || 0) > 0).length)
+const countExWork = computed(() => priorityList.value.filter(i => i.stuckExWork).length)
+const countStuckPo = computed(() => priorityList.value.filter(i => i.stuckPO).length)
+const countNoPo = computed(() => priorityList.value.filter(i => i.hasNoPo).length)
+
+const filteredList = computed(() => {
+  let list = priorityList.value
+
+  // Status Filter
+  if (filterStatus.value === 'ready') {
+    list = list.filter(i => (i.countReady || 0) > 0)
+  } else if (filterStatus.value === 'exwork') {
+    list = list.filter(i => i.stuckExWork)
+  } else if (filterStatus.value === 'stuck_po') {
+    list = list.filter(i => i.stuckPO)
+  } else if (filterStatus.value === 'no_po') {
+    list = list.filter(i => i.hasNoPo)
+  }
+
+  // Search Query
+  if (searchQuery.value.trim()) {
+    const q = searchQuery.value.toLowerCase().trim()
+    list = list.filter(i => {
+      const num = (i.number || '').toLowerCase()
+      const cust = (i.customer || '').toLowerCase()
+      const sales = (i.salesmanName || '').toLowerCase()
+      const hpos = (i.linkedHpos || []).some(h => h.toLowerCase().includes(q))
+      const act = (i.actionNeeded || '').toLowerCase()
+      return num.includes(q) || cust.includes(q) || sales.includes(q) || hpos || act.includes(q)
+    })
+  }
+
+  return list
+})
+
 // Pagination
 const currentPage = ref(1)
 const pageSize = ref(6)
 
-watch(() => props.targetYear, () => {
+watch([() => props.targetYear, searchQuery, filterStatus], () => {
   currentPage.value = 1
 })
 
 const totalPages = computed(() => {
-  return Math.ceil(priorityList.value.length / pageSize.value) || 1
+  return Math.ceil(filteredList.value.length / pageSize.value) || 1
 })
 
 const paginatedList = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
-  return priorityList.value.slice(start, start + pageSize.value)
+  return filteredList.value.slice(start, start + pageSize.value)
 })
 
 const prevPage = () => {
@@ -690,13 +730,106 @@ const nextPage = () => {
         </button>
 
         <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-muted text-muted-foreground border border-border">
-          SO ({{ priorityList.length }})
+          SO ({{ filteredList.length }})
         </span>
       </div>
     </div>
 
+    <!-- Quick Search & Filter Chips Toolbar -->
+    <div class="mt-4 pb-3 border-b border-border/60 flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+      <!-- Filter Chips -->
+      <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 text-xs">
+        <button 
+          @click="filterStatus = 'all'"
+          :class="[
+            'px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 shrink-0 border',
+            filterStatus === 'all' 
+              ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-slate-900 dark:border-white shadow-2xs' 
+              : 'bg-muted/50 text-muted-foreground border-border hover:bg-muted hover:text-foreground'
+          ]"
+        >
+          <span>Semua</span>
+          <span class="text-[10px] px-1.5 py-0.2 rounded-full font-extrabold bg-background/20">{{ countAll }}</span>
+        </button>
+
+        <button 
+          @click="filterStatus = 'ready'"
+          :class="[
+            'px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 shrink-0 border',
+            filterStatus === 'ready' 
+              ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs' 
+              : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900 hover:bg-emerald-100 dark:hover:bg-emerald-900/60'
+          ]"
+        >
+          <PackageCheck class="w-3.5 h-3.5" />
+          <span>Siap Kirim</span>
+          <span class="text-[10px] px-1.5 py-0.2 rounded-full font-extrabold" :class="filterStatus === 'ready' ? 'bg-white/20' : 'bg-emerald-200/60 dark:bg-emerald-800/60'">{{ countReady }}</span>
+        </button>
+
+        <button 
+          @click="filterStatus = 'exwork'"
+          :class="[
+            'px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 shrink-0 border',
+            filterStatus === 'exwork' 
+              ? 'bg-amber-600 text-white border-amber-600 shadow-2xs' 
+              : 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-900 hover:bg-amber-100 dark:hover:bg-amber-900/60'
+          ]"
+        >
+          <Truck class="w-3.5 h-3.5" />
+          <span>Stuck Ex-Work</span>
+          <span class="text-[10px] px-1.5 py-0.2 rounded-full font-extrabold" :class="filterStatus === 'exwork' ? 'bg-white/20' : 'bg-amber-200/60 dark:bg-amber-800/60'">{{ countExWork }}</span>
+        </button>
+
+        <button 
+          @click="filterStatus = 'stuck_po'"
+          :class="[
+            'px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 shrink-0 border',
+            filterStatus === 'stuck_po' 
+              ? 'bg-rose-600 text-white border-rose-600 shadow-2xs' 
+              : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-900 hover:bg-rose-100 dark:hover:bg-rose-900/60'
+          ]"
+        >
+          <AlertTriangle class="w-3.5 h-3.5" />
+          <span>Push Siemens (>14 Mgg)</span>
+          <span class="text-[10px] px-1.5 py-0.2 rounded-full font-extrabold" :class="filterStatus === 'stuck_po' ? 'bg-white/20' : 'bg-rose-200/60 dark:bg-rose-800/60'">{{ countStuckPo }}</span>
+        </button>
+
+        <button 
+          @click="filterStatus = 'no_po'"
+          :class="[
+            'px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer inline-flex items-center gap-1.5 shrink-0 border',
+            filterStatus === 'no_po' 
+              ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs' 
+              : 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 border-indigo-200 dark:border-indigo-900 hover:bg-indigo-100 dark:hover:bg-indigo-900/60'
+          ]"
+        >
+          <Clock class="w-3.5 h-3.5" />
+          <span>Belum Terbit PO</span>
+          <span class="text-[10px] px-1.5 py-0.2 rounded-full font-extrabold" :class="filterStatus === 'no_po' ? 'bg-white/20' : 'bg-indigo-200/60 dark:bg-indigo-800/60'">{{ countNoPo }}</span>
+        </button>
+      </div>
+
+      <!-- Quick Search Input -->
+      <div class="relative min-w-[220px] max-w-sm shrink-0">
+        <Search class="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <input 
+          v-model="searchQuery"
+          type="text"
+          placeholder="Cari Order / Kustomer / HPO..."
+          class="w-full h-8 pl-8 pr-7 rounded-lg border border-input bg-background text-xs text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring shadow-2xs"
+        />
+        <button 
+          v-if="searchQuery" 
+          @click="searchQuery = ''"
+          class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer"
+        >
+          <X class="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+
     <!-- Body -->
-    <div class="flex-1 flex flex-col mt-4 min-h-[300px]">
+    <div class="flex-1 flex flex-col mt-3 min-h-[300px]">
       <!-- Loading state -->
       <div v-if="isLoading" class="flex-1 flex flex-col justify-center items-center py-10 space-y-2">
         <div class="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
@@ -704,10 +837,21 @@ const nextPage = () => {
       </div>
 
       <!-- Empty state -->
-      <div v-else-if="priorityList.length === 0" class="flex-1 flex flex-col justify-center items-center py-10 text-slate-400 text-center">
+      <div v-else-if="filteredList.length === 0" class="flex-1 flex flex-col justify-center items-center py-10 text-slate-400 text-center">
         <Package class="w-10 h-10 mb-2 opacity-30" />
-        <p class="text-xs font-bold text-slate-400">Semua HSO Beres</p>
-        <p class="text-[10px] text-slate-500 mt-0.5">Tidak ada order outstanding untuk tahun berjalan</p>
+        <p class="text-xs font-bold text-slate-400">
+          {{ searchQuery || filterStatus !== 'all' ? 'Tidak Ada Order yang Cocok' : 'Semua HSO Beres' }}
+        </p>
+        <p class="text-[10px] text-slate-500 mt-0.5">
+          {{ searchQuery || filterStatus !== 'all' ? 'Coba sesuaikan filter atau kata kunci pencarian Anda' : 'Tidak ada order outstanding untuk tahun berjalan' }}
+        </p>
+        <button 
+          v-if="searchQuery || filterStatus !== 'all'"
+          @click="searchQuery = ''; filterStatus = 'all'"
+          class="mt-3 text-xs font-bold text-primary hover:underline cursor-pointer"
+        >
+          Reset Filter & Pencarian
+        </button>
       </div>
 
       <!-- Priority List (Full Width Desktop Friendly 4-Column Layout) -->
@@ -850,9 +994,9 @@ const nextPage = () => {
         </div>
 
         <!-- Controls Pagination -->
-        <div v-if="priorityList.length > pageSize" class="flex flex-col sm:flex-row items-center justify-between pt-3 border-t border-border text-xs gap-2 mt-3">
+        <div v-if="filteredList.length > pageSize" class="flex flex-col sm:flex-row items-center justify-between pt-3 border-t border-border text-xs gap-2 mt-3">
           <span class="text-muted-foreground font-medium">
-            Menampilkan <strong class="text-foreground">{{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, priorityList.length) }}</strong> dari <strong class="text-foreground">{{ priorityList.length }}</strong> HSO
+            Menampilkan <strong class="text-foreground">{{ (currentPage - 1) * pageSize + 1 }} - {{ Math.min(currentPage * pageSize, filteredList.length) }}</strong> dari <strong class="text-foreground">{{ filteredList.length }}</strong> HSO
           </span>
           <div class="flex items-center gap-2">
             <button 

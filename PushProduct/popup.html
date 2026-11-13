@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PushProduct - SiePortal to Accurate</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <!-- Header -->
+  <header class="app-header">
+    <div class="logo-group">
+      <div class="logo-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+      </div>
+      <div>
+        <h1 class="logo-title">PushProduct</h1>
+        <p class="logo-subtitle">SiePortal ➜ Accurate Online</p>
+      </div>
+    </div>
+    <span class="badge-status" id="page-status-badge">Memeriksa Halaman...</span>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <nav class="nav-tabs">
+    <button class="nav-tab active" data-tab="tab-push">⚡ Produk</button>
+    <button class="nav-tab" data-tab="tab-history">🕒 Riwayat</button>
+    <button class="nav-tab" data-tab="tab-settings">⚙️ Pengaturan</button>
+  </nav>
+
+  <!-- TAB 1: PUSH / CONVERT PRODUCT -->
+  <main class="tab-content active" id="tab-push">
+    <!-- Manual Input / Override Header -->
+    <div class="section-card">
+      <div class="card-header">
+        <span class="card-title">🔍 Data Produk</span>
+        <button class="btn-text" id="btn-toggle-manual">Input Manual</button>
+      </div>
+
+      <div class="manual-input-box" id="manual-input-box" style="display: none;">
+        <div class="form-group">
+          <label class="form-label">Kode Produk (MLFB)</label>
+          <input type="text" class="form-input" id="manual-code" placeholder="cth: 5TJ4110-6">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Deskripsi Mentah Web</label>
+          <textarea class="form-textarea" id="manual-desc" placeholder="cth: SINOPLUS, Miniature Circuit Breaker 240/415V 10kA, 1-pole B, 10 A"></textarea>
+        </div>
+        <button class="btn-secondary" id="btn-run-manual" style="width: 100%; margin-top: 6px;">
+          ⚡ Formatkan Data
+        </button>
+      </div>
+
+      <!-- Preview Output -->
+      <div class="preview-container" id="preview-container">
+        <div class="form-group">
+          <div class="label-with-action">
+            <label class="form-label">Judul / Deskripsi Accurate</label>
+            <button class="btn-text copy-btn" id="btn-copy-title">Salin</button>
+          </div>
+          <textarea class="form-textarea title-output" id="out-name" rows="3"></textarea>
+          <div style="margin-top: 6px; font-size: 11px; background: #F8FAFC; border: 1px dashed #CBD5E1; border-radius: 6px; padding: 6px 8px;">
+            <div style="font-weight: 600; color: #64748B; font-size: 10px; margin-bottom: 2px;">📄 DESKRIPSI ASLI DARI SIEPORTAL:</div>
+            <div id="out-raw-desc" style="color: #334155; font-style: italic; max-height: 48px; overflow-y: auto;">-</div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label">Kode Barang</label>
+            <input type="text" class="form-input" id="out-code">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Brand</label>
+            <input type="text" class="form-input" id="out-brand" value="Siemens" readonly>
+          </div>
+        </div>
+
+        <div class="grid-3">
+          <div class="form-group">
+            <label class="form-label">Kategori (Accurate)</label>
+            <select class="form-select" id="out-category">
+              <option value="ACB">ACB</option>
+              <option value="MCB">MCB</option>
+              <option value="MCCB">MCCB</option>
+              <option value="RCCB">RCCB</option>
+              <option value="RCBO">RCBO</option>
+              <option value="CONTACTOR">CONTACTOR</option>
+              <option value="CONTACTOR_RELAY">CONTACTOR RELAY</option>
+              <option value="TOR">TOR</option>
+              <option value="MPCB">MPCB</option>
+              <option value="SOFT_STARTER">SOFT STARTER</option>
+              <option value="VFD">VFD</option>
+              <option value="PILOT_DEVICE">PILOT DEVICE</option>
+              <option value="POWER_SUPPLY">POWER SUPPLY</option>
+              <option value="PLC_AUTOMATION">PLC AUTOMATION</option>
+              <option value="SPD_MODULAR">SPD MODULAR</option>
+              <option value="ACCESSORIES">ACCESSORIES</option>
+              <option value="OTHER">OTHER</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Jenis</label>
+            <input type="text" class="form-input" id="out-type" value="Persediaan" readonly>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Satuan</label>
+            <input type="text" class="form-input" id="out-unit" value="pcs">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Quick Refine Button -->
+    <div style="margin-bottom: 12px;">
+      <button class="btn-ai-popup" id="btn-popup-ai-refine" title="Gunakan AI Gemini Flash untuk analisis akurasi 100%">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+        </svg>
+        <span id="btn-popup-ai-text">✨ Sempurnakan dengan Gemini Flash AI</span>
+      </button>
+      <div id="popup-ai-status" style="display: none; font-size: 10px; color: #6D28D9; margin-top: 4px; font-weight: 500;"></div>
+    </div>
+
+    <!-- Pricing Card -->
+    <div class="section-card price-card">
+      <div class="card-header">
+        <span class="card-title">💰 Perhitungan Harga Jual (Pricelist)</span>
+        <span class="formula-tag" id="tag-formula">/ 0.63 / 0.7</span>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Harga Beli / Web SIEPortal (IDR)</label>
+        <input type="text" class="form-input" id="in-sieportal-price" placeholder="cth: 63000">
+      </div>
+
+      <div class="price-highlight">
+        <div class="price-sub">Pricelist Accurate Otomatis:</div>
+        <div class="price-val" id="out-pricelist">Rp 0</div>
+        <div class="price-formula" id="out-formula-text">Harga SIEPortal / 0.63 / 0.7</div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="action-footer">
+      <button class="btn-primary" id="btn-push-accurate">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 12h14"></path>
+          <path d="m12 5 7 7-7 7"></path>
+        </svg>
+        <span id="btn-push-text">🚀 Push ke Accurate Online (API)</span>
+      </button>
+
+      <div class="grid-2" style="margin-top: 8px;">
+        <button class="btn-secondary" id="btn-copy-all">📋 Salin Format Lengkap</button>
+        <button class="btn-secondary" id="btn-open-accurate-tab">🌐 Buka Tab Accurate</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- TAB 2: RIWAYAT (HISTORY) -->
+  <main class="tab-content" id="tab-history">
+    <div class="section-card">
+      <div class="card-header">
+        <span class="card-title">🕒 Riwayat Produk Terakhir</span>
+        <button class="btn-text" id="btn-clear-history">Bersihkan</button>
+      </div>
+      <div class="history-list" id="history-list">
+        <!-- Rendered via JS -->
+      </div>
+    </div>
+  </main>
+
+  <!-- TAB 3: PENGATURAN (SETTINGS) -->
+  <main class="tab-content" id="tab-settings">
+    <!-- Gemini Flash AI Configuration -->
+    <div class="section-card ai-settings-card">
+      <div class="card-header">
+        <span class="card-title" style="color: #6D28D9;">🤖 Google Gemini Flash AI</span>
+        <span class="ai-chip">Akurasi 100%</span>
+      </div>
+
+      <div class="form-group">
+        <div class="label-with-action">
+          <label class="form-label">Google Gemini API Key</label>
+          <a href="https://aistudio.google.com/app/apikey" target="_blank" class="btn-text" style="font-size: 10px; color: #6D28D9;">Dapatkan API Key Gratis ↗</a>
+        </div>
+        <div style="position: relative;">
+          <input type="password" class="form-input" id="set-gemini-key" placeholder="Masukkan API Key (AIzaSy...)">
+          <button type="button" class="btn-text" id="btn-toggle-key-visibility" style="position: absolute; right: 8px; top: 7px; font-size: 10px;">Lihat</button>
+        </div>
+        <small class="form-hint">Digunakan untuk memahami katalog switchgear Siemens dengan akurasi 100%.</small>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Model Gemini</label>
+        <select class="form-select" id="set-gemini-model">
+          <option value="gemini-3.8-flash" selected>Gemini 3.8 Flash (Rekomendasi Google Resmi - Terbaru & Cepat)</option>
+          <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+        </select>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-top: 10px;">
+        <button class="btn-secondary" id="btn-test-ai" style="flex: 1;">
+          🔌 Uji Koneksi AI
+        </button>
+        <button class="btn-primary" id="btn-save-ai-settings" style="flex: 1; padding: 8px 12px; font-size: 12px; background: linear-gradient(135deg, #6D28D9 0%, #4F46E5 100%);">
+          💾 Simpan API Key
+        </button>
+      </div>
+      <div id="ai-test-result" style="display: none; margin-top: 8px; font-size: 11px; padding: 8px; border-radius: 6px;"></div>
+    </div>
+
+    <!-- Accurate Categories Card -->
+    <div class="section-card">
+      <div class="card-header">
+        <span class="card-title">🏷️ Kategori Barang Accurate</span>
+        <div style="display: flex; gap: 6px;">
+          <button class="btn-text" id="btn-sync-cats-api" style="font-size: 11px; color: #0284C7; font-weight: 600;">🔌 Tarik via API</button>
+          <button class="btn-text" id="btn-reset-default-cats" style="font-size: 11px; color: #6D28D9; font-weight: 600;">⚡ Default HSO</button>
+          <button class="btn-text" id="btn-sync-cats-accurate" style="font-size: 11px;">🔄 Tarik Tab</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Daftar Kategori Terdaftar (Pisahkan Koma)</label>
+        <textarea class="form-textarea" id="set-accurate-categories" rows="3" placeholder="ACB, MCB, MCCB, RCCB, RCBO, CONTACTOR, CONTACTOR_RELAY, TOR, MPCB, SOFT_STARTER, VFD, PILOT_DEVICE, POWER_SUPPLY, PLC_AUTOMATION, SPD_MODULAR, ACCESSORIES, OTHER"></textarea>
+        <small class="form-hint">Daftar kategori ini otomatis digunakan oleh Gemini Flash & form input Accurate.</small>
+      </div>
+      <button class="btn-secondary" id="btn-save-categories" style="width: 100%; margin-top: 6px;">
+        💾 Simpan Kategori Accurate
+      </button>
+    </div>
+
+    <!-- Accurate Open API Direct Sync Card -->
+    <div class="section-card">
+      <div class="card-header">
+        <span class="card-title" style="color: #0284C7;">🔑 Accurate Online Open API</span>
+        <span class="ai-chip" style="background: #E0F2FE; color: #0369A1;">Direct Sync</span>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Accurate Access Token (Bearer)</label>
+        <div style="position: relative;">
+          <input type="password" class="form-input" id="set-accurate-token" placeholder="Masukkan Access Token Accurate...">
+          <button type="button" class="btn-text" id="btn-toggle-token-visibility" style="position: absolute; right: 8px; top: 7px; font-size: 10px;">Lihat</button>
+        </div>
+        <small class="form-hint">Token Open API resmi dari database Accurate Online Anda.</small>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Signature Secret (Opsional)</label>
+        <div style="position: relative;">
+          <input type="password" class="form-input" id="set-accurate-secret" placeholder="Masukkan Signature Secret (bila ada)...">
+          <button type="button" class="btn-text" id="btn-toggle-secret-visibility" style="position: absolute; right: 8px; top: 7px; font-size: 10px;">Lihat</button>
+        </div>
+        <small class="form-hint">Kunci rahasia HMAC-SHA256 untuk otorisasi API terenkripsi.</small>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Server / Host API</label>
+        <select class="form-select" id="set-accurate-host">
+          <option value="https://zeus.accurate.id/accurate/api" selected>zeus.accurate.id (Server Utama HSO)</option>
+          <option value="https://accurate.id/accurate/api">accurate.id (Apex Domain)</option>
+          <option value="https://titan.accurate.id/accurate/api">titan.accurate.id</option>
+        </select>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-top: 10px;">
+        <button class="btn-secondary" id="btn-test-accurate-api" style="flex: 1;">
+          🧪 Uji Koneksi API
+        </button>
+        <button class="btn-primary" id="btn-save-accurate-api" style="flex: 1; padding: 8px 12px; font-size: 12px; background: linear-gradient(135deg, #0284C7 0%, #0369A1 100%);">
+          💾 Simpan Kredensial
+        </button>
+      </div>
+      <div id="acc-test-result" style="display: none; margin-top: 8px; font-size: 11px; padding: 8px; border-radius: 6px;"></div>
+    </div>
+
+    <!-- Rumus Pricelist Card -->
+    <div class="section-card">
+      <div class="card-header">
+        <span class="card-title">⚙️ Rumus Pricelist & Default</span>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Diskon 1 (Pembagi Pertama)</label>
+        <input type="number" step="0.01" class="form-input" id="set-discount1" value="0.63">
+        <small class="form-hint">Default 0.63 (Sesuai ketentuan PT Hokiindo Raya)</small>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Diskon 2 (Pembagi Kedua)</label>
+        <input type="number" step="0.01" class="form-input" id="set-discount2" value="0.70">
+        <small class="form-hint">Default 0.70</small>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Default Satuan</label>
+        <input type="text" class="form-input" id="set-default-unit" value="pcs">
+      </div>
+
+      <button class="btn-primary" id="btn-save-settings" style="width: 100%; margin-top: 8px;">
+        💾 Simpan Pengaturan
+      </button>
+    </div>
+
+    <div class="section-card">
+      <div class="card-header">
+        <span class="card-title">ℹ️ Panduan Formula Judul</span>
+      </div>
+      <p class="guide-text">
+        Ekstensi ini secara otomatis memformat deskripsi Siemens SiePortal menjadi standar Accurate:
+      </p>
+      <div class="guide-box">
+        <strong>Format:</strong><br>
+        <code>SIEMENS [TYPE], [MLFB], [SERIES], [POLE], [AMPERE], [CURVE], [KA], [VOLTAGE]</code>
+      </div>
+      <div class="guide-box" style="margin-top: 8px;">
+        <strong>Contoh:</strong><br>
+        <code>SIEMENS MCB, 5TJ4110-6, SINOPLUS, 1P, 10A, CURVE B, 10KA, 240/415V AC</code>
+      </div>
+    </div>
+  </main>
+
+  <!-- Toast -->
+  <div class="popup-toast" id="popup-toast"></div>
+
+  <!-- Scripts -->
+  <script src="parser.js"></script>
+  <script src="geminiService.js"></script>
+  <script src="accurateService.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

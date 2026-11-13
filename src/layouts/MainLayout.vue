@@ -1,6 +1,6 @@
 
 <script setup>
-import { onMounted, ref, watch, computed, provide } from 'vue'
+import { onMounted, ref, watch, computed, provide, KeepAlive } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import { useAccurateSync } from '@/composables/useAccurateSync'
@@ -30,6 +30,7 @@ import {
   Wrench,
   Building2,
   ArrowRightLeft,
+  ArrowRight,
   Boxes,
   BadgePercent
 } from 'lucide-vue-next'
@@ -55,7 +56,7 @@ provide('allowedModules', allowedModules)
 
 const isPembelianOpen = ref(route.path.startsWith('/cart') || route.path.startsWith('/hpb') || route.path.startsWith('/purchase-orders'))
 const isLogistikOpen = ref(route.path.startsWith('/logistics-db') || route.path.startsWith('/delivery-orders') || route.path.startsWith('/receive-items'))
-const isSettingOpen = ref(route.path.startsWith('/settings'))
+const isSettingOpen = ref(route.path.startsWith('/settings') || route.path.startsWith('/weekly-task-recap'))
 const isSyncWidgetOpen = ref(false)
 const { isSyncing } = useAccurateSync()
 
@@ -81,7 +82,7 @@ watch(() => route.path, (newPath) => {
   if (newPath.startsWith('/logistics-db') || newPath.startsWith('/delivery-orders') || newPath.startsWith('/receive-items')) {
     isLogistikOpen.value = true
   }
-  if (newPath.startsWith('/settings')) {
+  if (newPath.startsWith('/settings') || newPath.startsWith('/weekly-task-recap')) {
     isSettingOpen.value = true
   }
 })
@@ -275,6 +276,47 @@ onMounted(async () => {
       }
     )
     .subscribe()
+
+  // Realtime refresh for user mentions, HSO discussions, and notifications
+  supabase
+    .channel('realtime_hso_team_notifications')
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'notifications' },
+      (payload) => {
+        fetchNotifications()
+        if (payload?.new) {
+          const currentEmail = (userEmail.value || localStorage.getItem('user_email') || '').toLowerCase().trim()
+          const target = (payload.new.recipient_email || payload.new.user_email || '').toLowerCase().trim()
+          if (currentEmail && target === currentEmail) {
+            if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+              try {
+                const n = new Notification(payload.new.title || 'Mention Baru di HSO', {
+                  body: payload.new.message || 'Anda ditandai dalam sebuah diskusi.',
+                  icon: '/favicon.ico'
+                })
+                n.onclick = () => {
+                  window.focus()
+                  if (payload.new.link) router.push(payload.new.link)
+                }
+              } catch (e) {}
+            }
+          }
+        }
+      }
+    )
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'hso_discussions' },
+      () => {
+        fetchNotifications()
+      }
+    )
+    .subscribe()
+
+  if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission().catch(() => {})
+  }
 })
 
 const menuGroups = [
@@ -283,7 +325,8 @@ const menuGroups = [
     name: 'Overview',
     items: [
       { type: 'item', name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, moduleKey: 'dashboard' },
-      { type: 'item', name: 'TO-DO', path: '/collaborate', icon: ClipboardList, moduleKey: 'permintaan' }
+      { type: 'item', name: 'TO-DO', path: '/collaborate', icon: ClipboardList, moduleKey: 'permintaan' },
+      { type: 'item', name: 'Notifikasi', path: '/notifications', icon: Bell, moduleKey: 'dashboard' }
     ]
   },
   {
@@ -356,7 +399,8 @@ const menuGroups = [
         icon: Settings,
         isOpen: isSettingOpen,
         children: [
-          { name: 'Manage Account', path: '/settings', moduleKey: 'settings' }
+          { name: 'Manage Account', path: '/settings', moduleKey: 'settings' },
+          { name: 'Rekapan Mingguan HSO', path: '/weekly-task-recap', moduleKey: 'settings' }
         ]
       },
       { type: 'item', name: 'Development', path: '/development', icon: Code, moduleKey: 'settings' }
@@ -534,18 +578,60 @@ const fetchNotifications = async () => {
       !(Array.isArray(i.platforms) && i.platforms.includes('event'))
     )
 
+    // Fetch user-specific notifications (including HSO mentions & discussions)
+    let userNotifs = []
+    try {
+      let currentEmail = userEmail.value
+      if (!currentEmail || currentEmail === 'Memuat...') {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user?.email) {
+          currentEmail = user.email
+          userEmail.value = user.email
+        } else {
+          currentEmail = localStorage.getItem('user_email') || ''
+        }
+      }
+
+      if (currentEmail) {
+        const { data: nData, error: nErr } = await supabase
+          .from('notifications')
+          .select('id, title, message, type, link, is_read, created_at, recipient_email, user_email')
+          .or(`recipient_email.ilike.${currentEmail},user_email.ilike.${currentEmail}`)
+          .order('created_at', { ascending: false })
+          .limit(50)
+
+        if (!nErr && nData) {
+          userNotifs = nData.map(n => ({
+            id: n.id,
+            title: n.title || 'Notifikasi HSO',
+            message: n.message || '',
+            status: n.message ? (n.message.length > 50 ? n.message.slice(0, 50) + '...' : n.message) : (n.type || 'INFO'),
+            type: n.type || 'HSO_MENTION',
+            created_at: n.created_at,
+            path: n.link || '/sales-orders',
+            read: n.is_read || localStorage.getItem(`notif_read_${n.id}`) === 'true'
+          }))
+        }
+      }
+    } catch (e) {
+      console.warn('Notifications user fetch note:', e)
+    }
+
     // Normalize each source to common shape {id, title, status, created_at, path, read}
     const normalize = (items, pathBase) =>
       (items || []).map(i => ({
         id: i.id,
         title: i.title || 'Tanpa Judul',
+        message: i.status || '',
         status: i.status || '-',
+        type: 'TASK',
         created_at: i.created_at,
         path: pathBase,
         read: localStorage.getItem(`notif_read_${i.id}`) === 'true'
       }))
 
     const allNotifs = [
+      ...userNotifs,
       ...normalize(boqData, '/collaborate'),
       ...normalize(marketingData, '/marketing-hub'),
       ...normalize(nonEventIdeas, '/marketing-hub'),
@@ -561,11 +647,48 @@ const fetchNotifications = async () => {
   }
 }
 
-const markAllRead = () => {
+const formatTimeAgo = (iso) => {
+  if (!iso) return ''
+  try {
+    const diff = (Date.now() - new Date(iso).getTime()) / 1000
+    if (diff < 60) return 'Baru saja'
+    if (diff < 3600) return `${Math.floor(diff / 60)} m lalu`
+    if (diff < 86400) return `${Math.floor(diff / 3600)} j lalu`
+    return new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
+  } catch (e) {
+    return ''
+  }
+}
+
+const handleNotifClick = async (notif) => {
+  notif.read = true
+  try { localStorage.setItem(`notif_read_${notif.id}`, 'true') } catch {}
+  try {
+    if (notif.id) {
+      await supabase.from('notifications').update({ is_read: true }).eq('id', notif.id)
+    }
+  } catch (e) {}
+  isNotifOpen.value = false
+  if (notif.path) {
+    router.push(notif.path)
+  }
+}
+
+const markAllRead = async () => {
   notifications.value.forEach(n => {
     n.read = true
     try { localStorage.setItem(`notif_read_${n.id}`, 'true') } catch {}
   })
+  try {
+    const currentEmail = userEmail.value
+    if (currentEmail && currentEmail !== 'Memuat...') {
+      await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .or(`recipient_email.ilike.${currentEmail},user_email.ilike.${currentEmail}`)
+        .eq('is_read', false)
+    }
+  } catch (e) {}
 }
 
 // --- Profile Dropdown ---
@@ -588,8 +711,23 @@ const userInitials = computed(() => {
         <img src="https://shop.hokiindo.co.id/favicon.ico" alt="Hokiindo Logo" class="w-7 h-7 object-contain" />
         <h1 class="text-[15px] font-bold uppercase text-slate-900 dark:text-white tracking-tight">HIR Workspace</h1>
       </div>
-      <div class="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center text-[11px]">
-        {{ userInitials }}
+      <div class="flex items-center gap-2">
+        <RouterLink 
+          to="/notifications" 
+          class="relative p-1.5 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          :class="unreadCount > 0 ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40' : ''"
+        >
+          <Bell class="w-5 h-5" />
+          <span 
+            v-if="unreadCount > 0" 
+            class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-rose-600 text-white text-[10px] font-black rounded-full flex items-center justify-center ring-2 ring-white dark:ring-[#1e293b] shadow-sm animate-pulse"
+          >
+            {{ unreadCount > 99 ? '99+' : unreadCount }}
+          </span>
+        </RouterLink>
+        <div class="w-7 h-7 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 flex items-center justify-center text-[11px] font-bold">
+          {{ userInitials }}
+        </div>
       </div>
     </header>
 
@@ -610,13 +748,31 @@ const userInitials = computed(() => {
             <RouterLink 
               v-if="group.type === 'item'"
               :to="group.path"
-              class="flex items-center gap-3 px-2.5 py-2 text-sm rounded-md transition-colors"
+              class="flex items-center gap-3 px-2.5 py-2 text-sm rounded-md transition-all group"
               :class="route.path.startsWith(group.path) 
-                ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white' 
+                ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white font-medium shadow-sm' 
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'"
             >
-              <component :is="group.icon" class="w-4 h-4 shrink-0" />
-              <span class="truncate">{{ group.name }}</span>
+              <div class="relative flex items-center justify-center">
+                <component 
+                  :is="group.icon" 
+                  class="w-4 h-4 shrink-0 transition-transform group-hover:scale-110" 
+                  :class="group.path === '/notifications' && unreadCount > 0 ? 'text-rose-600 dark:text-rose-400' : ''"
+                />
+                <span 
+                  v-if="group.path === '/notifications' && unreadCount > 0"
+                  class="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-rose-500 animate-ping pointer-events-none"
+                ></span>
+              </div>
+              <span class="truncate flex-1">{{ group.name }}</span>
+
+              <!-- Dynamic Badge for Notifications -->
+              <span
+                v-if="group.path === '/notifications' && unreadCount > 0"
+                class="ml-auto shrink-0 min-w-[20px] h-[20px] px-1.5 inline-flex items-center justify-center rounded-full text-[11px] font-black bg-rose-600 text-white shadow-sm ring-2 ring-white dark:ring-slate-800 animate-pulse"
+              >
+                {{ unreadCount > 99 ? '99+' : unreadCount }}
+              </span>
             </RouterLink>
 
             <!-- Group Collapsible Menu -->
@@ -810,43 +966,68 @@ const userInitials = computed(() => {
           <div class="relative">
             <button
               @click="isNotifOpen = !isNotifOpen; if(isNotifOpen) fetchNotifications()"
-              class="relative p-2 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-white transition-all"
+              class="relative p-2 rounded-xl transition-all flex items-center justify-center"
+              :class="unreadCount > 0 
+                ? 'text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 ring-1 ring-rose-200 dark:ring-rose-800' 
+                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-800 dark:hover:text-white'"
+              title="Notifikasi"
             >
-              <Bell class="w-5 h-5" />
-              <span v-if="unreadCount > 0" class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+              <Bell class="w-5 h-5 transition-transform" :class="{ 'animate-bounce': unreadCount > 0 }" />
+              <span 
+                v-if="unreadCount > 0" 
+                class="absolute -top-1 -right-1 min-w-[20px] h-[20px] px-1 bg-rose-600 text-white text-[10px] font-black rounded-full flex items-center justify-center ring-2 ring-white dark:ring-[#1e293b] shadow-md animate-pulse"
+              >
+                {{ unreadCount > 99 ? '99+' : unreadCount }}
+              </span>
             </button>
 
             <!-- Notif Dropdown -->
             <div
               v-if="isNotifOpen"
-              class="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-[#1e293b] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden z-50"
+              class="absolute right-0 top-full mt-2 bg-white dark:bg-[#1e293b] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-2 duration-150"
+              style="width: 22rem;"
             >
-              <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-800">
-                <span class="text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-400">Notifikasi</span>
-                <button v-if="unreadCount > 0" @click="markAllRead" class="text-[10px] text-red-500 hover:text-red-600 font-bold">Tandai Semua Dibaca</button>
+              <div class="flex items-center justify-between px-4 py-3 bg-slate-50/70 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800">
+                <div class="flex items-center gap-2">
+                  <span class="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200">Notifikasi</span>
+                  <span v-if="unreadCount > 0" class="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300">
+                    {{ unreadCount }} baru
+                  </span>
+                </div>
+                <button v-if="unreadCount > 0" @click="markAllRead" class="text-[11px] text-rose-600 dark:text-rose-400 hover:underline font-semibold">Tandai Semua Dibaca</button>
               </div>
               <div v-if="notifications.length === 0" class="py-10 text-center">
                 <Bell class="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600 mb-2" />
                 <p class="text-xs text-slate-400">Tidak ada notifikasi baru</p>
               </div>
-              <div v-else class="max-h-72 overflow-y-auto">
+              <div v-else class="max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/60">
                 <div
                   v-for="notif in notifications"
                   :key="notif.id"
-                  @click="router.push(notif.path); isNotifOpen = false"
-                  class="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer border-b border-slate-50 dark:border-slate-800/50 last:border-0 transition-colors"
-                  :class="{ 'bg-red-50/50 dark:bg-red-950/10': !notif.read }"
+                  @click="handleNotifClick(notif)"
+                  class="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition-colors"
+                  :class="{ 'bg-rose-50/40 dark:bg-rose-950/20': !notif.read }"
                 >
-                  <div class="w-2 h-2 rounded-full mt-1.5 shrink-0" :class="notif.read ? 'bg-slate-300' : 'bg-red-500'"></div>
+                  <div class="w-2.5 h-2.5 rounded-full mt-1.5 shrink-0" :class="notif.read ? 'bg-slate-300 dark:bg-slate-600' : 'bg-rose-500 ring-2 ring-rose-200 dark:ring-rose-900'"></div>
                   <div class="flex-1 min-w-0">
-                    <p class="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">{{ notif.title }}</p>
-                    <p v-if="notif.path === '/collaborate'" class="text-[10px] text-slate-400 mt-0.5">Didelegasikan ke Anda · <span class="font-mono">{{ notif.status }}</span></p>
-                    <p v-else class="text-[10px] text-slate-400 mt-0.5"><span class="font-mono">{{ notif.status }}</span></p>
+                    <p class="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">{{ notif.title }}</p>
+                    <p class="text-[11px] text-slate-600 dark:text-slate-300 line-clamp-2 mt-0.5 leading-snug">{{ notif.message || notif.status }}</p>
+                    <div class="flex items-center gap-2 mt-1 text-[10px] text-slate-400 dark:text-slate-500">
+                      <span>{{ formatTimeAgo(notif.created_at) }}</span>
+                      <span v-if="notif.path?.startsWith('/sales-orders')" class="text-blue-500 dark:text-blue-400 font-medium">• HSO Diskusi</span>
+                      <span v-else-if="notif.path?.startsWith('/collaborate')" class="text-amber-500 dark:text-amber-400 font-medium">• TO-DO Task</span>
+                    </div>
                   </div>
                 </div>
               </div>
-              <div class="px-4 py-2 border-t border-slate-100 dark:border-slate-800">
-                <button @click="router.push('/notifications'); isNotifOpen = false" class="w-full text-center text-xs text-red-500 hover:text-red-600 font-bold py-1">Lihat Semua Notifikasi →</button>
+              <div class="p-2.5 bg-slate-50/70 dark:bg-slate-800/60 border-t border-slate-100 dark:border-slate-800">
+                <button 
+                  @click="router.push('/notifications'); isNotifOpen = false" 
+                  class="w-full text-center text-xs font-bold text-slate-700 dark:text-slate-200 hover:text-rose-600 dark:hover:text-rose-400 py-1 flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <span>Buka Semua Notifikasi Lengkap</span>
+                  <ArrowRight class="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
           </div>
@@ -907,7 +1088,11 @@ const userInitials = computed(() => {
 
       <!-- Page Content -->
       <div class="flex-1 pt-4 md:pt-6 px-6 pb-24 md:pb-8">
-        <RouterView />
+        <RouterView v-slot="{ Component }">
+          <KeepAlive :include="['SalesOrderView']">
+            <component :is="Component" />
+          </KeepAlive>
+        </RouterView>
       </div>
     </main>
 
@@ -972,11 +1157,17 @@ const userInitials = computed(() => {
                   :to="group.path"
                   class="flex items-center gap-3 px-2.5 py-2 text-sm rounded-md transition-colors"
                   :class="route.path.startsWith(group.path) 
-                    ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white' 
+                    ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white font-medium' 
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'"
                 >
-                  <component :is="group.icon" class="w-4 h-4 shrink-0" />
-                  <span>{{ group.name }}</span>
+                  <component :is="group.icon" class="w-4 h-4 shrink-0" :class="group.path === '/notifications' && unreadCount > 0 ? 'text-rose-500' : ''" />
+                  <span class="truncate flex-1">{{ group.name }}</span>
+                  <span
+                    v-if="group.path === '/notifications' && unreadCount > 0"
+                    class="ml-auto shrink-0 min-w-[20px] h-[20px] px-1.5 inline-flex items-center justify-center rounded-full text-[11px] font-bold bg-rose-500 text-white shadow-sm"
+                  >
+                    {{ unreadCount > 99 ? '99+' : unreadCount }}
+                  </span>
                 </RouterLink>
 
                 <!-- Render Group Mobile -->

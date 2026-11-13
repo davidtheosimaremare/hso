@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, onUnmounted, ref, computed, watch, inject } from 'vue'
+import { onMounted, onUnmounted, ref, computed, watch, inject, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 
@@ -14,7 +14,7 @@ import { Separator } from '@/components/ui/separator'
 import { Progress } from '@/components/ui/progress'
 import { Switch } from '@/components/ui/switch'
 import {
-  Sheet, SheetContent, SheetHeader, SheetTitle
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription
 } from '@/components/ui/sheet'
 import {
   DropdownMenu,
@@ -28,7 +28,10 @@ import {
   PackageCheck, Share2, Info, ExternalLink, Package, Hourglass, 
   Layers, AlertCircle, Download, AlertTriangle, ShoppingCart, Paperclip,
   ChevronDown, ChevronUp, Plane, Box, Copy, Search, UploadCloud, FileSpreadsheet, Mail, Bell, RefreshCw, Eye, X, Maximize2,
-  Film, Music, FileCode, Check
+  Film, Music, FileCode, Check, Trash2,
+  MessageSquare, MessageCircle, Send, AtSign, Tag, CornerDownRight, Reply,
+  PackageSearch, Sparkles, Boxes, Globe,
+  Bold, Italic, Underline, Strikethrough, Highlighter, List, ListOrdered, Quote, Code, Link as LinkIcon, Eraser
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -105,30 +108,8 @@ const normalizeHso = (val) => {
   return String(val).toUpperCase().replace(/[^A-Z0-9]/g, '')
 }
 
-// Check if a note or extracted HSO string matches target HSO
-const isHsoNoteMatch = (noteOrHso, targetHso) => {
-  if (!noteOrHso || !targetHso) return false
-  const nTarget = normalizeHso(targetHso)
-  const nNote = normalizeHso(noteOrHso)
-  if (!nTarget || !nNote) return false
-  if (nNote.includes(nTarget) || nTarget.includes(nNote)) return true
-  
-  // Also check without prefix 'HSO' (e.g. '26080012')
-  const targetNoPrefix = nTarget.replace(/^HSO/, '')
-  if (targetNoPrefix && nNote.includes(targetNoPrefix)) return true
-
-  return false
-}
-
-// Extract HSO number from text / detail notes
-const extractHsoFromNote = (note) => {
-  if (!note) return null
-  const match = String(note).match(/(HSO[\/\-][\w\d\/\-]+)/i)
-  return match ? match[1].trim() : null
-}
-
 // Helper: Extract sequence numbers for natural FIFO comparison of HSO numbers
-const parseHsoSeq = (hsoStr) => {
+function parseHsoSeq(hsoStr) {
   if (!hsoStr) return { year: 99, month: 99, num: 999999 }
   const match = String(hsoStr).match(/(\d{2})[\/\-](\d{1,2})[\/\-](\d+)/)
   if (match) {
@@ -139,6 +120,46 @@ const parseHsoSeq = (hsoStr) => {
     }
   }
   return { year: 99, month: 99, num: 999999 }
+}
+
+// Check if a note or extracted HSO string matches target HSO
+const isHsoNoteMatch = (noteOrHso, targetHso) => {
+  if (!noteOrHso || !targetHso) return false
+  const nTarget = normalizeHso(targetHso)
+  const nNote = normalizeHso(noteOrHso)
+  if (!nTarget || !nNote) return false
+  if (nNote === nTarget) return true
+
+  // Parse sequence numbers to ensure exact number comparison (prevent '17' matching '173')
+  const tSeq = parseHsoSeq(targetHso)
+  if (tSeq.num < 999999) {
+    const regex = /(?:HSO[\/\-]?)?(\d{2})[\/\-](\d{1,2})[\/\-](\d+)(?!\d)/gi
+    let match
+    while ((match = regex.exec(String(noteOrHso))) !== null) {
+      const year = parseInt(match[1]) || 0
+      const month = parseInt(match[2]) || 0
+      const num = parseInt(match[3]) || 0
+      if (year === tSeq.year && month === tSeq.month && num === tSeq.num) {
+        return true
+      }
+    }
+  }
+
+  // Exact target with word/digit boundary check
+  const targetNoPrefix = nTarget.replace(/^HSO/, '')
+  if (targetNoPrefix) {
+    const boundaryRegex = new RegExp(`(?:^|[^0-9])${targetNoPrefix}(?:[^0-9]|$)`)
+    if (boundaryRegex.test(nNote)) return true
+  }
+
+  return false
+}
+
+// Extract HSO number from text / detail notes
+const extractHsoFromNote = (note) => {
+  if (!note) return null
+  const match = String(note).match(/(HSO[\/\-][\w\d\/\-]+)/i)
+  return match ? match[1].trim() : null
 }
 
 const compareHsoFifo = (hsoA, hsoB) => {
@@ -866,6 +887,23 @@ const isInvalidPo = (poNumberOrObj, statusName) => {
   return false
 }
 
+// Helper: Check if a shipment has been unlinked by user
+const isUnlinkedShipment = (s) => {
+  if (!s) return false
+  return s.current_status === 'UNLINKED' || String(s.admin_notes || '').includes('[UNLINKED]')
+}
+
+const getUnlinkedKey = (itemCode, hpoNumber) => {
+  if (!itemCode || !hpoNumber) return ''
+  return `${String(itemCode).trim().toUpperCase()}__${String(hpoNumber).trim().toUpperCase()}`
+}
+
+const isItemHpoUnlinked = (itemCode, hpoNumber) => {
+  const targetKey = getUnlinkedKey(itemCode, hpoNumber)
+  if (!targetKey) return false
+  return (shipmentList.value || []).some(s => isUnlinkedShipment(s) && getUnlinkedKey(s.item_code, s.hpo_number) === targetKey)
+}
+
 // --- BACKGROUND HPO FETCH ---
 const fetchHpoInBackground = async (soNumber) => {
   try {
@@ -942,10 +980,20 @@ const fetchHpoInBackground = async (soNumber) => {
     // Items are ONLY sourced from Step 1 (query by HSO number in detail_notes / hso_number).
 
 
+    // Fetch fresh shipment list from DB first so isItemHpoUnlinked is accurate
+    const { data: initShips } = await supabase.from('shipments').select('*').eq('so_id', String(resolvedSoId.value || soDetail.value?.id))
+    if (initShips) {
+      shipmentList.value = initShips
+    }
+
     const poData = { d: null }
     if (!poError && dbItems.length > 0) {
       poData.d = dbItems
-        .filter(item => !isInvalidPo(item.header?.number, item.header?.status_name))
+        .filter(item => {
+          if (isInvalidPo(item.header?.number, item.header?.status_name)) return false
+          if (isItemHpoUnlinked(item.item_code, item.header?.number)) return false
+          return true
+        })
         .map(item => ({
           poId: item.header?.id,
           poNumber: item.header?.number,
@@ -967,7 +1015,7 @@ const fetchHpoInBackground = async (soNumber) => {
     const totalItems = items.length
     
     items.forEach((item, idx) => {
-      if (item.itemCode && item.poNumber && !isInvalidPo(item.poNumber, item.poStatus)) {
+      if (item.itemCode && item.poNumber && !isInvalidPo(item.poNumber, item.poStatus) && !isItemHpoUnlinked(item.itemCode, item.poNumber)) {
         if (mapping[item.itemCode] && !mapping[item.itemCode].includes(item.poNumber)) {
           mapping[item.itemCode] += `, ${item.poNumber}`
         } else if (!mapping[item.itemCode]) {
@@ -1012,7 +1060,7 @@ const fetchHpoInBackground = async (soNumber) => {
         // Fetch fresh shipment list from DB to ensure local state is 100% up to date with any recent saves
         const { data: freshShips } = await supabase.from('shipments').select('*').eq('so_id', String(resolvedSoId.value || soDetail.value.id))
         if (freshShips) {
-          shipmentList.value = freshShips.filter(s => !isInvalidPo(s.hpo_number))
+          shipmentList.value = freshShips
         }
 
         const missingShipments = []
@@ -1021,6 +1069,7 @@ const fetchHpoInBackground = async (soNumber) => {
           if (hasHpo) {
             const hpos = hasHpo.split(',').map(x => x.trim()).filter(h => h && !isInvalidPo(h))
             hpos.forEach(hpo => {
+              if (isItemHpoUnlinked(item.code, hpo)) return // Do not re-create unlinked shipments
               // Only create if no shipment exists for this specific (item_code, hpo_number) pair
               const hasShipment = shipmentList.value.some(s => s.item_code === item.code && s.hpo_number === hpo)
               if (!hasShipment) {
@@ -1045,15 +1094,19 @@ const fetchHpoInBackground = async (soNumber) => {
             .select()
             
           if (!insertErr && newShips) {
-            shipmentList.value = [...shipmentList.value, ...newShips.filter(s => !isInvalidPo(s.hpo_number))]
+            shipmentList.value = [...shipmentList.value, ...newShips]
             console.log('Successfully healed missing shipments')
           } else if (insertErr) {
             console.warn('Healing error:', insertErr)
           }
         }
 
-        // Re-sync items with cleaned shipmentList
-        const cleanShipments = shipmentList.value.filter(s => !isInvalidPo(s.hpo_number))
+        // Re-sync items with cleaned shipmentList (ignoring invalid & unlinked)
+        const cleanShipments = shipmentList.value.filter(s => {
+          if (isUnlinkedShipment(s)) return false
+          if (s.hpo_number && isInvalidPo(s.hpo_number)) return false
+          return true
+        })
         soDetail.value.items.forEach(item => {
           const myShipments = cleanShipments.filter(s => s.item_code === item.code && (s.item_seq === item.seq || s.item_seq == null))
           const sortedMyShipments = [...myShipments].sort((a, b) => {
@@ -1065,11 +1118,16 @@ const fetchHpoInBackground = async (soNumber) => {
             return bTime - aTime
           })
           const myShipment = sortedMyShipments[0] || {}
+          const shipmentWithNote = [...myShipments]
+            .filter(s => !isUnlinkedShipment(s) && s.admin_notes && !s.admin_notes.includes('Auto-synced') && !s.admin_notes.includes('Auto-created'))
+            .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))[0]
+
           item.shipments_data = myShipments
           item.logistics_status = myShipment.current_status || 'Pending Process'
           item.logistics_hpo = (myShipment.hpo_number && !isInvalidPo(myShipment.hpo_number)) ? myShipment.hpo_number : null
           item.logistics_date = myShipment.status_date || myShipment.updated_at || null
           item.logistics_id = myShipment.id || null
+          item.logistics_note = shipmentWithNote?.admin_notes || myShipment.admin_notes || item.logistics_note || null
           item.exwork_date = myShipment.exwork_date || null
           item.eta_date = myShipment.eta_date || null
           item.dunex_date = myShipment.dunex_date || null
@@ -1319,10 +1377,10 @@ const syncFromLogisticsDb = async () => {
     const mapStatusLocal = (excelStatus) => {
       if (!excelStatus) return 'Follow up with our forwarder'
       const s = String(excelStatus).trim().toLowerCase()
-      if (s.includes('done delivery') || s.includes('delivered') || s.includes('customer') || s.includes('hokiindo')) return 'Already in Hokiindo Raya'
+      if (s.includes('done delivery') || s.includes('delivered') || s.includes('billed') || s.includes('customer') || s.includes('hokiindo')) return 'Already in Hokiindo Raya'
       if (s.includes('siemens') || s.includes('dunex') || s.includes('warehouse') || s.includes('tiba gudang dunex') || s.includes('our warehouse') || s.includes('our wh')) return 'Already in siemens Warehouse'
       if (s.includes('transit') || s.includes('eta') || s.includes('port') || s.includes('jkt') || s.includes('jkt port')) return 'ETA Port JKT'
-      if (s.includes('forwarder') || s.includes('ex-works') || s.includes('exwork') || s.includes('ready') || s.includes('factory') || s.includes('production')) return 'Follow up with our forwarder'
+      if (s.includes('forwarder') || s.includes('ex-works') || s.includes('exwork') || s.includes('ready') || s.includes('factory') || s.includes('production') || s.includes('hold')) return 'Follow up with our forwarder'
       const exact = ['follow up with our forwarder', 'eta port jkt', 'already in siemens warehouse', 'already in hokiindo raya']
       const matched = exact.find(e => e.toLowerCase() === s)
       if (matched) return matched
@@ -1825,7 +1883,9 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
         
         if (listError) throw listError
         
-        const matchedSo = listData?.d?.find(so => so.number === targetNumber)
+        const matchedSo = listData?.d?.find(so => so.number === targetNumber) ||
+                          listData?.d?.find(so => so.number?.toLowerCase() === targetNumber.toLowerCase()) ||
+                          listData?.d?.find(so => normalizeHso(so.number) === normalizeHso(targetNumber))
         if (!matchedSo) {
           throw new Error(`Sales Order dengan nomor ${targetNumber} tidak ditemukan di Accurate.`)
         }
@@ -1861,7 +1921,7 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
     const { data: shipData } = await supabase.from('shipments').select('*').eq('so_id', String(resolvedSoId.value))
     let currentShips = shipData || []
 
-    shipmentList.value = currentShips.filter(s => !isInvalidPo(s.hpo_number))
+    shipmentList.value = currentShips
 
     // Load accurate PO items already in Supabase for this SO
     try {
@@ -1880,7 +1940,7 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
 
         if (poItemsData && poItemsData.length > 0) {
           hpoDetails.value = poItemsData
-            .filter(item => !isInvalidPo(item.header?.number, item.header?.status_name))
+            .filter(item => !isInvalidPo(item.header?.number, item.header?.status_name) && !isItemHpoUnlinked(item.item_code, item.header?.number))
             .map(item => ({
               poId: item.header?.id,
               poNumber: item.header?.number,
@@ -1963,7 +2023,7 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
     // Initialize hpoMapping directly from Supabase shipments & PO items
     const directMapping = {}
     ;(shipData || []).forEach(s => {
-      if (s.item_code && s.hpo_number && !isInvalidPo(s.hpo_number)) {
+      if (s.item_code && s.hpo_number && !isInvalidPo(s.hpo_number) && !isUnlinkedShipment(s)) {
         if (directMapping[s.item_code] && !directMapping[s.item_code].includes(s.hpo_number)) {
           directMapping[s.item_code] += `, ${s.hpo_number}`
         } else if (!directMapping[s.item_code]) {
@@ -1972,7 +2032,7 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
       }
     })
     ;(hpoDetails.value || []).forEach(p => {
-      if (p.itemCode && p.poNumber && !isInvalidPo(p.poNumber, p.poStatus)) {
+      if (p.itemCode && p.poNumber && !isInvalidPo(p.poNumber, p.poStatus) && !isItemHpoUnlinked(p.itemCode, p.poNumber)) {
         if (directMapping[p.itemCode] && !directMapping[p.itemCode].includes(p.poNumber)) {
           directMapping[p.itemCode] += `, ${p.poNumber}`
         } else if (!directMapping[p.itemCode]) {
@@ -2022,9 +2082,9 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
       items: sortedItems.map(item => {
         const code = item.item?.no || '-'
         const seq = item.seq || 0
-        // Find by code AND sequence to avoid split row overlap (ignore invalid/draft PO shipments)
+        // Find by code AND sequence to avoid split row overlap (ignore invalid/draft/unlinked PO shipments)
         const myShipments = shipmentList.value
-          .filter(s => !isInvalidPo(s.hpo_number))
+          .filter(s => !isInvalidPo(s.hpo_number) && !isUnlinkedShipment(s))
           .filter(s => {
             const sCode = (s.item_code || '').trim().toUpperCase()
             const targetCode = (code || '').trim().toUpperCase()
@@ -2053,6 +2113,10 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
           return bTime - aTime // latest updated first
         })
         const myShipment = sortedMyShipments[0] || {} 
+        const shipmentWithNote = [...myShipments]
+          .filter(s => !isUnlinkedShipment(s) && s.admin_notes && !s.admin_notes.includes('Auto-synced') && !s.admin_notes.includes('Auto-created'))
+          .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))[0]
+        const resolvedLogisticsNote = shipmentWithNote?.admin_notes || myShipment.admin_notes || null
         
         // --- LOGIC PERHITUNGAN STOCK & TO ORDER (REVISI) ---
         const note = item.detailNotes || ''
@@ -2102,7 +2166,7 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
           logistics_date: myShipment.status_date || myShipment.updated_at || null, 
           logistics_id: myShipment.id || null,
           logistics_hdo: myShipment.hpo_number && ['On Delivery','Completed'].includes(myShipment.current_status) ? myShipment.hpo_number : null,
-          logistics_note: myShipment.admin_notes || null,
+          logistics_note: resolvedLogisticsNote,
           
           // Logistics date fields
           exwork_date: myShipment.exwork_date || null,
@@ -2161,12 +2225,1402 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
     if (route.query.search) {
         itemSearchQuery.value = route.query.search
     }
+
+    // Load discussions for this HSO
+    fetchDiscussions()
+    initDiscussionsRealtime()
+  }
+}
+
+// ==========================================
+// --- FORUM DISKUSI & PROGRESS HSO ---
+// ==========================================
+const discussions = ref([])
+const isLoadingDiscussions = ref(false)
+const isPostingDiscussion = ref(false)
+const discussionFilterStatus = ref('ALL')
+const discussionFilterItem = ref('ALL')
+const teamUsers = ref([])
+const showMentionPicker = ref(false)
+let discussionsChannel = null
+
+const newDiscussion = ref({
+  message: '',
+  item_code: '',
+  progress_status: 'PROGRESS',
+  tagged_emails: []
+})
+
+// --- SEARCH SELECT TERKAIT BARANG ---
+const isDiscussionItemSelectOpen = ref(false)
+const discussionItemSearchQuery = ref('')
+const discussionItemSelectContainerRef = ref(null)
+const discussionItemSearchInputRef = ref(null)
+
+const selectedDiscussionItem = computed(() => {
+  if (!newDiscussion.value.item_code) return null
+  return (soDetail.value?.items || []).find(it => it.code === newDiscussion.value.item_code)
+})
+
+const filteredDiscussionItems = computed(() => {
+  const list = soDetail.value?.items || []
+  const q = discussionItemSearchQuery.value.trim().toLowerCase()
+  if (!q) return list
+  return list.filter(it => 
+    (it.code && it.code.toLowerCase().includes(q)) ||
+    (it.name && it.name.toLowerCase().includes(q)) ||
+    (it.admin_note && it.admin_note.toLowerCase().includes(q))
+  )
+})
+
+const toggleItemSelect = () => {
+  isDiscussionItemSelectOpen.value = !isDiscussionItemSelectOpen.value
+  if (isDiscussionItemSelectOpen.value) {
+    discussionItemSearchQuery.value = ''
+    setTimeout(() => {
+      discussionItemSearchInputRef.value?.focus()
+    }, 50)
+  }
+}
+
+const selectDiscussionItem = (code) => {
+  newDiscussion.value.item_code = code || ''
+  isDiscussionItemSelectOpen.value = false
+  discussionItemSearchQuery.value = ''
+}
+
+// --- INLINE @MENTION AUTOCOMPLETE & RICH TEXT STATE ---
+const editorRef = ref(null)
+const isEditorEmpty = ref(true)
+const showInlineMention = ref(false)
+const mentionSearchQuery = ref('')
+const activeMentionIndex = ref(0)
+const inlineMentionRef = ref(null)
+const mentionPickerContainerRef = ref(null)
+
+const execFormat = (command, value = null) => {
+  if (editorRef.value) {
+    editorRef.value.focus()
+  }
+  try {
+    document.execCommand(command, false, value)
+  } catch (e) {
+    console.warn('execCommand error:', e)
+  }
+  handleEditorInput()
+}
+
+const toggleHighlight = () => {
+  if (editorRef.value) editorRef.value.focus()
+  try {
+    const ok = document.execCommand('hiliteColor', false, '#fef08a')
+    if (!ok) document.execCommand('backColor', false, '#fef08a')
+  } catch (e) {
+    document.execCommand('backColor', false, '#fef08a')
+  }
+  handleEditorInput()
+}
+
+const insertLink = () => {
+  if (editorRef.value) editorRef.value.focus()
+  const url = prompt('Masukkan URL Link (contoh: https://...):')
+  if (url) {
+    execFormat('createLink', url)
+  }
+}
+
+const filteredMentionUsers = computed(() => {
+  const q = mentionSearchQuery.value.trim().toLowerCase()
+  if (!q) return teamUsers.value
+  return teamUsers.value.filter(u => 
+    (u.name && u.name.toLowerCase().includes(q)) ||
+    (u.email && u.email.toLowerCase().includes(q)) ||
+    (u.role && u.role.toLowerCase().includes(q))
+  )
+})
+
+const handleEditorInput = () => {
+  if (!editorRef.value) {
+    isEditorEmpty.value = true
+    return
+  }
+  const rawText = editorRef.value.innerText || ''
+  const clean = rawText.replace(/[\s\u00A0]/g, '')
+  isEditorEmpty.value = clean.length === 0
+  newDiscussion.value.message = editorRef.value.innerHTML
+
+  // Deteksi jika kursor tepat setelah tanda @ atau @query dalam contenteditable
+  const sel = window.getSelection()
+  if (sel && sel.rangeCount > 0) {
+    const range = sel.getRangeAt(0)
+    const node = range.startContainer
+    if (node && node.nodeType === Node.TEXT_NODE) {
+      const textBefore = node.textContent.slice(0, range.startOffset)
+      const match = textBefore.match(/(?:^|\s)@([a-zA-Z0-9._-]*)$/)
+      if (match) {
+        showInlineMention.value = true
+        mentionSearchQuery.value = match[1] || ''
+        activeMentionIndex.value = 0
+        return
+      }
+    }
+  }
+  showInlineMention.value = false
+  mentionSearchQuery.value = ''
+}
+
+const handleEditorInputNextTick = () => {
+  nextTick(() => {
+    handleEditorInput()
+  })
+}
+
+const handleEditorKeydown = (e) => {
+  if (!showInlineMention.value || filteredMentionUsers.value.length === 0) {
+    return
+  }
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    activeMentionIndex.value = (activeMentionIndex.value + 1) % filteredMentionUsers.value.length
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    activeMentionIndex.value = (activeMentionIndex.value - 1 + filteredMentionUsers.value.length) % filteredMentionUsers.value.length
+  } else if (e.key === 'Enter' || e.key === 'Tab') {
+    e.preventDefault()
+    const targetUser = filteredMentionUsers.value[activeMentionIndex.value]
+    if (targetUser) selectMentionUser(targetUser)
+  } else if (e.key === 'Escape') {
+    e.preventDefault()
+    showInlineMention.value = false
+  }
+}
+
+const selectMentionUser = (user) => {
+  if (!user || !editorRef.value) return
+  editorRef.value.focus()
+
+  const sel = window.getSelection()
+  if (sel && sel.rangeCount > 0) {
+    const range = sel.getRangeAt(0)
+    const node = range.startContainer
+    if (node && node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent
+      const offset = range.startOffset
+      const atIdx = text.slice(0, offset).lastIndexOf('@')
+      if (atIdx !== -1) {
+        range.setStart(node, atIdx)
+        range.setEnd(node, offset)
+        range.deleteContents()
+      }
+    }
+
+    const mentionSpan = document.createElement('span')
+    mentionSpan.className = 'inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded font-bold text-xs bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+    mentionSpan.setAttribute('contenteditable', 'false')
+    mentionSpan.setAttribute('data-email', user.email)
+    mentionSpan.textContent = `@${user.name}`
+
+    const spaceNode = document.createTextNode('\u00A0')
+
+    range.insertNode(spaceNode)
+    range.insertNode(mentionSpan)
+
+    range.setStartAfter(spaceNode)
+    range.setEndAfter(spaceNode)
+    sel.removeAllRanges()
+    sel.addRange(range)
+  } else {
+    editorRef.value.innerHTML += `&nbsp;<span class="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded font-bold text-xs bg-blue-50 text-blue-600 border border-blue-200" contenteditable="false" data-email="${user.email}">@${user.name}</span>&nbsp;`
+  }
+
+  if (!newDiscussion.value.tagged_emails.includes(user.email)) {
+    newDiscussion.value.tagged_emails.push(user.email)
+  }
+
+  newDiscussion.value.message = editorRef.value.innerHTML
+  const rawText = editorRef.value ? editorRef.value.innerText || '' : ''
+  isEditorEmpty.value = rawText.replace(/[\s\u00A0]/g, '').length === 0
+  showInlineMention.value = false
+  mentionSearchQuery.value = ''
+}
+
+const triggerMentionFromButton = () => {
+  if (!editorRef.value) return
+  editorRef.value.focus()
+
+  const sel = window.getSelection()
+  if (sel && sel.rangeCount > 0) {
+    const range = sel.getRangeAt(0)
+    const atNode = document.createTextNode('@')
+    range.insertNode(atNode)
+    range.setStartAfter(atNode)
+    range.setEndAfter(atNode)
+    sel.removeAllRanges()
+    sel.addRange(range)
+  } else {
+    editorRef.value.innerHTML += '@'
+  }
+
+  showInlineMention.value = true
+  mentionSearchQuery.value = ''
+  activeMentionIndex.value = 0
+  newDiscussion.value.message = editorRef.value.innerHTML
+  const rawText = editorRef.value ? editorRef.value.innerText || '' : ''
+  isEditorEmpty.value = rawText.replace(/[\s\u00A0]/g, '').length === 0
+}
+
+const handleClickOutsideDiscussion = (e) => {
+  if (discussionItemSelectContainerRef.value && !discussionItemSelectContainerRef.value.contains(e.target)) {
+    isDiscussionItemSelectOpen.value = false
+  }
+  if (inlineMentionRef.value && !inlineMentionRef.value.contains(e.target) && editorRef.value !== e.target) {
+    showInlineMention.value = false
+  }
+  if (mentionPickerContainerRef.value && !mentionPickerContainerRef.value.contains(e.target)) {
+    showMentionPicker.value = false
+  }
+}
+
+const discussionCategories = [
+  { value: 'PROGRESS', label: 'Progress', icon: '🚀', activeClass: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 shadow-xs' },
+  { value: 'QUESTION', label: 'Pertanyaan', icon: '❓', activeClass: 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 shadow-xs' },
+  { value: 'LOGISTICS', label: 'Info Logistik', icon: '🚚', activeClass: 'bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-700 shadow-xs' },
+  { value: 'ISSUE', label: 'Kendala / Urgent', icon: '⚠️', activeClass: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700 shadow-xs' }
+]
+
+const getCategoryStyle = (status) => {
+  const cat = discussionCategories.find(c => c.value === status)
+  return cat ? cat.activeClass : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+}
+
+const getCategoryLabel = (status) => {
+  const cat = discussionCategories.find(c => c.value === status)
+  return cat ? `${cat.icon} ${cat.label}` : '🚀 Progress'
+}
+
+const formatUserName = (emailOrName) => {
+  if (!emailOrName) return 'User'
+  const str = String(emailOrName).trim()
+  if (!str.includes('@')) {
+    return str.charAt(0).toUpperCase() + str.slice(1)
+  }
+  const prefix = str.split('@')[0]
+  const foundUser = (teamUsers.value || []).find(u => u.email && u.email.toLowerCase() === str.toLowerCase())
+  if (foundUser?.name) return foundUser.name
+  return prefix
+    .split(/[._-]/)
+    .filter(Boolean)
+    .map(p => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(' ')
+}
+
+const formatDiscussionDate = (dateVal) => {
+  if (!dateVal) return '-'
+  try {
+    const d = new Date(dateVal)
+    if (isNaN(d.getTime())) return String(dateVal)
+    const now = new Date()
+    const diffMs = now - d
+    const diffMinutes = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMinutes / 60)
+    const diffDays = Math.floor(diffHours / 24)
+
+    if (diffMinutes < 1) return 'Baru saja'
+    if (diffMinutes < 60) return `${diffMinutes} menit lalu`
+    if (diffHours < 24) return `${diffHours} jam lalu`
+    if (diffDays < 7) return `${diffDays} hari lalu`
+
+    const pad = (n) => String(n).padStart(2, '0')
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  } catch {
+    return String(dateVal)
+  }
+}
+
+const removeTaggedEmail = (email) => {
+  newDiscussion.value.tagged_emails = (newDiscussion.value.tagged_emails || []).filter(e => e !== email)
+}
+
+const addTaggedUser = (userEmail) => {
+  if (!newDiscussion.value.tagged_emails) newDiscussion.value.tagged_emails = []
+  if (!newDiscussion.value.tagged_emails.includes(userEmail)) {
+    newDiscussion.value.tagged_emails.push(userEmail)
+  }
+  showMentionPicker.value = false
+}
+
+// Compute threaded discussions (Parent topics with nested replies)
+const discussionThreads = computed(() => {
+  const parents = []
+  const repliesMap = new Map()
+
+  discussions.value.forEach(d => {
+    let parentId = d.parent_id
+    if (!parentId && typeof d.message === 'string') {
+      const match = d.message.match(/<!--reply_to:([a-zA-Z0-9_-]+)-->/)
+      if (match) parentId = match[1]
+    }
+
+    if (parentId) {
+      if (!repliesMap.has(parentId)) repliesMap.set(parentId, [])
+      repliesMap.get(parentId).push(d)
+    } else {
+      parents.push(d)
+    }
+  })
+
+  // Sort parent topics: newest first
+  parents.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+
+  return parents.map(p => {
+    const reps = repliesMap.get(p.id) || []
+    // Sort replies: chronological (oldest first)
+    reps.sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    return {
+      ...p,
+      replies: reps
+    }
+  })
+})
+
+const filteredDiscussions = computed(() => {
+  return discussionThreads.value
+})
+
+const canDeleteDiscussion = (d) => {
+  if (!d) return false
+  const myEmail = (currentUser.value?.email || localStorage.getItem('user_email') || '').toLowerCase().trim()
+  const authorEmail = String(d.user_email || '').toLowerCase().trim()
+  if (myEmail && authorEmail && myEmail === authorEmail) return true
+  if (userRole?.value === 'ADMIN' || allowedModules?.value?.includes('sales-orders:write')) return true
+  return false
+}
+
+const isDeletingDiscussion = ref({})
+
+const deleteDiscussion = async (d, isReply = false) => {
+  if (!d || !d.id) return
+  const confirmMsg = isReply 
+    ? 'Hapus balasan komentar ini?' 
+    : 'Hapus pembahasan diskusi ini? Seluruh balasan di dalamnya juga akan terhapus.'
+  if (!confirm(confirmMsg)) return
+
+  isDeletingDiscussion.value[d.id] = true
+
+  try {
+    const { error } = await supabase
+      .from('hso_discussions')
+      .delete()
+      .eq('id', d.id)
+
+    if (error) {
+      console.warn('DB delete note:', error)
+    }
+
+    if (!isReply) {
+      try {
+        await supabase
+          .from('hso_discussions')
+          .delete()
+          .eq('parent_id', d.id)
+      } catch {}
+    }
+
+    if (isReply) {
+      discussions.value = discussions.value.filter(item => item.id !== d.id)
+    } else {
+      discussions.value = discussions.value.filter(item => {
+        if (item.id === d.id) return false
+        if (item.parent_id === d.id) return false
+        if (typeof item.message === 'string' && item.message.includes(`<!--reply_to:${d.id}-->`)) return false
+        return true
+      })
+    }
+
+    saveLocalDiscussions()
+
+  } catch (err) {
+    console.error('Delete discussion error:', err)
+    alert('Gagal menghapus: ' + err.message)
+  } finally {
+    isDeletingDiscussion.value[d.id] = false
+  }
+}
+
+// Reply state and handlers
+const activeReplyId = ref(null)
+const replyTexts = ref({})
+const replySubmitting = ref({})
+const replyMentionPicker = ref({})
+
+const toggleReplyForm = (discId) => {
+  if (activeReplyId.value === discId) {
+    activeReplyId.value = null
+  } else {
+    activeReplyId.value = discId
+    if (!replyTexts.value[discId]) replyTexts.value[discId] = ''
+    replyMentionPicker.value[discId] = false
+  }
+}
+
+const addReplyMention = (discId, userEmail) => {
+  const user = teamUsers.value.find(u => u.email === userEmail)
+  const tagStr = user?.name ? `@${user.name} ` : `@${userEmail} `
+  replyTexts.value[discId] = (replyTexts.value[discId] || '') + tagStr
+  replyMentionPicker.value[discId] = false
+}
+
+const submitReply = async (parentDisc) => {
+  const pId = parentDisc.id
+  const rawMsg = (replyTexts.value[pId] || '').trim()
+  if (!rawMsg) return
+
+  replySubmitting.value[pId] = true
+
+  try {
+    const soIdStr = String(resolvedSoId.value || soDetail.value?.id || '')
+    const soNumStr = String(soDetail.value?.number || routeId || '')
+    const authorEmail = currentUser.value?.email || localStorage.getItem('user_email') || 'team@hokiindo.com'
+    const authorName = formatUserName(authorEmail)
+
+    const tagged = new Set()
+    if (parentDisc.user_email && parentDisc.user_email !== authorEmail) {
+      tagged.add(parentDisc.user_email)
+    }
+
+    const textLower = rawMsg.toLowerCase()
+    teamUsers.value.forEach(u => {
+      const uName = (u.name || '').toLowerCase()
+      const uEmail = (u.email || '').toLowerCase()
+      if (uName && (textLower.includes(`@${uName}`) || textLower.includes(uName))) {
+        tagged.add(uEmail)
+      }
+    })
+
+    const allTagged = [...tagged].filter(e => e && e.includes('@'))
+    const formattedMsg = `<!--reply_to:${pId}-->${rawMsg}`
+
+    const payload = {
+      so_id: soIdStr,
+      so_number: soNumStr,
+      user_email: authorEmail,
+      user_name: authorName,
+      message: formattedMsg,
+      item_code: parentDisc.item_code || null,
+      item_name: parentDisc.item_name || null,
+      progress_status: parentDisc.progress_status || 'PROGRESS',
+      tagged_emails: allTagged,
+      parent_id: pId,
+      created_at: new Date().toISOString()
+    }
+
+    let newRow = null
+    try {
+      const { data, error } = await supabase
+        .from('hso_discussions')
+        .insert(payload)
+        .select()
+        .single()
+      
+      if (!error) {
+        newRow = data
+      } else if (error.message && error.message.includes('parent_id')) {
+        const fallback = { ...payload }
+        delete fallback.parent_id
+        const resFallback = await supabase
+          .from('hso_discussions')
+          .insert(fallback)
+          .select()
+          .single()
+        newRow = resFallback.data
+      }
+    } catch (e) {
+      console.warn('Insert reply note:', e)
+    }
+
+    const createdRecord = newRow || { id: 'reply_' + Date.now(), ...payload }
+
+    if (allTagged.length > 0) {
+      const notifRows = allTagged.map(recipient => ({
+        recipient_email: recipient,
+        user_email: recipient,
+        title: `Balasan di HSO ${soNumStr}`,
+        message: `${authorName} membalas bahasan: "${rawMsg.slice(0, 100)}${rawMsg.length > 100 ? '...' : ''}"`,
+        type: 'HSO_MENTION',
+        link: `/sales-orders/${soNumStr.replace(/\//g, '-')}`,
+        is_read: false,
+        created_at: new Date().toISOString()
+      }))
+
+      try {
+        await supabase.from('notifications').insert(notifRows)
+      } catch (e) {}
+
+      try {
+        await supabase.functions.invoke('send-custom-email', {
+          body: {
+            to: allTagged,
+            subject: `[HIR] Balasan Diskusi HSO ${soNumStr} dari ${authorName}`,
+            html: `
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; color: #1e293b;">
+                <div style="font-size: 16px; font-weight: 700; color: #dc2626; margin-bottom: 8px;">Balasan Baru di HSO ${soNumStr}</div>
+                <p style="margin: 0 0 12px 0;"><strong>${authorName}</strong> membalas diskusi:</p>
+                <div style="padding: 12px 16px; background-color: #f1f5f9; border-left: 4px solid #dc2626; border-radius: 4px; font-size: 14px; margin-bottom: 16px;">
+                  ${rawMsg}
+                </div>
+                <a href="https://hso.hokiindo.co.id/sales-orders/${soNumStr.replace(/\//g, '-')}" style="display: inline-block; padding: 8px 16px; background-color: #dc2626; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 13px;">Buka HSO</a>
+              </div>
+            `,
+            from_email: 'workspace@hokiindo.co.id',
+            from_name: 'HIR Workspace'
+          }
+        })
+      } catch {}
+    }
+
+    discussions.value = [...discussions.value, createdRecord]
+    saveLocalDiscussions()
+
+    replyTexts.value[pId] = ''
+    activeReplyId.value = null
+  } catch (err) {
+    console.error('Submit reply error:', err)
+    alert('Gagal mengirim balasan: ' + err.message)
+  } finally {
+    replySubmitting.value[pId] = false
+  }
+}
+
+const formatDiscussionMessage = (text) => {
+  if (!text) return ''
+  let res = String(text).trim()
+
+  // 1. Remove internal fallback reply marker
+  res = res.replace(/<!--reply_to:[^>]+-->/g, '')
+
+  // 2. Repair any legacy corrupted mention tag where regex matched inside data-email attribute
+  res = res.replace(/data-email="([^"]*?)<span[^>]*>(@[^<]*?)<\/span>">/gi, 'data-email="$1$2">')
+
+  const hasHtml = /<[a-z][\s\S]*>/i.test(res)
+  if (!hasHtml) {
+    res = res
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;')
+      .replace(/\n/g, '<br>')
+
+    for (const u of teamUsers.value) {
+      if (u.name) {
+        const reg = new RegExp(`(?<![a-zA-Z0-9_])@${u.name}\\b`, 'gi')
+        res = res.replace(reg, `<span class="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded font-bold text-xs bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">@${u.name}</span>`)
+      }
+    }
+  }
+
+  return res
+}
+
+const scrollToItem = (itemCode) => {
+  if (!itemCode) return
+  const el = document.getElementById(`item-${itemCode}`)
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('ring-2', 'ring-amber-500', 'bg-amber-100/60', 'dark:bg-amber-950/40')
+    setTimeout(() => {
+      el.classList.remove('ring-2', 'ring-amber-500', 'bg-amber-100/60', 'dark:bg-amber-950/40')
+    }, 2500)
+  }
+}
+
+const fetchTeamUsers = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('user_access')
+      .select('id, email, notification_email, role')
+      .order('email')
+    if (!error && data && data.length > 0) {
+      teamUsers.value = data.map(u => ({
+        id: u.id,
+        email: u.email,
+        notification_email: u.notification_email || u.email,
+        name: formatUserName(u.email),
+        role: u.role || 'Team'
+      }))
+    } else {
+      teamUsers.value = [
+        { id: '1', email: 'david@hokiindo.com', notification_email: 'david@hokiindo.com', name: 'David Theodore', role: 'Management' },
+        { id: '2', email: 'sales@hokiindo.com', notification_email: 'sales@hokiindo.com', name: 'Sales Team', role: 'Sales' },
+        { id: '3', email: 'purchasing@hokiindo.com', notification_email: 'purchasing@hokiindo.com', name: 'Purchasing', role: 'Purchasing' },
+        { id: '4', email: 'logistik@hokiindo.com', notification_email: 'logistik@hokiindo.com', name: 'Logistik', role: 'Logistics' }
+      ]
+    }
+  } catch (err) {
+    console.warn('Fetch team users error:', err)
+  }
+}
+
+const loadLocalDiscussions = () => {
+  const soIdStr = String(resolvedSoId.value || soDetail.value?.id || '')
+  const soNumStr = String(soDetail.value?.number || routeId || '').replace(/-/g, '/')
+  const routeNumStr = String(routeId || '')
+
+  const keys = [
+    soIdStr ? `hso_discussions_${soIdStr}` : null,
+    soNumStr ? `hso_discussions_${soNumStr}` : null,
+    routeNumStr ? `hso_discussions_${routeNumStr}` : null,
+    (soIdStr || soNumStr) ? `hso_discussions_${soIdStr || soNumStr}` : null
+  ].filter(Boolean)
+
+  for (const k of keys) {
+    const cached = localStorage.getItem(k)
+    if (cached) {
+      try {
+        const arr = JSON.parse(cached)
+        if (Array.isArray(arr) && arr.length > 0) {
+          const map = new Map()
+          arr.forEach(d => map.set(d.id, d))
+          discussions.value.forEach(d => {
+            if (!map.has(d.id)) map.set(d.id, d)
+          })
+          discussions.value = Array.from(map.values())
+          break
+        }
+      } catch {}
+    }
+  }
+}
+
+const saveLocalDiscussions = () => {
+  const soIdStr = String(resolvedSoId.value || soDetail.value?.id || '')
+  const soNumStr = String(soDetail.value?.number || routeId || '').replace(/-/g, '/')
+  const routeNumStr = String(routeId || '')
+  const dataStr = JSON.stringify(discussions.value)
+
+  try {
+    if (soIdStr) localStorage.setItem(`hso_discussions_${soIdStr}`, dataStr)
+    if (soNumStr) localStorage.setItem(`hso_discussions_${soNumStr}`, dataStr)
+    if (routeNumStr) localStorage.setItem(`hso_discussions_${routeNumStr}`, dataStr)
+  } catch {}
+}
+
+const fetchDiscussions = async () => {
+  loadLocalDiscussions()
+
+  // Only show loader if there is zero discussions in memory/cache
+  if (discussions.value.length === 0) {
+    isLoadingDiscussions.value = true
+  }
+
+  const soIdStr = String(resolvedSoId.value || soDetail.value?.id || '')
+  const soNumStr = String(soDetail.value?.number || routeId || '').replace(/-/g, '/')
+  const routeNumStr = String(routeId || '')
+
+  try {
+    let query = supabase.from('hso_discussions').select('*')
+    if (soIdStr && soNumStr) {
+      query = query.or(`so_id.eq.${soIdStr},so_number.eq.${soNumStr}`)
+    } else if (soIdStr) {
+      query = query.eq('so_id', soIdStr)
+    } else if (soNumStr) {
+      query = query.eq('so_number', soNumStr)
+    }
+
+    const fetchPromise = query.order('created_at', { ascending: false })
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Fetch timeout')), 5000)
+    )
+
+    const { data, error } = await Promise.race([fetchPromise, timeoutPromise])
+    
+    if (error) {
+      console.warn('Discussions fetch notice:', error)
+      loadLocalDiscussions()
+    } else if (Array.isArray(data)) {
+      const mergedMap = new Map()
+      data.forEach(d => mergedMap.set(d.id, d))
+      discussions.value.forEach(d => {
+        if (!mergedMap.has(d.id)) mergedMap.set(d.id, d)
+      })
+      discussions.value = Array.from(mergedMap.values())
+      saveLocalDiscussions()
+    }
+  } catch (err) {
+    console.warn('Error fetching discussions:', err)
+    loadLocalDiscussions()
+  } finally {
+    isLoadingDiscussions.value = false
+  }
+}
+
+const initDiscussionsRealtime = () => {
+  const soIdStr = String(resolvedSoId.value || '')
+  if (!soIdStr) return
+  if (discussionsChannel) {
+    supabase.removeChannel(discussionsChannel)
+  }
+  discussionsChannel = supabase
+    .channel(`realtime_hso_discussions_${soIdStr}`)
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'hso_discussions', filter: `so_id=eq.${soIdStr}` },
+      (payload) => {
+        if (payload.new) {
+          const exists = discussions.value.some(d => d.id === payload.new.id)
+          if (!exists) {
+            discussions.value = [payload.new, ...discussions.value]
+          }
+        }
+      }
+    )
+    .subscribe()
+}
+
+const submitDiscussion = async () => {
+  const msg = (editorRef.value ? editorRef.value.innerHTML : newDiscussion.value.message).trim()
+  if (!msg || isEditorEmpty.value) return
+  isPostingDiscussion.value = true
+
+  try {
+    const soIdStr = String(resolvedSoId.value || soDetail.value?.id || '')
+    const soNumStr = String(soDetail.value?.number || routeId || '')
+    const authorEmail = currentUser.value?.email || localStorage.getItem('user_email') || 'team@hokiindo.com'
+    const authorName = formatUserName(authorEmail)
+
+    // Ekstrak semua @mentions dari pesan teks / html + tagged_emails
+    const textMentions = []
+    const msgLower = msg.toLowerCase()
+    
+    // 1. Ambil dari data-email attribute pada tag mention HTML
+    const emailAttrRegex = /data-email="([^"]+)"/g
+    let attrMatch
+    while ((attrMatch = emailAttrRegex.exec(msg)) !== null) {
+      const email = attrMatch[1].toLowerCase()
+      if (!textMentions.includes(email)) textMentions.push(email)
+    }
+
+    // 2. Cek jika nama rekan tim atau email ada dalam pesan teks
+    for (const u of teamUsers.value) {
+      const uName = (u.name || '').toLowerCase()
+      const uEmail = (u.email || '').toLowerCase()
+      const uPrefix = uEmail.split('@')[0]
+
+      if (
+        (uName && msgLower.includes(`@${uName}`)) ||
+        (uEmail && msgLower.includes(`@${uEmail}`)) ||
+        (uPrefix && msgLower.includes(`@${uPrefix}`))
+      ) {
+        if (!textMentions.includes(u.email)) textMentions.push(u.email)
+      }
+    }
+
+    // 3. Format @user@domain.com regex
+    const mentionRegex = /@([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9._-]+)/g
+    let match
+    while ((match = mentionRegex.exec(msg)) !== null) {
+      const emailMatch = match[1].toLowerCase()
+      if (!textMentions.includes(emailMatch)) textMentions.push(emailMatch)
+    }
+
+    const allTagged = Array.from(new Set([...(newDiscussion.value.tagged_emails || []), ...textMentions]))
+    
+    // Cari nama barang jika item_code dipilih
+    const selItem = (soDetail.value?.items || []).find(i => i.code === newDiscussion.value.item_code)
+
+    const payload = {
+      so_id: soIdStr,
+      so_number: soNumStr,
+      item_code: newDiscussion.value.item_code || null,
+      item_name: selItem ? (selItem.name || selItem.code) : null,
+      user_email: authorEmail,
+      user_name: authorName,
+      message: msg,
+      progress_status: newDiscussion.value.progress_status || 'PROGRESS',
+      tagged_emails: allTagged
+    }
+
+    // 1. Simpan ke database hso_discussions
+    const { data: newRow, error: errDisc } = await supabase
+      .from('hso_discussions')
+      .insert(payload)
+      .select()
+      .single()
+
+    const createdRecord = newRow || { id: 'disc_' + Date.now(), ...payload, created_at: new Date().toISOString() }
+
+    // 2. Catat juga di shipment_logs untuk jejak audit internal
+    try {
+      await supabase.from('shipment_logs').insert({
+        status_name: `DISKUSI: ${payload.progress_status}`,
+        notes: msg,
+        user_email: authorEmail,
+        action_detail: `[Forum] ${payload.item_code ? `Item ${payload.item_code}: ` : ''}${msg.slice(0, 100)}`
+      })
+    } catch (e) {
+      console.warn('Shipment log note:', e)
+    }
+
+    // 3. Dispatch Notifikasi Web (In-App notifications table)
+    if (allTagged.length > 0) {
+      const notifRows = allTagged.map(recipient => ({
+        recipient_email: recipient,
+        user_email: recipient,
+        title: `Mention di HSO ${soNumStr}`,
+        message: `${authorName} menandai Anda di ${payload.item_code ? `item ${payload.item_code}` : 'diskusi HSO'}: "${msg.slice(0, 100)}${msg.length > 100 ? '...' : ''}"`,
+        type: 'HSO_MENTION',
+        link: `/sales-orders/${soNumStr.replace(/\//g, '-')}`,
+        is_read: false,
+        created_at: new Date().toISOString()
+      }))
+
+      try {
+        await supabase.from('notifications').insert(notifRows)
+      } catch (e) {
+        console.warn('Notif insert note:', e)
+      }
+
+      // 4. Dispatch Notifikasi Email via Edge Function send-custom-email
+      try {
+        const catItem = discussionCategories.find(c => c.value === payload.progress_status)
+        const categoryLabel = catItem ? `${catItem.icon} ${catItem.label}` : '🚀 Progress'
+        const appOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://hokiindo-operations.vercel.app'
+        const soDetailUrl = `${appOrigin}/sales-orders/${soNumStr.replace(/\//g, '-')}`
+
+        const emailSubject = `[HIR Workspace] ${authorName} menandai (@mention) Anda di HSO ${soNumStr}`
+        const emailHtml = `
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; padding: 24px; color: #1e293b;">
+            <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 28px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+              
+              <div style="border-bottom: 1px solid #f1f5f9; padding-bottom: 16px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;">
+                <span style="font-size: 13px; font-weight: 800; color: #dc2626; letter-spacing: 0.5px;">HOKIINDO SYSTEM OPERATIONS</span>
+                <span style="font-size: 11px; background: #fee2e2; color: #dc2626; padding: 3px 8px; border-radius: 6px; font-weight: 700;">HSO FORUM</span>
+              </div>
+
+              <div style="margin-bottom: 18px;">
+                <h2 style="margin: 0 0 6px 0; font-size: 17px; font-weight: 700; color: #0f172a; line-height: 1.4;">
+                  Anda ditandai (@mention) dalam Diskusi HSO
+                </h2>
+                <p style="margin: 0; font-size: 13px; color: #64748b;">
+                  <strong>${authorName}</strong> (${authorEmail}) menandai Anda pada Sales Order <strong>${soNumStr}</strong>.
+                </p>
+              </div>
+
+              <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 16px;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                  <tr>
+                    <td style="padding: 4px 0; color: #64748b; width: 110px; font-weight: 600;">Nomor HSO:</td>
+                    <td style="padding: 4px 0; color: #0f172a; font-weight: 700;">${soNumStr}</td>
+                  </tr>
+                  ${payload.item_code ? `
+                  <tr>
+                    <td style="padding: 4px 0; color: #64748b; font-weight: 600;">Terkait Barang:</td>
+                    <td style="padding: 4px 0; color: #dc2626; font-weight: 700; font-family: monospace;">${payload.item_code}</td>
+                  </tr>
+                  ${payload.item_name ? `
+                  <tr>
+                    <td style="padding: 4px 0; color: #64748b; font-weight: 600;">Nama Barang:</td>
+                    <td style="padding: 4px 0; color: #334155;">${payload.item_name}</td>
+                  </tr>` : ''}
+                  ` : `
+                  <tr>
+                    <td style="padding: 4px 0; color: #64748b; font-weight: 600;">Terkait Barang:</td>
+                    <td style="padding: 4px 0; color: #0f172a;">🌐 Umum (Seluruh Pesanan HSO)</td>
+                  </tr>`}
+                  <tr>
+                    <td style="padding: 4px 0; color: #64748b; font-weight: 600;">Kategori:</td>
+                    <td style="padding: 4px 0; color: #0f172a; font-weight: 600;">${categoryLabel}</td>
+                  </tr>
+                </table>
+              </div>
+
+              <div style="margin-bottom: 22px;">
+                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 6px;">Isi Pesan Diskusi:</div>
+                <div style="background-color: #fff7ed; border-left: 4px solid #f97316; padding: 12px 14px; border-radius: 4px; font-size: 13px; color: #1e293b; line-height: 1.5; white-space: pre-wrap;">
+                  ${msg}
+                </div>
+              </div>
+
+              <div style="text-align: center; margin-bottom: 20px;">
+                <a href="${soDetailUrl}" target="_blank" style="display: inline-block; background-color: #dc2626; color: #ffffff; font-weight: 600; text-decoration: none; padding: 10px 24px; border-radius: 8px; font-size: 13px;">
+                  Buka Detail HSO & Balas Pesan →
+                </a>
+              </div>
+
+              <div style="border-top: 1px solid #f1f5f9; padding-top: 14px; font-size: 11px; color: #94a3b8; text-align: center;">
+                Email notifikasi otomatis dari HIR Workspace (HSO PT Hokiindo Raya).
+              </div>
+
+            </div>
+          </div>
+        `
+
+        await supabase.functions.invoke('send-custom-email', {
+          body: {
+            to: allTagged,
+            subject: emailSubject,
+            html: emailHtml,
+            from_email: 'workspace@hokiindo.co.id',
+            from_name: 'HIR Workspace'
+          }
+        })
+      } catch (errEmail) {
+        console.warn('Failed to send discussion mention email:', errEmail)
+      }
+    }
+
+    // 5. Optimistically update local discussion list
+    discussions.value = [createdRecord, ...discussions.value.filter(d => d.id !== createdRecord.id)]
+    isLoadingDiscussions.value = false
+    saveLocalDiscussions()
+
+    // Reset form
+    newDiscussion.value.message = ''
+    if (editorRef.value) {
+      editorRef.value.innerHTML = ''
+    }
+    isEditorEmpty.value = true
+    newDiscussion.value.item_code = ''
+    newDiscussion.value.tagged_emails = []
+    showMentionPicker.value = false
+    showInlineMention.value = false
+  } catch (err) {
+    console.error('Submit discussion error:', err)
+    alert('Gagal mengirim diskusi: ' + err.message)
+  } finally {
+    isPostingDiscussion.value = false
+    isLoadingDiscussions.value = false
   }
 }
 
 onMounted(() => {
+  loadLocalDiscussions()
   fetchDetail()
+  fetchTeamUsers()
+  window.addEventListener('click', handleClickOutsideDiscussion)
 })
+
+onUnmounted(() => {
+  if (discussionsChannel) supabase.removeChannel(discussionsChannel)
+  window.removeEventListener('click', handleClickOutsideDiscussion)
+})
+
+// ==========================================
+// --- KESIMPULAN ALOKASI PRODUK & STOK RIIL ---
+// ==========================================
+const isAllocationModalOpen = ref(false)
+const selectedAllocationItem = ref(null)
+const isLoadingAllocation = ref(false)
+const allocationData = ref(null)
+const allocationError = ref(null)
+const allocationCache = ref({})
+
+// Helper: Check if string matches HSO or HSB format
+const isSameHso = (a, b) => {
+  if (!a || !b) return false
+  if (isHsoNoteMatch(a, b) || isHsoNoteMatch(b, a)) return true
+  const cleanA = String(a).replace(/[-_\s/]/g, '').toUpperCase()
+  const cleanB = String(b).replace(/[-_\s/]/g, '').toUpperCase()
+  return cleanA === cleanB
+}
+
+const openAllocationModal = async (item) => {
+  if (!item) return
+  selectedAllocationItem.value = item
+  isAllocationModalOpen.value = true
+  allocationError.value = null
+
+  const sku = (item.code || '').trim()
+  if (!sku) return
+
+  // Return cached result if already fetched during this session
+  if (allocationCache.value[sku]) {
+    allocationData.value = allocationCache.value[sku]
+    return
+  }
+
+  isLoadingAllocation.value = true
+  allocationData.value = null
+  allocationError.value = null
+
+  try {
+    const currentHsoNumber = soDetail.value?.number || routeId || ''
+
+    // Helper functions for safe fetching without PostgrestBuilder .catch issues
+    const fetchStock = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('get-stock-availability', {
+          body: { item_code: sku }
+        })
+        if (error) {
+          console.warn('get-stock-availability invoke notice:', error)
+          return null
+        }
+        return data?.data || null
+      } catch (err) {
+        console.warn('get-stock-availability catch:', err)
+        return null
+      }
+    }
+
+    const fetchCatalogItem = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('accurate_items')
+          .select('*')
+          .ilike('item_no', `%${sku}%`)
+          .order('item_no', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+        if (error) console.warn('accurate_items fetch notice:', error)
+        return data || null
+      } catch (err) {
+        console.warn('accurate_items catch:', err)
+        return null
+      }
+    }
+
+    const fetchPoItems = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('accurate_purchase_order_items')
+          .select(`
+            id, po_id, item_code, item_name, quantity, unit_name, detail_notes, hso_number,
+            po:accurate_purchase_orders(id, number, vendor_name, trans_date, status_name)
+          `)
+          .ilike('item_code', `%${sku}%`)
+        if (error) console.warn('accurate_purchase_order_items fetch notice:', error)
+        return data || []
+      } catch (err) {
+        console.warn('accurate_purchase_order_items catch:', err)
+        return []
+      }
+    }
+
+    const [accurateData, catalogItem, poItems] = await Promise.all([
+      fetchStock(),
+      fetchCatalogItem(),
+      fetchPoItems()
+    ])
+
+    // Stock quantities from Accurate
+    const stockWarehouse = accurateData?.stock_warehouse ?? catalogItem?.stock_quantity ?? item.parsed_stock_qty ?? 0
+    const stockAvailableAts = accurateData?.stock_available ?? catalogItem?.available_to_sell ?? 0
+    const stockOrdered = accurateData?.stock_ordered ?? 0
+
+    // References: HSO list
+    const hsoMap = {}
+    const references = accurateData?.references || []
+
+    references
+      .filter(r => r.type === 'SO')
+      .forEach(r => {
+        const soNum = (r.no_referensi || '').trim()
+        if (!soNum) return
+        const isCurrent = isSameHso(soNum, currentHsoNumber)
+        hsoMap[soNum] = {
+          so_number: soNum,
+          customer_name: r.nama_referensi || '-',
+          trans_date: r.tgl_estimasi || '-',
+          qty_order: r.dijual || 0,
+          sisa_alokasi: r.sisa_alokasi !== undefined ? r.sisa_alokasi : (r.is_fulfilled ? 0 : r.dijual),
+          is_fulfilled: r.is_fulfilled ?? false,
+          status_name: r.status_item || (r.is_fulfilled ? 'Sudah Terkirim' : 'Alokasi Aktif'),
+          is_current: isCurrent,
+          hpos: []
+        }
+      })
+
+    // Include current HSO if not yet in map
+    const hasCurrentInMap = Object.values(hsoMap).some(h => h.is_current)
+    if (!hasCurrentInMap) {
+      hsoMap[currentHsoNumber] = {
+        so_number: currentHsoNumber,
+        customer_name: soDetail.value?.client || '-',
+        trans_date: soDetail.value?.date || '-',
+        qty_order: item.qty_order || 0,
+        sisa_alokasi: item.qty_remaining || 0,
+        is_fulfilled: item.qty_remaining <= 0,
+        status_name: item.qty_remaining <= 0 ? 'Sudah Terkirim' : 'Perlu Pengiriman',
+        is_current: true,
+        hpos: []
+      }
+    }
+
+    // Attach HPO numbers to corresponding HSOs
+    poItems.forEach(poi => {
+      const hsoRef = (poi.hso_number || poi.detail_notes || '').trim()
+      const poNum = poi.po?.number || ''
+      if (!poNum) return
+
+      Object.values(hsoMap).forEach(hso => {
+        if (hsoRef && (hsoRef.includes(hso.so_number) || hso.so_number.includes(hsoRef))) {
+          if (!hso.hpos.includes(poNum)) hso.hpos.push(poNum)
+        }
+      })
+    })
+
+    // Process HPO list
+    const hpoList = []
+    const seenPos = new Set()
+
+    references
+      .filter(r => r.type === 'PO')
+      .forEach(r => {
+        const poNum = (r.no_referensi || '').trim()
+        if (!poNum || seenPos.has(poNum)) return
+        seenPos.add(poNum)
+
+        const matchDbPo = poItems.find(p => p.po?.number === poNum)
+        const poHsoRef = matchDbPo?.hso_number || matchDbPo?.detail_notes || ''
+        const isForCurrent = isSameHso(poHsoRef, currentHsoNumber) || (item.logistics_hpo && item.logistics_hpo.includes(poNum))
+
+        hpoList.push({
+          po_number: poNum,
+          vendor_name: r.nama_referensi || matchDbPo?.po?.vendor_name || 'PT. SIEMENS INDONESIA',
+          trans_date: r.tgl_estimasi || matchDbPo?.po?.trans_date || '-',
+          quantity: r.dipesan_total || r.dipesan || matchDbPo?.quantity || 0,
+          quantity_received: r.sudah_diterima || 0,
+          status_name: r.status_item || (r.is_fulfilled ? 'Sudah Diterima' : 'Sedang Dipesan'),
+          is_fulfilled: r.is_fulfilled ?? false,
+          hso_target: poHsoRef || '-',
+          is_for_current: isForCurrent
+        })
+      })
+
+    // Add any DB PO items not in Accurate references
+    poItems.forEach(poi => {
+      const poNum = poi.po?.number
+      if (poNum && !seenPos.has(poNum)) {
+        seenPos.add(poNum)
+        const isForCurrent = isSameHso(poi.hso_number || poi.detail_notes, currentHsoNumber)
+        hpoList.push({
+          po_number: poNum,
+          vendor_name: poi.po?.vendor_name || 'PT. SIEMENS INDONESIA',
+          trans_date: poi.po?.trans_date || '-',
+          quantity: poi.quantity || 0,
+          quantity_received: 0,
+          status_name: poi.po?.status_name || 'Open',
+          is_fulfilled: false,
+          hso_target: poi.hso_number || poi.detail_notes || '-',
+          is_for_current: isForCurrent
+        })
+      }
+    })
+
+    // Intelligent Verdict Synthesis matching Accurate's actual allocations
+    const currentHsoAlloc = Object.values(hsoMap).find(h => h.is_current)
+    const currentReserved = currentHsoAlloc ? (currentHsoAlloc.sisa_alokasi || 0) : 0
+    const otherHsos = Object.values(hsoMap).filter(h => !h.is_current && h.sisa_alokasi > 0)
+    const otherAllocated = otherHsos.reduce((sum, h) => sum + (h.sisa_alokasi || 0), 0)
+    const currentNeed = item.qty_remaining || (item.qty_order - item.qty_shipped) || 0
+    const salesNote = (item.admin_note || '').toLowerCase()
+    const saysNoStock = salesNote.includes('no stock') || salesNote.includes('kosong') || salesNote.includes('indent')
+
+    // Physical stock in warehouse available for THIS HSO (after deducting what other HSOs reserve)
+    const availableForThisHso = Math.max(0, stockWarehouse - otherAllocated)
+    const takeableFromWarehouse = Math.min(availableForThisHso, currentNeed)
+
+    let verdict = {
+      type: 'NORMAL',
+      title: 'Status Normal',
+      color: 'slate',
+      badge: 'STATUS NORMAL',
+      summary: '',
+      recommendation: '',
+      canTakeStock: false,
+      takeableQty: 0
+    }
+
+    if (stockWarehouse > 0 && availableForThisHso >= currentNeed) {
+      if (currentReserved > 0 && otherAllocated === 0) {
+        verdict = {
+          type: 'READY_DEDICATED',
+          title: 'BARANG READY DI GUDANG KHUSUS UNTUK HSO INI',
+          color: 'emerald',
+          badge: '🟢 READY STOK MILIK HSO INI',
+          canTakeStock: true,
+          takeableQty: takeableFromWarehouse,
+          summary: `Di Accurate tercatat ada ${stockWarehouse} ${accurateData?.unit_name || 'Pcs'} fisik di gudang, dan seluruhnya (${currentReserved} ${accurateData?.unit_name || 'Pcs'}) memang tercatat direservasi untuk pesanan HSO ini (${currentHsoNumber} - ${soDetail.value?.client || '-'}). Tidak ada HSO lain yang mengambil atau mengunci stok ini.`,
+          recommendation: `Barang 100% READY di gudang untuk dikirim ke pelanggan HSO ini! Segera proses pengiriman (surat jalan / HDO) atau klik tombol di bawah untuk update status logistik menjadi "Barang Ready / Siap Kirim".`
+        }
+      } else if (otherAllocated > 0) {
+        verdict = {
+          type: 'READY_PARTIAL_RESERVED',
+          title: 'BARANG READY DI GUDANG UNTUK HSO INI (Alokasi Aman)',
+          color: 'emerald',
+          badge: '🟢 READY UNTUK HSO INI',
+          canTakeStock: true,
+          takeableQty: takeableFromWarehouse,
+          summary: `Gudang fisik memiliki ${stockWarehouse} ${accurateData?.unit_name || 'Pcs'}. Setelah dikurangi alokasi HSO lain (${otherAllocated} ${accurateData?.unit_name || 'Pcs'}), masih ada ${availableForThisHso} ${accurateData?.unit_name || 'Pcs'} yang mencukupi seluruh kebutuhan HSO ini (${currentNeed} ${accurateData?.unit_name || 'Pcs'}).`,
+          recommendation: `Kebutuhan ${currentNeed} ${accurateData?.unit_name || 'Pcs'} untuk HSO ini aman dan dapat langsung diproses pengirimannya.`
+        }
+      } else {
+        verdict = {
+          type: 'CAN_TAKE_STOCK',
+          title: 'BISA DIAMBIL JADI STOK (Stok Bebas Tersedia)',
+          color: 'emerald',
+          badge: '🟢 BISA AMBIL STOK',
+          canTakeStock: true,
+          takeableQty: takeableFromWarehouse,
+          summary: saysNoStock 
+            ? `Keterangan Accurate tertulis "${item.admin_note}", TETAPI di Gudang Accurate ada ${stockWarehouse} ${accurateData?.unit_name || 'Pcs'} fisik (bebas tanpa reservasi HSO lain).`
+            : `Tersedia ${availableForThisHso} ${accurateData?.unit_name || 'Pcs'} stok di gudang Accurate yang belum terikat pesanan lain.`,
+          recommendation: `Kebutuhan HSO ini (${currentNeed} ${accurateData?.unit_name || 'Pcs'}) DAPAT LANGSUNG DIAMBIL DARI GUDANG tanpa perlu menunggu atau membuat PO baru! Klik tombol "Ambil Jadi Stok" di bawah.`
+        }
+      }
+    } else if (stockWarehouse > 0 && availableForThisHso > 0 && availableForThisHso < currentNeed) {
+      verdict = {
+        type: 'PARTIAL_STOCK',
+        title: 'BISA DIAMBIL SEBAGIAN DARI STOK GUDANG',
+        color: 'teal',
+        badge: '🟢 AMBIL SEBAGIAN STOK',
+        canTakeStock: true,
+        takeableQty: availableForThisHso,
+        summary: `Gudang fisik memiliki ${stockWarehouse} ${accurateData?.unit_name || 'Pcs'}. Sebanyak ${availableForThisHso} ${accurateData?.unit_name || 'Pcs'} dapat dialokasikan untuk HSO ini (setelah dikurangi alokasi HSO lain sebesar ${otherAllocated} ${accurateData?.unit_name || 'Pcs'}). Kebutuhan HSO ini adalah ${currentNeed} ${accurateData?.unit_name || 'Pcs'}.`,
+        recommendation: `Ambil ${availableForThisHso} ${accurateData?.unit_name || 'Pcs'} dari stok gudang terlebih dahulu untuk pengiriman bertahap lebih awal, dan sisanya (${currentNeed - availableForThisHso} ${accurateData?.unit_name || 'Pcs'}) dipesan melalui PO.`
+      }
+    } else if (stockWarehouse > 0 && availableForThisHso <= 0 && otherAllocated > 0) {
+      const otherNames = otherHsos.map(h => `${h.so_number} (${h.customer_name})`).slice(0, 2).join(', ')
+      verdict = {
+        type: 'LOCKED_BY_OTHER',
+        title: 'STOK FISIK ADA, TAPI TERIKAT HSO LAIN',
+        color: 'amber',
+        badge: '🟡 ALOKASI HSO LAIN',
+        canTakeStock: false,
+        takeableQty: 0,
+        summary: `Gudang fisik memiliki ${stockWarehouse} ${accurateData?.unit_name || 'Pcs'}, namun seluruhnya (${otherAllocated} ${accurateData?.unit_name || 'Pcs'}) telah direservasi oleh pesanan lain: ${otherNames}.`,
+        recommendation: `Cek apakah HSO lain tersebut masih menunggu pembayaran atau belum akan dikirim dalam waktu dekat. Jika memungkinkan, stok dapat dikoordinasikan untuk dialihkan ke HSO ini.`
+      }
+    } else if (hpoList.some(p => p.is_for_current && !p.is_fulfilled)) {
+      const myPos = hpoList.filter(p => p.is_for_current).map(p => p.po_number).join(', ')
+      verdict = {
+        type: 'DEDICATED_PO',
+        title: 'SEDANG DIPESAN KHUSUS UNTUK HSO INI',
+        color: 'blue',
+        badge: '🔵 PO MILIK HSO INI',
+        canTakeStock: false,
+        takeableQty: 0,
+        summary: `Barang ini memang tidak ada stok gudang, namun SUDAH MEMILIKI PO VENDOR (${myPos}) yang secara spesifik tercatat untuk HSO ini (${currentHsoNumber}).`,
+        recommendation: `Pengadaan sudah sesuai. Pantau jadwal kedatangan logistik (Ex-Works / ETA / Dunex) pada timeline di halaman depan.`
+      }
+    } else if (hpoList.some(p => !p.is_for_current && !p.is_fulfilled)) {
+      const otherPos = hpoList.filter(p => !p.is_for_current).map(p => `${p.po_number} (untuk ${p.hso_target})`).slice(0, 2).join(', ')
+      verdict = {
+        type: 'PO_OTHER_HSO',
+        title: 'ADA PO BERJALAN, TAPI MILIK HSO LAIN',
+        color: 'purple',
+        badge: '🟣 PO MILIK HSO LAIN',
+        canTakeStock: false,
+        takeableQty: 0,
+        summary: `Terdapat PO vendor (${otherPos}), namun di Accurate tidak ditujukan untuk HSO ini.`,
+        recommendation: `Barang ini BUKAN bagian dari PO tersebut. HSO ini tetap memerlukan pengadaan mandiri (HPB) atau konfirmasi alokasi ulang dengan purchasing.`
+      }
+    } else {
+      verdict = {
+        type: 'PURE_NO_STOCK',
+        title: 'BENAR-BENAR NO STOCK & BELUM ADA PO',
+        color: 'red',
+        badge: '🔴 MURNI NO STOCK',
+        canTakeStock: false,
+        takeableQty: 0,
+        summary: `Stok gudang 0, tidak ada stok bebas, dan belum ada PO pengadaan aktif di sistem.`,
+        recommendation: `Keterangan "NO STOCK" dari sales adalah BENAR. Segera masukkan barang ini ke Rencana Pembelian (Cart / HPB).`
+      }
+    }
+
+    const compiledData = {
+      sku,
+      itemName: accurateData?.item_name || catalogItem?.item_name || item.name,
+      unit: accurateData?.unit_name || catalogItem?.unit_name || item.unit || 'Pcs',
+      stockSummary: {
+        warehouse: stockWarehouse,
+        currentAllocated: currentReserved,
+        otherAllocated: otherAllocated,
+        availableForThisHso: availableForThisHso,
+        availableToSell: accurateData?.stock_available ?? 0,
+        ordered: stockOrdered
+      },
+      verdict,
+      hsoAllocations: Object.values(hsoMap).sort((a, b) => (b.is_current ? 1 : 0) - (a.is_current ? 1 : 0)),
+      hpoAllocations: hpoList.sort((a, b) => (b.is_for_current ? 1 : 0) - (a.is_for_current ? 1 : 0))
+    }
+
+    allocationData.value = compiledData
+    allocationCache.value[sku] = compiledData
+
+  } catch (err) {
+    console.error('Error fetching allocation summary:', err)
+    allocationError.value = err.message || 'Gagal memuat alokasi produk'
+  } finally {
+    isLoadingAllocation.value = false
+  }
+}
+
+const takeStockForCurrentHso = () => {
+  if (!selectedAllocationItem.value || !allocationData.value) return
+  const item = selectedAllocationItem.value
+  const available = allocationData.value.stockSummary.availableForThisHso
+  const need = item.qty_remaining || (item.qty_order - item.qty_shipped) || 0
+  const qtyToTake = Math.min(available, need)
+
+  isAllocationModalOpen.value = false
+  // Open the status modal for this item with ready status
+  openActionModal(item)
+  setTimeout(() => {
+    if (formStatus.value?.hpoStatuses?.default) {
+      formStatus.value.hpoStatuses.default.status = 'Barang Ready / Siap Kirim'
+      formStatus.value.hpoStatuses.default.admin_notes = `[AMBIL STOK GUDANG] Diambil ${qtyToTake} ${allocationData.value.unit} dari stok gudang Accurate (Total Fisik: ${allocationData.value.stockSummary.warehouse} ${allocationData.value.unit}). Memenuhi kebutuhan ${item.code} siap kirim.`
+    }
+  }, 150)
+}
+
+const copyAllocationSummary = () => {
+  if (!allocationData.value || !selectedAllocationItem.value) return
+  const d = allocationData.value
+  const item = selectedAllocationItem.value
+  const hsoNum = soDetail.value?.number || routeId || '-'
+
+  let text = `📦 *RINGKASAN ALOKASI & STOK BARANG*\n`
+  text += `*SKU:* ${d.sku}\n`
+  text += `*Nama Barang:* ${d.itemName}\n`
+  text += `*HSO Terkait:* ${hsoNum} (${soDetail.value?.client || '-'})\n`
+  text += `*Catatan Sales di SO:* ${item.admin_note || '-'}\n\n`
+  text += `🎯 *KESIMPULAN:* ${d.verdict.title}\n`
+  text += `${d.verdict.summary}\n`
+  text += `👉 *Rekomendasi:* ${d.verdict.recommendation}\n\n`
+  text += `📊 *Kondisi Stok Accurate:*\n`
+  text += `• Fisik Gudang: ${d.stockSummary.warehouse} ${d.unit}\n`
+  text += `• Alokasi HSO Ini: ${d.stockSummary.currentAllocated} ${d.unit}\n`
+  text += `• Alokasi HSO Lain: ${d.stockSummary.otherAllocated} ${d.unit}\n`
+  text += `• Siap Kirim HSO Ini: ${d.stockSummary.availableForThisHso} ${d.unit}\n`
+  if (d.stockSummary.ordered > 0) {
+    text += `• Sedang Dipesan (PO): ${d.stockSummary.ordered} ${d.unit}\n`
+  }
+  text += '\n'
+  
+  if (d.hsoAllocations.length > 0) {
+    text += `🏢 *Alokasi HSO (${d.hsoAllocations.length} Pesanan):*\n`
+    d.hsoAllocations.slice(0, 5).forEach(h => {
+      text += `• ${h.so_number}: ${h.qty_order} ${d.unit} (Sisa: ${h.sisa_alokasi}) - ${h.customer_name} [${h.is_current ? 'HSO INI' : 'HSO LAIN'}]\n`
+    })
+    text += '\n'
+  }
+
+  if (d.hpoAllocations.length > 0) {
+    text += `🚚 *PO Pengadaan Vendor (${d.hpoAllocations.length} PO):*\n`
+    d.hpoAllocations.slice(0, 3).forEach(p => {
+      text += `• ${p.po_number}: ${p.quantity} ${d.unit} - ${p.status_name} [${p.is_for_current ? 'Untuk HSO Ini' : `Untuk ${p.hso_target}`}]\n`
+    })
+  }
+
+  navigator.clipboard.writeText(text.trim()).then(() => {
+    alert('Ringkasan alokasi produk berhasil disalin ke clipboard! Siap dikirim ke WhatsApp/Slack.')
+  }).catch(() => {
+    alert('Gagal menyalin ke clipboard.')
+  })
+}
 
 
 const formatCurrency = (val) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(val || 0)
@@ -2533,7 +3987,11 @@ const getHpoEntries = (item) => {
   
   // 1. If hpoDetails is available (e.g. from manual HPO sync)
   if (hpoDetails.value && hpoDetails.value.length > 0) {
-    const poItems = hpoDetails.value.filter(p => p.itemCode === item.code && !isInvalidPo(p.poNumber, p.poStatus))
+    const poItems = hpoDetails.value.filter(p => 
+      p.itemCode === item.code && 
+      !isInvalidPo(p.poNumber, p.poStatus) &&
+      !isItemHpoUnlinked(item.code, p.poNumber)
+    )
     if (poItems.length > 0) {
       return poItems.map(p => ({
         poNumber: p.poNumber,
@@ -2549,7 +4007,12 @@ const getHpoEntries = (item) => {
 
   // 2. Direct from item.shipments_data (loaded immediately from Supabase)
   if (item.shipments_data && item.shipments_data.length > 0) {
-    const validShips = item.shipments_data.filter(s => s.hpo_number && s.hpo_number.trim() && !isInvalidPo(s.hpo_number))
+    const validShips = item.shipments_data.filter(s => 
+      s.hpo_number && 
+      s.hpo_number.trim() && 
+      !isInvalidPo(s.hpo_number) &&
+      !isUnlinkedShipment(s)
+    )
     if (validShips.length > 0) {
       const shipCount = validShips.length
       return validShips.map(s => ({
@@ -3241,6 +4704,29 @@ const saveUpdate = async () => {
                     const { error: errUpd } = await supabase.from('shipments').update(shipmentPayload).eq('id', shipmentId)
                     if (errUpd) throw errUpd 
                 } 
+
+                // Optimistic local state updates for immediate UI responsiveness
+                if (statusData.admin_notes !== undefined) {
+                    item.logistics_note = statusData.admin_notes
+                    if (selectedItem.value && selectedItem.value.code === item.code) {
+                        selectedItem.value.logistics_note = statusData.admin_notes
+                    }
+                }
+                item.logistics_status = finalStatus
+                if (item.shipments_data) {
+                    const shipObj = item.shipments_data.find(s => s.id === shipmentId || (refNumber ? s.hpo_number === refNumber : !s.hpo_number))
+                    if (shipObj) {
+                        Object.assign(shipObj, shipmentPayload, { id: shipmentId })
+                    } else {
+                        item.shipments_data.push({ id: shipmentId, so_id: String(soDetail.value.id), ...shipmentPayload })
+                    }
+                }
+                const localListIdx = (shipmentList.value || []).findIndex(s => s.id === shipmentId)
+                if (localListIdx !== -1) {
+                    Object.assign(shipmentList.value[localListIdx], shipmentPayload, { id: shipmentId })
+                } else {
+                    shipmentList.value.push({ id: shipmentId, so_id: String(soDetail.value.id), ...shipmentPayload })
+                } 
                 
                 let eventDate = null
                 if (finalStatus === 'Follow up with our forwarder') eventDate = statusData.exwork_date
@@ -3266,6 +4752,123 @@ const saveUpdate = async () => {
         isModalOpen.value = false
         selectedItemCodes.value = [] 
     } catch (error) { alert("Gagal update status: " + error.message) } finally { isSubmitting.value = false } 
+}
+
+const unlinkHpo = async (item, poNumber) => {
+  if (!item || !poNumber) return
+  const itemLabel = item.name || item.code
+  if (!confirm(`Lepas kaitan PO "${poNumber}" dari item "${itemLabel}"?\n\nPO ini tidak akan lagi dihubungkan ke pesanan ini.`)) return
+
+  try {
+    isSubmitting.value = true
+    const soIdStr = String(resolvedSoId.value || soDetail.value?.id)
+    const adminNote = `[UNLINKED] Dilepas oleh ${currentUser.value?.email || 'User'} pada ${new Date().toLocaleString('id-ID')}`
+    
+    // Find existing shipment row
+    const existingShip = (shipmentList.value || []).find(s => s.item_code === item.code && s.hpo_number === poNumber)
+    let shipmentId = existingShip?.id
+
+    if (shipmentId) {
+      const { error } = await supabase
+        .from('shipments')
+        .update({
+          admin_notes: adminNote,
+          updated_at: new Date()
+        })
+        .eq('id', shipmentId)
+      if (error) throw error
+    } else {
+      const { data: newShip, error } = await supabase
+        .from('shipments')
+        .insert({
+          so_id: soIdStr,
+          item_code: item.code,
+          item_seq: item.seq,
+          hpo_number: poNumber,
+          shipment_type: 'IMPORT_PO',
+          current_status: 'Follow up with our forwarder',
+          admin_notes: adminNote,
+          status_date: new Date().toISOString().split('T')[0]
+        })
+        .select()
+        .single()
+      if (error) throw error
+      shipmentId = newShip?.id
+    }
+
+    if (shipmentId) {
+      try {
+        await supabase.from('shipment_logs').insert({
+          shipment_id: shipmentId,
+          status_name: 'UNLINKED',
+          event_date: new Date().toISOString().split('T')[0],
+          notes: `Dilepas kaitan dari ${soDetail.value?.number || soIdStr}`,
+          user_email: currentUser.value?.email || 'User',
+          action_detail: `Lepas kaitan PO "${poNumber}" dari item "${item.code}"`
+        })
+      } catch (e) {
+        console.warn('Log error:', e)
+      }
+    }
+
+    // Update local shipmentList in place
+    const targetIdx = (shipmentList.value || []).findIndex(s => s.item_code === item.code && s.hpo_number === poNumber)
+    if (targetIdx !== -1) {
+      shipmentList.value[targetIdx].admin_notes = adminNote
+    } else {
+      shipmentList.value.push({
+        id: shipmentId,
+        so_id: soIdStr,
+        item_code: item.code,
+        hpo_number: poNumber,
+        current_status: 'Follow up with our forwarder',
+        admin_notes: adminNote
+      })
+    }
+
+    // Update item.shipments_data
+    if (item.shipments_data) {
+      item.shipments_data = item.shipments_data.filter(s => s.hpo_number !== poNumber)
+    }
+
+    // Update hpoDetails
+    if (hpoDetails.value) {
+      hpoDetails.value = hpoDetails.value.filter(p => !(p.itemCode === item.code && p.poNumber === poNumber))
+    }
+
+    // Update hpoMapping
+    if (hpoMapping.value && hpoMapping.value[item.code]) {
+      const remainHpos = hpoMapping.value[item.code]
+        .split(',')
+        .map(s => s.trim())
+        .filter(s => s && s !== poNumber && !isItemHpoUnlinked(item.code, s))
+      hpoMapping.value[item.code] = remainHpos.join(', ')
+    }
+
+    // If modal is open and has this HPO key, remove it
+    if (formStatus.value?.hpoStatuses && formStatus.value.hpoStatuses[poNumber]) {
+      delete formStatus.value.hpoStatuses[poNumber]
+      if (Object.keys(formStatus.value.hpoStatuses).length === 0) {
+        formStatus.value.hpoStatuses = {
+          default: {
+            status: 'Follow up with our forwarder',
+            exwork_date: '',
+            eta_date: '',
+            dunex_date: '',
+            hokiindo_date: '',
+            admin_notes: ''
+          }
+        }
+      }
+    }
+
+    alert(`Kaitan PO "${poNumber}" berhasil dilepas dari item ini.`)
+  } catch (err) {
+    console.error('Error unlinking PO:', err)
+    alert(`Gagal melepas kaitan PO: ${err.message || err}`)
+  } finally {
+    isSubmitting.value = false
+  }
 }
 
 const shareToClient = async () => { let codeToUse = uniqueTrackingCode.value; if (!codeToUse) { const newUniqueCode = generateUUID(); const { data, error } = await supabase.from('so_tracking_links').insert({ so_id: String(resolvedSoId.value), unique_code: newUniqueCode }).select('unique_code').single(); if (error) { alert('Gagal generate link'); return } codeToUse = data.unique_code; uniqueTrackingCode.value = codeToUse; } const trackingUrl = `${window.location.origin}/public/tracking/${codeToUse}`; navigator.clipboard.writeText(trackingUrl).then(() => { isLinkCopied.value = true; setTimeout(() => isLinkCopied.value = false, 3000); }) }
@@ -4181,6 +5784,16 @@ const downloadAttachment = async (att) => {
                     </div>
                     <div class="text-xs text-slate-600 dark:text-slate-400 mt-0.5 font-medium leading-normal">{{ item.name }}</div>
                     <div v-if="item.admin_note" class="text-[10px] text-slate-400 italic mt-0.5 font-sans">Note: {{ item.admin_note }}</div>
+                    
+                    <!-- Catatan Admin (Internal) -->
+                    <div v-if="item.logistics_note && !item.logistics_note.includes('[UNLINKED]') && !item.logistics_note.includes('Auto-synced') && !item.logistics_note.includes('Auto-created')" 
+                         class="mt-2 p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs flex items-start gap-1.5 shadow-2xs">
+                        <MessageSquare class="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                        <div class="flex-1 min-w-0">
+                            <span class="font-bold text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-400 block mb-0.5">Catatan Admin:</span>
+                            <span class="whitespace-pre-line leading-relaxed text-[11px] font-medium">{{ item.logistics_note }}</span>
+                        </div>
+                    </div>
                   </TableCell>
                   
                   <TableCell class="text-center align-top py-2.5 px-1 text-slate-900 dark:text-slate-100 font-semibold text-xs md:text-sm font-sans">{{ item.qty_order }}</TableCell>
@@ -4281,9 +5894,11 @@ const downloadAttachment = async (att) => {
                                         <ShoppingCart class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                                         <span class="font-bold text-emerald-700 dark:text-emerald-300 truncate">{{ hpo.poNumber }}</span>
                                     </div>
-                                    <span v-if="hpo.quantity" class="font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-1.5 py-0.5 rounded text-[11px] shrink-0">
-                                        {{ hpo.quantity }} {{ item.unit }}
-                                    </span>
+                                    <div class="flex items-center gap-1 shrink-0">
+                                        <span v-if="hpo.quantity" class="font-bold text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/40 px-1.5 py-0.5 rounded text-[11px]">
+                                            {{ hpo.quantity }} {{ item.unit }}
+                                        </span>
+                                    </div>
                                 </div>
 
                                 <!-- Vendor Row -->
@@ -4469,9 +6084,12 @@ const downloadAttachment = async (att) => {
                     </div>
                     
                     <!-- Admin Notes -->
-                    <div v-if="!isSyncing && item.logistics_note && !item.logistics_note.includes('Auto-synced') && !item.logistics_note.includes('Auto-created')" class="text-[11px] text-gray-600 dark:text-gray-400 mt-2 p-2 bg-gray-50 dark:bg-gray-800 rounded border-l-2 border-gray-300 dark:border-gray-600 leading-normal">
-                        <div class="font-bold text-[9px] uppercase text-slate-400 mb-0.5">Admin Logistics Note:</div>
-                        {{ item.logistics_note }}
+                    <div v-if="item.logistics_note && !item.logistics_note.includes('[UNLINKED]') && !item.logistics_note.includes('Auto-synced') && !item.logistics_note.includes('Auto-created')" class="text-[11px] text-amber-900 dark:text-amber-200 mt-2 p-2.5 bg-amber-50/80 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800/80 leading-normal shadow-2xs">
+                        <div class="font-bold text-[9px] uppercase tracking-wider text-amber-700 dark:text-amber-400 mb-0.5 flex items-center gap-1">
+                            <MessageSquare class="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                            Catatan Admin:
+                        </div>
+                        <div class="whitespace-pre-line">{{ item.logistics_note }}</div>
                     </div>
                   </TableCell>
                   
@@ -4592,6 +6210,17 @@ const downloadAttachment = async (att) => {
                 {{ item.admin_note }}
               </div>
 
+              <!-- Catatan Admin (Internal) -->
+              <div v-if="item.logistics_note && !item.logistics_note.includes('[UNLINKED]') && !item.logistics_note.includes('Auto-synced') && !item.logistics_note.includes('Auto-created')" 
+                   class="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs flex items-start gap-1.5 shadow-2xs">
+                <MessageSquare class="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div class="flex-1 min-w-0">
+                  <span class="font-bold text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-400 block mb-0.5">Catatan Admin:</span>
+                  <span class="whitespace-pre-line leading-relaxed text-[11px] font-medium">{{ item.logistics_note }}</span>
+                </div>
+              </div>
+
+
               <div class="border-t border-slate-100 dark:border-slate-800 my-1"></div>
 
               <!-- Metrics Stats Section -->
@@ -4701,7 +6330,9 @@ const downloadAttachment = async (att) => {
                       </div>
                       <div class="flex items-center justify-between gap-2">
                         <span class="text-xs font-mono font-bold text-slate-800 dark:text-slate-200 truncate">{{ hpo.poNumber }}</span>
-                        <span class="text-xs font-extrabold text-red-600 dark:text-red-400 whitespace-nowrap bg-red-50 dark:bg-red-950/20 px-2 py-0.5 rounded-lg border border-red-100 dark:border-red-950/60">{{ hpo.quantity }} {{ item.unit }}</span>
+                        <div class="flex items-center gap-1 shrink-0">
+                          <span class="text-xs font-extrabold text-red-600 dark:text-red-400 whitespace-nowrap bg-red-50 dark:bg-red-950/20 px-2 py-0.5 rounded-lg border border-red-100 dark:border-red-950/60">{{ hpo.quantity }} {{ item.unit }}</span>
+                        </div>
                       </div>
                       
                       <div v-if="hpo.vendorName" class="mt-1 flex">
@@ -4869,9 +6500,12 @@ const downloadAttachment = async (att) => {
                   </div>
 
                   <!-- Admin Note -->
-                  <div v-if="!isSyncing && item.logistics_note && !item.logistics_note.includes('Auto-synced') && !item.logistics_note.includes('Auto-created')" class="text-[11px] text-slate-600 dark:text-slate-400 p-2.5 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-800 leading-normal">
-                    <span class="font-bold text-[9px] uppercase text-slate-400 block mb-0.5">Admin Logistics Note:</span>
-                    {{ item.logistics_note }}
+                  <div v-if="item.logistics_note && !item.logistics_note.includes('[UNLINKED]') && !item.logistics_note.includes('Auto-synced') && !item.logistics_note.includes('Auto-created')" class="text-[11px] text-amber-900 dark:text-amber-200 p-2.5 bg-amber-50/80 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800/80 leading-normal">
+                    <span class="font-bold text-[9px] uppercase tracking-wider text-amber-700 dark:text-amber-400 block mb-0.5 flex items-center gap-1">
+                      <MessageSquare class="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                      Catatan Admin:
+                    </span>
+                    <span class="whitespace-pre-line">{{ item.logistics_note }}</span>
                   </div>
 
                   <!-- Keterangan Kelebihan / Kekurangan Dipesan -->
@@ -5135,6 +6769,662 @@ const downloadAttachment = async (att) => {
           </CardContent>
         </Card>
 
+        <!-- FORUM DISKUSI & PROGRESS HSO SECTION -->
+        <Card class="border shadow-sm rounded-lg bg-white dark:bg-slate-800 dark:border-slate-700 mt-6 overflow-visible">
+          <CardHeader class="pb-3 border-b border-slate-100 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/80">
+            <div class="flex items-center justify-between">
+              <div>
+                <CardTitle class="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  <MessageSquare class="w-4 h-4 sm:w-5 sm:h-5 text-red-600 dark:text-red-400"/>
+                  Forum Diskusi & Progress Barang
+                  <Badge variant="outline" class="ml-1.5 font-mono text-[11px] bg-red-50 text-red-600 border-red-200 dark:bg-red-950/40 dark:text-red-400 dark:border-red-800">
+                    {{ filteredDiscussions.length }} Pesan
+                  </Badge>
+                </CardTitle>
+                <CardDescription class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Tanya-jawab, koordinasi kendala, dan update progress antar tim. Tag rekan (@mention) untuk kirim notifikasi.
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+
+          <CardContent class="p-4 sm:p-6 space-y-6">
+            <!-- INPUT FORM BOX -->
+            <div class="p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/60 shadow-2xs space-y-3">
+              <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-200/80 dark:border-slate-700">
+                <div class="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+                  <span class="text-xs font-bold text-slate-600 dark:text-slate-400 shrink-0">Terkait Barang:</span>
+
+                  <!-- Search Select Component for Terkait Barang -->
+                  <div class="relative" ref="discussionItemSelectContainerRef">
+                    <!-- Trigger Button -->
+                    <button
+                      type="button"
+                      @click="toggleItemSelect"
+                      class="h-8 px-2.5 text-xs font-semibold bg-white dark:bg-slate-800 border rounded-lg text-slate-800 dark:text-slate-200 outline-none flex items-center justify-between gap-2 min-w-[220px] max-w-[320px] shadow-2xs hover:border-slate-400 dark:hover:border-slate-500 transition-colors cursor-pointer"
+                      :class="isDiscussionItemSelectOpen ? 'border-red-500 ring-2 ring-red-500/20' : 'border-slate-300 dark:border-slate-600'"
+                    >
+                      <div class="flex items-center gap-1.5 truncate">
+                        <Package v-if="newDiscussion.item_code" class="w-3.5 h-3.5 text-red-600 dark:text-red-400 shrink-0" />
+                        <Globe v-else class="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                        
+                        <span v-if="!newDiscussion.item_code" class="truncate text-slate-700 dark:text-slate-300 font-medium">
+                          Umum (Seluruh Pesanan HSO)
+                        </span>
+                        <span v-else class="truncate text-left">
+                          <span class="font-mono font-bold text-red-600 dark:text-red-400">{{ selectedDiscussionItem?.code }}</span>
+                          <span class="text-slate-500 dark:text-slate-400 font-normal ml-1" v-if="selectedDiscussionItem?.name">({{ selectedDiscussionItem.name }})</span>
+                        </span>
+                      </div>
+
+                      <div class="flex items-center gap-1 shrink-0 ml-1">
+                        <span
+                          v-if="newDiscussion.item_code"
+                          @click.stop="selectDiscussionItem('')"
+                          title="Reset ke Umum"
+                          class="p-0.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        >
+                          <X class="w-3 h-3" />
+                        </span>
+                        <ChevronDown class="w-3.5 h-3.5 text-slate-400 transition-transform" :class="{ 'rotate-180': isDiscussionItemSelectOpen }" />
+                      </div>
+                    </button>
+
+                    <!-- Search Select Dropdown Panel -->
+                    <div
+                      v-if="isDiscussionItemSelectOpen"
+                      class="absolute left-0 top-full mt-1.5 w-72 sm:w-96 max-w-[95vw] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-40 p-2 space-y-1.5 animate-in fade-in duration-100"
+                    >
+                      <!-- Search Input inside Dropdown -->
+                      <div class="relative">
+                        <Search class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          ref="discussionItemSearchInputRef"
+                          v-model="discussionItemSearchQuery"
+                          type="text"
+                          placeholder="Cari kode atau nama barang..."
+                          class="w-full pl-8 pr-7 py-1.5 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg outline-none focus:ring-1 focus:ring-red-500 text-slate-800 dark:text-slate-200 placeholder-slate-400 font-medium"
+                        />
+                        <button
+                          v-if="discussionItemSearchQuery"
+                          type="button"
+                          @click="discussionItemSearchQuery = ''"
+                          class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs p-0.5"
+                        >
+                          <X class="w-3 h-3" />
+                        </button>
+                      </div>
+
+                      <!-- Items List -->
+                      <div class="max-h-56 overflow-y-auto space-y-0.5 pr-1 text-left">
+                        <!-- Option: Umum -->
+                        <button
+                          type="button"
+                          @click="selectDiscussionItem('')"
+                          class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors cursor-pointer"
+                          :class="!newDiscussion.item_code ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 font-semibold' : 'text-slate-700 dark:text-slate-300'"
+                        >
+                          <div class="flex items-center gap-2 truncate">
+                            <Globe class="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                            <span class="truncate">Umum (Seluruh Pesanan HSO)</span>
+                          </div>
+                          <Check v-if="!newDiscussion.item_code" class="w-3.5 h-3.5 text-red-600 dark:text-red-400 shrink-0" />
+                        </button>
+
+                        <div class="border-t border-slate-100 dark:border-slate-700 my-1"></div>
+
+                        <!-- Filtered Items -->
+                        <button
+                          type="button"
+                          v-for="it in filteredDiscussionItems"
+                          :key="it.code"
+                          @click="selectDiscussionItem(it.code)"
+                          class="w-full text-left px-2.5 py-2 rounded-lg text-xs flex items-center justify-between gap-2 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors group cursor-pointer"
+                          :class="newDiscussion.item_code === it.code ? 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 font-semibold' : 'text-slate-700 dark:text-slate-300'"
+                        >
+                          <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-1.5">
+                              <Package class="w-3.5 h-3.5 text-slate-400 group-hover:text-red-500 shrink-0" />
+                              <span class="font-mono font-bold text-xs truncate">{{ it.code }}</span>
+                              <span v-if="it.qty_order" class="text-[10px] text-slate-400 font-normal shrink-0">({{ it.qty_order }} {{ it.unit || 'Pcs' }})</span>
+                            </div>
+                            <div v-if="it.name" class="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5 pl-5">
+                              {{ it.name }}
+                            </div>
+                          </div>
+                          <Check v-if="newDiscussion.item_code === it.code" class="w-3.5 h-3.5 text-red-600 dark:text-red-400 shrink-0" />
+                        </button>
+
+                        <div v-if="filteredDiscussionItems.length === 0" class="py-4 text-center text-xs text-slate-400">
+                          Tidak ada barang yang cocok "{{ discussionItemSearchQuery }}"
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Kategori Selector Pills -->
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    v-for="cat in discussionCategories"
+                    :key="cat.value"
+                    @click="newDiscussion.progress_status = cat.value"
+                    class="px-2.5 py-1 text-xs font-bold rounded-lg border transition-all flex items-center gap-1 cursor-pointer"
+                    :class="newDiscussion.progress_status === cat.value ? cat.activeClass : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'"
+                  >
+                    <span>{{ cat.icon }}</span>
+                    <span>{{ cat.label }}</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Rich Text Editor Box with Toolbar -->
+              <div class="relative">
+                <div class="border border-slate-300 dark:border-slate-600 rounded-xl overflow-visible bg-white dark:bg-slate-800 shadow-2xs focus-within:ring-2 focus-within:ring-red-500/20 focus-within:border-red-500 transition-all">
+                  <!-- Toolbar -->
+                  <div class="flex items-center justify-between gap-1 p-2 bg-slate-50/90 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-700 text-xs flex-wrap select-none">
+                    <div class="flex items-center gap-0.5 sm:gap-1 flex-wrap">
+                      <!-- Bold -->
+                      <button
+                        type="button"
+                        @mousedown.prevent
+                        @click="execFormat('bold')"
+                        class="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold transition-colors cursor-pointer"
+                        title="Tebal (Ctrl+B)"
+                      >
+                        <Bold class="w-3.5 h-3.5" />
+                      </button>
+                      <!-- Italic -->
+                      <button
+                        type="button"
+                        @mousedown.prevent
+                        @click="execFormat('italic')"
+                        class="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 italic transition-colors cursor-pointer"
+                        title="Miring (Ctrl+I)"
+                      >
+                        <Italic class="w-3.5 h-3.5" />
+                      </button>
+                      <!-- Underline -->
+                      <button
+                        type="button"
+                        @mousedown.prevent
+                        @click="execFormat('underline')"
+                        class="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 underline transition-colors cursor-pointer"
+                        title="Garis Bawah (Ctrl+U)"
+                      >
+                        <Underline class="w-3.5 h-3.5" />
+                      </button>
+                      <!-- Strikethrough -->
+                      <button
+                        type="button"
+                        @mousedown.prevent
+                        @click="execFormat('strikeThrough')"
+                        class="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 line-through transition-colors cursor-pointer"
+                        title="Coretan"
+                      >
+                        <Strikethrough class="w-3.5 h-3.5" />
+                      </button>
+                      <!-- Stabilo / Highlight -->
+                      <button
+                        type="button"
+                        @mousedown.prevent
+                        @click="toggleHighlight"
+                        class="p-1.5 rounded-lg hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-600 dark:text-amber-400 transition-colors cursor-pointer"
+                        title="Stabilo Kuning"
+                      >
+                        <Highlighter class="w-3.5 h-3.5" />
+                      </button>
+
+                      <div class="h-4 w-px bg-slate-200 dark:bg-slate-700 my-auto mx-1"></div>
+
+                      <!-- Bullet List -->
+                      <button
+                        type="button"
+                        @mousedown.prevent
+                        @click="execFormat('insertUnorderedList')"
+                        class="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+                        title="Daftar Poin (Bullet List)"
+                      >
+                        <List class="w-3.5 h-3.5" />
+                      </button>
+                      <!-- Numbered List -->
+                      <button
+                        type="button"
+                        @mousedown.prevent
+                        @click="execFormat('insertOrderedList')"
+                        class="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+                        title="Daftar Angka (Numbered List)"
+                      >
+                        <ListOrdered class="w-3.5 h-3.5" />
+                      </button>
+
+                      <div class="h-4 w-px bg-slate-200 dark:bg-slate-700 my-auto mx-1"></div>
+
+                      <!-- Quote -->
+                      <button
+                        type="button"
+                        @mousedown.prevent
+                        @click="execFormat('formatBlock', 'blockquote')"
+                        class="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+                        title="Kutipan (Quote)"
+                      >
+                        <Quote class="w-3.5 h-3.5" />
+                      </button>
+                      <!-- Code Block -->
+                      <button
+                        type="button"
+                        @mousedown.prevent
+                        @click="execFormat('formatBlock', 'pre')"
+                        class="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-mono transition-colors cursor-pointer"
+                        title="Blok Kode / Catatan Teknis"
+                      >
+                        <Code class="w-3.5 h-3.5" />
+                      </button>
+
+                      <div class="h-4 w-px bg-slate-200 dark:bg-slate-700 my-auto mx-1"></div>
+
+                      <!-- Link -->
+                      <button
+                        type="button"
+                        @mousedown.prevent
+                        @click="insertLink"
+                        class="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
+                        title="Sisipkan Link URL"
+                      >
+                        <LinkIcon class="w-3.5 h-3.5" />
+                      </button>
+                      <!-- Eraser -->
+                      <button
+                        type="button"
+                        @mousedown.prevent
+                        @click="execFormat('removeFormat')"
+                        class="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-rose-500 hover:text-rose-600 transition-colors cursor-pointer"
+                        title="Hapus Format Teks"
+                      >
+                        <Eraser class="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <!-- Quick Mention inside Toolbar -->
+                    <button
+                      type="button"
+                      @mousedown.prevent
+                      @click="triggerMentionFromButton"
+                      class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 transition-colors cursor-pointer shadow-2xs shrink-0"
+                    >
+                      <AtSign class="w-3.5 h-3.5 text-blue-500" />
+                      <span>Tag Rekan</span>
+                    </button>
+                  </div>
+
+                  <!-- Contenteditable Area -->
+                  <div
+                    ref="editorRef"
+                    contenteditable="true"
+                    @input="handleEditorInput"
+                    @keyup="handleEditorInput"
+                    @keydown="handleEditorKeydown"
+                    @paste="handleEditorInputNextTick"
+                    @cut="handleEditorInputNextTick"
+                    class="rich-editor-content p-3.5 min-h-[110px] max-h-[260px] overflow-y-auto text-sm text-slate-900 dark:text-slate-100 focus:outline-none leading-relaxed"
+                    data-placeholder="Tulis pertanyaan, update progress barang, kendala, atau ketik @ untuk langsung mention rekan tim..."
+                  ></div>
+                </div>
+
+                <!-- INLINE @ MENTION AUTOCOMPLETE POPUP (Downwards, NEVER cut off) -->
+                <div
+                  v-if="showInlineMention"
+                  ref="inlineMentionRef"
+                  class="absolute left-0 top-full mt-2 w-80 sm:w-96 max-w-[calc(100vw-3rem)] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-50 p-2 space-y-1 animate-in fade-in zoom-in-95 duration-100 text-left"
+                >
+                  <div class="flex items-center justify-between px-2.5 py-1.5 border-b border-slate-100 dark:border-slate-700 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    <span class="flex items-center gap-1.5">
+                      <AtSign class="w-3.5 h-3.5 text-blue-500" />
+                      Pilih Rekan Tim (@mention):
+                    </span>
+                    <span v-if="mentionSearchQuery" class="text-blue-600 dark:text-blue-400 font-mono font-bold">"{{ mentionSearchQuery }}"</span>
+                  </div>
+
+                  <div class="max-h-52 overflow-y-auto space-y-0.5 pr-0.5">
+                    <button
+                      type="button"
+                      v-for="(user, idx) in filteredMentionUsers"
+                      :key="user.id || user.email"
+                      @click="selectMentionUser(user)"
+                      @mouseenter="activeMentionIndex = idx"
+                      class="w-full text-left px-2.5 py-2 rounded-lg text-xs flex items-center justify-between gap-2 transition-colors cursor-pointer"
+                      :class="activeMentionIndex === idx ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-900 dark:text-blue-100 ring-1 ring-blue-300 dark:ring-blue-700' : 'hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300'"
+                    >
+                      <div class="flex items-center gap-2.5 min-w-0">
+                        <div class="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-300 font-bold text-[11px] flex items-center justify-center shrink-0 shadow-2xs">
+                          {{ user.name.slice(0, 2).toUpperCase() }}
+                        </div>
+                        <div class="min-w-0">
+                          <div class="font-bold text-xs truncate text-slate-900 dark:text-slate-100">{{ user.name }}</div>
+                          <div class="text-[10px] text-slate-400 truncate">{{ user.email }}</div>
+                        </div>
+                      </div>
+                      <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 shrink-0">
+                        {{ user.role || 'Team' }}
+                      </span>
+                    </button>
+
+                    <div v-if="filteredMentionUsers.length === 0" class="py-4 text-center text-xs text-slate-400">
+                      Tidak ada rekan dengan nama "{{ mentionSearchQuery }}"
+                    </div>
+                  </div>
+
+                  <div class="text-[9px] text-slate-400 px-2.5 pt-1.5 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between">
+                    <span>Tekan ↑↓ untuk navigasi, Enter/Tab untuk memilih</span>
+                    <span>Esc untuk batal</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Tagged Users list & Action Bar -->
+              <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-1">
+                <!-- Tag Rekan Tim Popover / Autocomplete -->
+                <div class="relative flex items-center gap-2 flex-wrap" ref="mentionPickerContainerRef">
+                  <button
+                    type="button"
+                    @click="triggerMentionFromButton"
+                    class="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                  >
+                    <AtSign class="w-3.5 h-3.5 text-blue-500"/>
+                    <span>Tag Rekan (@mention)</span>
+                  </button>
+
+                  <!-- Active Tagged Pills -->
+                  <div v-if="newDiscussion.tagged_emails.length > 0" class="flex items-center gap-1.5 flex-wrap">
+                    <span 
+                      v-for="email in newDiscussion.tagged_emails" 
+                      :key="email"
+                      class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 shadow-2xs"
+                    >
+                      @{{ formatUserName(email) }}
+                      <button type="button" @click="removeTaggedEmail(email)" class="hover:text-red-500 ml-0.5 cursor-pointer">×</button>
+                    </span>
+                  </div>
+
+                  <!-- Mention Picker Dropdown (Alternate manual picker) -->
+                  <div 
+                    v-if="showMentionPicker"
+                    class="absolute left-0 top-full mt-2 w-64 max-h-60 overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl z-40 p-2 space-y-1 text-left"
+                  >
+                    <div class="text-[10px] font-bold uppercase text-slate-400 px-2 py-1">Pilih Rekan Tim:</div>
+                    <button
+                      type="button"
+                      v-for="user in teamUsers"
+                      :key="user.id"
+                      @click="addTaggedUser(user.email)"
+                      class="w-full text-left px-2.5 py-1.5 text-xs rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/30 text-slate-700 dark:text-slate-200 flex items-center justify-between group transition-colors cursor-pointer"
+                    >
+                      <div class="truncate">
+                        <div class="font-bold truncate">{{ user.name }}</div>
+                        <div class="text-[10px] text-slate-400 truncate">{{ user.email }}</div>
+                      </div>
+                      <Check v-if="newDiscussion.tagged_emails.includes(user.email)" class="w-3.5 h-3.5 text-blue-600 shrink-0"/>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Send Button -->
+                <Button 
+                  type="button" 
+                  @click="submitDiscussion"
+                  :disabled="isPostingDiscussion || isEditorEmpty"
+                  class="px-5 py-2 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-lg flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-50 cursor-pointer w-full sm:w-auto justify-center"
+                >
+                  <Loader2 v-if="isPostingDiscussion" class="w-3.5 h-3.5 animate-spin" />
+                  <Send v-else class="w-3.5 h-3.5" />
+                  <span>Kirim Diskusi</span>
+                </Button>
+              </div>
+            </div>
+
+            <!-- DISCUSSION FEED LIST -->
+            <div v-if="isLoadingDiscussions && filteredDiscussions.length === 0" class="py-10 text-center">
+              <Loader2 class="w-6 h-6 animate-spin text-red-600 mx-auto mb-2"/>
+              <span class="text-xs text-slate-400 font-medium">Memuat diskusi...</span>
+            </div>
+
+            <div v-else-if="filteredDiscussions.length === 0" class="py-12 text-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
+              <MessageCircle class="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2.5"/>
+              <p class="text-sm font-bold text-slate-700 dark:text-slate-300">Belum ada diskusi untuk pesanan ini</p>
+              <p class="text-xs text-slate-400 mt-1">Mulai diskusi pertama dengan mengetik pesan di atas.</p>
+            </div>
+
+            <div v-else class="space-y-4">
+              <div 
+                v-for="d in filteredDiscussions" 
+                :key="d.id"
+                class="rounded-xl border border-slate-200/90 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xs hover:shadow-xs transition-all overflow-hidden"
+              >
+                <!-- TOP LEVEL / PEMBAHASAN -->
+                <div class="p-4 sm:p-5">
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="flex items-start gap-3 min-w-0">
+                      <!-- Avatar -->
+                      <div class="w-9 h-9 rounded-full bg-gradient-to-tr from-slate-700 to-slate-900 dark:from-red-600 dark:to-red-800 text-white flex items-center justify-center font-bold text-xs uppercase shadow-xs shrink-0 ring-2 ring-slate-100 dark:ring-slate-800">
+                        {{ (d.user_name || d.user_email || 'U').charAt(0) }}
+                      </div>
+                      
+                      <div class="min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <span class="text-xs sm:text-sm font-bold text-slate-900 dark:text-slate-100 font-sans">
+                            {{ d.user_name || d.user_email?.split('@')[0] }}
+                          </span>
+                          <span class="text-[11px] text-slate-400 font-mono">
+                            {{ d.user_email }}
+                          </span>
+                          <span class="text-[11px] text-slate-400">·</span>
+                          <span class="text-[11px] text-slate-400" :title="d.created_at">
+                            {{ formatDiscussionDate(d.created_at) }}
+                          </span>
+                        </div>
+
+                        <!-- Badges Row: Category & Tagged Item -->
+                        <div class="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                          <!-- Category Badge -->
+                          <span 
+                            class="px-2 py-0.5 rounded-md text-[10px] font-bold border"
+                            :class="getCategoryStyle(d.progress_status)"
+                          >
+                            {{ getCategoryLabel(d.progress_status) }}
+                          </span>
+
+                          <!-- Tagged Item Badge -->
+                          <button 
+                            v-if="d.item_code"
+                            type="button"
+                            @click="scrollToItem(d.item_code)"
+                            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 transition-colors cursor-pointer"
+                            :title="`Klik untuk melihat item ${d.item_code} di tabel atas`"
+                          >
+                            <Package class="w-3 h-3 text-amber-600 dark:text-amber-400"/>
+                            <span class="font-mono">{{ d.item_code }}</span>
+                            <span v-if="d.item_name" class="font-sans font-normal truncate max-w-[180px]">({{ d.item_name }})</span>
+                            <CornerDownRight class="w-2.5 h-2.5 opacity-60"/>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Delete button for discussion author or admin -->
+                    <div class="flex items-center gap-1 shrink-0">
+                      <button
+                        v-if="canDeleteDiscussion(d)"
+                        type="button"
+                        @click="deleteDiscussion(d, false)"
+                        :disabled="isDeletingDiscussion[d.id]"
+                        class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                        title="Hapus pembahasan ini"
+                      >
+                        <Loader2 v-if="isDeletingDiscussion[d.id]" class="w-3.5 h-3.5 animate-spin text-rose-500" />
+                        <Trash2 v-else class="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Message Text -->
+                  <div class="mt-3.5 pl-0 sm:pl-12 text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-sans">
+                    <span v-html="formatDiscussionMessage(d.message)"></span>
+                  </div>
+
+                  <!-- Action Bar (Reply Button & Counter) -->
+                  <div class="mt-3 pl-0 sm:pl-12 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 flex-wrap">
+                    <div class="flex items-center gap-2">
+                      <button
+                        type="button"
+                        @click="toggleReplyForm(d.id)"
+                        class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 border border-slate-200 dark:border-slate-700 transition-all cursor-pointer shadow-2xs"
+                      >
+                        <Reply class="w-3.5 h-3.5 text-red-600 dark:text-red-400" />
+                        <span>Balas</span>
+                      </button>
+
+                      <span v-if="d.replies && d.replies.length > 0" class="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                        <MessageSquare class="w-3.5 h-3.5 text-slate-400" />
+                        {{ d.replies.length }} Balasan
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- THREADED REPLIES & REPLY FORM -->
+                <div v-if="(d.replies && d.replies.length > 0) || activeReplyId === d.id" class="bg-slate-50/70 dark:bg-slate-950/40 border-t border-slate-100 dark:border-slate-800 p-4 sm:p-5 space-y-3">
+                  <!-- List of Replies -->
+                  <div v-if="d.replies && d.replies.length > 0" class="space-y-2.5">
+                    <div 
+                      v-for="rep in d.replies" 
+                      :key="rep.id"
+                      class="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 shadow-2xs transition-all flex items-start justify-between gap-3"
+                    >
+                      <div class="flex items-start gap-2.5 min-w-0">
+                        <!-- Reply Avatar -->
+                        <div class="w-7 h-7 rounded-full bg-gradient-to-tr from-slate-600 to-slate-800 text-white flex items-center justify-center font-bold text-[10px] uppercase shadow-2xs shrink-0 mt-0.5">
+                          {{ (rep.user_name || rep.user_email || 'U').charAt(0) }}
+                        </div>
+
+                        <div class="min-w-0">
+                          <div class="flex items-center gap-2 flex-wrap">
+                            <span class="text-xs font-bold text-slate-900 dark:text-slate-100 font-sans">
+                              {{ rep.user_name || rep.user_email?.split('@')[0] }}
+                            </span>
+                            <span class="text-[10px] text-slate-400 font-mono">
+                              {{ rep.user_email }}
+                            </span>
+                            <span class="text-[10px] text-slate-400">·</span>
+                            <span class="text-[10px] text-slate-400" :title="rep.created_at">
+                              {{ formatDiscussionDate(rep.created_at) }}
+                            </span>
+                          </div>
+
+                          <div class="mt-1 text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-sans">
+                            <span v-html="formatDiscussionMessage(rep.message)"></span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Reply Delete Button -->
+                      <button
+                        v-if="canDeleteDiscussion(rep)"
+                        type="button"
+                        @click="deleteDiscussion(rep, true)"
+                        :disabled="isDeletingDiscussion[rep.id]"
+                        class="p-1 rounded-md text-slate-300 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer shrink-0"
+                        title="Hapus komentar balasan ini"
+                      >
+                        <Loader2 v-if="isDeletingDiscussion[rep.id]" class="w-3 h-3 animate-spin text-rose-500" />
+                        <Trash2 v-else class="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- INLINE REPLY INPUT FORM -->
+                  <div v-if="activeReplyId === d.id" class="p-3 rounded-xl bg-white dark:bg-slate-900 border border-red-200 dark:border-red-900/60 shadow-xs space-y-2 mt-2">
+                    <div class="text-[11px] font-bold text-slate-600 dark:text-slate-400 flex items-center justify-between">
+                      <span class="flex items-center gap-1.5">
+                        <Reply class="w-3 h-3 text-red-600" />
+                        Balas untuk {{ d.user_name || d.user_email?.split('@')[0] }}:
+                      </span>
+                      <button 
+                        type="button" 
+                        @click="activeReplyId = null"
+                        class="text-slate-400 hover:text-slate-600 text-xs cursor-pointer font-normal"
+                      >
+                        Batal
+                      </button>
+                    </div>
+
+                    <textarea
+                      v-model="replyTexts[d.id]"
+                      rows="2"
+                      :placeholder="`Tulis tanggapan atau balasan untuk diskusi ini... (ketik @ untuk mention)`"
+                      class="w-full text-xs p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-red-500 text-slate-900 dark:text-slate-100 resize-y"
+                    ></textarea>
+
+                    <div class="flex items-center justify-between gap-2 flex-wrap pt-1">
+                      <!-- Quick Tag Helper -->
+                      <div class="relative">
+                        <button
+                          type="button"
+                          @click="replyMentionPicker[d.id] = !replyMentionPicker[d.id]"
+                          class="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 cursor-pointer"
+                        >
+                          <AtSign class="w-3 h-3 text-blue-500" />
+                          <span>Tag Rekan</span>
+                        </button>
+
+                        <div 
+                          v-if="replyMentionPicker[d.id]" 
+                          class="absolute left-0 bottom-full mb-1 w-56 max-h-48 overflow-y-auto bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-50 p-1.5 space-y-0.5 text-left"
+                        >
+                          <button
+                            v-for="u in teamUsers"
+                            :key="u.email"
+                            type="button"
+                            @click="addReplyMention(d.id, u.email)"
+                            class="w-full text-left px-2 py-1 text-xs rounded hover:bg-blue-50 dark:hover:bg-blue-900/40 flex items-center justify-between cursor-pointer truncate"
+                          >
+                            <span class="font-bold truncate text-slate-800 dark:text-slate-200">{{ u.name }}</span>
+                            <span class="text-[10px] text-slate-400 font-mono">{{ u.email.split('@')[0] }}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div class="flex items-center gap-1.5">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          @click="activeReplyId = null"
+                          class="h-7 px-2.5 text-xs text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                        >
+                          Batal
+                        </Button>
+
+                        <Button
+                          type="button"
+                          size="sm"
+                          @click="submitReply(d)"
+                          :disabled="!replyTexts[d.id]?.trim() || replySubmitting[d.id]"
+                          class="h-7 px-3 text-xs font-bold bg-red-600 hover:bg-red-700 text-white rounded-md flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        >
+                          <Loader2 v-if="replySubmitting[d.id]" class="w-3 h-3 animate-spin" />
+                          <Send v-else class="w-3 h-3" />
+                          <span>Kirim Balasan</span>
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
 
 
 
@@ -5351,6 +7641,8 @@ const downloadAttachment = async (att) => {
               <button @click="saveUpdate" :disabled="isSubmitting" class="bg-red-600 hover:bg-red-700 text-white px-8 py-2.5 font-bold text-sm rounded shadow-lg active:scale-95 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"><Loader2 v-if="isSubmitting" class="w-4 h-4 animate-spin" /> {{ isSubmitting ? 'SAVING...' : isBulkMode ? 'UPDATE ALL' : 'UPDATE ITEM' }}</button>
           </div>
         </SheetContent>
+      </Sheet>
+
       <!-- Excel Import Confirmation Modal -->
       <div v-if="isExcelModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 overflow-y-auto animate-in fade-in duration-200">
         <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden font-sans relative">
@@ -5488,6 +7780,403 @@ const downloadAttachment = async (att) => {
           </div>
         </div>
       </div>
+
+      <!-- SMART ALLOCATION & REAL STOCK SUMMARY SHEET -->
+      <Sheet :open="isAllocationModalOpen" @update:open="isAllocationModalOpen = $event">
+        <SheetContent side="right" class="w-full sm:w-[850px] sm:max-w-[850px] p-0 flex flex-col h-full bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+          
+          <!-- Sticky Header -->
+          <SheetHeader class="p-6 pb-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0">
+            <div class="flex items-start justify-between gap-4">
+              <div class="space-y-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                    <PackageSearch class="w-3.5 h-3.5" />
+                    Analisis Ketersediaan & Alokasi
+                  </span>
+                  <span v-if="selectedAllocationItem?.code" class="font-mono text-sm font-bold text-slate-900 dark:text-white bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
+                    {{ selectedAllocationItem?.code }}
+                  </span>
+                  <button 
+                    v-if="selectedAllocationItem?.code" 
+                    @click="copySku(selectedAllocationItem.code)" 
+                    class="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors" 
+                    title="Salin SKU"
+                  >
+                    <component :is="copiedSku === selectedAllocationItem?.code ? CheckCircle2 : Copy" class="w-3.5 h-3.5" :class="copiedSku === selectedAllocationItem?.code ? 'text-emerald-600' : ''"/>
+                  </button>
+                </div>
+                <SheetTitle class="text-xl font-extrabold text-slate-900 dark:text-white">
+                  {{ selectedAllocationItem?.name || allocationData?.itemName || 'Detail Barang' }}
+                </SheetTitle>
+                <SheetDescription class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 flex-wrap">
+                  <span>HSO Ini: <strong class="text-slate-700 dark:text-slate-200">{{ soDetail?.number || routeId }}</strong></span>
+                  <span>•</span>
+                  <span>Pelanggan: <strong class="text-slate-700 dark:text-slate-200">{{ soDetail?.client || '-' }}</strong></span>
+                  <span>•</span>
+                  <span>Kebutuhan: <strong class="text-red-600 dark:text-red-400">{{ selectedAllocationItem?.qty_remaining || (selectedAllocationItem?.qty_order - selectedAllocationItem?.qty_shipped) || 0 }} {{ selectedAllocationItem?.unit || 'Pcs' }}</strong></span>
+                </SheetDescription>
+              </div>
+            </div>
+
+            <!-- Catatan Sales di Accurate (jika ada) -->
+            <div v-if="selectedAllocationItem?.admin_note" class="mt-3 p-2.5 rounded-lg bg-slate-100/80 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 text-xs flex items-start gap-2">
+              <Info class="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+              <div class="leading-relaxed">
+                <span class="font-bold text-slate-700 dark:text-slate-300">Catatan Sales di Accurate: </span>
+                <span class="font-mono text-red-600 dark:text-red-400 font-semibold bg-red-50 dark:bg-red-950/40 px-1.5 py-0.5 rounded border border-red-200 dark:border-red-900/50">
+                  "{{ selectedAllocationItem.admin_note }}"
+                </span>
+                <span class="text-slate-500 dark:text-slate-400 text-[11px] block mt-0.5">
+                  Terkadang sales menulis "NO STOCK" saat penawaran dibuat, namun stok sebenarnya bisa saja masuk ke gudang atau ada stok bebas (ATS).
+                </span>
+              </div>
+            </div>
+          </SheetHeader>
+
+          <!-- Scrollable Body -->
+          <div class="p-6 space-y-6 overflow-y-auto flex-1">
+            
+            <!-- Loading State -->
+            <div v-if="isLoadingAllocation" class="py-16 text-center space-y-4">
+              <Loader2 class="w-10 h-10 animate-spin text-blue-600 mx-auto" />
+              <p class="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                Menghubungkan ke API Accurate & menganalisis alokasi stok...
+              </p>
+              <p class="text-xs text-slate-400 max-w-sm mx-auto">
+                Memeriksa stok fisik gudang, Available To Sell (ATS), reservasi SO lain, dan PO vendor aktif.
+              </p>
+            </div>
+
+            <!-- Error State -->
+            <div v-else-if="allocationError" class="p-5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300 space-y-3">
+              <div class="flex items-center gap-2 font-bold text-sm">
+                <AlertCircle class="w-5 h-5 text-red-600 shrink-0" />
+                Gagal Memuat Data Alokasi
+              </div>
+              <p class="text-xs leading-relaxed">{{ allocationError }}</p>
+              <Button size="sm" variant="outline" class="text-xs border-red-300" @click="openAllocationModal(selectedAllocationItem)">
+                Coba Lagi
+              </Button>
+            </div>
+
+            <!-- Content when loaded -->
+            <template v-else-if="allocationData">
+
+              <!-- 🎯 KESIMPULAN CERDAS / VERDICT CARD -->
+              <div 
+                class="p-5 rounded-2xl border transition-all shadow-sm space-y-3"
+                :class="{
+                  'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800 text-emerald-950 dark:text-emerald-100': allocationData.verdict.color === 'emerald',
+                  'bg-teal-50 dark:bg-teal-950/30 border-teal-300 dark:border-teal-800 text-teal-950 dark:text-teal-100': allocationData.verdict.color === 'teal',
+                  'bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-800 text-amber-950 dark:text-amber-100': allocationData.verdict.color === 'amber',
+                  'bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-800 text-blue-950 dark:text-blue-100': allocationData.verdict.color === 'blue',
+                  'bg-purple-50 dark:bg-purple-950/30 border-purple-300 dark:border-purple-800 text-purple-950 dark:text-purple-100': allocationData.verdict.color === 'purple',
+                  'bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-800 text-red-950 dark:text-red-100': allocationData.verdict.color === 'red',
+                  'bg-slate-100 dark:bg-slate-900 border-slate-300 dark:border-slate-800 text-slate-900 dark:text-slate-100': allocationData.verdict.color === 'slate'
+                }"
+              >
+                <div class="flex items-center justify-between gap-3 flex-wrap">
+                  <span 
+                    class="px-2.5 py-1 rounded-full text-xs font-extrabold uppercase tracking-wide border shadow-2xs"
+                    :class="{
+                      'bg-emerald-100 dark:bg-emerald-900/60 border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200': allocationData.verdict.color === 'emerald',
+                      'bg-teal-100 dark:bg-teal-900/60 border-teal-300 dark:border-teal-700 text-teal-800 dark:text-teal-200': allocationData.verdict.color === 'teal',
+                      'bg-amber-100 dark:bg-amber-900/60 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200': allocationData.verdict.color === 'amber',
+                      'bg-blue-100 dark:bg-blue-900/60 border-blue-300 dark:border-blue-700 text-blue-800 dark:text-blue-200': allocationData.verdict.color === 'blue',
+                      'bg-purple-100 dark:bg-purple-900/60 border-purple-300 dark:border-purple-700 text-purple-800 dark:text-purple-200': allocationData.verdict.color === 'purple',
+                      'bg-red-100 dark:bg-red-900/60 border-red-300 dark:border-red-700 text-red-800 dark:text-red-200': allocationData.verdict.color === 'red',
+                      'bg-slate-200 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-800 dark:text-slate-200': allocationData.verdict.color === 'slate'
+                    }"
+                  >
+                    {{ allocationData.verdict.badge }}
+                  </span>
+                  <span class="text-xs font-semibold opacity-75">
+                    Analisis Otomatis Akurat
+                  </span>
+                </div>
+
+                <div class="space-y-1.5">
+                  <h4 class="text-base font-extrabold tracking-tight">
+                    {{ allocationData.verdict.title }}
+                  </h4>
+                  <p class="text-xs leading-relaxed opacity-90">
+                    {{ allocationData.verdict.summary }}
+                  </p>
+                </div>
+
+                <!-- Rekomendasi Box -->
+                <div class="pt-2 border-t border-black/10 dark:border-white/10 flex items-start gap-2 text-xs">
+                  <Sparkles class="w-4 h-4 shrink-0 mt-0.5" />
+                  <div class="leading-relaxed">
+                    <strong>Rekomendasi Tindakan: </strong>
+                    <span>{{ allocationData.verdict.recommendation }}</span>
+                  </div>
+                </div>
+
+                <!-- CTA Khusus: Jika bisa diambil jadi stok -->
+                <div v-if="allocationData.verdict.canTakeStock" class="pt-2">
+                  <Button 
+                    @click="takeStockForCurrentHso" 
+                    class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 h-auto shadow-md gap-2 cursor-pointer"
+                  >
+                    <PackageCheck class="w-4 h-4" />
+                    <span>Ambil / Proses {{ allocationData.verdict.takeableQty }} {{ allocationData.unit }} Siap Kirim untuk HSO Ini</span>
+                  </Button>
+                </div>
+              </div>
+
+              <!-- 📊 4 METRICS CARDS (STOK FISIK VS BEBAS) -->
+              <div>
+                <h5 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3 flex items-center gap-1.5">
+                  <Boxes class="w-4 h-4 text-blue-600" />
+                  Kondisi Stok Accurate
+                </h5>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  
+                  <!-- 1. Stok Fisik Gudang -->
+                  <div class="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-1">
+                    <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Fisik Gudang</span>
+                    <div class="text-2xl font-black text-slate-900 dark:text-white">
+                      {{ allocationData.stockSummary.warehouse }}
+                      <span class="text-xs font-medium text-slate-500">{{ allocationData.unit }}</span>
+                    </div>
+                    <span class="text-[10px] text-slate-400 block leading-tight">Total fisik di Accurate</span>
+                  </div>
+
+                  <!-- 2. Alokasi HSO Ini -->
+                  <div 
+                    class="p-4 rounded-xl border shadow-2xs space-y-1"
+                    :class="allocationData.stockSummary.currentAllocated > 0 
+                      ? 'bg-blue-50/70 dark:bg-blue-950/40 border-blue-300 dark:border-blue-800 text-blue-900 dark:text-blue-100' 
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'"
+                  >
+                    <span class="text-[10px] font-bold uppercase tracking-wider block" :class="allocationData.stockSummary.currentAllocated > 0 ? 'text-blue-700 dark:text-blue-400' : 'text-slate-400'">
+                      Alokasi HSO Ini
+                    </span>
+                    <div class="text-2xl font-black" :class="allocationData.stockSummary.currentAllocated > 0 ? 'text-blue-700 dark:text-blue-300' : 'text-slate-400'">
+                      {{ allocationData.stockSummary.currentAllocated }}
+                      <span class="text-xs font-medium text-slate-500">{{ allocationData.unit }}</span>
+                    </div>
+                    <span class="text-[10px] text-slate-500 dark:text-slate-400 block leading-tight">Direservasi untuk pesanan ini</span>
+                  </div>
+
+                  <!-- 3. Alokasi HSO Lain -->
+                  <div 
+                    class="p-4 rounded-xl border shadow-2xs space-y-1"
+                    :class="allocationData.stockSummary.otherAllocated > 0 
+                      ? 'bg-amber-50/70 dark:bg-amber-950/40 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-100' 
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'"
+                  >
+                    <span class="text-[10px] font-bold uppercase tracking-wider block" :class="allocationData.stockSummary.otherAllocated > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-slate-400'">
+                      Alokasi HSO Lain
+                    </span>
+                    <div class="text-2xl font-black" :class="allocationData.stockSummary.otherAllocated > 0 ? 'text-amber-700 dark:text-amber-400' : 'text-slate-400'">
+                      {{ allocationData.stockSummary.otherAllocated }}
+                      <span class="text-xs font-medium text-slate-500">{{ allocationData.unit }}</span>
+                    </div>
+                    <span class="text-[10px] text-slate-500 dark:text-slate-400 block leading-tight">Terikat antrean pesanan lain</span>
+                  </div>
+
+                  <!-- 4. Siap Kirim HSO Ini -->
+                  <div 
+                    class="p-4 rounded-xl border shadow-2xs space-y-1 relative overflow-hidden"
+                    :class="allocationData.stockSummary.availableForThisHso > 0 
+                      ? 'bg-emerald-50/70 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-100' 
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'"
+                  >
+                    <div class="flex items-center justify-between gap-1">
+                      <span class="text-[10px] font-bold uppercase tracking-wider block" :class="allocationData.stockSummary.availableForThisHso > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'">
+                        Siap Kirim HSO Ini
+                      </span>
+                      <span v-if="allocationData.stockSummary.availableForThisHso > 0" class="px-1.5 py-0.2 bg-emerald-600 text-white text-[9px] font-extrabold rounded-full">Ready!</span>
+                    </div>
+                    <div class="text-2xl font-black" :class="allocationData.stockSummary.availableForThisHso > 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-400'">
+                      {{ allocationData.stockSummary.availableForThisHso }}
+                      <span class="text-xs font-medium text-slate-500">{{ allocationData.unit }}</span>
+                    </div>
+                    <span class="text-[10px] text-slate-500 dark:text-slate-400 block leading-tight">Bisa diproses kirim sekarang</span>
+                  </div>
+
+                </div>
+
+                <!-- Info PO Vendor jika ada -->
+                <div v-if="allocationData.stockSummary.ordered > 0" class="mt-2.5 p-2 rounded-lg bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300 text-xs flex items-center justify-between">
+                  <span class="flex items-center gap-1.5 font-medium">
+                    <Truck class="w-3.5 h-3.5 text-blue-600" />
+                    Sedang Dipesan di PO Vendor:
+                  </span>
+                  <span class="font-bold">{{ allocationData.stockSummary.ordered }} {{ allocationData.unit }}</span>
+                </div>
+              </div>
+
+              <!-- 🏢 DAFTAR ALOKASI PESANAN (HSO) -->
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <h5 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <Building2 class="w-4 h-4 text-blue-600" />
+                    Distribusi Alokasi ke Sales Order (HSO)
+                  </h5>
+                  <span class="text-xs font-bold text-slate-500">
+                    {{ allocationData.hsoAllocations.length }} Pesanan
+                  </span>
+                </div>
+
+                <div v-if="allocationData.hsoAllocations.length === 0" class="p-6 text-center text-xs text-slate-400 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+                  Tidak ada pesanan HSO lain yang menggunakan barang ini.
+                </div>
+
+                <div v-else class="space-y-2">
+                  <div 
+                    v-for="(hso, hIdx) in allocationData.hsoAllocations" 
+                    :key="hIdx"
+                    class="p-4 rounded-xl border transition-all bg-white dark:bg-slate-900"
+                    :class="hso.is_current 
+                      ? 'border-blue-400 dark:border-blue-600 ring-2 ring-blue-500/10 dark:ring-blue-500/20 shadow-xs' 
+                      : 'border-slate-200 dark:border-slate-800'"
+                  >
+                    <div class="flex items-start justify-between gap-3">
+                      <div class="space-y-1 flex-1 min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <span 
+                            class="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide"
+                            :class="hso.is_current ? 'bg-blue-600 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'"
+                          >
+                            {{ hso.is_current ? '📌 HSO INI' : '🏢 HSO LAIN' }}
+                          </span>
+                          <RouterLink 
+                            :to="`/sales-orders/${hso.so_number}`" 
+                            target="_blank"
+                            class="font-mono text-sm font-bold text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1"
+                          >
+                            <span>{{ hso.so_number }}</span>
+                            <ExternalLink class="w-3 h-3" />
+                          </RouterLink>
+                          <span class="text-xs text-slate-400">• {{ hso.trans_date }}</span>
+                        </div>
+                        <div class="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                          {{ hso.customer_name }}
+                        </div>
+                      </div>
+
+                      <div class="text-right shrink-0">
+                        <div class="text-xs font-bold text-slate-900 dark:text-white">
+                          Order: {{ hso.qty_order }} {{ allocationData.unit }}
+                        </div>
+                        <div class="text-[11px] font-semibold" :class="hso.sisa_alokasi > 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'">
+                          Sisa: {{ hso.sisa_alokasi }} {{ allocationData.unit }}
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- PO Vendor terkait HSO ini jika ada -->
+                    <div v-if="hso.hpos && hso.hpos.length > 0" class="mt-2 pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center gap-1.5 flex-wrap text-[11px]">
+                      <span class="text-slate-400 font-medium">PO Vendor:</span>
+                      <span v-for="po in hso.hpos" :key="po" class="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                        {{ po }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 🚚 DAFTAR PO PENGADAAN VENDOR (HPO) -->
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <h5 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <Truck class="w-4 h-4 text-blue-600" />
+                    Daftar Purchase Order Vendor (HPO)
+                  </h5>
+                  <span class="text-xs font-bold text-slate-500">
+                    {{ allocationData.hpoAllocations.length }} PO
+                  </span>
+                </div>
+
+                <div v-if="allocationData.hpoAllocations.length === 0" class="p-6 text-center text-xs text-slate-400 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+                  Belum ada PO vendor yang tercatat untuk barang ini.
+                </div>
+
+                <div v-else class="space-y-2">
+                  <div 
+                    v-for="(hpo, pIdx) in allocationData.hpoAllocations" 
+                    :key="pIdx"
+                    class="p-4 rounded-xl border transition-all bg-white dark:bg-slate-900"
+                    :class="hpo.is_for_current 
+                      ? 'border-emerald-400 dark:border-emerald-600 ring-2 ring-emerald-500/10 dark:ring-emerald-500/20 shadow-xs' 
+                      : 'border-slate-200 dark:border-slate-800'"
+                  >
+                    <div class="flex items-start justify-between gap-3">
+                      <div class="space-y-1 flex-1 min-w-0">
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <span 
+                            class="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wide"
+                            :class="hpo.is_for_current ? 'bg-emerald-600 text-white' : 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700'"
+                          >
+                            {{ hpo.is_for_current ? '✓ KHUSUS HSO INI' : `⚠️ BUKAN HSO INI (Target: ${hpo.hso_target})` }}
+                          </span>
+                          <span class="font-mono text-sm font-bold text-slate-900 dark:text-white">
+                            {{ hpo.po_number }}
+                          </span>
+                          <span class="text-xs text-slate-400">• {{ hpo.trans_date }}</span>
+                        </div>
+                        <div class="text-xs font-medium text-slate-600 dark:text-slate-400 truncate">
+                          🏢 {{ hpo.vendor_name }}
+                        </div>
+                      </div>
+
+                      <div class="text-right shrink-0">
+                        <div class="text-xs font-bold text-slate-900 dark:text-white">
+                          Dipesan: {{ hpo.quantity }} {{ allocationData.unit }}
+                        </div>
+                        <div class="text-[11px] font-medium text-slate-500">
+                          Status: {{ hpo.status_name }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </template>
+          </div>
+
+          <!-- Sticky Footer -->
+          <div class="p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0 flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                @click="copyAllocationSummary"
+                :disabled="!allocationData"
+                class="text-xs font-bold gap-1.5"
+              >
+                <Copy class="w-3.5 h-3.5" />
+                <span>Salin Ringkasan</span>
+              </Button>
+
+              <RouterLink 
+                v-if="selectedAllocationItem?.code"
+                :to="`/tools/product-tracker?sku=${encodeURIComponent(selectedAllocationItem.code)}`"
+                target="_blank"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <Boxes class="w-3.5 h-3.5" />
+                <span>Pelacak Lengkap</span>
+                <ExternalLink class="w-3 h-3 opacity-60" />
+              </RouterLink>
+            </div>
+
+            <Button 
+              variant="default" 
+              size="sm" 
+              @click="isAllocationModalOpen = false"
+              class="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-6"
+            >
+              Tutup
+            </Button>
+          </div>
+
+        </SheetContent>
       </Sheet>
 
       <!-- EMAIL REMINDER MODAL -->
@@ -5894,4 +8583,44 @@ const downloadAttachment = async (att) => {
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 20px; }
 .dark .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #475569; }
+
+/* Rich Text Editor Content Styles */
+.rich-editor-content[contenteditable="true"]:empty:before {
+  content: attr(data-placeholder);
+  color: #94a3b8;
+  pointer-events: none;
+  font-style: italic;
+  display: block;
+}
+.rich-editor-content ul {
+  list-style-type: disc !important;
+  padding-left: 1.5rem !important;
+  margin: 0.5rem 0 !important;
+}
+.rich-editor-content ol {
+  list-style-type: decimal !important;
+  padding-left: 1.5rem !important;
+  margin: 0.5rem 0 !important;
+}
+.rich-editor-content li {
+  margin-bottom: 0.25rem !important;
+  display: list-item !important;
+}
+.rich-editor-content blockquote {
+  border-left: 3px solid #f97316 !important;
+  padding-left: 0.75rem !important;
+  margin: 0.5rem 0 !important;
+  color: #64748b !important;
+  font-style: italic !important;
+}
+.rich-editor-content pre {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  padding: 0.5rem 0.75rem !important;
+  border-radius: 0.5rem !important;
+  font-family: monospace !important;
+  font-size: 0.8rem !important;
+  white-space: pre-wrap !important;
+  margin: 0.5rem 0 !important;
+}
 </style>

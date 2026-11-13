@@ -1,5 +1,6 @@
 <script setup>
-import { onMounted, ref, computed, watch } from 'vue'
+defineOptions({ name: 'SalesOrderView' })
+import { onMounted, onActivated, ref, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { supabase } from '@/lib/supabase'
 import * as XLSX from 'xlsx'
@@ -177,8 +178,15 @@ const invokeEdgeFunctionWithRetry = async (functionName, options, maxRetries = 2
   }
 }
 
-const fetchOrders = async () => {
-  isLoading.value = true
+// SWR In-Memory & LocalStorage Cache
+let cachedSalesOrders = null
+let lastFetchTimestamp = 0
+const SO_CACHE_KEY = 'hir_sales_orders_cache_v1'
+
+const fetchOrders = async (isBackground = false) => {
+  if (!isBackground && salesOrders.value.length === 0) {
+    isLoading.value = true
+  }
   try {
     const [soRes, sqRes] = await Promise.all([
       invokeEdgeFunctionWithRetry('accurate-list-so', {
@@ -249,7 +257,7 @@ const fetchOrders = async () => {
     }
 
     const soData = soRes?.data?.d || []
-    salesOrders.value = soData.map(item => {
+    const mapped = soData.map(item => {
       const desc = item.description || ''
       let proj = extractProjectFromItem(item)
 
@@ -280,6 +288,13 @@ const fetchOrders = async () => {
         project: proj || '-'
       }
     })
+
+    salesOrders.value = mapped
+    cachedSalesOrders = mapped
+    lastFetchTimestamp = Date.now()
+    try {
+      localStorage.setItem(SO_CACHE_KEY, JSON.stringify(mapped))
+    } catch (e) {}
   } catch (err) {
     console.error("Error fetching sales orders:", err)
   } finally {
@@ -289,11 +304,33 @@ const fetchOrders = async () => {
 
 onMounted(() => {
   loadFiltersFromUrl()
+
+  // SWR: Hydrate immediately from memory or localStorage cache for 0ms render
+  try {
+    if (!cachedSalesOrders) {
+      const stored = localStorage.getItem(SO_CACHE_KEY)
+      if (stored) cachedSalesOrders = JSON.parse(stored)
+    }
+  } catch (e) {}
+
+  if (cachedSalesOrders && Array.isArray(cachedSalesOrders) && cachedSalesOrders.length > 0) {
+    salesOrders.value = cachedSalesOrders
+    isLoading.value = false
+  }
+
   fetchOrders()
   // Set flag to false after initial load completes
   setTimeout(() => {
     isInitialLoad.value = false
   }, 100)
+})
+
+onActivated(() => {
+  loadFiltersFromUrl()
+  // Silent background revalidation if data is older than 45 seconds
+  if (Date.now() - lastFetchTimestamp > 45000) {
+    fetchOrders(true)
+  }
 })
 
 // --- HELPERS ---

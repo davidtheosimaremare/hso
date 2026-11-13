@@ -1,5 +1,13 @@
 [
   {
+    "hash": "79d2a45c2fe0ef225114ce8e415e1b3aa4c235ef",
+    "shortHash": "79d2a45",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Nov 3 21:27:13 2026 +0700",
+    "message": "fix(dashboard): integrate sales receipt payments (primeOwing & primeReceipt) for accurate piutang calculation"
+  },
+  {
     "hash": "3799277b5e7d99ad9dc30cd21b6ce54d3b92abf3",
     "shortHash": "3799277",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Sat Aug 29 10:48:26 2026 +0700",
     "message": "feat(receive-items): add detailed received items breakdown, admin notes, official Accurate PDF printing, and attachment documents preview"
-  },
-  {
-    "hash": "842a207b53cb0dc45f1cf9104c41ac6ffcf442a5",
-    "shortHash": "842a207",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Fri Aug 28 17:09:38 2026 +0700",
-    "message": "fix(hso-detail): fix 400 Bad Request URL limit via chunking and declare matching helpers globally"
   }
 ]

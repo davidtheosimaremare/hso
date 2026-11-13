@@ -17,7 +17,7 @@ import {
   ChevronLeft, ChevronRight, ArrowUpRight, Clock, Zap,
   UploadCloud, FileSpreadsheet, Trash2, CheckCircle2, AlertTriangle,
   RefreshCcw, Database, PackageCheck, Truck, ShoppingBag, CheckCircle, XCircle, Info,
-  Calendar, FileText, Filter, Receipt
+  Calendar, FileText, Filter, Receipt, LayoutDashboard, CheckSquare, Target
 } from 'lucide-vue-next'
 import StandingSection from '@/components/dashboard/StandingSection.vue'
 import TargetTrajectoryChart from '@/components/dashboard/TargetTrajectoryChart.vue'
@@ -54,6 +54,21 @@ const monthShortNames = [
   'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
   'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'
 ]
+
+// Quick Jump Navigation Sections
+const navSections = [
+  { id: 'section-kpi', label: 'Ringkasan Eksekutif', icon: LayoutDashboard },
+  { id: 'section-priority', label: 'Task Status Order', icon: CheckSquare },
+  { id: 'section-invoicing', label: 'Status Pengiriman & Piutang', icon: Receipt },
+  { id: 'section-target', label: 'Target Penjualan', icon: Target },
+]
+
+const scrollToSection = (sectionId) => {
+  const el = document.getElementById(sectionId)
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
 
 const selectMonth = (idx) => {
   selectedMonthIdx.value = idx
@@ -402,6 +417,8 @@ const targetSalesData = computed(() => {
       monthIdx: idx,
       monthName: name,
       qtyMonthly,
+      isCurrentMonth,
+      isFutureMonth,
       
       // SECTION A: Monthly Performance (Primary KPI)
       actualMonthly,
@@ -606,8 +623,22 @@ onUnmounted(() => {
     </div>
 
 
+    <!-- Quick Section Navigation Pills (Sticky / Jump Links) -->
+    <div class="sticky top-2 z-20 bg-background/80 backdrop-blur-md p-1.5 rounded-xl border border-border/80 shadow-xs flex items-center gap-2 overflow-x-auto no-scrollbar">
+      <span class="text-[11px] font-bold text-muted-foreground uppercase tracking-wider pl-2 pr-1 shrink-0 hidden sm:inline-block">Navigasi:</span>
+      <button 
+        v-for="section in navSections" 
+        :key="section.id"
+        @click="scrollToSection(section.id)"
+        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card hover:bg-accent text-xs font-semibold text-muted-foreground hover:text-foreground transition-all cursor-pointer shrink-0 shadow-2xs"
+      >
+        <component :is="section.icon" class="w-3.5 h-3.5 text-primary" />
+        <span>{{ section.label }}</span>
+      </button>
+    </div>
+
     <!-- Summary Section: Filter Toolbar + 3 Main Cards (HSQ, HSO, HSI) -->
-    <div class="space-y-4">
+    <div id="section-kpi" class="space-y-4 scroll-mt-20">
       <!-- Filter Toolbar (Shadcn Segmented Control / Tabs style) -->
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div class="flex items-center gap-2">
@@ -651,7 +682,7 @@ onUnmounted(() => {
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         
         <!-- 1. EFEKTIVITAS PENAWARAN (WIN RATE) -->
-        <Card class="shadow-xs transition-shadow hover:shadow-sm">
+        <Card class="shadow-xs transition-shadow hover:shadow-sm flex flex-col justify-between">
           <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
             <div class="space-y-1">
               <div class="flex items-center gap-2">
@@ -662,7 +693,7 @@ onUnmounted(() => {
             </div>
             <TrendingUp class="h-4 w-4 text-muted-foreground" />
           </CardHeader>
-          <CardContent class="pt-4">
+          <CardContent class="pt-4 flex-1 flex flex-col justify-between space-y-3">
             <div v-if="isLoading" class="space-y-2">
               <div class="h-8 w-24 bg-muted rounded animate-pulse"></div>
               <div class="h-4 w-32 bg-muted rounded animate-pulse"></div>
@@ -687,11 +718,25 @@ onUnmounted(() => {
                 </p>
               </div>
             </div>
+
+            <!-- Mini Progress Bar Win Rate -->
+            <div v-if="!isLoading" class="pt-1 border-t border-border/60">
+              <div class="h-1.5 w-full bg-muted rounded-full overflow-hidden mb-1">
+                <div 
+                  class="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                  :style="{ width: `${Math.min(summaryData.pipeline.winRate, 100)}%` }"
+                ></div>
+              </div>
+              <div class="flex justify-between items-center text-[10px] text-muted-foreground font-medium">
+                <span>Konversi Deal</span>
+                <span class="font-bold text-emerald-600 dark:text-emerald-400">{{ summaryData.pipeline.winRate }}%</span>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
         <!-- 2. OMBET PENJUALAN (SALES ORDER) -->
-        <Card class="shadow-xs transition-shadow hover:shadow-sm">
+        <Card class="shadow-xs transition-shadow hover:shadow-sm flex flex-col justify-between">
           <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
             <div class="space-y-1">
               <div class="flex items-center gap-2">
@@ -702,7 +747,7 @@ onUnmounted(() => {
             </div>
             <ShoppingCart class="h-4 w-4 text-muted-foreground" />
           </CardHeader>
-          <CardContent class="pt-4">
+          <CardContent class="pt-4 flex-1 flex flex-col justify-between space-y-3">
             <div v-if="isLoading" class="space-y-2">
               <div class="h-8 w-24 bg-muted rounded animate-pulse"></div>
               <div class="h-4 w-32 bg-muted rounded animate-pulse"></div>
@@ -725,11 +770,25 @@ onUnmounted(() => {
                 </p>
               </div>
             </div>
+
+            <!-- Mini Progress Bar Omzet Status -->
+            <div v-if="!isLoading" class="pt-1 border-t border-border/60">
+              <div class="h-1.5 w-full bg-muted rounded-full overflow-hidden mb-1">
+                <div 
+                  class="h-full bg-blue-500 rounded-full transition-all duration-500"
+                  :style="{ width: `${summaryData.sales.qty > 0 ? 100 : 0}%` }"
+                ></div>
+              </div>
+              <div class="flex justify-between items-center text-[10px] text-muted-foreground font-medium">
+                <span>Rata-rata Nilai SO</span>
+                <span class="font-bold text-foreground">{{ formatCurrencyShort(summaryData.sales.avgValue) }}</span>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
         <!-- 3. REALISASI FAKTUR & PENAGIHAN SO (EXCLUDING CARRY-OVER) -->
-        <Card class="shadow-xs transition-shadow hover:shadow-sm">
+        <Card class="shadow-xs transition-shadow hover:shadow-sm flex flex-col justify-between">
           <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
             <div class="space-y-1">
               <div class="flex items-center gap-2">
@@ -740,7 +799,7 @@ onUnmounted(() => {
             </div>
             <Receipt class="h-4 w-4 text-muted-foreground" />
           </CardHeader>
-          <CardContent class="pt-4">
+          <CardContent class="pt-4 flex-1 flex flex-col justify-between space-y-3">
             <div v-if="isLoading" class="space-y-2">
               <div class="h-8 w-24 bg-muted rounded animate-pulse"></div>
               <div class="h-4 w-32 bg-muted rounded animate-pulse"></div>
@@ -756,13 +815,33 @@ onUnmounted(() => {
                 </p>
               </div>
               <div class="space-y-1">
-                <p class="text-xs font-medium text-muted-foreground">Belum Kirim & Tagih</p>
+                <p class="text-xs font-medium text-muted-foreground">Perlu Dikirim</p>
                 <p class="text-xl font-bold tracking-tight text-amber-600 dark:text-amber-400 truncate" :title="formatCurrency(summaryData.invoicing.unshippedNominal)">
                   {{ formatCurrencyShort(summaryData.invoicing.unshippedNominal) }}
                 </p>
                 <p class="text-xs text-muted-foreground truncate" :title="`Sisa Belum Difakturkan: ${formatCurrency(summaryData.invoicing.unshippedNominal)}`">
-                  {{ summaryData.invoicing.unshippedPercent }}% Dalam Proses
+                  {{ summaryData.invoicing.unshippedPercent }}% Belum Kirim
                 </p>
+              </div>
+            </div>
+
+            <!-- Mini Dual Stacked Bar Pengiriman (Kirim vs Perlu Kirim) -->
+            <div v-if="!isLoading" class="pt-1 border-t border-border/60">
+              <div class="h-1.5 w-full bg-muted rounded-full overflow-hidden flex mb-1">
+                <div 
+                  class="h-full bg-emerald-500 transition-all duration-500"
+                  :style="{ width: `${summaryData.invoicing.shippedPercent}%` }"
+                  :title="`Sudah Kirim: ${summaryData.invoicing.shippedPercent}%`"
+                ></div>
+                <div 
+                  class="h-full bg-amber-500 transition-all duration-500"
+                  :style="{ width: `${summaryData.invoicing.unshippedPercent}%` }"
+                  :title="`Perlu Dikirim: ${summaryData.invoicing.unshippedPercent}%`"
+                ></div>
+              </div>
+              <div class="flex justify-between items-center text-[10px] font-medium">
+                <span class="text-emerald-600 dark:text-emerald-400 font-bold">Kirim {{ summaryData.invoicing.shippedPercent }}%</span>
+                <span class="text-amber-600 dark:text-amber-400 font-bold">Perlu Kirim {{ summaryData.invoicing.unshippedPercent }}%</span>
               </div>
             </div>
           </CardContent>
@@ -785,7 +864,7 @@ onUnmounted(() => {
     />
 
     <!-- Target Penjualan Section (Compact Horizontal Carousel Slider) -->
-    <Card>
+    <Card id="section-target" class="scroll-mt-20">
       <!-- Section Header -->
       <CardHeader>
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -880,7 +959,7 @@ onUnmounted(() => {
                   ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' 
                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
               ]">
-              <span v-if="idx === new Date().getMonth() && targetYear === new Date().getFullYear()" class="w-1 h-1 rounded-full bg-current"></span>
+              <span v-if="idx === new Date().getMonth() && targetYear === new Date().getFullYear()" class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
               {{ mName }}
             </button>
           </div>
@@ -897,10 +976,12 @@ onUnmounted(() => {
             :data-month-idx="m.monthIdx"
             @click="selectMonth(m.monthIdx)"
             :class="[
-              'min-w-[320px] sm:min-w-[340px] max-w-[360px] shrink-0 snap-center rounded-xl border transition-all duration-300 flex flex-col justify-between p-5 cursor-pointer',
+              'min-w-[320px] sm:min-w-[340px] max-w-[360px] shrink-0 snap-center rounded-xl border transition-all duration-300 flex flex-col justify-between p-5 cursor-pointer relative',
               selectedMonthIdx === m.monthIdx
                 ? 'ring-2 ring-primary border-primary/50 bg-card shadow-sm'
-                : 'bg-card/60 border-border hover:border-muted-foreground/30'
+                : m.isCurrentMonth
+                  ? 'border-emerald-500/80 bg-emerald-50/20 dark:bg-emerald-950/25 ring-1 ring-emerald-500/30 shadow-xs'
+                  : 'bg-card/60 border-border hover:border-muted-foreground/30'
             ]">
             
             <!-- Top Section -->
@@ -909,6 +990,9 @@ onUnmounted(() => {
               <div class="flex items-center justify-between mb-4">
                 <div class="flex items-center gap-2">
                   <h4 class="font-bold text-foreground text-base">{{ m.monthName }} {{ targetSalesData.year }}</h4>
+                  <span v-if="m.isCurrentMonth" class="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 animate-pulse">
+                    Bulan Ini
+                  </span>
                 </div>
                 <Badge variant="secondary" class="text-xs font-semibold">{{ m.qtyMonthly }} SO</Badge>
               </div>

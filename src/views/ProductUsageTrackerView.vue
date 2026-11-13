@@ -12,7 +12,8 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { 
   Search, ArrowRight, CheckCircle2, Clock, Truck, 
   FileText, RefreshCw, Share2, 
-  Tag, Loader2, Package, ShoppingCart, X, PackageSearch
+  Tag, Loader2, Package, ShoppingCart, X, PackageSearch, Sparkles,
+  Building2, ChevronDown, Archive, ExternalLink, Check
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -26,6 +27,9 @@ const hasSearched = ref(false)
 
 // Recent searches from localStorage (Max 5)
 const recentSearches = ref([])
+
+// Toggle for viewing historical closed HPOs
+const showHistoricalHpo = ref(false)
 
 // --- RESULTS STATE ---
 const shipmentsResults = ref([])
@@ -90,10 +94,10 @@ const removeRecentSearch = (sku, event) => {
   } catch (e) {}
 }
 
-// Helper: Check if string matches HSO format (HSO/yy/mm/numbering)
+// Helper: Check if string matches HSO or HSB format (HSO/yy/mm/numbering or HSB/yy/mm/numbering, with / or -)
 const isValidHsoNumber = (number) => {
   if (!number || typeof number !== 'string') return false
-  return /^HSO\/\d{2}\/\d{2}\/\d+/i.test(number.trim())
+  return /^HS[OB][\/\-]\d{2}[\/\-]\d{1,2}[\/\-]\d+/i.test(number.trim())
 }
 
 // Helper: Detect draft, unapproved, rejected, or closed POs
@@ -123,7 +127,7 @@ const extractProjectName = (soObj) => {
   if (match && match[1]) return match[1].trim()
 
   const bracketMatch = desc.match(/\[([^\]]+)\]/)
-  if (bracketMatch && bracketMatch[1] && !bracketMatch[1].toUpperCase().startsWith('HSO')) {
+  if (bracketMatch && bracketMatch[1] && !bracketMatch[1].toUpperCase().startsWith('HSO') && !bracketMatch[1].toUpperCase().startsWith('HSB')) {
     return bracketMatch[1].trim()
   }
 
@@ -134,6 +138,13 @@ const extractProjectName = (soObj) => {
 const executeSearch = async (skuToSearch) => {
   const query = (skuToSearch || searchInput.value || '').trim()
   if (!query) return
+
+  // Tracking pesanan berformat HSB / HSO: Jika input adalah nomor pesanan HSB atau HSO, langsung buka tracking pesanan tersebut
+  if (isValidHsoNumber(query)) {
+    const formattedOrder = query.replace(/\//g, '-')
+    router.push(`/sales-orders/${formattedOrder}`)
+    return
+  }
 
   activeSku.value = query
   searchInput.value = query
@@ -190,6 +201,8 @@ const executeSearch = async (skuToSearch) => {
         .from('accurate_items')
         .select('*')
         .ilike('item_no', `%${query}%`)
+        .order('item_no', { ascending: true })
+        .limit(1)
         .maybeSingle(),
 
       invokeEdgeFunctionWithRetry('get-stock-availability', {
@@ -459,6 +472,10 @@ const groupedHsoList = computed(() => {
 // 2. Grouped HPO Procurement (Deep Scan Merging Accurate Live + Logistics) - Sorted Terbaru ke Terlama
 const groupedHpoList = computed(() => {
   const map = {}
+  
+  // Accurate adalah single source of truth untuk status pengadaan aktif:
+  // Jika Accurate melaporkan stock_ordered === 0, maka seluruh HPO historis sudah selesai/terproses!
+  const isAccurateZeroOrdered = stockAvailability.value && (stockAvailability.value.stock_ordered === 0 || stockAvailability.value.stock_ordered === null)
 
   // A. From Accurate Live References
   if (stockAvailability.value?.references) {
@@ -466,16 +483,18 @@ const groupedHpoList = computed(() => {
       .filter(r => r.type === 'PO')
       .forEach(r => {
         const hpoNum = r.no_referensi.trim()
+        const isFulfilled = r.is_fulfilled ?? false
+        const activeQty = r.dipesan !== undefined ? r.dipesan : (isFulfilled ? 0 : (r.dipesan_total || 0))
         map[hpoNum] = {
           hpo_number: hpoNum,
           vendor_name: r.nama_referensi || 'PT. SIEMENS INDONESIA',
           trans_date: r.tgl_estimasi || '-',
-          status_name: r.status_item || (r.is_fulfilled ? 'Sudah Diterima (Selesai)' : 'Sedang Dipesan'),
+          status_name: r.status_item || (isFulfilled ? 'Sudah Diterima (Selesai)' : 'Sedang Dipesan'),
           linked_hsos: new Set(),
           quantity: r.dipesan_total || r.dipesan || 0,
-          quantity_active: r.dipesan !== undefined ? r.dipesan : (r.is_fulfilled ? 0 : (r.dipesan_total || 0)),
+          quantity_active: isAccurateZeroOrdered ? 0 : activeQty,
           quantity_received: r.sudah_diterima || 0,
-          is_fulfilled: r.is_fulfilled ?? false,
+          is_fulfilled: isAccurateZeroOrdered || isFulfilled || activeQty === 0,
           unit_name: stockAvailability.value?.unit_name || 'PCS',
           shipments: []
         }
@@ -488,7 +507,11 @@ const groupedHpoList = computed(() => {
     const hpos = ship.hpo_number.split(',').map(h => h.trim()).filter(Boolean)
     
     hpos.forEach(hpoNum => {
-      const isDelivered = String(ship.current_status || '').toLowerCase().includes('already in hokiindo')
+      const isDelivered = String(ship.current_status || '').toLowerCase().includes('already in hokiindo') ||
+                          String(ship.current_status || '').toLowerCase().includes('dunex') ||
+                          String(ship.current_status || '').toLowerCase().includes('tiba') ||
+                          Boolean(isAccurateZeroOrdered)
+
       if (!map[hpoNum]) {
         map[hpoNum] = {
           hpo_number: hpoNum,
@@ -529,12 +552,16 @@ const groupedHpoList = computed(() => {
     })
   })
 
-  // C. From PO Items table
+  // C. From PO Items table (Supabase historical cache)
   poItemsResults.value.forEach(item => {
     const hpoNum = item.po?.number
     if (!hpoNum || isInvalidPo(hpoNum, item.po?.status_name)) return
 
-    const isPoClosed = item.po?.status_name === 'Terproses' || item.po?.status_name === 'Ditutup'
+    const st = String(item.po?.status_name || '').toLowerCase()
+    const isClosedStatus = ['terproses', 'ditutup', 'closed', 'selesai', 'already in hokiindo raya', 'done delivery', 'billed', 'completed'].includes(st)
+    
+    // Jika Accurate konfirmasi 0 sedang dipesan, maka PO lama di database pasti sudah selesai/terproses
+    const isPoClosed = isClosedStatus || Boolean(isAccurateZeroOrdered)
     const itemQty = Number(item.quantity || 0)
 
     if (!map[hpoNum]) {
@@ -542,7 +569,7 @@ const groupedHpoList = computed(() => {
         hpo_number: hpoNum,
         vendor_name: item.po?.vendor_name || '-',
         trans_date: item.po?.trans_date || '-',
-        status_name: item.po?.status_name || '-',
+        status_name: item.po?.status_name || (isPoClosed ? 'Selesai / Diterima' : 'Sedang Diproses'),
         linked_hsos: new Set(),
         quantity: itemQty,
         quantity_active: isPoClosed ? 0 : itemQty,
@@ -588,6 +615,17 @@ const groupedHpoList = computed(() => {
     }
   })
 
+  // Enforce zero active if isAccurateZeroOrdered is true
+  if (isAccurateZeroOrdered) {
+    Object.values(map).forEach(hpo => {
+      hpo.is_fulfilled = true
+      hpo.quantity_active = 0
+      if (!hpo.quantity_received && hpo.quantity) {
+        hpo.quantity_received = hpo.quantity
+      }
+    })
+  }
+
   // Sort: Urutkan dari yang terbaru ke terlama
   return Object.values(map)
     .map(entry => ({
@@ -604,17 +642,26 @@ const groupedHpoList = computed(() => {
     })
 })
 
-// --- HPO FILTER STATE & COMPUTED LISTS ---
-// Filter: 'active' (Sedang Dipesan saja - Default) or 'all' (Semua HPO)
-const hpoFilter = ref('active')
-
-// Active HPOs only (where goods are still pending / on order)
+// Active HPOs only: Pastikan hanya memunculkan data jika memang memiliki HPO yang BELUM terproses!
 const activeHpoList = computed(() => {
+  // Jika Accurate konfirmasi stock_ordered === 0, pastikan tidak ada HPO aktif yang muncul!
+  if (stockAvailability.value && (stockAvailability.value.stock_ordered === 0 || stockAvailability.value.stock_ordered === null)) {
+    return []
+  }
+
   return groupedHpoList.value.filter(hpo => {
     if (hpo.is_fulfilled) return false
-    if (hpo.quantity_active !== undefined) return hpo.quantity_active > 0
-    return true
+    const st = String(hpo.current_status || hpo.status_name || '').toLowerCase()
+    if (['terproses', 'ditutup', 'closed', 'selesai', 'already in hokiindo raya', 'done delivery', 'billed', 'completed'].includes(st)) {
+      return false
+    }
+    return (hpo.quantity_active || 0) > 0
   })
+})
+
+// Completed / Historical HPOs
+const completedHpoList = computed(() => {
+  return groupedHpoList.value.filter(hpo => hpo.is_fulfilled || (hpo.quantity_active === 0 && hpo.quantity > 0))
 })
 
 // Displayed HPO list based on active filter
@@ -701,10 +748,10 @@ const copyResumeText = () => {
     text += `Stok Gudang: ${stockAvailability.value.stock_warehouse} | Dipesan Customer: ${stockAvailability.value.stock_sold} | ATS (Siap Jual): ${stockAvailability.value.stock_available} | PO Vendor: ${stockAvailability.value.stock_ordered}\n`
   }
   text += `----------------------------------------\n`
-  text += `🏢 *Alokasi Penggunaan di ${totalHsoCount.value} HSO:*\n`
+  text += `🏢 *Alokasi Penggunaan (${totalHsoCount.value} Pesanan HSO / HSB):*\n`
 
   if (groupedHsoList.value.length === 0) {
-    text += `(Belum ada data HSO terhubung)\n`
+    text += `(Belum ada data pesanan terhubung)\n`
   } else {
     groupedHsoList.value.forEach((hso, idx) => {
       text += `${idx + 1}. *${hso.so_number}* - ${hso.customer_name}\n`
@@ -723,25 +770,15 @@ const copyResumeText = () => {
   }
 
   text += `\n📦 *Pengadaan Vendor (HPO):*\n`
-  text += `Sedang Dipesan: ${totalOrderedActive.value} ${stockAvailability.value?.unit_name || 'PCS'}`
-  if (totalOrderedOverall.value > totalOrderedActive.value) {
-    text += ` | Total: ${totalOrderedOverall.value} PCS (${totalOrderedReceived.value} PCS sudah diterima)`
-  }
-  text += `\n`
-
-  if (displayedHpoList.value.length === 0) {
-    text += `(Tidak ada HPO aktif)\n`
+  if (activeHpoList.value.length === 0) {
+    text += `✓ Tidak ada HPO yang belum terproses (seluruh pengadaan telah diterima).\n`
   } else {
-    displayedHpoList.value.forEach((hpo, idx) => {
+    text += `Sedang Dipesan: ${totalOrderedActive.value} ${stockAvailability.value?.unit_name || 'PCS'}\n`
+    activeHpoList.value.forEach((hpo, idx) => {
       text += `${idx + 1}. *${hpo.hpo_number}* (${hpo.vendor_name})\n`
-      if (hpo.quantity) text += `   Qty: ${hpo.quantity} ${hpo.unit_name || 'PCS'}`
-      if (hpo.is_fulfilled) {
-        text += ` (Sudah Diterima)\n`
-      } else {
-        text += ` (Sedang Dipesan: ${hpo.quantity_active || hpo.quantity} ${hpo.unit_name || 'PCS'})\n`
-      }
+      text += `   Qty Belum Terproses: ${hpo.quantity_active || hpo.quantity} ${hpo.unit_name || 'PCS'}\n`
       text += `   Status: ${hpo.current_status || hpo.status_name}\n`
-      if (hpo.hso_list.length > 0) text += `   Untuk HSO: ${hpo.hso_list.join(', ')}\n`
+      if (hpo.hso_list.length > 0) text += `   Untuk Pesanan: ${hpo.hso_list.join(', ')}\n`
       if (hpo.hokiindo_date) text += `   Tiba Hokiindo: ${hpo.hokiindo_date}\n`
       else if (hpo.exwork_date) text += `   Ex-Works: ${hpo.exwork_date}\n`
     })
@@ -781,29 +818,33 @@ watch(() => route.query.sku, (newSku) => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50/50 dark:bg-[#0f172a] pb-24 font-sans transition-colors duration-300">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
+  <div class="min-h-screen bg-slate-50/60 dark:bg-[#0b1120] pb-24 font-sans transition-colors duration-300">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
 
-      <!-- TOP BAR / HEADER -->
-      <div class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 p-6 shadow-sm space-y-5">
+      <!-- TOP BAR / HEADER BOX -->
+      <div class="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 p-6 sm:p-7 shadow-xs space-y-5">
         <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div class="space-y-1">
-            <h1 class="text-lg sm:text-xl font-bold text-slate-900 dark:text-white tracking-tight">
+          <div class="space-y-1.5">
+            <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+              <PackageSearch class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <span>PELACAKAN ALOKASI & STOK</span>
+            </div>
+            <h1 class="text-xl sm:text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
               Detail Penggunaan dan Alokasi Produk
             </h1>
             <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-2xl">
-              Cek alokasi produk (Part Number/SKU) ke dalam <strong>seluruh HSO Penjualan</strong> dan <strong>status pengadaan HPO ke vendor</strong> secara mendalam dan akurat.
+              Pantau alokasi produk ke seluruh <strong>Pesanan Penjualan (HSO / HSB)</strong> dan status pengadaan <strong>HPO vendor</strong> secara mendalam dan akurat.
             </p>
           </div>
 
-          <div v-if="hasSearched && (groupedHsoList.length > 0 || groupedHpoList.length > 0)" class="flex items-center gap-2">
+          <div v-if="hasSearched && (groupedHsoList.length > 0 || groupedHpoList.length > 0 || stockAvailability)" class="flex items-center gap-2 self-start md:self-auto">
             <Button
               @click="copyResumeText"
               variant="outline"
               size="sm"
-              class="h-9 px-3.5 text-xs font-semibold rounded-xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all cursor-pointer flex items-center gap-1.5"
+              class="h-9 px-3.5 text-xs font-bold rounded-xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all cursor-pointer flex items-center gap-1.5"
             >
-              <component :is="isCopied['resume_wa'] ? CheckCircle2 : Share2" class="w-4 h-4 text-slate-700 dark:text-slate-300" />
+              <component :is="isCopied['resume_wa'] ? Check : Share2" class="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
               <span>{{ isCopied['resume_wa'] ? 'Resume Disalin!' : 'Salin Ringkasan (WA)' }}</span>
             </Button>
 
@@ -811,7 +852,7 @@ watch(() => route.query.sku, (newSku) => {
               @click="executeSearch(activeSku)"
               variant="outline"
               size="sm"
-              class="h-9 px-3 text-xs font-semibold rounded-xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer"
+              class="h-9 px-3 text-xs font-bold rounded-xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-slate-700 dark:text-slate-300"
               title="Refresh & Scan Ulang"
             >
               <RefreshCw class="w-4 h-4" :class="{ 'animate-spin': isSearching }" />
@@ -820,7 +861,7 @@ watch(() => route.query.sku, (newSku) => {
         </div>
 
         <!-- SEARCH INPUT BOX -->
-        <div class="space-y-2.5">
+        <div class="space-y-3">
           <form @submit.prevent="executeSearch(searchInput)" class="w-full flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
             <div class="relative flex-1">
               <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
@@ -829,8 +870,8 @@ watch(() => route.query.sku, (newSku) => {
               <input
                 v-model="searchInput"
                 type="text"
-                placeholder="Masukkan Part Number / SKU produk (contoh: 3VJ1192-7DB32-0AA0, 3WT9816-1CD00)..."
-                class="w-full pl-11 pr-10 py-3 text-sm sm:text-base font-mono font-medium rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-slate-400 focus:border-slate-500 shadow-xs transition-all"
+                placeholder="Masukkan Part Number / SKU produk (contoh: 3VJ1192-7DB32-0AA0, 3WT9816-1CD00, 3VA1110-3ED36-0AA0)..."
+                class="w-full pl-11 pr-10 py-3 text-sm sm:text-base font-mono font-medium rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-slate-400 focus:border-slate-500 shadow-2xs transition-all"
               />
               <button
                 v-if="searchInput"
@@ -846,7 +887,7 @@ watch(() => route.query.sku, (newSku) => {
             <Button 
               type="submit" 
               :disabled="isSearching || !searchInput.trim()"
-              class="bg-slate-900 hover:bg-black text-white dark:bg-slate-100 dark:hover:bg-white dark:text-slate-900 font-bold text-xs sm:text-sm h-11 px-5 rounded-xl shadow-xs cursor-pointer shrink-0 flex items-center justify-center gap-2 transition-all"
+              class="bg-slate-900 hover:bg-black text-white dark:bg-white dark:hover:bg-slate-100 dark:text-slate-900 font-bold text-xs sm:text-sm h-11 px-6 rounded-xl shadow-xs cursor-pointer shrink-0 flex items-center justify-center gap-2 transition-all"
             >
               <Loader2 v-if="isSearching" class="w-4 h-4 animate-spin" />
               <Search v-else class="w-4 h-4" />
@@ -854,24 +895,24 @@ watch(() => route.query.sku, (newSku) => {
             </Button>
           </form>
 
-          <!-- RECENT SEARCHES -->
-          <div v-if="recentSearches.length > 0" class="flex flex-wrap items-center gap-2 pt-0.5">
+          <!-- RECENT SEARCHES ONLY (NO HSB BUTTON) -->
+          <div v-if="recentSearches.length > 0" class="flex flex-wrap items-center gap-2 pt-1">
             <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-              <Clock class="w-3 h-3 text-slate-400" /> Riwayat:
+              <Clock class="w-3 h-3 text-slate-400" /> Riwayat Pencarian:
             </span>
             <div
               v-for="sku in recentSearches.slice(0, 5)"
               :key="sku"
               @click="executeSearch(sku)"
-              class="group inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-mono rounded-md bg-slate-50 dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:bg-slate-200 hover:text-slate-800 dark:hover:bg-slate-800 dark:hover:text-slate-200 border border-slate-200/60 dark:border-slate-800 transition-all cursor-pointer"
+              class="group inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-mono rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200/80 dark:border-slate-700 transition-all cursor-pointer"
             >
               <span>{{ sku }}</span>
               <button 
                 @click="removeRecentSearch(sku, $event)" 
-                class="opacity-0 group-hover:opacity-100 hover:text-red-500 p-0.5 rounded transition-opacity"
+                class="opacity-40 group-hover:opacity-100 hover:text-red-500 p-0.5 rounded transition-opacity"
                 title="Hapus dari riwayat"
               >
-                <X class="w-2.5 h-2.5" />
+                <X class="w-3 h-3" />
               </button>
             </div>
           </div>
@@ -879,12 +920,12 @@ watch(() => route.query.sku, (newSku) => {
       </div>
 
       <!-- DEEP SCANNING LOADER -->
-      <div v-if="isSearching" class="flex flex-col items-center justify-center p-14 bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 shadow-sm space-y-3.5">
+      <div v-if="isSearching" class="flex flex-col items-center justify-center p-14 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-sm space-y-3.5">
         <Loader2 class="w-9 h-9 animate-spin text-slate-800 dark:text-slate-200" />
         <div class="text-center space-y-1">
           <p class="text-sm font-bold text-slate-900 dark:text-white">Memindai Alokasi Produk "{{ activeSku }}" Secara Mendalam...</p>
           <p class="text-xs text-slate-500 dark:text-slate-400 max-w-md">
-            Memeriksa saldo fisik gudang, memindai seluruh HSO Penjualan aktif, dan status pengadaan HPO langsung dari Accurate Online & Logistik.
+            Memeriksa saldo fisik gudang, memindai seluruh Pesanan Penjualan aktif, dan status pengadaan HPO langsung dari Accurate Online & Logistik.
           </p>
         </div>
       </div>
@@ -892,148 +933,176 @@ watch(() => route.query.sku, (newSku) => {
       <!-- SEARCH RESULTS -->
       <div v-else-if="hasSearched" class="space-y-6 animate-in fade-in slide-in-from-bottom-3 duration-300">
         
-        <!-- PRODUCT MASTER & ACCURATE STOCK AVAILABILITY BANNER -->
-        <div v-if="stockAvailability" class="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shadow-xs space-y-4">
-          <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-700/60 pb-3">
+        <!-- PRODUCT MASTER & ACCURATE STOCK AVAILABILITY BOX -->
+        <div v-if="stockAvailability" class="p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-5">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
             <div>
-              <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Informasi Inventori & Saldo Produk (Accurate Online Real-Time)</div>
-              <div class="text-base sm:text-lg font-bold text-slate-900 dark:text-white mt-0.5">
-                {{ stockAvailability.item_name || catalogItem?.item_name || activeSku }}
+              <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                Informasi Inventori & Saldo Produk (Accurate Online Real-Time)
               </div>
+              <h2 class="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white mt-1">
+                {{ stockAvailability.item_name || catalogItem?.item_name || activeSku }}
+              </h2>
             </div>
-            <div class="text-xs font-mono text-slate-500 bg-slate-100 dark:bg-slate-700/60 px-2.5 py-1 rounded-lg self-start md:self-auto">
-              SKU: {{ activeSku }}
+            <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 self-start md:self-auto">
+              <span class="text-[11px] font-bold text-slate-400">SKU:</span>
+              <span class="text-xs font-mono font-bold text-slate-800 dark:text-slate-200">{{ activeSku }}</span>
             </div>
           </div>
 
-          <!-- Stock Balance Metric Grid -->
-          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-            <!-- Stok Fisik Gudang / Kts (Gdng Pengguna) -->
-            <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-700/70 space-y-1">
-              <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">🏢 Kts (Gdng Pengguna)</div>
-              <div class="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
+          <!-- 4 Kotak Saldo Utama -->
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- 1. Stok Fisik Gudang / Kts (Gdng Pengguna) -->
+            <div class="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/90 dark:border-slate-700/80 space-y-1.5">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Stok Fisik Gudang</span>
+                <Building2 class="w-4 h-4 text-slate-400" />
+              </div>
+              <div class="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tabular-nums font-mono">
                 {{ stockAvailability.stock_warehouse ?? 0 }} <span class="text-xs font-normal text-slate-400">{{ stockAvailability.unit_name || 'Pcs' }}</span>
               </div>
-              <div class="text-[10px] text-slate-400">Saldo Fisik Gudang</div>
+              <div class="text-[11px] text-slate-500 dark:text-slate-400">Saldo fisik di gudang pengguna</div>
             </div>
 
-            <!-- Dipesan Customer (HSO) -->
-            <div class="p-3.5 rounded-xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/70 dark:border-amber-800/50 space-y-1">
-              <div class="text-[11px] font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wider">📋 Dipesan (Pelanggan)</div>
-              <div class="text-2xl font-bold text-amber-900 dark:text-amber-300 tabular-nums">
-                {{ stockAvailability.stock_sold ?? 0 }} <span class="text-xs font-normal text-amber-600/70">{{ stockAvailability.unit_name || 'Pcs' }}</span>
+            <!-- 2. Dipesan Customer (HSO / HSB) -->
+            <div class="p-4 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/60 space-y-1.5">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-bold text-amber-800 dark:text-amber-400 uppercase tracking-wider">Dipesan (Pelanggan)</span>
+                <ShoppingCart class="w-4 h-4 text-amber-600 dark:text-amber-400" />
               </div>
-              <div class="text-[10px] text-amber-700/70 dark:text-amber-400/70">Terikat Pesanan HSO</div>
+              <div class="text-2xl sm:text-3xl font-extrabold text-amber-900 dark:text-amber-300 tabular-nums font-mono">
+                {{ stockAvailability.stock_sold ?? 0 }} <span class="text-xs font-normal text-amber-700/70 dark:text-amber-400/70">{{ stockAvailability.unit_name || 'Pcs' }}</span>
+              </div>
+              <div class="text-[11px] text-amber-700/80 dark:text-amber-400/80">Terikat pesanan HSO / HSB</div>
             </div>
 
-            <!-- Stok Dapat Dijual / Available to Sell (ATS) -->
-            <div class="p-3.5 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200/70 dark:border-emerald-800/50 space-y-1">
-              <div class="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">✨ Stok Dapat Dijual</div>
-              <div class="text-2xl font-bold text-emerald-900 dark:text-emerald-300 tabular-nums">
-                {{ stockAvailability.stock_available ?? 0 }} <span class="text-xs font-normal text-emerald-600/70">{{ stockAvailability.unit_name || 'Pcs' }}</span>
+            <!-- 3. Stok Bebas (Dapat Dijual / ATS) -->
+            <div class="p-4 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/60 space-y-1.5">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-bold text-emerald-800 dark:text-emerald-400 uppercase tracking-wider">Stok Bebas (ATS)</span>
+                <CheckCircle2 class="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
               </div>
-              <div class="text-[10px] text-emerald-700/70 dark:text-emerald-400/70">Available to Sell (ATS Bebas)</div>
+              <div class="text-2xl sm:text-3xl font-extrabold text-emerald-900 dark:text-emerald-300 tabular-nums font-mono">
+                {{ stockAvailability.stock_available ?? 0 }} <span class="text-xs font-normal text-emerald-700/70 dark:text-emerald-400/70">{{ stockAvailability.unit_name || 'Pcs' }}</span>
+              </div>
+              <div class="text-[11px] text-emerald-700/80 dark:text-emerald-400/80">Bebas dijual / ditawarkan</div>
             </div>
 
-            <!-- Sedang Dipesan Vendor (HPO) -->
-            <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-700/70 space-y-1">
-              <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">📦 Sedang Dipesan (HPO)</div>
-              <div class="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">
-                {{ stockAvailability.stock_ordered ?? totalOrderedActive }} <span class="text-xs font-normal text-slate-400">{{ stockAvailability.unit_name || 'Pcs' }}</span>
+            <!-- 4. Sedang Dipesan Vendor (HPO) -->
+            <div class="p-4 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-800/60 space-y-1.5">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-bold text-blue-800 dark:text-blue-400 uppercase tracking-wider">Sedang Dipesan (HPO)</span>
+                <Truck class="w-4 h-4 text-blue-600 dark:text-blue-400" />
               </div>
-              <div class="text-[10px] text-slate-400">
-                Total: {{ stockAvailability.stock_ordered_total ?? totalOrderedOverall }} {{ stockAvailability.unit_name || 'Pcs' }}
-                <span v-if="(stockAvailability.stock_received ?? totalOrderedReceived) > 0" class="text-slate-500 font-medium">
-                  ({{ stockAvailability.stock_received ?? totalOrderedReceived }} sudah diterima)
+              <div class="text-2xl sm:text-3xl font-extrabold text-blue-900 dark:text-blue-300 tabular-nums font-mono">
+                {{ stockAvailability.stock_ordered ?? totalOrderedActive }} <span class="text-xs font-normal text-blue-700/70 dark:text-blue-400/70">{{ stockAvailability.unit_name || 'Pcs' }}</span>
+              </div>
+              <div class="text-[11px] text-blue-700/80 dark:text-blue-400/80">
+                <span v-if="(stockAvailability.stock_ordered ?? totalOrderedActive) > 0">
+                  {{ activeHpoList.length }} HPO belum terproses
+                </span>
+                <span v-else>
+                  Tidak ada HPO tertunda
                 </span>
               </div>
             </div>
           </div>
 
-          <!-- RINCIAN ALOKASI & PENGGUNAAN PRODUK -->
-          <div class="pt-2 border-t border-slate-100 dark:border-slate-700/60 space-y-3">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+          <!-- RINCIAN ALOKASI & PENGGUNAAN PRODUK (3 KOTAK) -->
+          <div class="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
               <div class="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
                 <span>Rincian Penggunaan & Alokasi Stok Fisik</span>
                 <span class="text-[11px] font-normal text-slate-500 dark:text-slate-400">(Total Fisik: {{ stockAvailability.stock_warehouse ?? 0 }} {{ stockAvailability.unit_name || 'Pcs' }})</span>
               </div>
-              <div class="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                Formula: {{ stockAvailability.stock_warehouse ?? 0 }} (Fisik) - {{ stockAvailability.stock_sold ?? 0 }} (Dipesan) = <strong class="text-emerald-600 dark:text-emerald-400">{{ stockAvailability.stock_available ?? 0 }} {{ stockAvailability.unit_name || 'Pcs' }} Available</strong>
+              <div class="text-[11px] font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800/70 px-2.5 py-1 rounded-lg">
+                Formula: {{ stockAvailability.stock_warehouse ?? 0 }} (Fisik) - {{ stockAvailability.stock_sold ?? 0 }} (Dipesan) = <strong class="text-emerald-600 dark:text-emerald-400 font-bold">{{ stockAvailability.stock_available ?? 0 }} {{ stockAvailability.unit_name || 'Pcs' }} Tersedia</strong>
               </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <!-- 1. Dipesan / Alokasi Aktif -->
-              <div class="p-3 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/30 space-y-2">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+              <!-- Kotak 1: Terikat Pesanan (Dipesan) -->
+              <div class="p-4 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/70 dark:border-amber-800/40 space-y-2.5">
                 <div class="flex items-center justify-between text-xs font-bold text-amber-900 dark:text-amber-300">
                   <span>🔒 Terikat Pesanan (Dipesan)</span>
-                  <span class="tabular-nums">{{ stockAvailability.stock_sold ?? 0 }} {{ stockAvailability.unit_name || 'Pcs' }}</span>
+                  <span class="tabular-nums font-mono">{{ stockAvailability.stock_sold ?? 0 }} {{ stockAvailability.unit_name || 'Pcs' }}</span>
                 </div>
+                
                 <div v-if="activeAllocationHsos.length > 0" class="space-y-1.5">
                   <div 
                     v-for="hso in activeAllocationHsos" 
                     :key="hso.so_number"
                     @click="router.push(`/sales-orders/${hso.so_number.replace(/\//g, '-')}?search=${encodeURIComponent(activeSku)}&highlight=${encodeURIComponent(activeSku)}`)"
-                    class="p-2 rounded-lg bg-white dark:bg-slate-900/80 border border-amber-200/60 dark:border-amber-800/40 text-xs flex items-center justify-between gap-2 cursor-pointer hover:border-amber-400 transition-colors"
+                    class="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-amber-200/80 dark:border-amber-800/50 text-xs flex items-center justify-between gap-2 cursor-pointer hover:border-amber-400 dark:hover:border-amber-600 transition-colors shadow-2xs"
                   >
                     <div class="min-w-0">
-                      <div class="font-bold text-slate-900 dark:text-white font-mono text-[11px]">{{ hso.so_number }}</div>
-                      <div class="text-[10px] text-slate-500 truncate">{{ hso.customer_name }}</div>
+                      <div class="font-bold text-slate-900 dark:text-white font-mono text-[11px] flex items-center gap-1.5">
+                        <span>{{ hso.so_number }}</span>
+                        <span v-if="(stockAvailability.stock_sold ?? 0) === 0" class="text-[9px] font-semibold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300">
+                          Menunggu Pengadaan
+                        </span>
+                      </div>
+                      <div class="text-[10px] text-slate-500 truncate mt-0.5">{{ hso.customer_name }}</div>
                     </div>
                     <div class="text-right shrink-0">
-                      <span class="font-bold text-amber-700 dark:text-amber-400 text-xs">{{ hso.sisa_alokasi || hso.qty_order }} {{ stockAvailability.unit_name || 'Pcs' }}</span>
+                      <span class="font-bold text-amber-700 dark:text-amber-400 font-mono text-xs">{{ hso.sisa_alokasi || hso.qty_order }} {{ stockAvailability.unit_name || 'Pcs' }}</span>
                     </div>
                   </div>
                 </div>
-                <div v-else class="text-[11px] text-slate-500 italic py-1">
-                  Tidak ada pesanan aktif yang mengikat stok fisik saat ini.
+                <div v-else class="text-[11px] text-slate-500 dark:text-slate-400 italic py-1">
+                  ✓ Tidak ada pesanan aktif yang mengikat stok fisik saat ini.
                 </div>
               </div>
 
-              <!-- 2. Available to Sell (ATS Bebas) -->
-              <div class="p-3 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-800/30 space-y-2">
+              <!-- Kotak 2: Stok Bebas ATS -->
+              <div class="p-4 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-800/40 space-y-2.5">
                 <div class="flex items-center justify-between text-xs font-bold text-emerald-900 dark:text-emerald-300">
                   <span>✨ Stok Bebas (Dapat Dijual)</span>
-                  <span class="tabular-nums">{{ stockAvailability.stock_available ?? 0 }} {{ stockAvailability.unit_name || 'Pcs' }}</span>
+                  <span class="tabular-nums font-mono">{{ stockAvailability.stock_available ?? 0 }} {{ stockAvailability.unit_name || 'Pcs' }}</span>
                 </div>
                 <p class="text-[11px] text-emerald-800/80 dark:text-emerald-400/80 leading-relaxed">
-                  Stok fisik di gudang belum dialokasikan ke pesanan manapun, bebas untuk langsung ditawarkan atau dijual ke customer.
+                  Stok fisik di gudang belum dialokasikan ke pesanan manapun, bebas untuk langsung ditawarkan atau dikirim ke customer.
                 </p>
-                <div class="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-white/70 dark:bg-slate-900/60 p-1.5 rounded border border-emerald-200/60 dark:border-emerald-800/40">
-                  ✓ Sesuai kolom "Stok dapat dijual" Accurate
+                <div class="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 bg-white/80 dark:bg-slate-900/70 p-2 rounded-lg border border-emerald-200/60 dark:border-emerald-800/40 flex items-center gap-1.5">
+                  <Check class="w-3.5 h-3.5" />
+                  <span>Sesuai kolom "Stok dapat dijual" Accurate</span>
                 </div>
               </div>
 
-              <!-- 3. Pengadaan Vendor (HPO) -->
-              <div class="p-3 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/60 dark:border-blue-800/30 space-y-2">
+              <!-- Kotak 3: Sedang Dipesan HPO Aktif -->
+              <div class="p-4 rounded-xl bg-blue-50/50 dark:bg-blue-950/20 border border-blue-200/70 dark:border-blue-800/40 space-y-2.5">
                 <div class="flex items-center justify-between text-xs font-bold text-blue-900 dark:text-blue-300">
                   <span>📦 Sedang Dipesan (HPO Aktif)</span>
-                  <span class="tabular-nums">{{ stockAvailability.stock_ordered ?? totalOrderedActive }} {{ stockAvailability.unit_name || 'Pcs' }}</span>
+                  <span class="tabular-nums font-mono">{{ stockAvailability.stock_ordered ?? totalOrderedActive }} {{ stockAvailability.unit_name || 'Pcs' }}</span>
                 </div>
+
+                <!-- Only show active HPO items if they exist -->
                 <div v-if="activeHpoList.length > 0" class="space-y-1.5">
                   <div 
                     v-for="hpo in activeHpoList.slice(0, 3)" 
                     :key="hpo.hpo_number"
                     @click="router.push(`/purchase-orders/${encodeURIComponent(hpo.hpo_number)}`)"
-                    class="p-2 rounded-lg bg-white dark:bg-slate-900/80 border border-blue-200/60 dark:border-blue-800/40 text-xs flex items-center justify-between gap-2 cursor-pointer hover:border-blue-400 transition-colors"
+                    class="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-blue-200/80 dark:border-blue-800/50 text-xs flex items-center justify-between gap-2 cursor-pointer hover:border-blue-400 dark:hover:border-blue-600 transition-colors shadow-2xs"
                   >
                     <div class="min-w-0">
                       <div class="font-bold text-slate-900 dark:text-white font-mono text-[11px]">{{ hpo.hpo_number }}</div>
-                      <div class="text-[10px] text-slate-500 truncate">{{ hpo.vendor_name }}</div>
+                      <div class="text-[10px] text-slate-500 truncate mt-0.5">{{ hpo.vendor_name }}</div>
                     </div>
                     <div class="text-right shrink-0">
-                      <span class="font-bold text-blue-700 dark:text-blue-400 text-xs">{{ hpo.quantity_active || hpo.quantity }} {{ hpo.unit_name || 'PCS' }}</span>
+                      <span class="font-bold text-blue-700 dark:text-blue-400 font-mono text-xs">{{ hpo.quantity_active || hpo.quantity }} {{ hpo.unit_name || 'PCS' }}</span>
                     </div>
                   </div>
                 </div>
-                <div v-else-if="groupedHpoList.length > 0" class="text-[11px] text-slate-500 italic py-1">
-                  Semua pesanan HPO sudah diterima (tidak ada HPO aktif).
-                </div>
-                <div v-else class="text-[11px] text-slate-500 italic py-1">
-                  Tidak ada transaksi pengadaan HPO berjalan.
-                </div>
-                <div v-if="totalOrderedOverall > totalOrderedActive" class="text-[10px] text-slate-500 dark:text-slate-400 pt-1 border-t border-blue-100 dark:border-blue-900/40">
-                  Total: {{ totalOrderedOverall }} {{ stockAvailability.unit_name || 'Pcs' }} ({{ totalOrderedReceived }} sudah diterima)
+
+                <!-- Clean state if NO active unprocessed HPOs -->
+                <div v-else class="p-2.5 rounded-lg bg-white/70 dark:bg-slate-900/70 border border-blue-100 dark:border-blue-900/40 text-[11px] text-slate-600 dark:text-slate-400 space-y-1">
+                  <div class="flex items-center gap-1.5 font-bold text-slate-800 dark:text-slate-200">
+                    <CheckCircle2 class="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                    <span>Tidak ada HPO yang belum terproses</span>
+                  </div>
+                  <p class="text-[10px] text-slate-500 dark:text-slate-400 leading-normal">
+                    {{ groupedHpoList.length > 0 ? 'Semua pengadaan sebelumnya telah selesai diterima.' : 'Belum ada transaksi pengadaan ke vendor.' }}
+                  </p>
                 </div>
               </div>
             </div>
@@ -1042,56 +1111,53 @@ watch(() => route.query.sku, (newSku) => {
 
         <!-- FALLBACK 4 METRIC CARDS (IF NO LIVE STOCK AVAILABILITY) -->
         <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <!-- Total HSO -->
-          <div class="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shadow-xs flex items-center gap-4">
-            <div class="p-3 bg-slate-100 dark:bg-slate-700/60 rounded-xl text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700">
+          <!-- Total Pesanan -->
+          <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xs flex items-center gap-4">
+            <div class="p-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
               <FileText class="w-5 h-5" />
             </div>
             <div>
-              <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">HSO Menggunakan</div>
-              <div class="text-2xl font-bold text-slate-900 dark:text-white mt-0.5 tabular-nums">
+              <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Pesanan (HSO / HSB)</div>
+              <div class="text-2xl font-extrabold text-slate-900 dark:text-white mt-0.5 tabular-nums font-mono">
                 {{ totalHsoCount }} <span class="text-xs font-normal text-slate-400">Order</span>
               </div>
             </div>
           </div>
 
           <!-- Total HPO -->
-          <div class="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shadow-xs flex items-center gap-4">
-            <div class="p-3 bg-slate-100 dark:bg-slate-700/60 rounded-xl text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700">
+          <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xs flex items-center gap-4">
+            <div class="p-3 bg-blue-50 dark:bg-blue-950/40 rounded-xl text-blue-700 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/40">
               <ShoppingCart class="w-5 h-5" />
             </div>
             <div>
-              <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Sedang Dipesan (HPO)</div>
-              <div class="text-2xl font-bold text-slate-900 dark:text-white mt-0.5 tabular-nums">
-                {{ totalOrderedActive }} <span class="text-xs font-normal text-slate-400">{{ stockAvailability?.unit_name || 'Pcs' }}</span>
-              </div>
-              <div class="text-[10px] text-slate-400 mt-0.5">
-                Total: {{ totalOrderedOverall }} <span v-if="totalOrderedReceived > 0">({{ totalOrderedReceived }} sudah diterima)</span>
+              <div class="text-[11px] font-bold text-blue-800 dark:text-blue-400 uppercase tracking-wider">Sedang Dipesan (HPO)</div>
+              <div class="text-2xl font-extrabold text-blue-900 dark:text-blue-300 mt-0.5 tabular-nums font-mono">
+                {{ totalOrderedActive }} <span class="text-xs font-normal text-blue-700/70">{{ stockAvailability?.unit_name || 'Pcs' }}</span>
               </div>
             </div>
           </div>
 
           <!-- Penerimaan Barang (RI) -->
-          <div class="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shadow-xs flex items-center gap-4">
-            <div class="p-3 bg-slate-100 dark:bg-slate-700/60 rounded-xl text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700">
+          <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xs flex items-center gap-4">
+            <div class="p-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
               <Package class="w-5 h-5" />
             </div>
             <div>
-              <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Penerimaan Gudang (RI)</div>
-              <div class="text-2xl font-bold text-slate-900 dark:text-white mt-0.5 tabular-nums">
+              <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Penerimaan Gudang (RI)</div>
+              <div class="text-2xl font-extrabold text-slate-900 dark:text-white mt-0.5 tabular-nums font-mono">
                 {{ totalRiCount }} <span class="text-xs font-normal text-slate-400">Transaksi</span>
               </div>
             </div>
           </div>
 
           <!-- Pengiriman (DO) -->
-          <div class="p-5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 shadow-xs flex items-center gap-4">
-            <div class="p-3 bg-slate-100 dark:bg-slate-700/60 rounded-xl text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700">
+          <div class="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 shadow-xs flex items-center gap-4">
+            <div class="p-3 bg-slate-100 dark:bg-slate-800 rounded-xl text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
               <Truck class="w-5 h-5" />
             </div>
             <div>
-              <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Pengiriman Customer (DO)</div>
-              <div class="text-2xl font-bold text-slate-900 dark:text-white mt-0.5 tabular-nums">
+              <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Pengiriman Customer (DO)</div>
+              <div class="text-2xl font-extrabold text-slate-900 dark:text-white mt-0.5 tabular-nums font-mono">
                 {{ totalDoCount }} <span class="text-xs font-normal text-slate-400">Surat Jalan</span>
               </div>
             </div>
@@ -1099,56 +1165,56 @@ watch(() => route.query.sku, (newSku) => {
         </div>
 
         <!-- NO RESULTS FOUND -->
-        <div v-if="totalHsoCount === 0 && totalHpoCount === 0 && totalRiCount === 0 && totalDoCount === 0 && !stockAvailability" class="flex flex-col items-center justify-center p-12 text-center bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm space-y-3">
-          <div class="p-4 bg-slate-100 dark:bg-slate-700 rounded-full text-slate-400">
+        <div v-if="totalHsoCount === 0 && totalHpoCount === 0 && totalRiCount === 0 && totalDoCount === 0 && !stockAvailability" class="flex flex-col items-center justify-center p-14 text-center bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-3">
+          <div class="p-4 bg-slate-100 dark:bg-slate-800 rounded-2xl text-slate-400 border border-slate-200 dark:border-slate-700">
             <PackageSearch class="w-10 h-10" />
           </div>
-          <h3 class="text-base font-bold text-slate-900 dark:text-white">Tidak Ditemukan Penggunaan Produk "{{ activeSku }}"</h3>
+          <h3 class="text-base font-extrabold text-slate-900 dark:text-white">Tidak Ditemukan Penggunaan Produk "{{ activeSku }}"</h3>
           <p class="text-xs text-slate-500 dark:text-slate-400 max-w-md">
-            Produk ini belum tercatat pada transaksi HSO Penjualan, HPO Pembelian, maupun database pengiriman logistik aktif. Pastikan kode part number sudah sesuai.
+            Produk ini belum tercatat pada transaksi Pesanan Penjualan (HSO / HSB), HPO Pembelian, maupun database logistik aktif. Pastikan kode part number sudah sesuai.
           </p>
         </div>
 
         <!-- RESULTS TABLES -->
         <div v-else class="space-y-6">
 
-          <!-- 1. HSO SALES ORDERS TABLE -->
-          <Card class="border border-slate-200/80 dark:border-slate-700/80 shadow-sm rounded-2xl overflow-hidden bg-white dark:bg-slate-800">
-            <CardHeader class="flex flex-row items-center justify-between border-b border-slate-100 dark:border-slate-700/60 bg-slate-50/60 dark:bg-slate-900/60 px-6 py-4">
+          <!-- 1. HSO / HSB SALES ORDERS TABLE -->
+          <Card class="border border-slate-200/90 dark:border-slate-800 shadow-xs rounded-2xl overflow-hidden bg-white dark:bg-slate-900">
+            <CardHeader class="flex flex-row items-center justify-between border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 px-6 py-4">
               <div class="flex items-center gap-2.5">
-                <div class="p-2 bg-slate-100 dark:bg-slate-700/60 rounded-lg text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700">
+                <div class="p-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700">
                   <FileText class="w-4 h-4"/>
                 </div>
                 <div>
-                  <CardTitle class="text-base font-bold text-slate-900 dark:text-white">Daftar HSO Penjualan (Customer)</CardTitle>
-                  <p class="text-xs text-slate-500 dark:text-slate-400">Seluruh pesanan HSO yang membutuhkan produk {{ activeSku }}</p>
+                  <CardTitle class="text-base font-extrabold text-slate-900 dark:text-white">Daftar Pesanan Penjualan (HSO / HSB Customer)</CardTitle>
+                  <p class="text-xs text-slate-500 dark:text-slate-400">Seluruh pesanan penjualan yang menggunakan produk {{ activeSku }}</p>
                 </div>
               </div>
               <Badge variant="outline" class="font-bold text-xs bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
-                {{ groupedHsoList.length }} HSO
+                {{ groupedHsoList.length }} Pesanan
               </Badge>
             </CardHeader>
             <CardContent class="p-0">
               <div class="overflow-x-auto">
                 <Table>
-                  <TableHeader class="bg-slate-50/80 dark:bg-slate-900/80 border-b border-slate-100 dark:border-slate-700">
+                  <TableHeader class="bg-slate-50/80 dark:bg-slate-900/80 border-b border-slate-100 dark:border-slate-800">
                     <TableRow class="hover:bg-transparent">
-                      <TableHead class="font-bold text-xs text-slate-500 uppercase tracking-wider py-3.5 px-4 w-[200px]">No. HSO</TableHead>
+                      <TableHead class="font-bold text-xs text-slate-500 uppercase tracking-wider py-3.5 px-4 w-[200px]">No. Pesanan</TableHead>
                       <TableHead class="font-bold text-xs text-slate-500 uppercase tracking-wider py-3.5 px-4 min-w-[220px]">Customer & Proyek</TableHead>
                       <TableHead class="font-bold text-xs text-slate-500 uppercase tracking-wider py-3.5 px-4 hidden md:table-cell w-[140px]">Tanggal & Qty</TableHead>
-                      <TableHead class="font-bold text-xs text-slate-500 uppercase tracking-wider py-3.5 px-4 min-w-[200px]">HPO Terkait & Status Logistik</TableHead>
-                      <TableHead class="text-right font-bold text-xs text-slate-500 uppercase tracking-wider py-3.5 px-4 w-[120px]">Aksi</TableHead>
+                      <TableHead class="font-bold text-xs text-slate-500 uppercase tracking-wider py-3.5 px-4 min-w-[200px]">Status Alokasi & Logistik</TableHead>
+                      <TableHead class="text-right font-bold text-xs text-slate-500 uppercase tracking-wider py-3.5 px-4 w-[130px]">Aksi</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     <TableRow 
                       v-for="(hso, idx) in groupedHsoList" 
                       :key="hso.so_number || idx" 
-                      class="hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition-colors border-b border-slate-100 dark:border-slate-700/60 last:border-0"
+                      class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors border-b border-slate-100 dark:border-slate-800/60 last:border-0"
                     >
-                      <!-- No HSO -->
+                      <!-- No Pesanan -->
                       <TableCell class="py-4 px-4 align-top">
-                        <div class="font-bold font-sans text-sm text-slate-900 dark:text-white">
+                        <div class="font-bold font-mono text-sm text-slate-900 dark:text-white">
                           {{ hso.so_number }}
                         </div>
                       </TableCell>
@@ -1185,7 +1251,7 @@ watch(() => route.query.sku, (newSku) => {
                       <TableCell class="py-4 px-4 align-top hidden md:table-cell">
                         <div class="space-y-1.5">
                           <div class="text-xs text-slate-600 dark:text-slate-400 font-medium">{{ hso.trans_date }}</div>
-                          <div v-if="hso.qty_order" class="text-[11px] font-bold text-slate-800 dark:text-slate-200">
+                          <div v-if="hso.qty_order" class="text-[11px] font-bold text-slate-800 dark:text-slate-200 font-mono">
                             Dipesan: {{ hso.qty_order }} Pcs
                           </div>
                           <!-- Status Alokasi / Penggunaan -->
@@ -1246,9 +1312,9 @@ watch(() => route.query.sku, (newSku) => {
                           variant="ghost" 
                           class="h-8 px-2.5 text-xs font-semibold text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white gap-1 cursor-pointer"
                           @click="router.push(`/sales-orders/${hso.so_number.replace(/\//g, '-')}?search=${encodeURIComponent(activeSku)}&highlight=${encodeURIComponent(activeSku)}`)"
-                          title="Buka Detail HSO"
+                          title="Buka Detail Pesanan"
                         >
-                          <span>Buka HSO</span>
+                          <span>Buka Pesanan</span>
                           <ArrowRight class="w-3.5 h-3.5" />
                         </Button>
                       </TableCell>
@@ -1259,75 +1325,47 @@ watch(() => route.query.sku, (newSku) => {
             </CardContent>
           </Card>
 
-          <!-- 2. HPO PURCHASE ORDERS TABLE -->
-          <Card class="border border-slate-200/80 dark:border-slate-700/80 shadow-sm rounded-2xl overflow-hidden bg-white dark:bg-slate-800">
-            <CardHeader class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-700/60 bg-slate-50/60 dark:bg-slate-900/60 px-6 py-4">
+          <!-- 2. HPO PURCHASE ORDERS (HANYA MUNCUL JIKA MEMANG ADA HPO BELUM TERPROSES) -->
+          
+          <!-- CASE A: ADA HPO YANG BELUM TERPROSES -->
+          <Card v-if="activeHpoList.length > 0" class="border border-slate-200/90 dark:border-slate-800 shadow-xs rounded-2xl overflow-hidden bg-white dark:bg-slate-900">
+            <CardHeader class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 px-6 py-4">
               <div class="flex items-center gap-2.5">
-                <div class="p-2 bg-slate-100 dark:bg-slate-700/60 rounded-lg text-slate-700 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700">
+                <div class="p-2 bg-blue-50 dark:bg-blue-950/40 rounded-xl text-blue-700 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/40">
                   <ShoppingCart class="w-4 h-4"/>
                 </div>
                 <div>
-                  <CardTitle class="text-base font-bold text-slate-900 dark:text-white">Daftar HPO Pengadaan (Vendor)</CardTitle>
+                  <CardTitle class="text-base font-extrabold text-slate-900 dark:text-white">Daftar HPO Pengadaan Belum Terproses (Vendor)</CardTitle>
                   <p class="text-xs text-slate-500 dark:text-slate-400">
-                    {{ hpoFilter === 'active' ? 'Menampilkan HPO aktif yang sedang dipesan' : 'Seluruh riwayat HPO pemesanan ke vendor' }} untuk {{ activeSku }}
+                    Menampilkan pesanan pembelian vendor yang masih aktif & belum selesai diterima untuk {{ activeSku }}
                   </p>
                 </div>
               </div>
 
-              <!-- Filter Tabs: Sedang Dipesan (Aktif) vs Semua HPO -->
               <div class="flex items-center gap-2">
-                <div class="inline-flex p-1 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs">
-                  <button
-                    type="button"
-                    @click="hpoFilter = 'active'"
-                    :class="[
-                      'px-3 py-1 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-1.5',
-                      hpoFilter === 'active' 
-                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs' 
-                        : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-                    ]"
-                  >
-                    <span>Sedang Dipesan</span>
-                    <span class="px-1.5 py-0.2 rounded-full text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300 font-bold">
-                      {{ activeHpoList.length }}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    @click="hpoFilter = 'all'"
-                    :class="[
-                      'px-3 py-1 rounded-lg font-semibold transition-all cursor-pointer flex items-center gap-1.5',
-                      hpoFilter === 'all' 
-                        ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-xs' 
-                        : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-                    ]"
-                  >
-                    <span>Semua HPO</span>
-                    <span class="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300 font-bold">
-                      {{ groupedHpoList.length }}
-                    </span>
-                  </button>
-                </div>
+                <Badge variant="outline" class="font-bold text-xs bg-blue-50 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300">
+                  {{ activeHpoList.length }} HPO Belum Terproses
+                </Badge>
               </div>
             </CardHeader>
             <CardContent class="p-0">
-              <div v-if="displayedHpoList.length > 0" class="overflow-x-auto">
+              <div class="overflow-x-auto">
                 <Table>
-                  <TableHeader class="bg-slate-50/80 dark:bg-slate-900/80 border-b border-slate-100 dark:border-slate-700">
+                  <TableHeader class="bg-slate-50/80 dark:bg-slate-900/80 border-b border-slate-100 dark:border-slate-800">
                     <TableRow class="hover:bg-transparent">
                       <TableHead class="font-bold text-xs text-slate-500 uppercase tracking-wider py-3.5 px-4 w-[200px]">No. HPO</TableHead>
                       <TableHead class="font-bold text-xs text-slate-500 uppercase tracking-wider py-3.5 px-4 min-w-[200px]">Vendor / Supplier</TableHead>
-                      <TableHead class="font-bold text-xs text-slate-500 uppercase tracking-wider py-3.5 px-4 w-[170px]">Qty & Status</TableHead>
-                      <TableHead class="font-bold text-xs text-slate-500 uppercase tracking-wider py-3.5 px-4 min-w-[200px]">Alokasi Untuk HSO</TableHead>
+                      <TableHead class="font-bold text-xs text-slate-500 uppercase tracking-wider py-3.5 px-4 w-[180px]">Qty Belum Terproses</TableHead>
+                      <TableHead class="font-bold text-xs text-slate-500 uppercase tracking-wider py-3.5 px-4 min-w-[200px]">Alokasi Untuk Pesanan</TableHead>
                       <TableHead class="font-bold text-xs text-slate-500 uppercase tracking-wider py-3.5 px-4 min-w-[180px]">Status Logistik</TableHead>
                       <TableHead class="text-right font-bold text-xs text-slate-500 uppercase tracking-wider py-3.5 px-4 w-[120px]">Aksi</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     <TableRow 
-                      v-for="(hpo, idx) in displayedHpoList" 
+                      v-for="(hpo, idx) in activeHpoList" 
                       :key="hpo.hpo_number || idx" 
-                      class="hover:bg-slate-50/80 dark:hover:bg-slate-700/30 transition-colors border-b border-slate-100 dark:border-slate-700/60 last:border-0"
+                      class="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors border-b border-slate-100 dark:border-slate-800/60 last:border-0"
                     >
                       <!-- No HPO -->
                       <TableCell class="py-4 px-4 align-top">
@@ -1349,30 +1387,19 @@ watch(() => route.query.sku, (newSku) => {
                         </div>
                       </TableCell>
 
-                      <!-- Qty & Status Pemesanan -->
+                      <!-- Qty Belum Terproses -->
                       <TableCell class="py-4 px-4 align-top">
                         <div class="space-y-1.5">
-                          <div class="font-bold text-sm text-slate-900 dark:text-white">
-                            {{ hpo.quantity }} {{ hpo.unit_name || 'PCS' }}
+                          <div class="font-bold text-sm text-blue-700 dark:text-blue-400 font-mono">
+                            {{ hpo.quantity_active || hpo.quantity }} {{ hpo.unit_name || 'PCS' }}
                           </div>
-                          <div>
-                            <span 
-                              v-if="hpo.is_fulfilled || hpo.quantity_active === 0" 
-                              class="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800"
-                            >
-                              ✓ Sudah Diterima
-                            </span>
-                            <span 
-                              v-else 
-                              class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-400 dark:border-blue-800"
-                            >
-                              ⏳ Sedang Dipesan: {{ hpo.quantity_active || hpo.quantity }} {{ hpo.unit_name || 'PCS' }}
-                            </span>
-                          </div>
+                          <span class="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-800 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-400 dark:border-blue-800">
+                            ⏳ Sedang Dipesan
+                          </span>
                         </div>
                       </TableCell>
 
-                      <!-- Linked HSO -->
+                      <!-- Linked HSO / HSB -->
                       <TableCell class="py-4 px-4 align-top">
                         <div v-if="hpo.hso_list.length > 0" class="flex flex-wrap items-center gap-1">
                           <Badge 
@@ -1381,12 +1408,12 @@ watch(() => route.query.sku, (newSku) => {
                             @click="router.push(`/sales-orders/${hso.replace(/\//g, '-')}?search=${encodeURIComponent(activeSku)}&highlight=${encodeURIComponent(activeSku)}`)"
                             variant="outline"
                             class="text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-200 dark:border-slate-600 cursor-pointer transition-colors"
-                            title="Buka HSO Ini"
+                            title="Buka Pesanan Ini"
                           >
                             {{ hso }}
                           </Badge>
                         </div>
-                        <span v-else class="text-xs text-slate-400 italic">Umum / Tanpa HSO spesifik</span>
+                        <span v-else class="text-xs text-slate-400 italic">Umum / Tanpa pesanan spesifik</span>
                       </TableCell>
 
                       <!-- Logistics Status & Schedule -->
@@ -1425,78 +1452,179 @@ watch(() => route.query.sku, (newSku) => {
                 </Table>
               </div>
 
-              <!-- Empty state when active list is empty -->
-              <div v-else class="p-8 text-center space-y-2">
-                <p class="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                  Tidak ada HPO yang sedang dipesan (seluruh pesanan pengadaan telah selesai diterima).
-                </p>
-                <p class="text-xs text-slate-500">
-                  Klik tombol 
-                  <button @click="hpoFilter = 'all'" class="font-bold underline text-blue-600 hover:text-blue-700 cursor-pointer">Semua HPO</button> 
-                  di atas untuk melihat riwayat pengadaan sebelumnya.
-                </p>
-              </div>
-
-              <!-- BOTTOM SUMMARY BAR: TOTAL KESELURUHAN + SEDANG DIPESAN + SUDAH DIKIRIM -->
-              <div class="px-6 py-4 bg-slate-50/80 dark:bg-slate-900/80 border-t border-slate-200/80 dark:border-slate-700/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <!-- Bottom Summary Bar -->
+              <div class="px-6 py-4 bg-slate-50/80 dark:bg-slate-900/80 border-t border-slate-200/90 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div class="flex items-center gap-3">
                   <div class="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200/60 dark:border-blue-800/40 shrink-0">
                     <ShoppingCart class="w-5 h-5" />
                   </div>
                   <div>
                     <div class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                      Status Pengadaan Masuk (Accurate Real-Time)
+                      Status Pengadaan Berjalan (Accurate Online Real-Time)
                     </div>
                     <div class="flex flex-wrap items-baseline gap-2 mt-0.5">
-                      <span class="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                      <span class="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white">
                         Sedang Dipesan: {{ totalOrderedActive }} {{ stockAvailability?.unit_name || 'Pcs' }}
                       </span>
-                      <span class="text-xs font-normal text-slate-500 dark:text-slate-400">
-                        ({{ totalOrderedReceived }} {{ stockAvailability?.unit_name || 'Pcs' }} sudah dikirim / diterima)
+                      <span v-if="totalOrderedReceived > 0" class="text-xs font-normal text-slate-500 dark:text-slate-400">
+                        ({{ totalOrderedReceived }} {{ stockAvailability?.unit_name || 'Pcs' }} sudah diterima sebelumnya)
                       </span>
                     </div>
                   </div>
                 </div>
 
-                <div class="flex items-center gap-3 border-t sm:border-t-0 sm:border-l border-slate-200 dark:border-slate-700 pt-3 sm:pt-0 sm:pl-6 shrink-0">
-                  <div class="space-y-0.5">
-                    <div class="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                      Total Keseluruhan Pengadaan
-                    </div>
-                    <div class="text-base sm:text-lg font-bold text-slate-900 dark:text-white tabular-nums">
-                      {{ totalOrderedOverall }} <span class="text-xs font-normal text-slate-500">{{ stockAvailability?.unit_name || 'Pcs' }}</span>
-                      <span class="text-xs font-normal text-slate-400 ml-1">({{ groupedHpoList.length }} HPO)</span>
-                    </div>
-                  </div>
+                <div v-if="completedHpoList.length > 0" class="flex items-center gap-2">
+                  <Button
+                    @click="showHistoricalHpo = !showHistoricalHpo"
+                    variant="outline"
+                    size="sm"
+                    class="h-8 px-3 text-xs font-semibold rounded-xl border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Archive class="w-3.5 h-3.5 text-slate-400" />
+                    <span>{{ showHistoricalHpo ? 'Tutup Arsip' : `Lihat ${completedHpoList.length} HPO Selesai` }}</span>
+                    <ChevronDown class="w-3.5 h-3.5 transition-transform" :class="{ 'rotate-180': showHistoricalHpo }" />
+                  </Button>
+                </div>
+              </div>
+
+              <!-- Historical Completed HPO Table when expanded -->
+              <div v-if="showHistoricalHpo && completedHpoList.length > 0" class="p-6 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 space-y-3 animate-in fade-in duration-200">
+                <div class="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Archive class="w-3.5 h-3.5 text-slate-400" />
+                  <span>Arsip HPO yang Sudah Selesai Diterima:</span>
+                </div>
+                <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                  <Table>
+                    <TableHeader class="bg-slate-50 dark:bg-slate-800/80">
+                      <TableRow>
+                        <TableHead class="text-xs font-bold py-2.5 px-3">No. HPO</TableHead>
+                        <TableHead class="text-xs font-bold py-2.5 px-3">Vendor</TableHead>
+                        <TableHead class="text-xs font-bold py-2.5 px-3">Qty</TableHead>
+                        <TableHead class="text-xs font-bold py-2.5 px-3">Status</TableHead>
+                        <TableHead class="text-xs font-bold py-2.5 px-3 text-right">Aksi</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      <TableRow v-for="hpo in completedHpoList" :key="hpo.hpo_number" class="text-xs border-b border-slate-100 dark:border-slate-800 last:border-0">
+                        <TableCell class="py-2.5 px-3 font-mono font-bold">{{ hpo.hpo_number }}</TableCell>
+                        <TableCell class="py-2.5 px-3 text-slate-600 dark:text-slate-400">{{ hpo.vendor_name }}</TableCell>
+                        <TableCell class="py-2.5 px-3 font-bold font-mono">{{ hpo.quantity }} {{ hpo.unit_name || 'PCS' }}</TableCell>
+                        <TableCell class="py-2.5 px-3">
+                          <span class="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800">
+                            ✓ Selesai / Diterima
+                          </span>
+                        </TableCell>
+                        <TableCell class="py-2.5 px-3 text-right">
+                          <Button size="sm" variant="ghost" class="h-7 px-2 text-xs" @click="router.push(`/purchase-orders/${encodeURIComponent(hpo.hpo_number)}`)">
+                            Buka
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
                 </div>
               </div>
             </CardContent>
+          </Card>
+
+          <!-- CASE B: TIDAK MEMILIKI HPO BELUM TERPROSES (TAMPILAN BERSIH KOTAK RAMAH PENGGUNA) -->
+          <Card v-else class="border border-slate-200/90 dark:border-slate-800 shadow-xs rounded-2xl overflow-hidden bg-white dark:bg-slate-900 p-5 sm:p-6">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div class="flex items-center gap-3.5">
+                <div class="w-11 h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-200/70 dark:border-emerald-800/60">
+                  <CheckCircle2 class="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 class="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                    <span>Tidak Ada HPO Pengadaan yang Belum Terproses</span>
+                  </h4>
+                  <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    Barang ini tidak memiliki pesanan pembelian tertunda ke vendor.
+                    <span v-if="groupedHpoList.length > 0">Seluruh transaksi pengadaan sebelumnya telah selesai diterima secara lengkap.</span>
+                  </p>
+                </div>
+              </div>
+
+              <!-- Toggle for historical HPO archive if any exist -->
+              <div v-if="groupedHpoList.length > 0">
+                <Button
+                  @click="showHistoricalHpo = !showHistoricalHpo"
+                  variant="outline"
+                  size="sm"
+                  class="h-8 px-3 text-xs font-semibold rounded-xl border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer flex items-center gap-1.5"
+                >
+                  <Archive class="w-3.5 h-3.5 text-slate-400" />
+                  <span>{{ showHistoricalHpo ? 'Tutup Arsip' : `Lihat Riwayat HPO Selesai (${groupedHpoList.length})` }}</span>
+                  <ChevronDown class="w-3.5 h-3.5 transition-transform" :class="{ 'rotate-180': showHistoricalHpo }" />
+                </Button>
+              </div>
+            </div>
+
+            <!-- Historical HPO Table when expanded -->
+            <div v-if="showHistoricalHpo && groupedHpoList.length > 0" class="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800 animate-in fade-in duration-200 space-y-3">
+              <div class="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Archive class="w-3.5 h-3.5 text-slate-400" />
+                <span>Arsip Riwayat HPO yang Telah Diterima Lengkap:</span>
+              </div>
+              <div class="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
+                <Table>
+                  <TableHeader class="bg-slate-100/80 dark:bg-slate-800">
+                    <TableRow>
+                      <TableHead class="text-xs font-bold py-2.5 px-3">No. HPO</TableHead>
+                      <TableHead class="text-xs font-bold py-2.5 px-3">Vendor</TableHead>
+                      <TableHead class="text-xs font-bold py-2.5 px-3">Qty</TableHead>
+                      <TableHead class="text-xs font-bold py-2.5 px-3">Status</TableHead>
+                      <TableHead class="text-xs font-bold py-2.5 px-3 text-right">Aksi</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow v-for="hpo in groupedHpoList" :key="hpo.hpo_number" class="text-xs border-b border-slate-100 dark:border-slate-800 last:border-0 bg-white dark:bg-slate-900">
+                      <TableCell class="py-2.5 px-3 font-mono font-bold">{{ hpo.hpo_number }}</TableCell>
+                      <TableCell class="py-2.5 px-3 text-slate-600 dark:text-slate-400">{{ hpo.vendor_name }}</TableCell>
+                      <TableCell class="py-2.5 px-3 font-bold font-mono">{{ hpo.quantity }} {{ hpo.unit_name || 'PCS' }}</TableCell>
+                      <TableCell class="py-2.5 px-3">
+                        <span class="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800">
+                          ✓ Selesai / Diterima
+                        </span>
+                      </TableCell>
+                      <TableCell class="py-2.5 px-3 text-right">
+                        <Button size="sm" variant="ghost" class="h-7 px-2 text-xs" @click="router.push(`/purchase-orders/${encodeURIComponent(hpo.hpo_number)}`)">
+                          Buka
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
           </Card>
 
           <!-- 3. RI (RECEIVE ITEMS) & DO (DELIVERY ORDERS) SECTION -->
           <div v-if="riItemsResults.length > 0 || doItemsResults.length > 0" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             
             <!-- Penerimaan Barang (RI) -->
-            <Card v-if="sortedRiList.length > 0" class="border border-slate-200/80 dark:border-slate-700/80 shadow-sm rounded-2xl overflow-hidden bg-white dark:bg-slate-800">
-              <CardHeader class="flex flex-row items-center justify-between border-b border-slate-100 dark:border-slate-700/60 bg-slate-50/60 dark:bg-slate-900/60 px-5 py-3.5">
+            <Card v-if="sortedRiList.length > 0" class="border border-slate-200/90 dark:border-slate-800 shadow-xs rounded-2xl overflow-hidden bg-white dark:bg-slate-900">
+              <CardHeader class="flex flex-row items-center justify-between border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 px-5 py-3.5">
                 <div class="flex items-center gap-2">
                   <Package class="w-4 h-4 text-slate-700 dark:text-slate-300"/>
-                  <CardTitle class="text-sm font-bold text-slate-900 dark:text-white">Penerimaan Barang (RI)</CardTitle>
+                  <CardTitle class="text-sm font-extrabold text-slate-900 dark:text-white">Penerimaan Barang (RI)</CardTitle>
                 </div>
-                <Badge variant="outline" class="font-bold text-[11px] text-slate-700 dark:text-slate-300">{{ sortedRiList.length }} Bukti</Badge>
+                <Badge variant="outline" class="font-bold text-[11px] text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+                  {{ sortedRiList.length }} Bukti
+                </Badge>
               </CardHeader>
               <CardContent class="p-0">
-                <div class="divide-y divide-slate-100 dark:divide-slate-700">
+                <div class="divide-y divide-slate-100 dark:divide-slate-800">
                   <div 
                     v-for="riItem in sortedRiList" 
                     :key="riItem.id"
                     @click="router.push(`/receive-items/${riItem.receive_item_id || riItem.ri?.id}`)"
-                    class="p-4 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer flex items-center justify-between gap-3"
+                    class="p-4 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer flex items-center justify-between gap-3"
                   >
                     <div class="space-y-0.5 min-w-0">
-                      <div class="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <div class="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5 font-mono">
                         <span>{{ riItem.ri?.number || 'RI' }}</span>
-                        <span class="text-slate-400 font-normal">&bull; {{ riItem.ri?.trans_date }}</span>
+                        <span class="text-slate-400 font-normal font-sans">&bull; {{ riItem.ri?.trans_date }}</span>
                       </div>
                       <p class="text-[11px] text-slate-500 truncate">Vendor: {{ riItem.ri?.vendor_name }}</p>
                       <div v-if="riItem.detail_notes" class="text-[11px] text-slate-600 dark:text-slate-400 italic">
@@ -1504,8 +1632,8 @@ watch(() => route.query.sku, (newSku) => {
                       </div>
                     </div>
                     <div class="text-right shrink-0">
-                      <div class="font-bold text-sm text-slate-900 dark:text-white">{{ riItem.quantity }} {{ riItem.unit_name || 'PCS' }}</div>
-                      <div class="text-[10px] text-slate-400 font-medium">Diterima</div>
+                      <div class="font-extrabold text-sm text-slate-900 dark:text-white font-mono">{{ riItem.quantity }} {{ riItem.unit_name || 'PCS' }}</div>
+                      <div class="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">Diterima</div>
                     </div>
                   </div>
                 </div>
@@ -1513,32 +1641,34 @@ watch(() => route.query.sku, (newSku) => {
             </Card>
 
             <!-- Pengiriman Customer (DO) -->
-            <Card v-if="sortedDoList.length > 0" class="border border-slate-200/80 dark:border-slate-700/80 shadow-sm rounded-2xl overflow-hidden bg-white dark:bg-slate-800">
-              <CardHeader class="flex flex-row items-center justify-between border-b border-slate-100 dark:border-slate-700/60 bg-slate-50/60 dark:bg-slate-900/60 px-5 py-3.5">
+            <Card v-if="sortedDoList.length > 0" class="border border-slate-200/90 dark:border-slate-800 shadow-xs rounded-2xl overflow-hidden bg-white dark:bg-slate-900">
+              <CardHeader class="flex flex-row items-center justify-between border-b border-slate-100 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/60 px-5 py-3.5">
                 <div class="flex items-center gap-2">
                   <Truck class="w-4 h-4 text-slate-700 dark:text-slate-300"/>
-                  <CardTitle class="text-sm font-bold text-slate-900 dark:text-white">Pengiriman Customer (DO)</CardTitle>
+                  <CardTitle class="text-sm font-extrabold text-slate-900 dark:text-white">Pengiriman Customer (DO)</CardTitle>
                 </div>
-                <Badge variant="outline" class="font-bold text-[11px] text-slate-700 dark:text-slate-300">{{ sortedDoList.length }} Surat Jalan</Badge>
+                <Badge variant="outline" class="font-bold text-[11px] text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+                  {{ sortedDoList.length }} Surat Jalan
+                </Badge>
               </CardHeader>
               <CardContent class="p-0">
-                <div class="divide-y divide-slate-100 dark:divide-slate-700">
+                <div class="divide-y divide-slate-100 dark:divide-slate-800">
                   <div 
                     v-for="doItem in sortedDoList" 
                     :key="doItem.id"
                     @click="router.push(`/delivery-orders/${doItem.delivery_order_id || doItem.do?.id}`)"
-                    class="p-4 hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors cursor-pointer flex items-center justify-between gap-3"
+                    class="p-4 hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer flex items-center justify-between gap-3"
                   >
                     <div class="space-y-0.5 min-w-0">
-                      <div class="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <div class="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5 font-mono">
                         <span>{{ doItem.do?.number || 'DO' }}</span>
-                        <span class="text-slate-400 font-normal">&bull; {{ doItem.do?.trans_date }}</span>
+                        <span class="text-slate-400 font-normal font-sans">&bull; {{ doItem.do?.trans_date }}</span>
                       </div>
                       <p class="text-[11px] text-slate-500 truncate">Customer: {{ doItem.do?.customer_name }}</p>
                     </div>
                     <div class="text-right shrink-0">
-                      <div class="font-bold text-sm text-slate-900 dark:text-white">{{ doItem.quantity }} {{ doItem.unit_name || 'PCS' }}</div>
-                      <div class="text-[10px] text-slate-400 font-medium">Terkirim</div>
+                      <div class="font-extrabold text-sm text-slate-900 dark:text-white font-mono">{{ doItem.quantity }} {{ doItem.unit_name || 'PCS' }}</div>
+                      <div class="text-[10px] text-blue-600 dark:text-blue-400 font-bold">Terkirim</div>
                     </div>
                   </div>
                 </div>
