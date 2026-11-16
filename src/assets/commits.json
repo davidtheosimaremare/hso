@@ -1,5 +1,13 @@
 [
   {
+    "hash": "edef5138c4e9e2d20e8072d5ed2012f393879085",
+    "shortHash": "edef513",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Mon Nov 16 21:02:42 2026 +0700",
+    "message": "feat(hsq,hsb): integrate HSO sync for HSQ detail & add HSB to HSO feature"
+  },
+  {
     "hash": "8d6671149badcec9e5ae0561da3853ff2c6764f6",
     "shortHash": "8d66711",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Mon Aug 31 16:09:55 2026 +0700",
     "message": "feat(tools): integrate deep Accurate Online stock & HSO/HPO scan in Product Tracker"
-  },
-  {
-    "hash": "85974e89317e358638e24bd4f183a1124e098f59",
-    "shortHash": "85974e8",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Mon Aug 31 10:51:44 2026 +0700",
-    "message": "feat(tools): refine Product Usage & Allocation Tracker UI and HSO validation"
   }
 ]

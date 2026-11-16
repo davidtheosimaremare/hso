@@ -61,6 +61,7 @@ const fetchHsqList = async () => {
   try {
     // Panggil langsung ke HSO Sync Server (VPS Indonesia)
     const res = await getListSq({
+      limit: 3000,
       fields: 'id,number,transDate,customer,totalAmount,statusName,description,detailItem'
     })
     
