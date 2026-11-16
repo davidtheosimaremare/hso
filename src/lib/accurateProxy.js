@@ -48,6 +48,14 @@ export async function getDetailSo(id, type = 'sales-order') {
 }
 
 /**
+ * Shortcut: ambil detail Sales Quotation (HSQ) berdasarkan ID atau nomor
+ * Dipanggil langsung ke HSO Sync server di hso-sync.hokiindo.co.id
+ */
+export async function getDetailSq(id) {
+  return callAccurateProxy('detail-so', { id, type: 'sales-quotation' })
+}
+
+/**
  * Shortcut: ambil list Sales Orders
  * Pengganti: supabase.functions.invoke('accurate-list-so', { body: { fields, limit, sort, filterNumber } })
  */
@@ -89,4 +97,19 @@ export async function getListPo(options = {}) {
 export async function getListTrackingSo(options = {}) {
   return callAccurateProxy('list-tracking-so', options)
 }
+
+/**
+ * Shortcut: ambil usulan nomor HSO urut berikutnya
+ */
+export async function getNextHsoNumber() {
+  return callAccurateProxy('get-next-hso-number', {})
+}
+
+/**
+ * Shortcut: eksekusi konversi HSB ke HSO (Pecah atau Penuh)
+ */
+export async function convertHsbToHso(payload) {
+  return callAccurateProxy('convert-hsb-to-hso', payload)
+}
+
 

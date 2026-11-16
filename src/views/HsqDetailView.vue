@@ -2,6 +2,7 @@
 import { onMounted, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
+import { getDetailSq } from '@/lib/accurateProxy'
 import { 
   Loader2, AlertCircle, FileText, ArrowLeft, Calendar, 
   FileSpreadsheet, Download, ChevronRight, User, DollarSign, Tag, Search,
@@ -61,17 +62,30 @@ const filteredItems = computed(() => {
 const fetchHsqDetail = async () => {
   isLoading.value = true
   fetchError.value = null
-  selectedHsq.value = null
   
+  // 1. Coba baca dari cache lokal untuk tampilan instan tanpa blank
   try {
-    const { data, error } = await supabase.functions.invoke('accurate-detail-so', {
-      body: { id: hsqId, type: 'sales-quotation' }
-    })
+    const rawCache = localStorage.getItem('hir_sales_quotations_cache')
+    if (rawCache) {
+      const cachedList = JSON.parse(rawCache)
+      const match = cachedList.find(q => String(q.id) === String(hsqId) || q.number === String(hsqId) || q.number?.replace(/\//g, '-') === String(hsqId))
+      if (match && !selectedHsq.value) {
+        selectedHsq.value = match
+        isLoading.value = false
+      }
+    }
+  } catch (e) {
+    console.warn('Gagal membaca cache HSQ lokal:', e)
+  }
+
+  try {
+    // 2. Ambil detail segar langsung dari HSO Sync Proxy VPS (hso-sync.hokiindo.co.id)
+    const res = await getDetailSq(hsqId)
     
-    if (error) throw new Error(error.message || 'Gagal mengambil detail dari Edge Function')
-    if (!data?.s) throw new Error(data?.error || 'Gagal mengambil detail HSQ')
+    if (res.error) throw new Error(res.error)
+    if (!res.data?.s) throw new Error(res.data?.error || 'Gagal mengambil detail HSQ dari HSO Sync')
     
-    selectedHsq.value = data.d
+    selectedHsq.value = res.data.d
 
     // Fetch tracking data for this HSQ
     await fetchHsqTrackingData()

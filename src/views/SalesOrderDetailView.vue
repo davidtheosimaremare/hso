@@ -31,7 +31,7 @@ import {
   ChevronDown, ChevronUp, Plane, Box, Copy, Search, UploadCloud, FileSpreadsheet, Mail, Bell, RefreshCw, Eye, X, Maximize2,
   Film, Music, FileCode, Check, Trash2,
   MessageSquare, MessageCircle, Send, AtSign, Tag, CornerDownRight, Reply,
-  PackageSearch, Sparkles, Boxes, Globe,
+  PackageSearch, Sparkles, Boxes, Globe, ArrowRightLeft,
   Bold, Italic, Underline, Strikethrough, Highlighter, List, ListOrdered, Quote, Code, Link as LinkIcon, Eraser
 } from 'lucide-vue-next'
 
@@ -5771,6 +5771,16 @@ const downloadAttachment = async (att) => {
             <Button v-if="canWrite" size="sm" variant="outline" class="h-8 px-3 text-xs font-semibold border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-all cursor-pointer" @click="syncFromLogisticsDb" :disabled="isExcelParsing || isLoading">
               <RefreshCw class="w-4 h-4 mr-1.5 text-indigo-600 dark:text-indigo-400 shrink-0" :class="isExcelParsing ? 'animate-spin' : ''"/>
               <span>{{ isExcelParsing ? 'Syncing...' : 'Sync Logistik' }}</span>
+            </Button>
+
+            <Button 
+              v-if="soDetail?.number && soDetail.number.toUpperCase().startsWith('HSB')"
+              size="sm" 
+              class="h-8 px-3 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 transition-all cursor-pointer shadow-xs" 
+              @click="router.push('/hsb-to-hso')"
+            >
+              <ArrowRightLeft class="w-3.5 h-3.5 mr-1.5"/>
+              <span>Konversi ke HSO</span>
             </Button>
 
             <DropdownMenu>

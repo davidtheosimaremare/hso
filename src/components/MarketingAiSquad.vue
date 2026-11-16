@@ -104,16 +104,16 @@ const DEFAULT_KNOWLEDGE_BASE = [
   },
   {
     id: 'kb_2',
-    category: 'gcomin',
-    title: 'Standar Lux SNI Tata Cahaya Gudang & Thermal Heatsink High Bay LED',
-    source: 'SNI 03-6575 & G-Comin Engineering Lab',
-    summary: 'Plafon gudang 8-12 meter membutuhkan efikasi minimal 130-150 lm/W dengan sudut berkas (beam angle) 60°-90° agar cahaya jatuh di lantai kerja, bukan terbuang ke dinding atas. Suhu atap seng bisa 50°C, membutuhkan sirip pendingin die-cast ADC12.',
+    category: 'siemens',
+    title: 'Standar Tata Kelola Daya & Form Segregasi Cubicle Switchgear (IEC 61439-1/2 & PUIL 2020)',
+    source: 'IEC 61439 Switchgear Assemblies & PUIL 2020',
+    summary: 'Konfigurasi Form 2b, 3b, hingga 4b pada Main Distribution Panel (MDP) memisahkan busbar fasa, unit fungsional breaker, dan terminal eksternal untuk menjamin keselamatan operator saat inspeksi pemeliharaan operasional industri.',
     keyInsights: [
-      'Standar SNI: Gudang logistik 150 Lux, area packaging 300 Lux, ruang kerja presisi 500 Lux.',
-      'Unified Glare Rating (UGR) < 22 untuk kenyamanan mata operator forklift dan keselamatan K3.',
-      'Proteksi IP66 waterproof dan IK10 tahan benturan fisik di lingkungan pabrik berat.'
+      'Form 4b memberikan isolasi total antar unit fungsional dan terminal konduktor eksternal.',
+      'Uji kenaikan suhu (temperature rise test) verifikasi disipasi panas switchgear sesuai ambang batas busbar tembaga.',
+      'Mencegah propagasi busur api internal (internal arc flash) merambat antar kompartemen kubikel.'
     ],
-    tags: ['G-Comin', 'High Bay UFO', 'Standar Lux SNI', 'Thermal Management']
+    tags: ['IEC 61439-1/2', 'Switchboard Form 4b', 'PUIL 2020', 'Busbar Sizing']
   },
   {
     id: 'kb_3',
@@ -130,16 +130,16 @@ const DEFAULT_KNOWLEDGE_BASE = [
   },
   {
     id: 'kb_4',
-    category: 'gcomin',
-    title: 'Kalkulasi ROI PJU Solar Cell All-in-One vs PJU Konvensional',
-    source: 'HSO Engineering Case Study & Kawasan Industri Cikarang',
-    summary: 'Pemasangan 20 titik PJU konvensional membutuhkan biaya kabel tanah NYFGBY, galian paving, dan panel timer mencapai Rp 170 Juta. PJU Solar Cell G-Comin memangkas biaya hingga 50% di muka dan nol tagihan listrik PLN selamanya.',
+    category: 'siemens',
+    title: 'Analisis Tekno-Ekonomi Koordinasi Kaskade (Cascading) Breaker Siemens Sentron',
+    source: 'IEC 60947-2 Annex A & Siemens Sentron Technical Guide',
+    summary: 'Penerapan teknik kaskade sesuai IEC 60947-2 Lampiran A memungkinkan penggunaan breaker hilir (downstream) dengan kapasitas pemutusan Icu lebih ekonomis berkat pembatasan energi tembus (let-through energy I²t) oleh breaker hulu Siemens Sentron.',
     keyInsights: [
-      'Baterai LiFePO4 tahan > 2.000 siklus charging tanpa efek memori.',
-      'Sensor radar microwave mendeteksi gerakan kendaraan hingga 12 meter untuk meredupkan saat sepi.',
-      'Balik modal investasi (Payback period) rata-rata tercapai dalam 11-14 bulan.'
+      'Mengurangi biaya investasi switchboard cabang hilir hingga 25-35% tanpa mengorbankan keselamatan sistem.',
+      'Tabel koordinasi resmi Siemens menjamin validitas kaskade teruji laboratorium akreditasi internasional.',
+      'Mencegah kerusakan termal dan elektrodinamik pada konduktor sirkit cabang selama gangguan hubung singkat.'
     ],
-    tags: ['PJU Solar', 'G-Comin', 'ROI Kalkulator', 'Green Energy']
+    tags: ['IEC 60947-2 Annex A', 'Cascading Proteksi', 'Siemens Sentron', 'Efisiensi Capex']
   },
   {
     id: 'kb_5',
@@ -260,17 +260,17 @@ const DEMO_AUDIENCE_PERSONAS = [
   },
   {
     id: 'joko',
-    name: 'Mas Joko',
-    age: 27,
+    name: 'Ir. Joko Prasetyo, S.T.',
+    age: 38,
     location: 'Surabaya (Rungkut Industri)',
-    role: 'Mandor Instalasi Elektrikal & Tenaga Lapangan Proyek',
-    strategicMarket: 'Pekerja Lapangan',
+    role: 'Lead Electrical Testing & Commissioning Engineer (AK3 Listrik)',
+    strategicMarket: 'Testing & Commissioning',
     segment: 'field',
-    avatarEmoji: '🛠️',
-    avatarBg: 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300',
-    painPoint: 'Kabel semrawut tanpa label ferrule bikin pusing, mandor cerewet, lembur malam minggu kopi habis.',
-    whatMatters: 'Meme relatable, humor mandor & kabel tembaga, bahasa santai, tips praktis instalasi di bedeng proyek, dan keselamatan kerja K3.',
-    primaryInterest: 'humor'
+    avatarEmoji: '⚡',
+    avatarBg: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
+    painPoint: 'Toleransi tripping kurva TCC tidak presisi dengan kurva pabrikan, resistansi kontak busbar tinggi memicu hotspot saat uji beban penuh, dan kendala sinkronisasi interlock mekanikal-elektrikal ACB.',
+    whatMatters: 'Uji injeksi sekunder kurva TCC Siemens ETU, uji kontak resistance (Micro-Ohm Ductor < 50 µΩ), protokol komisioning SAT terverifikasi, dan sertifikasi kalibrasi alat uji.',
+    primaryInterest: 'testing'
   },
   {
     id: 'hendro',
@@ -288,17 +288,17 @@ const DEMO_AUDIENCE_PERSONAS = [
   },
   {
     id: 'ratna',
-    name: 'Ibu Ratna',
-    age: 39,
+    name: 'Ir. Ratna, M.T.',
+    age: 41,
     location: 'Bekasi (Jababeka)',
-    role: 'Facility & HSE (K3) / Sustainability Manager',
+    role: 'Plant Reliability & Electrical Safety / HSE Manager',
     strategicMarket: 'HSE & K3',
     segment: 'end_user',
     avatarEmoji: '🌱',
     avatarBg: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
-    painPoint: 'Tagihan listrik pabrik membengkak, lampu gudang sering mati kena panas atap seng 50°C, ancaman bahaya arc flash pada panel lama.',
-    whatMatters: 'Standar lux SNI 03-6575, efisiensi energi (ROI < 14 bulan), lampu High Bay heatsink ADC12 tahan 50°C, proteksi arc flash.',
-    primaryInterest: 'gcomin'
+    painPoint: 'Rugi daya reaktif (kVARh) pabrik tinggi, ancaman insiden bahaya arc flash pada switchboard tegangan rendah, dan target audit ISO 50001.',
+    whatMatters: 'Mitigasi bahaya arc flash (IEEE 1584 / NFPA 70E), audit kualitas daya THD-V/THD-I via Sentron PAC, efisiensi konsumsi daya, dan kepatuhan K3 Listrik PUIL 2020.',
+    primaryInterest: 'safety'
   },
   {
     id: 'rian',
@@ -341,10 +341,10 @@ function calculateAudienceBaseline(slot) {
         reaction = 'Sangat Relevan dengan Proyek Panel'
         quote = '"Nah iki! Spesifikasi Sentron 3VM presisi gini yang dicari konsultan. Asal stok beneran ready di gudang Hokiindo, langsung tak masukin BoQ switchboard."'
         actionTriggered = 'Cek stok di shop.hokiindo.co.id & Minta Penawaran BoQ'
-      } else if (title.includes('kabel') || title.includes('grounding') || title.includes('trafo')) {
+      } else if (title.includes('busbar') || title.includes('grounding') || title.includes('trafo')) {
         score = 86
         reaction = 'Suka Pembahasannya'
-        quote = '"Bener banget, kabel rapi standar IEC bikin serah terima lancar tanpa rewel konsultan pengawas."'
+        quote = '"Konfigurasi busbar dan pembumian berstandar IEC membuat serah terima komisioning lancar tanpa catatan konsultan pengawas."'
         actionTriggered = 'Bookmark Referensi Teknis'
       } else {
         score = 70
@@ -417,27 +417,27 @@ function calculateAudienceBaseline(slot) {
       if (title.includes('wiring') || title.includes('terminal') || title.includes('busbar') || title.includes('baut') || title.includes('kontak') || title.includes('pasang') || title.includes('teknisi')) {
         score = 95
         reaction = 'Sangat Praktis untuk Teknisi Lapangan'
-        quote = '"Terminal baut tembaga Siemens Sentron kokoh dan anti-sleek. Kalau ada panduan skema praktis gini teknisi di ruang panel makin cepet ngerjainnya."'
+        quote = '"Terminal baut tembaga Siemens Sentron kokoh dan presisi. Kalau ada panduan skema praktis gini teknisi di ruang panel makin cepat mengeksekusi wiring."'
         actionTriggered = 'Simpan Panduan Wiring & Tips Panel'
       } else {
-        score = 71
-        reaction = 'Bagus untuk Edukasi'
-        quote = '"Penjelasannya oke, kalau bisa tambahin foto terminal sambungan kabel biar makin kebayang."'
-        actionTriggered = 'Baca Sekilas'
+        score = 75
+        reaction = 'Bagus untuk Edukasi Teknik'
+        quote = '"Penjelasannya komprehensif, sertakan skema diagram wiring terminal busbar agar teknisi semakin cepat memahami konfigurasi polaritas."'
+        actionTriggered = 'Baca Detail Rekayasa'
         suggestedTweak = 'Sertakan foto detail terminal tembaga busbar pada visual konten.'
       }
     } else if (persona.id === 'joko') {
-      // Pekerja Lapangan (Mandor)
-      if (cat === 'humor' || title.includes('kuli') || title.includes('mandor') || title.includes('kopi') || title.includes('kabel') || postType.includes('Reels') || postType.includes('Meme')) {
-        score = 98
-        reaction = 'Gokil & Relatable Banget!'
-        quote = '"Wahahaha sumpah relate pol rek! Kejadian tenan pas kabel grounding meh dipotong mandor nggo tuku kopi! Langsung tak share ning grup WA kuli proyek!"'
-        actionTriggered = 'Share ke Grup WhatsApp Kuli Proyek & Tinggalkan Komentar'
+      // Testing & Commissioning Site Engineer
+      if (title.includes('uji') || title.includes('komisioning') || title.includes('fat') || title.includes('sat') || title.includes('tcc') || title.includes('injeksi') || title.includes('megger') || title.includes('proteksi')) {
+        score = 96
+        reaction = 'Sangat Krusial untuk Komisioning Site'
+        quote = '"Protokol uji injeksi sekunder kurva TCC dan batas toleransi tripping ini sangat presisi. Ini standar wajib yang kami terapkan saat SAT sebelum energize."'
+        actionTriggered = 'Simpan Protokol Pengujian & Bookmark Dokumen Teknik'
       } else {
-        score = 65
-        reaction = 'Bahasa Agak Serius'
-        quote = '"Bahasanya agak serius ndoro konsultan, tapi gambar ilustrasinya mantap."'
-        actionTriggered = 'Lewat ke Konten Video'
+        score = 80
+        reaction = 'Relevan Secara Teknis'
+        quote = '"Spesifikasi peralatan terinci baik, sangat membantu validasi Single Line Diagram."'
+        actionTriggered = 'Verifikasi Parameter Spesifikasi'
       }
     } else if (persona.id === 'hendro') {
       // Purchasing Manager
@@ -561,17 +561,17 @@ const SQUAD_AGENTS = [
   {
     id: 'tejo',
     name: 'Mas Tejo',
-    nickname: 'Pujangga B2B',
-    title: 'Copywriter Teknis & Thought Leadership',
+    nickname: 'Lead Tech Author',
+    title: 'Lead Power Systems Engineer & Technical Specification Author',
     avatarBg: 'from-blue-600 to-indigo-700',
     badgeCls: 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border-blue-200 dark:border-blue-800',
     avatarEmoji: '✍️',
-    quote: '"Tata kata tertata rapi, reputasi teknik meninggi, closing transaksi makin pasti."',
+    quote: '"Integritas rekayasa kelistrikan ditentukan oleh presisi spesifikasi dan kepatuhan mutlak pada standar IEC 60947 serta PUIL 2020."',
     specialties: [
-      'Artikel LinkedIn B2B (3x / minggu)',
-      'Artikel Blog SEO Website PT Hokiindo Raya',
-      'Copywriting Teknis Siemens & Lampu G-Comin',
-      'Body Email Newsletter Perusahaan'
+      'Technical Whitepapers & Application Guides (IEC 60947, IEC 61439)',
+      'Kajian Koordinasi Selektivitas & Mitigasi Bahaya Arc Flash',
+      'Optimasi Single Line Diagram (SLD) & Spesifikasi Tender Industri',
+      'Technical Bulletins untuk Konsultan Perencana & Panel Builder'
     ],
     defaultPlatform: 'linkedin',
     defaultModel: 'deepseek-v3',
@@ -580,18 +580,18 @@ const SQUAD_AGENTS = [
   },
   {
     id: 'bagong',
-    name: 'Cak Bagong',
-    nickname: 'Raja Konten & Guyon',
-    title: 'Creative Reels, TikTok & Meme Proyek',
+    name: 'Ir. Bagong, S.T.',
+    nickname: 'Commissioning Specialist',
+    title: 'Field Testing, FAT/SAT & Commissioning Engineer',
     avatarBg: 'from-amber-500 to-orange-600',
     badgeCls: 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-200 dark:border-amber-800',
-    avatarEmoji: '🎬',
-    quote: '"Konten gak usah kaku koyo tiang sutet, seng penting rame, ngenai atine kuli lan engineer!"',
+    avatarEmoji: '⚡',
+    quote: '"Uji injeksi sekunder tidak pernah bohong; kurva TCC dan ketahanan kontak harus presisi di lapangan sebelum serah terima daya penuh."',
     specialties: [
-      'Naskah Video Vertikal Hook 3 Detik (Reels/TikTok)',
-      'Meme & Sindiran Lucu Dunia Proyek ME & Teknisi',
-      'Struktur Alur Konten Carousel 5-Slide',
-      'Video Bumper Hari Besar & Momen Khusus'
+      'Protokol Pengujian Lapangan FAT & SAT Berstandar IEC',
+      'Verifikasi Kurva Waktu-Arus (TCC) Injeksi Sekunder',
+      'Analisis Termografi Inframerah & Ductor Micro-Ohm',
+      'Studi Kasus Kegagalan Proteksi & Mitigasi Arc Flash'
     ],
     defaultPlatform: 'instagram',
     defaultModel: 'deepseek-v3',
@@ -601,17 +601,17 @@ const SQUAD_AGENTS = [
   {
     id: 'sri',
     name: 'Mbak Sri',
-    nickname: 'Sekretaris Gercep',
-    title: 'Operasional, Jadwal & Email Blaster',
+    nickname: 'Engineering Coordinator',
+    title: 'Tender Document Specialist & Supply Chain Coordinator',
     avatarBg: 'from-emerald-600 to-teal-700',
     badgeCls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
     avatarEmoji: '📋',
-    quote: '"Semua tercatat, jadwal posting anti-bolong, klien di-follow up set-sat-set."',
+    quote: '"SLA respon BoQ 2 jam, validitas Certificate of Origin (CoO) pabrikan terjamin 100% untuk kelulusan tender industri."',
     specialties: [
-      'Penjadwalan Konten 3x Seminggu (Multiplatform)',
-      'Draf Email Marketing Klien Bi-Weekly (2x/bulan)',
-      'Laporan Bulanan & Digest Performa Marketing',
-      'Template Balas DM / Komentar Klien B2B'
+      'Analisis BoQ & SLA Penawaran Teknis (< 4 Jam)',
+      'Manajemen Dokumen Keaslian CoO & Sertifikat Type-Test',
+      'Komunikasi Terjadwal Multi-Platform untuk EPC & Panel Maker',
+      'Orkestrasian Tindak Lanjut Inquiries Proyek Industri'
     ],
     defaultPlatform: 'email',
     defaultModel: 'deepseek-v3',
@@ -620,18 +620,18 @@ const SQUAD_AGENTS = [
   },
   {
     id: 'broto',
-    name: 'Juragan Broto',
-    nickname: 'Pawang Iklan & Cuan',
-    title: 'Ads Manager & Growth Strategist B2B',
+    name: 'Ir. Broto Kusumo, M.T.',
+    nickname: 'Industrial Solutions Director',
+    title: 'Head of Energy Optimization & Capex/Opex Engineering',
     avatarBg: 'from-purple-600 to-pink-700',
     badgeCls: 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border-purple-200 dark:border-purple-800',
-    avatarEmoji: '💰',
-    quote: '"Ojo mung obong-obong dhuwit iklan! Budget sak upet, target pas, cuane sak kontainer!"',
+    avatarEmoji: '💼',
+    quote: '"Investasi kelistrikan pabrik harus terukur secara TCO (Total Cost of Ownership), meminimalkan risiko downtime tak terjadwal dan menekan rugi daya."',
     specialties: [
-      'Kurasi Konten Organik Terbaik untuk Di-Boost Ads',
-      'Strategi Iklan Momen & Event Tender Industri',
-      'Targeting Persona B2B (Purchasing, ME, Kontraktor)',
-      'Kalkulasi Efisiensi Budget & Estimasi ROI'
+      'Analisis Total Cost of Ownership (TCO) & Payback Industri',
+      'Kajian Retrofit & Modernisasi Switchgear Existing',
+      'Outreach B2B Strategis untuk Direktur Operasional & Purchasing',
+      'Kajian Kelayakan Monitoring Energi (ISO 50001 / IEC 61557-12)'
     ],
     defaultPlatform: 'linkedin',
     defaultModel: 'deepseek-v3',
@@ -745,7 +745,7 @@ Ketika terjadi arus beban lebih (overload) atau gangguan hubung singkat (short c
 
 Inilah alasan PT Hokiindo Raya secara konsisten merekomendasikan jajaran MCCB Siemens Sentron 3VM:
 1. Akurasi Trip Unit Teruji: Respon termal-magnetik dan proteksi elektronik yang presisi tanpa false tripping.
-2. Dimensi Kompak & Ergonomis: Menghemat ruang tata letak panel hingga 20%, memudahkan penarikan kabel.
+2. Dimensi Kompak & Ergonomis: Menghemat ruang tata letak panel hingga 20%, memudahkan terminasi konduktor busbar.
 3. Ketersediaan Riil (Ready Stock): Kami memahami deadline proyek Anda tidak bisa menunggu waktu inden berbulan-bulan.
 
 Bagaimana standar proteksi panel di plant Anda saat ini? Mari berdiskusi tentang optimasi sistem kelistrikan Anda.`,
@@ -776,42 +776,42 @@ Bagaimana standar proteksi panel di plant Anda saat ini? Mari berdiskusi tentang
       dateStr: dates[1],
       dayLabel: 'Senin Sore',
       agentId: 'bagong',
-      category: 'humor',
+      category: 'testing',
       platform: 'instagram',
-      postType: 'Video Reels / TikTok (Hook 3 Detik)',
-      title: 'Detik-Detik Breaker Murahan Ngetrip Pas Bos Audit',
-      hook: '[0-3 Detik]: "Momen paling bikin jantungan anak maintenance shift 3: bos lagi audit, breaker mendadak ngetrip!" 😱',
-      body: `[Alur Video Vertikal 30 Detik]:
+      postType: 'Video Walkthrough Pengujian Teknis',
+      title: 'Verifikasi Kurva Waktu-Arus (TCC) Injeksi Sekunder: Mengapa Breaker Non-Standar Trip Prematur',
+      hook: '[0-3 Detik]: "Pernah mengalami breaker mendadak trip di 80% beban nominal saat commissioning? Jangan salahkan beban dulu sebelum verifikasi kurva TCC trip unit!" ⚡',
+      body: `[Protokol Video Pengujian Teknis 30 Detik]:
 
-👉 [03-08 Detik]: 
-Visual: Ekspresi muka panik teknisi pegang obeng sambil ngintip bos dari balik pintu ruang panel.
-VO: "Niat hemat anggaran pengadaan, malah beli breaker abal-abal yang baru kena beban 80% udah panas jeglek!"
+👉 [00-08 Detik]: 
+Visual: Display alat uji injeksi sekunder (Secondary Injection Test Set) terhubung ke Electronic Trip Unit (ETU) Siemens Sentron 3VA.
+Penjelasan: "Breaker non-standar bimetal sering mengalami degradasi termal akibat creepage & contact bounce, memicu pergeseran kurva invers sehingga trip prematur sebelum mencapai arus proteksi nominal."
 
-👉 [08-18 Detik]: 
-Visual: Transisi cepat ke tangan merapikan kabel di panel rapi dengan MCCB Siemens 3VM & Lampu G-Comin yang terang benderang.
-VO: "Makanya, engineer yang sayang karir dan sayang nyawa milihnya Siemens Sentron dari PT Hokiindo Raya. Dingin, presisi, gak rewel waktu beban puncak!"
+👉 [08-20 Detik]: 
+Visual: Grafik Time-Current Characteristic (TCC) presisi dengan kurva L-S-I-G Siemens Sentron yang stabil pada toleransi ±5% sesuai IEC 60947-2.
+Penjelasan: "Trip Unit Mikroprosesor Siemens Sentron mengukur nilai True RMS arus fasa, menjamin selektivitas penuh tanpa risiko false tripping akibat harmonisa beban non-linear."
 
-👉 [18-25 Detik]:
-Visual: Si teknisi santai ngopi bareng bos yang senyum puas lihat mesin jalan lancar.
-VO: "Stok ready, garansi resmi pabrikan, hati tenang, bos senang!"`,
-      cta: 'Tulis di kolom komentar: Pernah ngalamin drama jeglek pas bos lewat? Hubungi PT Hokiindo Raya buat solusi anti-senam jantung!',
-      hashtags: '#HumorTeknik #DeritaTeknisi #KuliProyek #SiemensIndonesia #PTHokiindoRaya #PanelMakerKocak',
+👉 [20-30 Detik]:
+Visual: Pengecekan status kontak breaker pada busbar cubicle yang dingin dan stabil pada uji injeksi arus penuh.
+Penjelasan: "Gunakan pemutus sirkuit dengan akurasi teruji dan Certificate of Origin (CoO) pabrikan resmi dari PT Hokiindo Raya."`,
+      cta: 'Konsultasikan kurva koordinasi proteksi dan kebutuhan breaker industri Anda bersama tim rekayasa PT Hokiindo Raya di shop.hokiindo.co.id.',
+      hashtags: '#UjiInjeksiSekunder #KurvaTCC #ProteksiListrik #SiemensSentron #IEC60947 #PTHokiindoRaya',
       curationStatus: 'approved',
       uploadedImagePreview: '',
       externalImageUrl: '',
       designGuide: {
         dimensions: '1080 x 1920 px (9:16 Vertikal Thumbnail)',
-        layoutType: 'Split Komedi Proyek (Panik vs Santai)',
-        headlineOverlay: 'BREAKER JEGLEK PAS BOS LAGI AUDIT?!',
-        subHeadlineOverlay: 'Pilih Breaker Abal-Abal vs Tenangnya Pakai Siemens HSO',
+        layoutType: 'Technical Diagnostic Protocol Visual',
+        headlineOverlay: 'UJI INJEKSI SEKUNDER KURVA TCC: BREAKER SERING FALSE TRIP?',
+        subHeadlineOverlay: 'Verifikasi Toleransi Tripping IEC 60947-2 Siemens Sentron',
         colorPalette: [
-          { name: 'Alert Red', hex: '#DC2626' },
-          { name: 'Warning Amber', hex: '#F59E0B' },
-          { name: 'Slate Black', hex: '#020617' },
-          { name: 'Bright White', hex: '#FFFFFF' }
+          { name: 'Precision Cyan', hex: '#06B6D4' },
+          { name: 'Siemens Petrol', hex: '#00646E' },
+          { name: 'Dark Navy', hex: '#020617' },
+          { name: 'Pure White', hex: '#FFFFFF' }
         ],
-        compositionDetails: 'Cover video 9:16: Wajah panik teknisi intip bos di panel atas, unit breaker Siemens dingin dengan stempel "BEBAS SENAM JANTUNG" di bawah.',
-        aiPrompt: 'Dramatic comic style vertical frame, top half panicked factory technician looking at a breaker sparking, bottom half calm engineer holding Siemens breaker with thumbs up --ar 9:16'
+        compositionDetails: 'Teknisi komisioning bersertifikat mengoperasikan test kit injeksi sekunder dengan tampilan kurva waktu-arus digital di latar belakang ruang switchboard industri.',
+        aiPrompt: 'High-tech electrical commissioning engineer testing a Siemens circuit breaker with secondary injection test set, digital logarithmic graph display, clean industrial switchgear laboratory --ar 9:16'
       }
     })
 
@@ -866,36 +866,34 @@ Keuntungan pemesanan minggu ini:
       dateStr: dates[3],
       dayLabel: 'Rabu Pagi',
       agentId: 'tejo',
-      category: 'gcomin',
+      category: 'siemens',
       platform: 'website',
       postType: 'Artikel Blog Website & LinkedIn SEO',
-      title: '3 Dosa Kontraktor Saat Pasang Lampu High Bay di Gudang Plafon 9 Meter',
-      hook: 'Lampu watt besar bukan jaminan gudang terang merata. Malah tagihan listrik membengkak dan pekerja silau.',
-      body: `Banyak pengelola logistik mengeluhkan area lorong racking mereka temaram meski sudah memasang puluhan titik lampu 200 Watt.
+      title: '3 Kesalahan Fatal Pemilihan Kapasitas Pemutusan (Breaking Capacity kA) pada Switchboard Industri',
+      hook: 'Memilih breaker hanya berdasarkan arus nominal (In) tanpa menghitung kapasitas hubung singkat prospektif trafo (Isc) adalah penyebab utama ledakan cubicle panel.',
+      body: `Banyak perencana elektrikal mengabaikan relasi antara impedansi persentase (%Z) transformator daya dan level arus hubung singkat simetris 3-fasa pada busbar utama LVMDP.
 
-Inilah 3 kesalahan umum tata cahaya industri:
-1. Mengabaikan Sudut Pencahayaan (Beam Angle): Menggunakan lensa 120° pada plafon tinggi menyebabkan cahaya terbuang ke dinding atas, bukan ke lantai kerja.
-2. Tidak Memperhatikan UGR (Unified Glare Rating): Silau berlebih membuat operator forklift cepat lelah dan memicu insiden K3.
-3. Memilih Lampu Tanpa Heatsink Die-Cast Alumunium: Panas terjebak di dekat atap seng membakar driver LED dalam hitungan bulan.
-
-Solusi Lampu High Bay UFO G-Comin dari PT Hokiindo Raya dirancang dengan heatsink sirip aerodinamis dan efikasi hingga 140 lm/W.`,
-      cta: 'Dapatkan simulasi desain pencahayaan dialux gratis untuk gudang Anda dengan menghubungi engineer lighting PT Hokiindo Raya.',
-      hashtags: '#LampuGudang #HighBayLED #GCominLighting #PencahayaanIndustri #EfisiensiEnergi #HokiindoRaya',
+Inilah 3 parameter rekayasa krusial yang wajib diverifikasi:
+1. Menghitung Isc Prospektif Trafo: Rumus dasar Isc = S_trafo / (akar(3) x V_fasa x %Z). Untuk trafo 2000 kVA 20kV/400V dengan %Z = 6%, arus short-circuit simetris mencapai 48,1 kA. Menggunakan breaker 36kA pada posisi ini adalah pelanggaran fatal standar IEC 60947-2.
+2. Membedakan Icu vs Ics: Icu (Ultimate Breaking Capacity) hanya menguji kemampuan pemutusan sekali uji lab. Pastikan memilih breaker dengan Ics = 100% Icu (seperti Siemens Sentron 3VA/3VM) agar breaker tetap beroperasi andal pasca-gangguan.
+3. Koordinasi Back-up Protection: Jika level gangguan melebihi rating breaker cabang, terapkan koordinasi kaskade (cascading) berdasar tabel resmi Siemens Sentron untuk membatasi energi tembus I²t.`,
+      cta: 'Dapatkan tabel kalkulasi kA trafo vs breaker dan konsultasi spesifikasi switchboard bersama tim rekayasa PT Hokiindo Raya di hokiindo.co.id.',
+      hashtags: '#BreakingCapacity #IEC60947 #SiemensSentron #KalkulasiHubungSingkat #SwitchboardDesign #HokiindoRaya',
       curationStatus: 'approved',
       uploadedImagePreview: '',
       externalImageUrl: '',
       designGuide: {
         dimensions: '1200 x 628 px (16:9 Banner)',
         layoutType: 'Technical Diagnostic Comparison / Diagram',
-        headlineOverlay: '3 KESALAHAN FATAL INSTALASI LAMPU GUDANG TINGGI',
-        subHeadlineOverlay: 'Solusi Pencahayaan Efisien Bersama G-Comin High Bay LED',
+        headlineOverlay: '3 KESALAHAN FATAL PEMILIHAN BREAKING CAPACITY (kA)',
+        subHeadlineOverlay: 'Rumus Kalkulasi Isc Trafo & Jaminan Ics = 100% Icu Siemens Sentron',
         colorPalette: [
-          { name: 'Dark Warehouse Navy', hex: '#0B132B' },
-          { name: 'Bright Illuminating Yellow', hex: '#FACC15' },
+          { name: 'Engineering Navy', hex: '#0B132B' },
+          { name: 'Precision Cyan', hex: '#00F0FF' },
           { name: 'Safety White', hex: '#FFFFFF' }
         ],
-        compositionDetails: 'Diagram skematik gudang modern berplafon tinggi dengan perbandingan kerucut cahaya lampu salah vs lampu benar.',
-        aiPrompt: 'Architectural lighting simulation diagram inside a massive logistics warehouse, light beam rays shining down on warehouse floor --ar 16:9'
+        compositionDetails: 'Diagram skematik Single Line Diagram (SLD) transformator distribusi ke Main Switchboard dengan rumus perhitungan Isc dan grafik kurva pemutusan breaker Siemens.',
+        aiPrompt: 'Clean technical electrical single line diagram with short circuit calculation formulas, blueprint aesthetics, professional switchgear engineering --ar 16:9'
       }
     })
 
@@ -931,7 +929,7 @@ Slide 5: Solusi - Re-evaluasi dengan Siemens Sentron 3VM ready stock di PT Hokii
           { name: 'Industrial Charcoal', hex: '#1F2937' },
           { name: 'Siemens Amber', hex: '#F59E0B' }
         ],
-        compositionDetails: 'Visual dramatis breaker dengan efek thermal scanner inframerah (panas merah-kuning) di terminal kabelnya.',
+        compositionDetails: 'Visual dramatis breaker dengan efek thermal scanner inframerah (panas merah-kuning) di terminal busbarnya.',
         aiPrompt: 'Infrared thermal scan visual of an electrical circuit breaker overheating, stark contrast, alert red warning graphics --ar 4:5'
       }
     })
@@ -986,35 +984,36 @@ Slide 5: Solusi - Re-evaluasi dengan Siemens Sentron 3VM ready stock di PT Hokii
       dateStr: dates[6],
       dayLabel: 'Jumat',
       agentId: 'bagong',
-      category: 'humor',
-      platform: 'facebook',
-      postType: 'Meme Proyek & Post Akhir Pekan',
-      title: 'Ketika Kabel Grounding Mau Dipotong Kuli Buat Beli Kopi',
-      hook: '"Detik-detik mandor teriak: Woi! Itu kabel tembaga panel, bukan kawat jemuran!" 😂',
-      body: `Derita proyek akhir pekan yang dialami hampir semua site engineer:
+      category: 'testing',
+      platform: 'linkedin',
+      postType: 'Studi Kasus Teknis & Evaluasi Lapangan',
+      title: 'Analisis Kegagalan Kontak Pemutus Akibat Peningkatan Resistansi Mikro-Ohm (Ductor Test)',
+      hook: 'Resistansi kontak di atas 50 µΩ pada terminal busbar breaker adalah bom waktu termal I²R yang memicu hotspot hingga 140°C saat dialiri arus beban penuh.',
+      body: `Banyak kegagalan switchboard terjadi bukan karena kesalahan tripping kurva proteksi, melainkan degradasi mekanikal permukaan kontak pemutus sirkuit.
 
-Waktu sore hari mau serah terima proyek, mendadak ada potongan kabel grounding sisa yang udah digulung rapi mau 'diamankan' kuli buat modal ngopi malam minggu.
+Mengapa uji Contact Resistance (Ductor Test) wajib dilakukan saat FAT/SAT:
+1. Rugi Disipasi Panas I²R: Resistansi kontak yang naik dari 25 µΩ menjadi 150 µΩ pada arus 630A menghasilkan pelepasan panas terkonsentrasi sebesar ~60 Watt pada titik sambungan yang sempit.
+2. Degradasi Kontak Bimetal: Breaker non-standar yang menggunakan lapisan tembaga tipis tanpa paduan perak-nikel mengalami oksidasi termal cepat, melelehkan insulator bodi switchgear.
+3. Keunggulan Siemens Sentron: Desain kontak perak-nikel (AgNi) pada Siemens Sentron 3VM/3VA mempertahankan resistansi kontak stabil < 30 µΩ bahkan setelah menjalani siklus pemutusan arus hubung singkat berat.
 
-Untung kabel grounding panel Siemens Sentron yang disuplai PT Hokiindo Raya tercatat rapi per meter di sistem HSO, jadi gak bisa ditilep diam-diam!
-
-Selamat berakhir pekan untuk seluruh pejuang proyek, panel maker, dan engineer tangguh di seluruh Indonesia! Mesin istirahat sejenak, tenaga di-charge kembali.`,
-      cta: 'Tag mandor atau temen proyekmu yang suka ngincer sisa kabel tembaga! Tetap utamakan K3 dan keaslian komponen!',
-      hashtags: '#JumatBerkah #HumorProyek #KuliJawa #EngineerKocak #PTHokiindoRaya #SiemensIndonesia',
+Pastikan protokol komisioning Anda mencakup pengukuran mikro-ohm 4-kawat (Kelvin bridge) sebelum serah terima daya.`,
+      cta: 'Konsultasikan prosedur pengujian komisioning dan ketersediaan komponen proteksi resmi Siemens bersama tim rekayasa PT Hokiindo Raya di hokiindo.co.id.',
+      hashtags: '#DuctorTest #ContactResistance #FAT #SAT #KomisioningListrik #SiemensSentron #HokiindoRaya',
       curationStatus: 'approved',
       uploadedImagePreview: '',
       externalImageUrl: '',
       designGuide: {
-        dimensions: '1080 x 1080 px (1:1 Square Meme)',
-        layoutType: 'Meme Split Relatable Proyek',
-        headlineOverlay: 'KETIKA KABEL GROUNDING MAU DIPOTONG KULI...',
-        subHeadlineOverlay: 'Mandor: "Woi! Itu tembaga panel Siemens, dudu kawat jemuran!"',
+        dimensions: '1080 x 1080 px (1:1 Technical Infographic)',
+        layoutType: 'Engineering Failure Analysis Graphic',
+        headlineOverlay: 'RESISTANSI KONTAK > 50 µΩ: BOM WAKTU HOTSPOT RUANG PANEL',
+        subHeadlineOverlay: 'Pentingnya Uji Ductor Test 4-Kawat pada Breaker Siemens Sentron',
         colorPalette: [
-          { name: 'Kopi Hitam Brown', hex: '#78350F' },
+          { name: 'Alert Red', hex: '#DC2626' },
           { name: 'Copper Shiny', hex: '#D97706' },
-          { name: 'Bedeng Grey', hex: '#4B5563' }
+          { name: 'Dark Navy', hex: '#0B132B' }
         ],
-        compositionDetails: 'Format meme split 2 frame: Atas foto kabel tembaga rapi di panel, bawah foto secangkir kopi hitam dan gorengan di bedeng proyek.',
-        aiPrompt: 'Relatable funny meme comic split frame of electrical copper wiring on top and steaming black coffee with fried banana snack on bottom --ar 1:1'
+        compositionDetails: 'Visual inframerah termografi yang menampakkan perbandingan terminal breaker bertemperatur normal (biru-hijau) vs hotspot kritis (merah membara) akibat resistansi kontak tinggi.',
+        aiPrompt: 'Infrared thermal imaging comparison of electrical circuit breaker terminals, one cool green and one glowing red hotspot, professional engineering diagram layout --ar 1:1'
       }
     })
   } else if (normWeek === 2) {
@@ -1061,33 +1060,33 @@ Keunggulan Siemens Sentron ACB yang disuplai PT Hokiindo Raya:
       dateStr: dates[1],
       dayLabel: 'Senin Sore',
       agentId: 'bagong',
-      category: 'gcomin',
-      platform: 'tiktok',
-      postType: 'Video Vertikal (Uji Ekstrim)',
-      title: 'Uji Siram Air Tekanan Tinggi Lampu Sorot IP66 G-Comin',
-      hook: '[0-3 Detik]: "Kalo lampu sorot biasa disemprot steam cuci mobil pasti meledak, coba kita uji lampu G-Comin ini!" 💦',
-      body: `[Skenario Video 35 Detik]:
-Detik 0-5: Cak Bagong pegang nozzle waterjet bertekanan tinggi di depan lampu sorot outdoor G-Comin.
-Detik 5-15: Lampu dinyalakan, lalu disemprot air deras langsung ke kaca tempered dan sambungan bodi.
-Detik 15-25: Hasilnya? Lampu tetap menyala terang tanpa ada setetes embun pun di dalam reflektor!
-Detik 25-35: "Sertifikasi IP66 asli pabrikan bukan stiker tempelan. Aman buat lapangan tambang, dermaga kapal, dan pabrik kimia!"`,
-      cta: 'Cek katalog dan ketersediaan stok lampu floodlight outdoor G-Comin langsung di shop.hokiindo.co.id!',
-      hashtags: '#UjiKetahanan #LampuSorotIP66 #GCominLighting #AntiAir #WaterproofTest #HokiindoRaya',
+      category: 'testing',
+      platform: 'instagram',
+      postType: 'Video Walkthrough Pengujian Teknis',
+      title: 'Verifikasi Tingkat Proteksi Selungkup IP54 & IP65 Cubicle Switchboard Sesuai IEC 60529',
+      hook: '[0-3 Detik]: "Debu konduktif atau percikan air masuk ke dalam cubicle breaker? Verifikasi sertifikasi IP rating switchboard Anda sesuai IEC 60529!" 🛡️',
+      body: `[Alur Video Protokol Pengujian 30 Detik]:
+Detik 0-5: Ir. Bagong memeriksa gasket sealing polyurethane dan pintu ber-interlock pada kubikel switchgear industri.
+Detik 5-15: Pengujian semprotan air bertekanan terkontrol (Water Ingress Test) pada sambungan kompartemen busbar dan pintu ventilasi ber-filter IP54.
+Detik 15-22: Inspeksi kompartemen internal: tidak ada partikel debu konduktif maupun tetesan air yang menembus ruang isolasi busbar.
+Detik 22-30: "Sertifikasi enclosure IP54/IP65 terverifikasi menjamin operasional kontinu switchboard pada pabrik kimia, semen, dan manufaktur berat."`,
+      cta: 'Konsultasikan desain panel switchboard berstandar IEC 61439 dan komponen proteksi Siemens di hokiindo.co.id.',
+      hashtags: '#IEC60529 #IPRating #SwitchgearProtection #SiemensSentron #EnclosureDesign #HokiindoRaya',
       curationStatus: 'approved',
       uploadedImagePreview: '',
       externalImageUrl: '',
       designGuide: {
         dimensions: '1080 x 1920 px (9:16 Video Thumbnail)',
-        layoutType: 'Extreme Product Action Shot',
-        headlineOverlay: 'UJI SEMPROT WATERJET: LAMPU G-COMIN MELEDAK?!',
-        subHeadlineOverlay: 'Sertifikasi IP66 Riil untuk Area Outdoor & Tambang',
+        layoutType: 'Technical Enclosure Testing Visual',
+        headlineOverlay: 'VERIFIKASI TINGKAT PROTEKSI IP54/IP65 CUBICLE SWITCHBOARD',
+        subHeadlineOverlay: 'Uji Ketahanan Ingress Sesuai Standar IEC 60529 & IEC 61439',
         colorPalette: [
-          { name: 'Splash Cyan', hex: '#06B6D4' },
-          { name: 'Industrial Black', hex: '#111827' },
-          { name: 'Bright Glow', hex: '#FACC15' }
+          { name: 'Precision Cyan', hex: '#06B6D4' },
+          { name: 'Industrial Navy', hex: '#0F172A' },
+          { name: 'Safety Gold', hex: '#FACC15' }
         ],
-        compositionDetails: 'Percikan air membeku di udara saat menyiram unit lampu sorot hitam dengan sorot cahaya kuning keemasan yang menembus kabut air.',
-        aiPrompt: 'High speed action shot of water splashing against an industrial LED floodlight, water droplets frozen in air, dramatic lighting --ar 9:16'
+        compositionDetails: 'Close-up pintu cubicle switchgear dengan gasket industri presisi tinggi dan indikator uji penetrasi air berstandar laboratorium akreditasi.',
+        aiPrompt: 'High tech industrial electrical enclosure undergoing IP rating water ingress spray testing, professional electrical engineering test facility, dramatic clean lighting --ar 9:16'
       }
     })
 
@@ -1209,7 +1208,7 @@ PT Hokiindo Raya memastikan setiap komponen Siemens disertai dokumen resmi langs
       postType: 'Strategi Retargeting Ads',
       title: 'Strategi Retargeting: Menjangkau Klien yang Pernah Minta BoQ',
       hook: 'Jangan biarkan penawaran harga yang sudah dikirim menggantung tanpa follow up digital.',
-      body: `Juragan Broto merancang kampanye retargeting khusus di LinkedIn & Meta untuk audiens yang pernah mengunjungi landing page katalog Siemens dalam 30 hari terakhir.
+      body: `Ir. Broto Kusumo merancang strategi re-engagement digital khusus di LinkedIn & jaringan industri B2B untuk audiens yang pernah mengajukan penawaran BoQ komponen Siemens dalam 30 hari terakhir.
 
 Pesan retargeting: "Masih membandingkan harga komponen untuk proyek Anda? PT Hokiindo Raya berikan garansi ketersediaan stok 100% dan pengiriman sameday untuk BoQ Anda!"`,
       cta: 'Aktifkan kampanye retargeting untuk menutup deals sebelum akhir bulan.',
@@ -1238,34 +1237,36 @@ Pesan retargeting: "Masih membandingkan harga komponen untuk proyek Anda? PT Hok
       dateStr: dates[6],
       dayLabel: 'Jumat',
       agentId: 'bagong',
-      category: 'humor',
-      platform: 'facebook',
-      postType: 'Meme Proyek & Relatable',
-      title: 'Momen Multimeter Murahan Berasap Pas Mau Ngecek 380V',
-      hook: '"Niat hati mau ngecek tegangan fasa-fasa, multimeternya malah ngeluarin jin!" 😭',
-      body: `Pelajaran berharga hari Jumat:
-Jangan pernah colok probe multimeter abal-abal ke busbar 380V kalo gak mau ngerasain sensasi kaget setengah hidup!
+      category: 'testing',
+      platform: 'linkedin',
+      postType: 'Studi Kasus Teknis & Keselamatan K3',
+      title: 'Kategori Pengukuran CAT III / CAT IV Menurut IEC 61010-1: Mencegah Transien Arc Blast pada Busbar 380V',
+      hook: 'Tegangan transien hingga 8.000 Volt akibat switching induktif trafo dapat memicu busur api ledakan (Arc Blast) jika instrumentasi uji tidak memenuhi standar CAT IV.',
+      body: `Banyak insiden keselamatan di ruang cubicle panel terjadi bukan karena hubung singkat peralatan, melainkan penggunaan instrumen ukur dengan kategori isolasi yang tidak memadai.
 
-Gunakan alat ukur berstandar CAT III / CAT IV dan pasang proteksi breaker Siemens yang responsif memutus arus sebelum tanganmu gosong.
+Parameter keselamatan instrumentasi listrik industri sesuai IEC 61010-1:
+1. Definisi Kategori Instalasi: CAT III dirancang untuk panel distribusi sub-feeder pabrik, sedangkan CAT IV wajib digunakan pada sambungan primer transformator dan Main Distribution Panel (MDP).
+2. Tegangan Impuls Transien: Alat ukur CAT IV 600V / CAT III 1000V mampu menahan impuls lonjakan transien petir dan switching hingga 8 kV tanpa mengalami breakdown dielektrik antar terminal probe.
+3. Koordinasi dengan Pemutus Siemens: Pasang pemutus sirkuit berkecepatan pemutusan tinggi dengan arc chute Siemens Sentron untuk membatasi durasi busur api di bawah 10 milidetik saat terjadi kesalahan isolasi.
 
-Selamat ngopi dan menyambut akhir pekan para kuli teknik di seluruh nusantara!`,
-      cta: 'Pernah ngalamin multimeter jebol pas colok fasa? Ceritain di komentar!',
-      hashtags: '#MemeListrik #MultimeterBerasap #DeritaEngineer #SafetyFirst #HokiindoRaya',
+Utamakan keselamatan K3 teknisi pengujian dengan selalu memeriksa sertifikasi CAT rating dan APD arc flash sebelum melakukan pengukuran busbar bertegangan.`,
+      cta: 'Pelajari panduan keselamatan proteksi ruang switchboard industri bersama tim aplikasi PT Hokiindo Raya di hokiindo.co.id.',
+      hashtags: '#IEC61010 #CATIV #ArcFlashSafety #K3Listrik #SiemensSentron #SwitchboardSafety #HokiindoRaya',
       curationStatus: 'approved',
       uploadedImagePreview: '',
       externalImageUrl: '',
       designGuide: {
-        dimensions: '1080 x 1080 px (1:1 Square Meme)',
-        layoutType: 'Comic Strip Humor Proyek',
-        headlineOverlay: 'SAAT MULTIMETER 50 RIBUAN DICOBAIN KE 380V...',
-        subHeadlineOverlay: 'Teknisi: "Kok ada bau sate kambing ya di ruang panel?"',
+        dimensions: '1080 x 1080 px (1:1 Technical Safety Infographic)',
+        layoutType: 'Safety & Standards Technical Diagram',
+        headlineOverlay: 'STANDAR CAT III VS CAT IV IEC 61010-1: MITIGASI ARC BLAST',
+        subHeadlineOverlay: 'Prosedur Verifikasi Keselamatan Pengukuran Busbar 380V di Ruang Panel',
         colorPalette: [
-          { name: 'Smoke Grey', hex: '#4B5563' },
-          { name: 'Spark Yellow', hex: '#FACC15' },
-          { name: 'Black', hex: '#000000' }
+          { name: 'Safety Amber', hex: '#F59E0B' },
+          { name: 'Industrial Navy', hex: '#0B132B' },
+          { name: 'Alert Red', hex: '#DC2626' }
         ],
-        compositionDetails: 'Ilustrasi kartun lucu ekspresi kaget teknisi dengan rambut berdiri dan multimeter mengeluarkan asap tipis di depan busbar tembaga.',
-        aiPrompt: 'Funny cartoon caricature of an electrician with shock face and smoking broken multimeter in front of an electrical switchboard, humor style --ar 1:1'
+        compositionDetails: 'Diagram teknis zona kategori pengukuran kelistrikan dari gardu distribusi (CAT IV) ke sub-panel distribusi (CAT III) dengan visual APD teknisi dan kubikel Siemens Sentron.',
+        aiPrompt: 'Technical electrical safety diagram showing CAT III and CAT IV measurement categories on an industrial power distribution network, clean blueprint layout --ar 1:1'
       }
     })
   } else if (normWeek === 3) {
@@ -1283,7 +1284,7 @@ Selamat ngopi dan menyambut akhir pekan para kuli teknik di seluruh nusantara!`,
       body: `Otomasi bukan monopoli industri raksasa. Siemens S7-1200 dirancang modular untuk manufaktur skala menengah dengan integrasi TIA Portal yang intuitif.
 
 Keuntungan implementasi S7-1200 dari PT Hokiindo Raya:
-- Diagnostik error terpadu tanpa perlu bongkar rangkaian kabel.
+- Diagnostik error terpadu tanpa perlu membongkar rangkaian pengawatan (wiring).
 - Port komunikasi PROFINET terpasang untuk koneksi HMI dan cloud IoT.
 - Didukung engineer otomasi HSO yang siap membantu pemilihan modul I/O.`,
       cta: 'Konsultasikan BoQ otomasi pabrik Anda bersama spesialis PLC PT Hokiindo Raya.',
@@ -1312,36 +1313,36 @@ Keuntungan implementasi S7-1200 dari PT Hokiindo Raya:
       dateStr: dates[1],
       dayLabel: 'Senin Sore',
       agentId: 'sri',
-      category: 'gcomin',
+      category: 'siemens',
       platform: 'email',
-      postType: 'Email Blast Klien B2B',
-      title: 'Solusi Lampu PJU Solar Cell G-Comin untuk Jalan Kawasan Industri & Tambang',
-      hook: 'Subject: [Solusi Nol Tagihan Listrik] Lampu PJU Tenaga Surya G-Comin untuk Jalan Kawasan Anda',
-      body: `Yth. Manajer Estate & Pengelola Kawasan Industri,
+      postType: 'Email Blast Klien B2B & Konsultasi Teknis',
+      title: 'Strategi Manajemen Kualitas Daya Terpadu Menggunakan Sentron PAC3200 & PAC4200 pada MDP',
+      hook: 'Subject: [Optimasi Kualitas Daya Industri] Pemantauan Harmonisa THD & Efisiensi Energi Listrik Pabrik',
+      body: `Yth. Manajer Teknik & Pemeliharaan Pabrik,
 
-Tarik kabel tanah ratusan meter untuk penerangan jalan kawasan membutuhkan biaya galian dan kabel yang sangat mahal.
+Beban non-linear seperti Variable Frequency Drive (VFD), inverter, dan rectifier switching pada industri modern menginjeksikan distorsi harmonisa (THD-V dan THD-I) yang signifikan ke jaringan kelistrikan internal.
 
-G-Comin All-in-One Solar Street Light adalah solusi mandiri energi:
-- Panel Monocrystalline efisiensi tinggi dengan baterai LiFePO4 tahan 2.000 siklus.
-- Sensor gerak radar otomatis meredupkan saat sepi dan terang 100% saat ada kendaraan.
-- Tanpa kabel, instalasi hanya butuh 15 menit per tiang.`,
-      cta: 'Minta katalog lengkap dan daftar harga proyek PJU Solar Cell G-Comin via email ini.',
-      hashtags: '#PJUSolarCell #EnergiTerbarukan #LampuJalanTenagaSurya #GComin #HokiindoRaya',
+Dampak buruk harmonisa jika tidak termonitor secara real-time:
+1. Overheating Transformator: Peningkatan rugi arus eddy (eddy current losses) yang memaksa derating kapasitas kVA trafo.
+2. Penurunan Faktor Daya (Cos Phi): Kegagalan kapasitor bank akibat resonansi paralel harmonisa orde ke-5 dan ke-7.
+3. Solusi Siemens SENTRON PAC: Digital Power Meter dengan akurasi Class 0.5S sesuai IEC 62053-22, menganalisis individual harmonics hingga orde ke-31 atau ke-64 secara presisi melalui protokol Modbus TCP dan PROFINET.`,
+      cta: 'Dapatkan spesifikasi lengkap Siemens Sentron PAC dan ajukan audit kualitas daya bersama engineer PT Hokiindo Raya di hokiindo.co.id.',
+      hashtags: '#PowerQuality #SentronPAC #Harmonics #THD #EfisiensiEnergi #SiemensIndonesia #HokiindoRaya',
       curationStatus: 'approved',
       uploadedImagePreview: '',
       externalImageUrl: '',
       designGuide: {
         dimensions: '600 x 250 px (Header Banner Email)',
-        layoutType: 'Eco-Industrial Clean Energy Banner',
-        headlineOverlay: 'NOL KABEL, NOL TAGIHAN LISTRIK: PJU SOLAR G-COMIN',
-        subHeadlineOverlay: 'Penerangan Jalan Kawasan Industri Mandiri Energi',
+        layoutType: 'Power Quality & Analytics Banner',
+        headlineOverlay: 'MONITORING KUALITAS DAYA TERPADU: SENTRON PAC SERIES',
+        subHeadlineOverlay: 'Deteksi Dini Harmonisa THD & Optimasi Efisiensi Energi Pabrik',
         colorPalette: [
-          { name: 'Eco Emerald', hex: '#059669' },
-          { name: 'Solar Gold', hex: '#EAB308' },
+          { name: 'Siemens Cyan', hex: '#00646E' },
+          { name: 'Analytics Navy', hex: '#0F172A' },
           { name: 'Clean White', hex: '#FFFFFF' }
         ],
-        compositionDetails: 'Deretan tiang lampu PJU Solar Cell menerangi jalan kawasan industri beraspal mulus di waktu senja dengan langit keemasan.',
-        aiPrompt: 'Row of sleek all-in-one solar LED street lights illuminating a wide asphalt industrial estate road during golden hour sunset --ar 12:5'
+        compositionDetails: 'Unit Power Meter Siemens Sentron PAC4200 dengan layar LCD berwarna menampilkan diagram spektrum harmonisa fasa dan tren konsumsi daya aktif industri.',
+        aiPrompt: 'Digital high tech power monitoring meter installed on an industrial switchgear cubicle, displaying clear harmonic distortion graph, precision engineering aesthetic --ar 12:5'
       }
     })
 
@@ -1351,33 +1352,33 @@ G-Comin All-in-One Solar Street Light adalah solusi mandiri energi:
       dateStr: dates[2],
       dayLabel: 'Selasa',
       agentId: 'bagong',
-      category: 'humor',
-      platform: 'tiktok',
-      postType: 'Video Vertikal (Edukasi Lucu)',
-      title: 'Misteri Kabel Panel yang Kusut Kaya Hubungan Asmara Kuli',
-      hook: '[0-3 Detik]: "Kalo kamu pikir hubungan asmaramu rumit, coba liat jalur kabel di dalam panel ini!" 😂',
-      body: `[Skenario Video 30 Detik]:
-Detik 0-6: Kamera buka pintu panel tua: isinya kabel kusut gak karuan kaya sarang burung tanpa label ferrule.
-Detik 6-16: Cak Bagong pegang kepala: "Kalo kabel gak ada nomor ferrule-nya gini, pas ada error yang mana yang mau ditest? Bisa seminggu gak pulang!"
-Detik 16-25: Transisi ke panel baru rapi: kabel tersusun dalam ducting kabel, terminal block Siemens berlabel jelas.
-Detik 25-30: "Rapi itu bukan gaya-gayaan, tapi nyawa maintenance! Pesan komponen rapi standar IEC hanya di PT Hokiindo Raya!"`,
-      cta: 'Tag temenmu yang bikin panel kaya sarang burung!',
-      hashtags: '#PanelKusut #DeritaTeknisi #KuliProyek #KabelRapi #SiemensIndonesia #HokiindoRaya',
+      category: 'testing',
+      platform: 'instagram',
+      postType: 'Video Walkthrough Rekayasa Panel',
+      title: 'Desain Segregasi Internal Switchboard Form 2b hingga Form 4b Sesuai IEC 61439-2',
+      hook: '[0-3 Detik]: "Mengapa konsultan perencana menolak BAST panel distribusi utama Anda? Cek pemisahan kompartemen busbar fasa dan breaker sesuai Form 4b!" 📐',
+      body: `[Alur Video Rekayasa Teknis 30 Detik]:
+Detik 0-6: Ir. Bagong membuka pintu cubicle switchgear Main Distribution Panel (MDP).
+Detik 6-16: Menjelaskan batas partisi Form 4b: Busbar tembaga utama terisolasi total dalam kompartemen tersendiri, terpisah dari unit fungsional breaker drawout dan terminal terminasi eksternal.
+Detik 16-25: "Pemisahan Form 4b menjamin keselamatan absolut: teknisi dapat melakukan pemeliharaan pada unit breaker cabang tanpa risiko tersentuh busbar fasa bertegangan."
+Detik 25-30: "Rancang panel switchgear Anda dengan komponen Siemens Sentron berstandar IEC 61439-1/2 bersama distributor resmi PT Hokiindo Raya."`,
+      cta: 'Unduh panduan segregasi internal panel switchboard Form 1-4b di portal teknik PT Hokiindo Raya di hokiindo.co.id.',
+      hashtags: '#IEC61439 #Form4b #SwitchboardDesign #PanelMaker #SiemensSentron #KeselamatanKerja #HokiindoRaya',
       curationStatus: 'approved',
       uploadedImagePreview: '',
       externalImageUrl: '',
       designGuide: {
         dimensions: '1080 x 1920 px (9:16 Video Thumbnail)',
-        layoutType: 'Split Reality (Sarang Burung vs Rapi Standar)',
-        headlineOverlay: 'MISTERI KABEL PANEL: LEBIH RUMIT DARI CINTA!',
-        subHeadlineOverlay: 'Sarang Burung vs Rapi Standar IEC PT Hokiindo Raya',
+        layoutType: 'Technical Internal Segregation Exploded View',
+        headlineOverlay: 'DESAIN FORM 2b VS FORM 4b IEC 61439-2: APA BEDANYA?',
+        subHeadlineOverlay: 'Pemisahan Kompartemen Busbar Fasa untuk Keselamatan Maksimal',
         colorPalette: [
-          { name: 'Tangled Orange', hex: '#EA580C' },
-          { name: 'Orderly Navy', hex: '#0F172A' },
-          { name: 'Warning Yellow', hex: '#FACC15' }
+          { name: 'Blueprint Blue', hex: '#1D4ED8' },
+          { name: 'Safety Amber', hex: '#F59E0B' },
+          { name: 'Industrial Navy', hex: '#0F172A' }
         ],
-        compositionDetails: 'Foto perbandingan split vertikal: Atas panel kabel semrawut membingungkan, bawah tata kabel wiring duct rapi sempurna.',
-        aiPrompt: 'Split comparison visual, messy tangled spaghetti electrical wires on top, ultra neat organized industrial control panel on bottom --ar 9:16'
+        compositionDetails: 'Diagram skematik 3D kompartemen cubicle switchboard dengan pembagian zona busbar tembaga, unit breaker, dan terminal eksternal sesuai Form 4b.',
+        aiPrompt: 'Detailed technical 3D architectural cutaway diagram of an industrial low voltage switchgear panel showing Form 4b internal segregation chambers, pristine engineering design --ar 9:16'
       }
     })
 
@@ -1422,34 +1423,34 @@ Detik 25-30: "Rapi itu bukan gaya-gayaan, tapi nyawa maintenance! Pesan komponen
       week: weekNumber,
       dateStr: dates[4],
       dayLabel: 'Rabu Sore',
-      agentId: 'bagong',
-      category: 'gcomin',
-      platform: 'instagram',
-      postType: 'Carousel Instagram (5 Slide)',
-      title: 'Hitung-Hitungan Balik Modal Pasang Lampu PJU Solar Cell di Pabrik',
-      hook: 'Slide 1: "Investasi PJU Solar Cell mahal di awal? Mari kita bedah angka riilnya di Excel!" 📊',
-      body: `Slide 1: Benarkah PJU Solar Cell Lebih Murah dari Tarik Kabel Konvensional?
-Slide 2: Biaya PJU Konvensional: Tiang + Lampu + Kabel NYFGBY 4x10mm + Ongkos Galian Paving (Total Rp 8,5 Jt / titik).
-Slide 3: Biaya PJU Solar G-Comin: Tiang + Unit All-in-One Lampu (Hanya Rp 4,2 Jt / titik, hemat 50% di awal!).
-Slide 4: Nol Biaya Operasional Listrik PLN selama 5 Tahun.
-Slide 5: Kesimpulan: Balik modal kurang dari 14 bulan. Cek spesifikasi di shop.hokiindo.co.id atau ajukan audit energi di hokiindo.co.id.`,
-      cta: 'Geser sampai akhir dan kirimkan layout denah pabrik Anda untuk hitungan gratis!',
-      hashtags: '#SolarCell #PabrikHemat #PeneranganPabrik #GCominLighting #ROIIndustri #HokiindoRaya',
+      agentId: 'broto',
+      category: 'siemens',
+      platform: 'linkedin',
+      postType: 'Carousel Rekayasa Tekno-Ekonomi (5 Slide)',
+      title: 'Studi Kelayakan Retrofit Air Circuit Breaker (ACB) Lama ke Siemens Sentron 3WL',
+      hook: 'Slide 1: "Ganti total kubikel switchgear senilai ratusan juta atau Retrofit Cradle ACB Siemens Sentron 3WL? Mari bedah data tekno-ekonominya!" 📊',
+      body: `Slide 1: Dilema Pabrik Manufaktur: ACB lama sering macet mekanikal trip, sparepart diskontinu, dan berisiko downtime fatal.
+Slide 2: Solusi Retrofit Cradle: Mengganti unit drawout moving part lama dengan Siemens Sentron 3WL tanpa membongkar kubikel switchgear eksisting.
+Slide 3: Efisiensi Waktu Downtime: Proses retrofit hanya memakan waktu 6-8 jam selama shutdown terencana (dibanding ganti kubikel yang butuh 5-7 hari).
+Slide 4: Peningkatan Keandalan: Mendapatkan Electronic Trip Unit (ETU) mikroprosesor terkini dengan proteksi L-S-I-G dan komunikasi Modbus TCP terpadu.
+Slide 5: Kesimpulan: Menghemat biaya Capex hingga 65% dengan masa pakai sistem bertambah 15-20 tahun. Ajukan studi retrofit kelistrikan bersama PT Hokiindo Raya.`,
+      cta: 'Geser sampai slide akhir dan jadwalkan inspeksi teknis retrofit switchboard pabrik Anda bersama tim engineer PT Hokiindo Raya.',
+      hashtags: '#RetrofitACB #Siemens3WL #Sentron #ModernisasiSwitchgear #TCO #EfisiensiIndustri #HokiindoRaya',
       curationStatus: 'approved',
       uploadedImagePreview: '',
       externalImageUrl: '',
       designGuide: {
         dimensions: '1080 x 1350 px (4:5 Carousel Slide 1)',
-        layoutType: 'Financial Calculation & Breakdown Card',
-        headlineOverlay: 'BEDAH ANGKA: BALIK MODAL PJU SOLAR G-COMIN < 14 BULAN',
-        subHeadlineOverlay: 'Hemat Biaya Kabel Galian Tanah Hingga 50% di Awal Proyek',
+        layoutType: 'Financial & Engineering Feasibility Breakdown',
+        headlineOverlay: 'STUDI RETROFIT ACB 3WL: HEMAT CAPEX HINGGA 65%',
+        subHeadlineOverlay: 'Modernisasi Proteksi Switchgear Tanpa Ganti Kubikel Eksisting',
         colorPalette: [
-          { name: 'Emerald Green', hex: '#10B981' },
-          { name: 'Executive Dark', hex: '#0F172A' },
-          { name: 'Sun Yellow', hex: '#FACC15' }
+          { name: 'Siemens Petrol', hex: '#00646E' },
+          { name: 'Executive Navy', hex: '#0F172A' },
+          { name: 'Precision Cyan', hex: '#06B6D4' }
         ],
-        compositionDetails: 'Tampilan grafis perbandingan biaya dengan grafik batang komparasi PJU Konvensional vs PJU Solar Cell G-Comin.',
-        aiPrompt: 'Financial infographics comparison chart showing cost savings of solar energy vs conventional wiring, modern clean design --ar 4:5'
+        compositionDetails: 'Tampilan perbandingan visual side-by-side unit ACB lama yang aus vs unit Siemens Sentron 3WL baru yang terpasang pada cradle retrofit kubikel industri.',
+        aiPrompt: 'Professional side by side industrial comparison of an old legacy electrical air circuit breaker cradle versus a brand new modern Siemens Sentron ACB, clean corporate layout --ar 4:5'
       }
     })
 
@@ -1463,12 +1464,12 @@ Slide 5: Kesimpulan: Balik modal kurang dari 14 bulan. Cek spesifikasi di shop.h
       platform: 'linkedin',
       postType: 'Strategi Ads B2B (Momen Tender BoQ)',
       title: 'Strategi Iklan: Menargetkan Kontraktor Menjelang Penutupan Tender',
-      hook: 'Analisis Juragan Broto: Di akhir kuartal, ratusan kontraktor ME sedang berburu distributor resmi penyedia surat dukungan tender.',
-      body: `Rekomendasi Kampanye Ads Juragan Broto:
-Luncurkan iklan berformat Lead Generation di LinkedIn yang menawarkan "Surat Dukungan Distributor Resmi Siemens & G-Comin Terbit Dalam 24 Jam".
+      hook: 'Analisis Ir. Broto: Di akhir kuartal, ratusan kontraktor ME sedang berburu distributor resmi penyedia surat dukungan tender.',
+      body: `Rekomendasi Kampanye Ads Ir. Broto Kusumo:
+Luncurkan iklan berformat Lead Generation di LinkedIn yang menawarkan "Surat Dukungan Distributor Resmi Siemens Terbit Dalam 24 Jam".
 
 Targeting: Estimator ME, Tender Specialist, Project Director di seluruh kontraktor EPC tier 1 dan tier 2 di Indonesia.`,
-      cta: 'Dapatkan surat dukungan tender resmi untuk memenangkan lelang proyek Anda.',
+      cta: 'Dapatkan surat dukungan tender resmi untuk memenangkan lelang proyek Anda di hokiindo.co.id.',
       hashtags: '#TenderME #KontraktorEPC #SuratDukungan #SiemensIndonesia #HokiindoRaya',
       curationStatus: 'approved',
       uploadedImagePreview: '',
@@ -1494,34 +1495,35 @@ Targeting: Estimator ME, Tender Specialist, Project Director di seluruh kontrakt
       dateStr: dates[6],
       dayLabel: 'Jumat',
       agentId: 'bagong',
-      category: 'humor',
-      platform: 'facebook',
-      postType: 'Meme Proyek Akhir Pekan',
-      title: 'Wajah Mandor Waktu Gambar As-Built Beda Jauh dari Lapangan',
-      hook: '"Di gambar teknik rapi lurus, pas dipasang kuli meliuk-liuk kaya uler kadut!" 😂',
-      body: `Momen krusial serah terima As-Built Drawing:
-Waktu konsultan pengawas ngecek jalur tray kabel, kok jalurnya meliuk menghindari tiang yang ternyata gak ada di gambar sipil.
+      category: 'testing',
+      platform: 'linkedin',
+      postType: 'Studi Kasus Koordinasi Proteksi',
+      title: 'Validasi Single Line Diagram (SLD) As-Built vs Koordinasi Proteksi Aktual di Lapangan',
+      hook: 'Perbedaan 1 rating ukuran breaker antara gambar SLD tender dan instalasi aktual dapat merusak seluruh hierarki selektivitas kurva TCC sistem kelistrikan Anda.',
+      body: `Momen krusial serah terima proyek (BAST) dan penerbitan Sertifikat Laik Operasi (SLO):
+Seringkali terjadi di lapangan, breaker cabang dinaikkan kapasitasnya dari 160A ke 250A tanpa memperbarui kurva selektivitas waktu-arus terhadap breaker hulu di LVMDP.
 
-Apapun drama di lapangan, pastikan isi panelnya tetap Siemens dari PT Hokiindo Raya biar tetap lulus uji komisioning!
-
-Selamat berlibur akhir pekan rekan-rekan proyek! Senin kita luruskan yang meliuk!`,
-      cta: 'Share ke grup proyekmu yang As-Built Drawing nya sering bikin senyum getir!',
-      hashtags: '#AsBuiltDrawing #HumorProyek #KuliJawa #EngineerIndonesia #HokiindoRaya',
+Risiko teknis yang timbul:
+1. Kehilangan Selektivitas (Loss of Discrimination): Gangguan hubung singkat di sub-panel cabang memicu trip langsung pada Main ACB hulu, menyebabkan blackout total pabrik.
+2. Kerusakan Elektrodinamik: Busbar dan konduktor sirkit hilir mengalami gaya tolak elektrodinamik raksasa karena energi tembus I²t tidak dibatasi secara tepat.
+3. Solusi Validasi Siemens: Manfaatkan perangkat lunak koordinasi Siemens Simaris Curves untuk memvalidasi setting L-S-I-G pada trip unit ETU Sentron secara presisi sebelum uji beban komisioning.`,
+      cta: 'Konsultasikan validasi Single Line Diagram dan koordinasi selektivitas proteksi bersama tim aplikasi PT Hokiindo Raya di hokiindo.co.id.',
+      hashtags: '#SingleLineDiagram #SLDAsBuilt #KoordinasiProteksi #SelektivitasBreaker #SiemensSentron #HokiindoRaya',
       curationStatus: 'approved',
       uploadedImagePreview: '',
       externalImageUrl: '',
       designGuide: {
-        dimensions: '1080 x 1080 px (1:1 Square Meme)',
-        layoutType: 'Expectation vs Reality Meme',
-        headlineOverlay: 'EKSPEKTASI GAMBAR CAD VS REALITA PASANGAN KULI',
-        subHeadlineOverlay: 'Konsultan: "Ini jalur kabel apa lintasan roller coaster?"',
+        dimensions: '1080 x 1080 px (1:1 Technical Comparison Graphic)',
+        layoutType: 'Expectation vs Reality Engineering Review',
+        headlineOverlay: 'VALIDASI SLD AS-BUILT: HINDARI BLACKOUT KARENA SALAH RATING',
+        subHeadlineOverlay: 'Verifikasi Kurva Selektivitas TCC Menggunakan Siemens Sentron Tools',
         colorPalette: [
           { name: 'Drafting Blue', hex: '#1D4ED8' },
-          { name: 'Caution Orange', hex: '#EA580C' },
+          { name: 'Alert Red', hex: '#DC2626' },
           { name: 'Pure White', hex: '#FFFFFF' }
         ],
-        compositionDetails: 'Format meme side-by-side: Kiri gambar CAD lurus sempurna, kanan foto kabel tray berbelok-belok ekstrem di langit-langit proyek.',
-        aiPrompt: 'Side by side meme visual, pristine technical CAD drawing on left, funny chaotic crooked conduit pipes on right, humorous tone --ar 1:1'
+        compositionDetails: 'Format komparasi teknis: Kiri gambar Single Line Diagram CAD presisi, kanan grafik kurva koordinasi TCC yang tumpang tindih dengan indikator peringatan bahaya tripping.',
+        aiPrompt: 'Clean technical electrical single line diagram schematic beside logarithmic time current tripping curves with warning highlight indicator, professional engineering interface --ar 1:1'
       }
     })
   } else {
@@ -1566,33 +1568,33 @@ Teknologi breaker Siemens Sentron di PT Hokiindo Raya dirancang dengan ruang pem
       dateStr: dates[1],
       dayLabel: 'Senin Sore',
       agentId: 'bagong',
-      category: 'bts',
+      category: 'testing',
       platform: 'instagram',
-      postType: 'Behind The Scenes (Video Vertikal)',
-      title: 'Melihat Gudang Logistik HSO: Pengiriman 24 Jam Siemens & G-Comin',
-      hook: '[0-3 Detik]: "Kalian pernah penasaran gak, gimana ratusan MCCB dan lampu pabrik disiapin tiap pagi di HSO?" 📦',
-      body: `[Alur Video Vertikal 30 Detik]:
-Detik 0-5: Suasana pagi di warehouse utama PT Hokiindo Raya: forklift bergerak lincah menata palet breaker Siemens.
-Detik 5-15: Proses Quality Control (QC) ketat: pengecekan serial number pabrikan dan stempel garansi resmi.
-Detik 15-22: Tim ekspedisi memasukkan pesanan klien ke armada armada boks HSO untuk pengiriman sameday area Jabodetabek.
-Detik 22-30: Cak Bagong senyum: "Barang ready, tim gercep, kirim selamat sampai plant Anda!"`,
-      cta: 'Hubungi admin kami untuk cek ketersediaan stok komponen proyek Anda hari ini!',
-      hashtags: '#BehindTheScenes #GudangHSO #DistributorSiemens #LogistikCepat #HokiindoRaya',
+      postType: 'Video Walkthrough Pengujian Teknis',
+      title: 'Protokol Quality Control (QC) & Verifikasi CoO Komponen Switchgear Siemens',
+      hook: '[0-3 Detik]: "Bagaimana memastikan breaker Siemens yang tiba di proyek Anda 100% genuine dan lulus kalibrasi pabrikan?" 🔍',
+      body: `[Alur Video Inspeksi Teknis 30 Detik]:
+Detik 0-5: Suasana fasilitas logistik PT Hokiindo Raya: teknisi melakukan unboxing inspeksi breaker Siemens Sentron 3VM/3VA.
+Detik 5-15: Proses Quality Control (QC) terverifikasi: pengecekan nomor seri MLFB dengan laser marking pabrik dan pemindaian QR code Certificate of Origin (CoO).
+Detik 15-22: Uji kontinuitas kutub dan mekanikal trip toggle (Push to Trip) untuk menjamin pegas pemutus berfungsi prima.
+Detik 22-30: Ir. Bagong: "Komponen lolos QC, bersegel garansi resmi distributor, siap dikirim untuk keandalan instalasi proyek Anda."`,
+      cta: 'Hubungi tim sales engineering kami untuk kepastian ketersediaan stok komponen Siemens hari ini di shop.hokiindo.co.id.',
+      hashtags: '#QualityControl #DistributorResmi #SiemensIndonesia #Sentron #Sirius #LogistikTeknik #HokiindoRaya',
       curationStatus: 'approved',
       uploadedImagePreview: '',
       externalImageUrl: '',
       designGuide: {
         dimensions: '1080 x 1920 px (9:16 Video Thumbnail)',
-        layoutType: 'Dynamic Warehouse Action Shot',
-        headlineOverlay: 'DIBALIK LAYAR PENGIRIMAN 24 JAM PT HOKIINDO RAYA',
-        subHeadlineOverlay: 'Quality Control Ketat & Garansi Resmi Sampai di Proyek Anda',
+        layoutType: 'Dynamic Technical Inspection Shot',
+        headlineOverlay: 'PROTOKOL QC & VERIFIKASI SERTIFIKAT COO SIEMENS',
+        subHeadlineOverlay: 'Jaminan Keaslian 100% Prinsipal Sebelum Pengiriman ke Proyek',
         colorPalette: [
           { name: 'Action Navy', hex: '#1E293B' },
-          { name: 'Vibrant Orange', hex: '#F97316' },
+          { name: 'Siemens Cyan', hex: '#00646E' },
           { name: 'Pure White', hex: '#FFFFFF' }
         ],
-        compositionDetails: 'Aktivitas pergudangan modern dengan pencahayaan terang lampu High Bay G-Comin dan deretan rak rapi komponen elektrikal.',
-        aiPrompt: 'Dynamic motion shot inside a modern high-bay logistics warehouse with forklift moving boxes of electrical equipment, warm lens flare --ar 9:16'
+        compositionDetails: 'Teknisi inspeksi kelistrikan melakukan verifikasi barcode laser pada unit breaker Siemens Sentron dengan checklist QC digital.',
+        aiPrompt: 'Professional electrical quality control engineer verifying serial numbers and authentic certificates on a Siemens Sentron circuit breaker, high-tech industrial testing lab --ar 9:16'
       }
     })
 
@@ -1641,7 +1643,7 @@ Detik 22-30: Cak Bagong senyum: "Barang ready, tim gercep, kirim selamat sampai 
       platform: 'website',
       postType: 'Artikel Blog Website & LinkedIn SEO',
       title: 'Panduan Memilih Kapasitas Ampere MCCB Sesuai Beban Trafo Pabrik',
-      hook: 'Salah perhitungan kapasitas pemutus sirkuit berakibat tripping konstan atau kabel hangus terbakar.',
+      hook: 'Salah perhitungan kapasitas pemutus sirkuit berakibat tripping konstan atau konduktor mengalami degradasi termal akibat panas berlebih.',
       body: `Tabel panduan praktis menghitung In (Nominal Current) breaker berdasarkan kapasitas kVA transformator dan faktor diversitas beban industri. Dilengkapi tips pemilihan kapasitas pemutusan Icu (kA).`,
       cta: 'Unduh tabel kalkulasi kapasitas breaker gratis di portal teknik PT Hokiindo Raya.',
       hashtags: '#RumusListrik #KalkulasiMCCB #TrafoPabrik #TeknikElektro #HokiindoRaya',
@@ -1704,26 +1706,26 @@ Detik 22-30: Cak Bagong senyum: "Barang ready, tim gercep, kirim selamat sampai 
       category: 'siemens',
       platform: 'linkedin',
       postType: 'Strategi Ads B2B (Proyeksi Kuartal I)',
-      title: 'Kalkulasi Akhir Tahun: Evaluasi Anggaran Iklan & Proyeksi Kuartal I',
-      hook: 'Analisis Juragan Broto: Bagaimana menjaga efisiensi biaya iklan tetap di bawah batas aman dengan konversi leads maksimal.',
-      body: `Rekomendasi alokasi budget menyongsong Kuartal I: Menitikberatkan pada konten studi kasus instalasi riil dan promosi kesiapan stok Siemens. Budget tetap ramah kantong, hasil nyata.`,
-      cta: 'Rencana strategi iklan siap dieksekusi bersama Manajer.',
-      hashtags: '#EvaluasiAds #BudgetingMarketing #GrowthB2B #HokiindoRaya',
+      title: 'Kalkulasi Akhir Tahun: Perencanaan Capex & Modernisasi Sistem Switchboard Kuartal I',
+      hook: 'Analisis Ir. Broto Kusumo: Bagaimana merencanakan alokasi Capex peremajaan breaker dan monitoring energi tanpa membebani arus kas operasional pabrik.',
+      body: `Rekomendasi alokasi anggaran menyongsong Kuartal I: Menitikberatkan pada program retrofit cradle ACB Sentron 3WL dan implementasi digital power monitoring SENTRON PAC. Penghematan biaya perawatan darurat mencapai 40%.`,
+      cta: 'Rencana strategi rekayasa kelistrikan siap dieksekusi bersama tim aplikasi PT Hokiindo Raya di hokiindo.co.id.',
+      hashtags: '#CapexKelistrikan #ModernisasiSwitchgear #TCO #SiemensSentron #HokiindoRaya',
       curationStatus: 'approved',
       uploadedImagePreview: '',
       externalImageUrl: '',
       designGuide: {
         dimensions: '1080 x 1080 px (1:1 Iklan B2B)',
         layoutType: 'ROI Calculator & Modern Factory',
-        headlineOverlay: 'PROYEKSI EFISIENSI ENERGI: HEMAT DENGAN G-COMIN',
-        subHeadlineOverlay: 'Audit Efisiensi Gratis Bersama Tim Lighting PT Hokiindo Raya',
+        headlineOverlay: 'PROYEKSI MODERNISASI SWITCHBOARD: EFISIENSI TCO',
+        subHeadlineOverlay: 'Audit Keandalan Proteksi Bersama Tim Rekayasa PT Hokiindo Raya',
         colorPalette: [
           { name: 'Royal Gold', hex: '#B45309' },
           { name: 'Dark Navy', hex: '#0F172A' },
           { name: 'Pure White', hex: '#FFFFFF' }
         ],
-        compositionDetails: 'Pabrik modern terang benderang dengan grafik panah naik keemasan melambangkan efisiensi biaya operasional pabrik.',
-        aiPrompt: 'Financial energy audit presentation graphic, modern bright factory, golden upward arrow, polished corporate look --ar 1:1'
+        compositionDetails: 'Pabrik manufaktur modern dengan visual ruang kubikel switchboard yang andal dan grafik proyeksi efisiensi operasional daya.',
+        aiPrompt: 'Financial energy and switchboard audit presentation graphic, modern clean industrial plant, golden upward efficiency curve, executive corporate engineering look --ar 1:1'
       }
     })
 
@@ -2374,10 +2376,10 @@ const EDITORIAL_THEMES = [
   {
     id: 'energy_roi',
     title: 'Audit Energi & Efisiensi Biaya Listrik Pabrik',
-    badge: '💰 Cuan & Efisiensi',
-    angle: 'Kalkulasi penghematan kWh & rupiah konkret, ROI retrofit Lampu High Bay LED UFO G-Comin & Floodlight IP66, dan pemantauan daya via Digital Power Meter Sentron PAC.',
-    keywords: 'High Bay LED UFO 150W, Floodlight IP66, Efisiensi kWh, ROI Penghematan Listrik Pabrik, Power Meter PAC3200, Standar Lux SNI Gudang',
-    preferredCategory: 'gcomin'
+    badge: '💰 Efisiensi & Daya',
+    angle: 'Kalkulasi penghematan kWh & rupiah konkret, pemantauan daya presisi via Digital Power Meter Sentron PAC, dan optimasi rugi daya sistem switchgear.',
+    keywords: 'Power Meter PAC3200, Efisiensi kWh, ROI Penghematan Listrik Pabrik, Kualitas Daya, Audit Daya & Form Segregasi Cubicle Switchboard',
+    preferredCategory: 'siemens'
   },
   {
     id: 'motor_starter',
@@ -2412,12 +2414,12 @@ const EDITORIAL_THEMES = [
     preferredCategory: 'siemens'
   },
   {
-    id: 'green_solar',
-    title: 'Penerangan Hijau & PJU Solar Cell Kawasan Industri',
-    badge: '☀️ Green Energy',
-    angle: 'Penerangan jalan industri nol rupiah tagihan PLN menggunakan PJU Solar Cell All-in-One G-Comin dengan baterai LiFePO4 tahan 2.000 siklus bebas perawatan kabel.',
-    keywords: 'Lampu PJU Tenaga Surya All-in-One, Baterai LiFePO4, Floodlight IP66, Penghematan Biaya Tarik Kabel, Penerangan Dermaga & Pabrik',
-    preferredCategory: 'gcomin'
+    id: 'power_quality_audit',
+    title: 'Manajemen Kualitas Daya & Efisiensi Energi Listrik (ISO 50001)',
+    badge: '📊 Kualitas Daya & Energi',
+    angle: 'Analisis harmonisa THD-V dan THD-I menggunakan Sentron PAC3200/4200, mitigasi kenaikan suhu transformator akibat beban non-linear, dan audit efisiensi daya pabrik manufaktur sesuai IEC 61557-12.',
+    keywords: 'SENTRON PAC Power Meter, Harmonisa THD-V THD-I, Efisiensi Energi ISO 50001, IEC 61557-12, Kualitas Daya Industri, Power Monitoring',
+    preferredCategory: 'siemens'
   },
   {
     id: 'trust_counterfeit',
@@ -2501,8 +2503,20 @@ async function generateWeekPlanWithSumopod(mondayStr, weekNum, focusTopic) {
 
   const referenceContext = hsoContentReferences.value.map(r => `[Contoh Referensi: ${r.title} (${r.platform} - ${r.category})]\n• Formula Sukses: ${r.whyItWorks}\n• Cuplikan Konten: "${r.contentText}"`).join('\n\n')
 
-  const systemPrompt = `Kamu adalah Antigravity Marketing & Technical Engineering Engine untuk PT Hokiindo Raya (distributor resmi produk industri kelistrikan Siemens & Lampu Industri G-Comin di Indonesia).
-PERAN & OTORITAS: Kamu bertindak sebagai Chief Electrical Engineer & Siemens Certified Specialist kelas dunia sekaligus Master B2B Copywriter. Konten yang kamu hasilkan HARUS 100% KREDIBEL, AKURAT SECARA STANDAR TEKNIK LISTRIK, TIDAK AMBIGU, namun memiliki DAYA TARIK VIRAL TINGGI, JUDUL MENGGUGAH, SEO KUAT, HOOK 3 DETIK PERTAMA, dan TATA BAHASA HUMAN YANG ASIK, COOL, TAJAM, SERTA BERWIBAWA.
+  const systemPrompt = `Kamu adalah Antigravity Marketing & Technical Engineering Engine untuk PT Hokiindo Raya (distributor resmi produk industri kelistrikan Siemens di Indonesia).
+PERAN & OTORITAS: Kamu bertindak sebagai Chief Electrical Engineer & Siemens Certified Specialist kelas dunia sekaligus Master B2B Technical Copywriter. Konten yang kamu hasilkan HARUS 100% KREDIBEL, SANGAT BERBOBOT TEKNIK (ENGINEERING-GRADE), AKURAT SECARA STANDAR KELISTRIKAN INTERNASIONAL (IEC / PUIL), TIDAK AMBIGU, MEMILIKI TINGKAT KETERBACAAN EKSEKUTIF YANG TINGGI, SERTA BERWIBAWA.
+
+BATASAN CAKUPAN PRODUK & LARANGAN KERAS (MUTLAK & WAJIB DIIKUTI):
+1. TIDAK ADA TOWER LIGHTING DI MINING, GUDANG & KONSTRUKSI:
+   - DILARANG KERAS mempromosikan tower lighting (lampu menara / mobile lighting tower).
+   - DILARANG KERAS membuat konten atau penawaran penerangan untuk sektor penambangan (mining), gudang logistik umum, dan proyek konstruksi sipil/bedeng proyek.
+   - Fokus kelistrikan PT Hokiindo Raya adalah fasilitas industri manufaktur berat, proses industri terotomasi, gardu distribusi, ruang cubicle switchgear/MCC, dan pabrik modern.
+2. TIDAK JUALAN KABEL:
+   - DILARANG KERAS menyatakan atau mengimplikasikan bahwa PT Hokiindo Raya menjual atau menyuplai kabel (kabel tanah, kabel NYFGBY, kabel grounding tembaga, dsb.). KAMI TIDAK MENJUAL KABEL.
+   - Pemutus sirkuit dan relay proteksi Siemens memproteksi konduktor dan kabel sirkit eksternal (menurut kaidah I²t <= k²S² per IEC 60364-4-43 & PUIL 2020), tetapi suplai kabel dilakukan oleh pihak ketiga/kontraktor. PT Hokiindo Raya HANYA menyediakan komponen pemutus tenaga, switchgear, controlgear, proteksi, dan otomasi.
+3. BAHASA SANGAT ENGINEERING & KELAS DUNIA:
+   - DILARANG KERAS menggunakan bahasa gaul pasar murahan, guyonan kuli/mandor, plesetan kopi bedeng, kawat jemuran, drama mandor ngamuk, dll.
+   - Wajib menggunakan bahasa rekayasa teknik kelistrikan tingkat tinggi (Chief Electrical Engineer & Senior Power Systems Consultant tone): berbasis data matematis, merujuk standar internasional resmi (IEC 60947, IEC 61439, IEEE 1584, IEC 61557, PUIL 2020), metodis, presisi, dan berwibawa.
 
 STANDAR KREDIBILITAS & AKURASI TEKNIK LISTRIK (MUTLAK & WAJIB AKURAT):
 1. PEMUTUS TENAGA & BREAKER (MCCB 3VM/3VA, ACB 3WA/3WL):
@@ -2521,20 +2535,16 @@ STANDAR KREDIBILITAS & AKURASI TEKNIK LISTRIK (MUTLAK & WAJIB AKURAT):
    - Standar IEC 61643-11: Bedakan Type 1 (gelombang impuls arus petir 10/350 µs) untuk Main Switchboard MDP, Type 2 (gelombang switching surge 8/20 µs) untuk Sub-Panel SDP, dan Type 3 untuk beban sensitif. Up (voltage protection level) <= 1.5 kV.
 5. STANDAR PANEL & SWITCHBOARD:
    - IEC 61439-1 & IEC 61439-2 (Desain Panel Design-Verified, Form of Internal Separation Form 1 s/d Form 4b, derajat proteksi IP30, IP41, IP54, IP65).
-6. LAMPU INDUSTRI G-COMIN:
-   - Efikasi tinggi nyata >= 140 - 160 lm/W, sertifikasi IP65/IK08, chip LED Lumileds/Bridgelux, driver terisolasi dengan proteksi surge 4-6 kV, THD < 10%, Power Factor (PF) >= 0.95. Standar pencahayaan merujuk SNI (gudang 100-200 lux, workshop mesin 300-500 lux).
-7. SOLAR PJU ALL-IN-ONE:
-   - Baterai LiFePO4 (Lithium Iron Phosphate) Cell Grade A 3.2V tahan > 2.000 - 3.000 siklus (DOD 80%), controller MPPT efisiensi >= 98%, solar panel monocrystalline A-grade.
 
-RUKUN GAYA PENULISAN: MENGGUGAH, ASIK, COOL, BERISI & HOOK 3 DETIK (PEMBEDA HOKIINDO):
+RUKUN GAYA PENULISAN: ENGINEERING-GRADE, METODIS, MENGGUGAH & HOOK 3 DETIK:
 1. HOOK 3 DETIK PERTAMA (WAJIB ADA DI SETIAP AWAL KONTEN):
-   - Langsung sentak perhatian audiens dengan studi kasus nyata, realita pahit di lapangan, atau mitos kelistrikan yang salah kaprah.
-   - Contoh hook keren: "Jangan buru-buru vonis motor 45 kW lu kebakar gara-gara beban lebih. Cek dulu kontaktornya: udah lolos uji AC-3e belum? Kalau masih pakai kontaktor AC-3 lawas buat motor IE3, kontak peraknya pasti lumer kena inrush 9x lipat!"
-2. JUDUL MENGGUGAH DENGAN SEO KUAT:
-   - Judul harus memicu rasa penasaran engineer, panel builder, maupun purchasing manajer. Sertakan angka konkret, tipe part number MLFB, atau solusi terhadap risiko denda proyek.
-3. TATA BAHASA HUMAN, ASIK, COOL, & ZERO SLOP:
-   - DILARANG KERAS menggunakan bahasa robot klise seperti: "Dalam era modern/digital...", "Tidak dapat dipungkiri bahwa...", "Mari kita selami...", "Solusi komprehensif...", "Game changer...", "Kesimpulannya...".
-   - Tulis seperti senior electrical engineer yang berwawasan luas, humoris berkelas, santai tapi saat bicara data teknis selalu presisi dan tidak terbantahkan.
+   - Langsung sentak perhatian audiens dengan studi kasus rekayasa nyata, parameter kegagalan kritis, atau mitos kelistrikan yang salah kaprah.
+   - Contoh hook engineering: "Memilih breaker hanya berdasarkan arus nominal tanpa menghitung kapasitas hubung singkat prospektif (Isc) dari trafo adalah akar penyebab utama kegagalan katastropik switchboard."
+2. JUDUL MENGGUGAH DENGAN SEO & TERMINOLOGI TEKNIS KUAT:
+   - Judul harus memuat parameter rekayasa konkret, nomor standar IEC/PUIL, atau tipe part number MLFB Siemens.
+3. TATA BAHASA PRESISI, FORMAL-BERWIBAWA, & ZERO SLOP:
+   - DILARANG KERAS menggunakan bahasa robot klise atau humor pasar murahan.
+   - Tulis dengan gaya Chief Electrical Engineer & Senior Power Systems Consultant yang berwibawa, metodis, dan tidak terbantahkan secara kalkulasi fisik listrik.
 
 ATURAN DOMAIN & RUJUKAN SITUS RESMI PT HOKIINDO RAYA (MUTLAK & KETAT):
 1. CEK PRODUK, SPESIFIKASI, STOK & PEMBELIAN (PENTING SEKALI):
@@ -2547,26 +2557,26 @@ ATURAN DOMAIN & RUJUKAN SITUS RESMI PT HOKIINDO RAYA (MUTLAK & KETAT):
    - DILARANG KERAS menyebut atau mengarahkan publik untuk mengecek produk di "HSO".
 2. COMPANY PROFILE, KREDIBILITAS DISTRIBUTOR RESMI & TENDER:
    - Wajib arahkan ke WEBSITE KORPORAT RESMI: https://hokiindo.co.id
-   - Gunakan hokiindo.co.id untuk profil PT Hokiindo Raya sebagai authorized distributor resmi Siemens Indonesia & G-Comin, legalitas dokumen CoO (Certificate of Origin), portofolio proyek switchgear/panel, dan pengajuan tender BoQ proyek besar.
+   - Gunakan hokiindo.co.id untuk profil PT Hokiindo Raya sebagai authorized distributor resmi Siemens Indonesia, legalitas dokumen CoO (Certificate of Origin), portofolio proyek switchgear/panel, dan pengajuan tender BoQ proyek besar.
    - Contoh CTA: "Pelajari legalitas distributor resmi kami dan ajukan surat dukungan tender di https://hokiindo.co.id".
 3. KONTAK RESMI: https://hokiindo.co.id/contact.
 
 FOKUS TEMA STRATEGIS PEKAN INI (WAJIB DIIKUTI & DIEKSPLORASI PENUH):
 - Tema Utama: "${effectiveTheme.title}" (${effectiveTheme.badge})
-- Sudut Pandang Kreatif: "${effectiveTheme.angle}"
+- Sudut Pandang Rekayasa: "${effectiveTheme.angle}"
 - Kata Kunci & Produk Sorotan: ${effectiveTheme.keywords}
 
-ATURAN ANTI-REPETISI & KREATIVITAS TINGGI (MUTLAK):
+ATURAN ANTI-REPETISI & KUALITAS TEKNIK TINGGI (MUTLAK):
 1. Seluruh 7 slot konten pekan ini HARUS mengeksplorasi tema "${effectiveTheme.title}".
 2. DILARANG KERAS mengulang-ulang cerita generik yang sama! Terapkan sudut pandang unik tema ini.
-3. Setiap slot per hari harus memiliki format dan sudut pandang yang unik:
-   - Slot 1 (Senin Pagi - Mas Tejo): Artikel LinkedIn B2B yang solutif & berbobot teknis seputar tema ini.
-   - Slot 2 (Senin Sore - Cak Bagong): Video Reels/TikTok (hook 3 detik pertama) jenaka & relatable seputar tema ini.
-   - Slot 3 (Selasa - Mbak Sri): Email penawaran B2B yang rapi & solutif seputar tema ini.
-   - Slot 4 (Rabu Pagi - Mas Tejo): Panduan Teknis & Blog SEO mendalam seputar tema ini.
-   - Slot 5 (Rabu Sore - Cak Bagong): Carousel Instagram 5 slide berisi infografis / komparasi angka konkret.
-   - Slot 6 (Kamis - Juragan Broto): Strategi iklan berbayar terukur membidik purchasing & project manager.
-   - Slot 7 (Jumat - Cak Bagong / Mas Tejo): Humor proyek / meme teknisi / refleksi akhir pekan seputar tema ini.
+3. Setiap slot per hari harus memiliki format dan sudut pandang rekayasa yang unik:
+   - Slot 1 (Senin Pagi - Mas Tejo): Artikel Teknis & Thought Leadership LinkedIn B2B (Standar Desain & Spesifikasi Kelistrikan).
+   - Slot 2 (Senin Sore - Ir. Bagong, S.T.): Video Walkthrough Teknis / Prosedur Komisioning Lapangan (FAT/SAT & Kurva TCC).
+   - Slot 3 (Selasa - Mbak Sri): Surat Penawaran B2B & Konsultasi Spesifikasi BoQ Tender Industri.
+   - Slot 4 (Rabu Pagi - Mas Tejo): Whitepaper / Panduan Rekayasa Teknis & Standar Proteksi Industri (IEC/PUIL).
+   - Slot 5 (Rabu Sore - Ir. Bagong, S.T.): Carousel Infografis Teknis 5-Slide (Komparasi Kurva, Koordinasi Proteksi, Analisis Kerusakan Termal).
+   - Slot 6 (Kamis - Ir. Broto Kusumo, M.T.): Analisis Capex/Opex, TCO & Strategi Efisiensi Kelistrikan untuk Direktur Operasional & Purchasing Industri.
+   - Slot 7 (Jumat - Ir. Bagong, S.T. / Mas Tejo): Evaluasi Studi Kasus Kegagalan Proteksi Lapangan & Refleksi Keandalan Sistem Kelistrikan Industri.
 
 5 PILAR BANK DATA PT HOKIINDO RAYA:
 Situs Resmi:
@@ -2840,7 +2850,7 @@ const generateCurrentWeekPlan = async (forceSumopod = false) => {
         saveWeeklyPlansToStorage()
         const providerName = sumopodBaseUrl.value.includes('sumopod.com') ? 'SumoPod AI' : 'Mesin AI'
         const themeLabel = focusTopic || EDITORIAL_THEMES[((weekNum + planGenerationVariant - 1) % EDITORIAL_THEMES.length)]?.title || 'Tema Terpilih'
-        aiGenerationNotice.value = `Berhasil! 7 slot konten pekan ${formatShortDate(mondayStr)} bertema "${themeLabel}" selesai diracik via ${providerName} (${sumopodModel.value}) oleh Geng Punakawan Setrum!`
+        aiGenerationNotice.value = `Berhasil! 7 slot konten pekan ${formatShortDate(mondayStr)} bertema "${themeLabel}" selesai diracik via ${providerName} (${sumopodModel.value}) oleh ${squadGangName.value}!`
         return
       } catch (apiErr) {
         console.error('AI call failed:', apiErr)
@@ -3143,7 +3153,7 @@ OUTPUT HARUS BERUPA JSON MURNI:
       if (parsed.cta) slot.cta = parsed.cta
       if (parsed.hashtags) slot.hashtags = parsed.hashtags
 
-      audienceImproveSuccess.value = `Naskah berhasil disempurnakan oleh Geng Punakawan Setrum berdasarkan masukan 10 panelis audiens! Buka tab "Naskah & Copywriting" untuk melihat hasilnya.`
+      audienceImproveSuccess.value = `Naskah berhasil disempurnakan oleh ${squadGangName.value} berdasarkan masukan 10 panelis audiens! Buka tab "Naskah & Copywriting" untuk melihat hasilnya.`
 
       // Re-review otomatis menggunakan AI untuk memperbarui skor dan reaksi
       try {
@@ -3185,7 +3195,7 @@ const applyIndividualFeedback = (persona) => {
   } else if (persona.id === 'bagas') {
     snippet = '\n\n⚡ Catatan Teknisi Panel & Wiring: Terminal koneksi tembaga dirancang ergonomis mempermudah penarikan busbar serta memangkas waktu wiring di ruang panel.'
   } else if (persona.id === 'joko') {
-    snippet = '\n\n🛠️ Catatan Mandor & K3 Lapangan: Pastikan label ferrule kabel rapi dan selalu utamakan keselamatan kerja K3 saat instalasi ruang switchboard.'
+    snippet = '\n\n🛠️ Catatan Rekayasa & K3 Listrik: Pastikan identifikasi ferrule konduktor sesuai Single Line Diagram dan terapkan prosedur LOTO (Lockout/Tagout) saat instalasi ruang switchboard.'
   } else if (persona.id === 'hendro') {
     snippet = '\n\n💼 Catatan Pengadaan untuk Tim Purchasing: Cek stok live dan pesan mandiri di shop.hokiindo.co.id. Dapatkan diskon volume BoQ dan pengiriman sameday untuk kawasan industri.'
   } else if (persona.id === 'ratna') {
@@ -3346,7 +3356,7 @@ const publishActiveWeekSlots = async () => {
       if (slot.externalImageUrl) desc += `\n\n🖼️ Link Gambar Referensi: ${slot.externalImageUrl}`
 
       const agentObj = SQUAD_AGENTS.find(a => a.id === slot.agentId)
-      const agentName = agentObj ? agentObj.name : 'Geng Punakawan Setrum'
+      const agentName = agentObj ? agentObj.name : squadGangName.value
 
       return {
         platforms: [slot.platform],
@@ -3503,16 +3513,16 @@ const DEFAULT_HSO_ARTICLES = [
   },
   {
     id: 'art_3',
-    title: 'Cara Menghitung Titik Lampu High Bay LED Gudang Berdasarkan SNI 03-6575: Hemat Listrik hingga 60%',
-    author: 'Divisi Lighting G-Comin Lab',
-    category: 'Pencahayaan Industri G-Comin',
-    summary: 'Studi tata cahaya gudang logistik modern dengan plafon 9-12 meter. Mengganti lampu konvensional Mercury/Metal Halide 400W dengan G-Comin High Bay LED 150W menghasilkan pencahayaan lantai rata-rata 180-220 Lux (di atas standar SNI 150 Lux), menurunkan suhu ruang lampu, dan menghasilkan ROI dalam tempo 11 bulan.',
+    title: 'Kompensasi Daya Reaktif & Mitigasi Harmonisa Beban Non-Linear pada Main Distribution Panel (MDP)',
+    author: 'Divisi Power Quality & Industrial Applications PT Hokiindo Raya',
+    category: 'Kualitas Daya & Harmonisa',
+    summary: 'Analisis pengaruh beban inverter VFD dan rectifier terhadap kenaikan suhu transformator daya dan distorsi tegangan (THD-V). Penggunaan Digital Power Meter Siemens SENTRON PAC3200/4200 dengan akurasi Class 0.5S sesuai IEC 62053-22 memungkinkan identifikasi harmonisa orde ke-5, 7, dan 11 secara presisi untuk perancangan detuned capacitor bank.',
     keyInsights: [
-      'Rumus Lumen Method: N = (E x A) / (F x UF x LLF).',
-      'Pemilihan beam angle 90 derajat untuk area lorong rak pallet racking sempit agar cahaya fokus ke lantai kerja.',
-      'Driver Sosen/Meanwell dengan Power Factor > 0.95 dan proteksi lonjakan petir (Surge Protection) 6kV.'
+      'Analisis spektrum harmonisa FFT (Fast Fourier Transform) hingga orde ke-31.',
+      'Menjaga faktor daya (Power Factor / Cos Phi) di atas 0.95 untuk menghindari denda kVARh PLN.',
+      'Menurunkan rugi tembaga dan kenaikan temperatur eddy current pada transformator distribusi.'
     ],
-    tags: ['SNI 03-6575', 'G-Comin High Bay', 'Efisiensi Energi', 'Audit Lux']
+    tags: ['SENTRON PAC', 'IEC 62053-22', 'THD Harmonisa', 'Kualitas Daya']
   },
   {
     id: 'art_4',
@@ -3690,7 +3700,7 @@ const DEFAULT_HSO_PRODUCTS = [
     stock_quantity: 210,
     unit_price: 490000,
     description: 'Relay Overload Termal Siemens SIRIUS 3RU2126 untuk proteksi beban lebih motor induksi 3-fasa dengan rentang setelan arus 14A hingga 20A.',
-    long_description: 'Relay Overload Termal Siemens SIRIUS 3RU2126 untuk proteksi beban lebih motor induksi 3-fasa dengan rentang setelan arus 14A hingga 20A. Trip Class 10 dengan fitur kompensasi suhu ruangan (-40C hingga +70C) dan sensitivitas fasa hilang (Phase Loss Protection). Pemasangan langsung menancap (direct mounting) di bawah kontaktor 3RT202 Size S0 tanpa memerlukan kabel jumper tambahan.',
+    long_description: 'Relay Overload Termal Siemens SIRIUS 3RU2126 untuk proteksi beban lebih motor induksi 3-fasa dengan rentang setelan arus 14A hingga 20A. Trip Class 10 dengan fitur kompensasi suhu ruangan (-40C hingga +70C) dan sensitivitas fasa hilang (Phase Loss Protection). Pemasangan langsung menancap (direct mounting) di bawah kontaktor 3RT202 Size S0 tanpa memerlukan jumper tembaga tambahan.',
     specs: { range: '14A - 20A', tripClass: 'Class 10', mounting: 'Direct to 3RT202' },
     datasheet: 'https://hokiindo.com/downloads/manuals/siemens-sirius-modular-system-manual.pdf'
   },
@@ -3746,40 +3756,40 @@ const DEFAULT_HSO_CONTENT_REFERENCES = [
   },
   {
     id: 'ref_3',
-    title: 'Kalkulasi Penghematan Listrik Pabrik: Ganti High Bay UFO LED (Carousel 5 Slide)',
+    title: 'Analisis Tekno-Ekonomi Retrofit Cradle ACB Siemens Sentron 3WL (Carousel 5 Slide)',
     platform: 'Instagram / LinkedIn',
-    category: 'Kalkulasi ROI & Energi',
-    whyItWorks: 'Visualisasi angka rupiah konkret di slide cover + Perbandingan teknis kW/jam yang transparan (hemat 62,5% daya) + Ajakan audit BoQ lux gratis tanpa paksaan.',
-    contentText: 'Slide 1: Ganti 50 lampu merkuri gudang 400W ke High Bay UFO LED 150W hemat listrik Rp 45 Juta setahun? Ini hitungannya.\nSlide 2: Lampu konvensional 400W x 50 unit = 20 kW/jam. G-Comin LED 150W x 50 unit = 7,5 kW/jam (Hemat 62,5% daya listrik gudang).\nSlide 3: Dengan tarif industri Rp 1.114/kWh dan pemakaian 12 jam/hari, penghematan capai Rp 3,76 juta per bulan!\nSlide 4: Umur pakai 50.000 jam + garansi 5 tahun distributor resmi PT Hokiindo Raya.\nSlide 5: Mau hitungkan BoQ pencahayaan gudang pabrik Anda secara gratis? Hubungi tim engineering PT Hokiindo Raya di hokiindo.co.id.',
-    sourceUrl: 'https://instagram.com/p/hokiindo-roi-high-bay'
+    category: 'Rekayasa Tekno-Ekonomi & TCO',
+    whyItWorks: 'Visualisasi perbandingan Capex/Opex konkret + Analisis penghematan waktu shutdown pabrik dari 7 hari menjadi 6 jam + Rekomendasi audit teknis switchgear tanpa komitmen.',
+    contentText: 'Slide 1: Ganti total kubikel switchgear Rp 800 Juta atau Retrofit Cradle ACB Siemens Sentron 3WL hanya Rp 180 Juta? Mari bedah datanya.\nSlide 2: Dilema ACB lawas: sparepart langka, kontak aus, dan risiko kegagalan pemutusan short-circuit.\nSlide 3: Solusi Retrofit: Memasang moving part Siemens 3WL pada kerangka eksisting tanpa modifikasi busbar utama.\nSlide 4: Peningkatan keandalan proteksi mikroprosesor ETU dengan komunikasi Modbus TCP/PROFINET.\nSlide 5: Jadwalkan inspeksi teknis kelistrikan bersama engineer PT Hokiindo Raya di hokiindo.co.id.',
+    sourceUrl: 'https://linkedin.com/posts/hokiindo-retrofit-acb-study'
   },
   {
     id: 'ref_4',
-    title: 'Humor Lapangan: Akibat Beli Breaker Aspal Non-Resmi Demi Murah (Meme Proyek)',
-    platform: 'Facebook / Instagram',
-    category: 'Meme Proyek & Komedi',
-    whyItWorks: 'Humor sarkasme lapangan yang sangat relatable bagi kontraktor dan engineer + Mengangkat ketakutan terbesar kontraktor saat komisioning owner + Pesan keselamatan tanpa menggurui.',
-    contentText: 'Kata kontraktor: "Ah, beli yang non-resmi aja di toko sebelah, beda 50 ribu per unit lumayan hemat anggaran." Begitu komisioning depan owner pabrik, breaker panas dan keluar asap dupa pas beban baru naik 70%. Ujung-ujungnya bongkar panel lagi, kena omel PM, dan nama baik taruhannya. Breaker itu asuransi nyawa pabrik, Bos. Selalu pakai Siemens resmi dari PT Hokiindo Raya — ada barcode CoO asli, garansi distributor, dan tidur nyenyak!',
-    sourceUrl: 'https://facebook.com/hokiindo/posts/meme-breaker-aspal'
+    title: 'Evaluasi Kegagalan Breaker Non-Standar Saat Uji Beban Penuh (Field Case Review)',
+    platform: 'LinkedIn / Website',
+    category: 'Studi Kasus Keandalan Sistem',
+    whyItWorks: 'Analisis kegagalan teknis faktual yang dihadapi konsultan & kontraktor saat FAT/SAT + Penjelasan ilmiah kenaikan temperatur I²R akibat resistansi kontak tinggi + Solusi jaminan keaslian CoO pabrikan.',
+    contentText: 'Saat uji komisioning daya penuh di depan konsultan pengawas, breaker non-standar mengalami kenaikan suhu abnormal hingga 135°C pada arus beban 75% akibat resistansi kontak melebihi 100 µΩ. Hal ini mengakibatkan pembongkaran kubikel dan penundaan serah terima BAST. Pemutus sirkuit adalah benteng proteksi utama aset industri. Pastikan selalu menggunakan Siemens Sentron resmi dari PT Hokiindo Raya — terverifikasi Certificate of Origin (CoO) pabrikan resmi untuk jaminan kepatuhan audit standar IEC 60947-2.',
+    sourceUrl: 'https://linkedin.com/posts/hokiindo-breaker-reliability-study'
   }
 ]
 
 // =========================================================================
-// NAMA GENG TIM AI & KURASI PERSONAL DENGAN MATERI USER
+// NAMA TIM REKAYASA KELISTRIKAN AI & KURASI PERSONAL DENGAN MATERI USER
 // =========================================================================
 const GANG_NAME_PRESETS = [
-  'Geng Punakawan Setrum',
-  'Geng Konco Setrum',
-  'Geng Guyub Watt',
-  'Geng Voltase Jawa',
-  'Geng Juragan Setrum',
-  'Geng Hoki Listrik'
+  'Hokiindo Power Engineering Taskforce',
+  'Siemens Switchgear & Automation Squad',
+  'Power System Reliability Group',
+  'Industrial Electrical Engineering Squad',
+  'HSO Engineering & Commissioning Division',
+  'Hokiindo Industrial Solutions Team'
 ]
 
-let savedGangName = 'Geng Punakawan Setrum'
+let savedGangName = 'Hokiindo Power Engineering Taskforce'
 try {
   const cachedName = localStorage.getItem('hso_marketing_gang_name')
-  if (cachedName) savedGangName = cachedName
+  if (cachedName && !cachedName.includes('Punakawan')) savedGangName = cachedName
 } catch {}
 const squadGangName = ref(savedGangName)
 const isEditingGangName = ref(false)
@@ -4086,13 +4096,13 @@ Format naskah sutradara harus sangat detail, terstruktur dan siap syuting:
      * Text on Screen (OST): (Teks besar tebal di layar yang memikat)
      * Voiceover (VO): (Kalimat pembuka provokatif yang relatable bagi pekerja lapangan)
    - [SCENE 2: Detik 4-15 | THE PROBLEM (Masalah Nyata di Lapangan)]
-     * Visual & B-Roll: (Kabel semrawut, panel panas, kuli bingung)
+     * Visual & B-Roll: (Hotspot termal busbar, kurva tripping deviasi, indikator fault pada cubicle panel)
      * OST & SFX: (Efek tegang singkat)
      * Voiceover (VO): (Bahas ketakutan kena denda keterlambatan proyek atau komisioning ditolak)
    - [SCENE 3: Detik 16-45 | THE DEMO & SOLUTION (Bedah Fisik & Fitur)]
      * Visual & B-Roll: (Tangan memegang unit Siemens Sentron 3VM, sorot barcode CoO asli, tunjukkan trip unit TM220)
      * OST & SFX: (Angka kA, logo Siemens resmi)
-     * Voiceover (VO): (Solusi teknis konkret dengan bahasa santai proyek Jawa/Indonesia yang akrab)
+     * Voiceover (VO): (Solusi teknis konkret dengan bahasa rekayasa profesional dan otoritatif)
    - [SCENE 4: Detik 46-60 | CALL TO ACTION & ENDING]
      * Visual: (Talent menunjuk alamat toko online di layar)
      * Voiceover (VO): (Ajak cek stok 24 jam dan pesan langsung di toko online resmi: shop.hokiindo.co.id)
@@ -4108,20 +4118,32 @@ Format naskah sutradara harus sangat detail, terstruktur dan siap syuting:
 6. Call to Action: Arahkan ke https://shop.hokiindo.co.id untuk cek harga/stok atau ajukan BoQ tender ke https://hokiindo.co.id.`
   }
 
-  const systemPrompt = `Kamu adalah Antigravity Deep Content Engine untuk ${agent.name} (${agent.role}) dari "${squadGangName.value}" PT Hokiindo Raya (distributor resmi Siemens Indonesia & G-Comin).
-PERAN: Kamu adalah Lead Electrical & Automation Systems Consultant berstandar internasional sekaligus Master B2B Copywriter. Konten panjang yang kamu hasilkan HARUS SANGAT KREDIBEL, DETAIL, BEBAS DARI KLAIM AMBIGU ATAU SALAH TEKNIK (teruji valid saat dievaluasi AI model manapun seperti Gemini / GPT), memiliki JUDUL MENGGUGAH, TINGGI SEO, HOOK 3 DETIK PERTAMA, dan TATA BAHASA HUMAN YANG ASIK, COOL, DAN KEREN.
+  const systemPrompt = `Kamu adalah Antigravity Deep Content Engine untuk ${agent.name} (${agent.role}) dari "${squadGangName.value}" PT Hokiindo Raya (distributor resmi Siemens Indonesia).
+PERAN: Kamu adalah Lead Electrical & Automation Systems Consultant berstandar internasional sekaligus Master B2B Technical Copywriter. Konten panjang yang kamu hasilkan HARUS SANGAT KREDIBEL, BERBOBOT REKAYASA TINGGI (ENGINEERING-GRADE), BEBAS DARI KLAIM AMBIGU ATAU SALAH TEKNIK (teruji valid saat dievaluasi AI model manapun seperti Gemini / GPT), memiliki JUDUL MENGGUGAH, TINGGI SEO, HOOK 3 DETIK PERTAMA, dan TATA BAHASA TEKNIK PROFESIONAL YANG PRESISI, BERWIBAWA, SERTA METODIS.
+
+BATASAN CAKUPAN PRODUK & LARANGAN KERAS (MUTLAK):
+1. TIDAK ADA TOWER LIGHTING DI MINING, GUDANG & KONSTRUKSI:
+   - DILARANG KERAS mempromosikan tower lighting (lampu menara / mobile lighting tower).
+   - DILARANG KERAS membuat konten atau penawaran penerangan untuk sektor penambangan (mining), gudang logistik umum, dan proyek konstruksi sipil/bedeng proyek.
+   - Fokus kelistrikan PT Hokiindo Raya adalah fasilitas industri manufaktur berat, proses industri terotomasi, gardu distribusi, ruang cubicle switchgear/MCC, dan pabrik modern.
+2. TIDAK JUALAN KABEL:
+   - DILARANG KERAS menyatakan atau mengimplikasikan bahwa PT Hokiindo Raya menjual atau menyuplai kabel (kabel tanah, kabel NYFGBY, kabel grounding tembaga, dsb.). KAMI TIDAK MENJUAL KABEL.
+   - Pemutus sirkuit dan relay proteksi Siemens memproteksi konduktor dan kabel sirkit eksternal (menurut kaidah I²t <= k²S² per IEC 60364-4-43 & PUIL 2020), tetapi suplai kabel dilakukan oleh pihak ketiga/kontraktor. PT Hokiindo Raya HANYA menyediakan komponen pemutus tenaga, switchgear, controlgear, proteksi, dan otomasi.
+3. BAHASA SANGAT ENGINEERING & KELAS DUNIA:
+   - DILARANG KERAS menggunakan bahasa gaul pasar murahan, guyonan kuli/mandor, plesetan kopi bedeng, kawat jemuran, drama mandor ngamuk, dll.
+   - Wajib menggunakan bahasa rekayasa teknik kelistrikan tingkat tinggi (Chief Electrical Engineer & Senior Power Systems Consultant tone): berbasis data matematis, merujuk standar internasional resmi (IEC 60947, IEC 61439, IEEE 1584, IEC 61557, PUIL 2020), metodis, presisi, dan berwibawa.
 
 STANDAR ILMIAH & REKAYASA KELISTRIKAN (WAJIB DITERAPKAN DI NASKAH):
 1. Breaker & Proteksi: Rujuk IEC 60947-2 & PUIL 2020. Jelaskan parameter teknis riil: Icu, Ics = 100% Icu, koordinasi selektivitas diskriminasi proteksi (upstream ACB 3WA/3WL vs downstream MCCB 3VA/3VM), kurva tripping TMD (bimetal beralur) vs ETU (L-S-I-G microprocessor).
 2. Motor Control: Rujuk IEC 60947-4-1. Tegaskan kategori utilisasi AC-3e khusus motor efisiensi tinggi IE3/IE4 dengan arus inrush start tinggi (8-10x In). Jelaskan proteksi fasa hilang (single-phasing) dan Trip Class 10 pada overload 3RU.
-3. Kualitas Daya: Rujuk IEC 62053-22 Class 0.2S / 0.5S (Sentron PAC), analisa THD-I / THD-V untuk menekan rugi-rugi trafo dan kabel netral panas.
+3. Kualitas Daya: Rujuk IEC 62053-22 Class 0.2S / 0.5S (Sentron PAC), analisa THD-I / THD-V untuk menekan rugi-rugi trafo dan distorsi tegangan.
 4. Surge Protection: IEC 61643-11 (SPD Type 1 gelombang 10/350 µs vs Type 2 gelombang 8/20 µs, Up <= 1.5 kV).
-5. Pencahayaan & Solar: Efikasi lm/W riil >= 140 lm/W, standar lux SNI, baterai LiFePO4 Cell Grade A 3.2V dengan MPPT controller 98%.
+5. Segregasi Switchboard: IEC 61439-1/2 (Form 2b s/d Form 4b, verifikasi temperature rise dan derajat proteksi IP54/IP65).
 
-TATA BAHASA & RUKUN PEMBEDA (ASIK, COOL, HUMAN & HOOK 3 DETIK):
-1. HOOK 3 DETIK PERTAMA: Selalu buka dengan hook tajam yang menyentuh studi kasus atau problem lapangan engineer.
+TATA BAHASA & RUKUN PEMBEDA (ENGINEERING-GRADE & HOOK 3 DETIK):
+1. HOOK 3 DETIK PERTAMA: Selalu buka dengan hook tajam yang menyentuh studi kasus rekayasa nyata atau mitigasi risiko teknis.
 2. ZERO ROBOTIC SLOP: DILARANG KERAS menggunakan kata klise robot ("Dalam era modern/digital...", "Tidak dapat dipungkiri bahwa...", "Mari kita selami...", "Solusi komprehensif...", "Game changer...", "Kesimpulannya...").
-3. BERCERITA ALAMI: Gunakan analogi praktisi proyek yang cerdas, santai, berkelas, dan mudah dipahami kustomer.
+3. BERCERITA ALAMI: Gunakan penjelasan praktisi rekayasa kelistrikan yang otoritatif, sistematis, berkelas, dan berbasis bukti empiris.
 
 ATURAN DOMAIN WAJIB & MUTLAK:
 1. Pengecekan produk, harga, spesifikasi, ketersediaan stok, dan pembelian online: https://shop.hokiindo.co.id
@@ -4413,7 +4435,7 @@ function resolveProductSupportingData(prod) {
   } else if (/ETU|Electronic/i.test(name) || /ETU/i.test(baseDesc)) {
     tripUnit = 'Electronic Trip Unit ETU (Proteksi presisi L-I-S-G & selektivitas kaskade)'
   } else if (cat === 'MCB') {
-    tripUnit = 'Kurva Karakteristik C (Tripping 5-10x In, proteksi sirkit kabel)'
+    tripUnit = 'Kurva Karakteristik C (Tripping 5-10x In, proteksi beban cabang induktif)'
   } else if (cat === 'CONTACTOR' || cat === 'TOR') {
     tripUnit = 'Kontak Paduan Perak-Nikel AC-3 & Bimetal Overload Trip Class 10'
   }
@@ -4431,7 +4453,7 @@ function resolveProductSupportingData(prod) {
   } else if (cat === 'TOR' || cat === 'MPCB') {
     application = 'Proteksi termal anti-overload dan kehilangan fasa (phase-loss) motor pompa & kompresor'
   } else if (cat === 'LIGHTING') {
-    application = 'Pencahayaan plafon tinggi gudang logistik, hangar pabrik, dan area industri bersuhu tinggi'
+    application = 'Pencahayaan presisi tinggi fasilitas manufaktur, ruang switchboard, dan area proses industri bersuhu tinggi'
   } else if (cat === 'PLC_AUTOMATION' || cat === 'VFD') {
     application = 'Otomasi lini produksi industri 4.0, kontrol kecepatan motor, dan sistem SCADA pabrik'
   }
@@ -4826,7 +4848,7 @@ onMounted(() => {
           <div class="flex items-center gap-2 flex-wrap text-xs">
             <span class="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
               <Sparkles class="w-3.5 h-3.5 text-slate-500" />
-              Geng Punakawan Setrum
+              {{ squadGangName }}
             </span>
 
             <span class="text-slate-300 dark:text-slate-700">•</span>
@@ -6464,10 +6486,10 @@ onMounted(() => {
                 v-model="contentCategory"
                 class="w-full px-3 py-1.5 rounded-lg text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:border-slate-400"
               >
-                <option value="siemens">⚡ Siemens (Switchgear, MCCB, ACB, Kontaktor, PLC)</option>
-                <option value="gcomin">💡 Lampu G-Comin (High Bay Industri, Floodlight, PJU Solar)</option>
-                <option value="humor">🎭 Humor / Meme Proyek Kuli & Teknisi</option>
-                <option value="bts">🏢 Behind the Scenes & Gudang HSO</option>
+                <option value="siemens">⚡ Siemens Power Distribution (MCCB, ACB, SIRIUS, PAC, S7-1200)</option>
+                <option value="protection">🛡️ Rekayasa Proteksi & Standar IEC (Selektivitas, Kaskade, Arc Flash)</option>
+                <option value="testing">🔬 Pengujian Lapangan & FAT/SAT (Injeksi Sekunder, Megger, TCC)</option>
+                <option value="bts">🏢 Operasional & Keandalan Pasokan (Quality Control, CoO, Ready Stock)</option>
               </select>
             </div>
           </div>
@@ -6504,7 +6526,7 @@ onMounted(() => {
               <h3 class="font-bold text-slate-900 dark:text-white text-sm">
                 Pengaturan Mesin Kecerdasan AI
               </h3>
-              <p class="text-[11px] text-slate-400">Kelola koneksi model cerdas untuk Geng Punakawan Setrum</p>
+              <p class="text-[11px] text-slate-400">Kelola koneksi model cerdas untuk {{ squadGangName }}</p>
             </div>
           </div>
           <button @click="showSettingsModal = false" class="text-slate-400 hover:text-slate-600 p-1 text-sm">
@@ -6711,7 +6733,7 @@ onMounted(() => {
       <div class="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
           <div class="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium mb-1">
-            <span>Geng Punakawan Setrum</span>
+            <span>{{ squadGangName }}</span>
             <span>/</span>
             <span class="text-slate-700 dark:text-slate-300 font-semibold">Bank Data & Intelijen</span>
             <span>/</span>
@@ -6724,7 +6746,7 @@ onMounted(() => {
             </span>
           </h3>
           <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 max-w-3xl leading-normal">
-            Bank data resmi yang dipelajari Mas Tejo, Cak Bagong, Mbak Sri, dan Juragan Broto. Mengintegrasikan Situs Sendiri, Artikel Teknik, Dokumen PDF, Database Produk Accurate, serta Konten Referensi & Inspirasi Serupa.
+            Bank data resmi yang dipelajari Mas Tejo, Ir. Bagong, S.T., Mbak Sri, dan Ir. Broto Kusumo, M.T. Mengintegrasikan Situs Korporat, Artikel Rekayasa Teknik, Dokumen PDF & Datasheet, Database Produk Accurate, serta Analisis Studi Kasus Lapangan.
           </p>
         </div>
 
@@ -7412,7 +7434,7 @@ onMounted(() => {
         <div class="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div class="flex items-center gap-1.5 flex-wrap">
             <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
-            <span>Menampilkan <strong>{{ displayedProducts.length }}</strong> dari <strong>{{ filteredProducts.length.toLocaleString('id-ID') }}</strong> produk terfilter (Total Master: <strong>{{ accurateProducts.length.toLocaleString('id-ID') }}</strong> produk Accurate). Seluruh nomor part number MLFB, ampere, kA, harga, dan deskripsi produk lengkap dipelajari secara mendalam oleh Geng Punakawan Setrum.</span>
+            <span>Menampilkan <strong>{{ displayedProducts.length }}</strong> dari <strong>{{ filteredProducts.length.toLocaleString('id-ID') }}</strong> produk terfilter (Total Master: <strong>{{ accurateProducts.length.toLocaleString('id-ID') }}</strong> produk Accurate). Seluruh nomor part number MLFB, ampere, kA, harga, dan deskripsi produk lengkap dipelajari secara mendalam oleh {{ squadGangName }}.</span>
           </div>
           <div class="flex items-center gap-1 text-[10px] text-slate-400 shrink-0">
             <span class="px-1.5 py-0.2 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-semibold border border-emerald-200 dark:border-emerald-800">
@@ -7744,7 +7766,7 @@ onMounted(() => {
         <div class="p-2.5 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 flex items-center justify-between gap-2">
           <div class="flex items-center gap-1.5">
             <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
-            <span>Tersimpan <strong>{{ filteredReferences.length }}</strong> konten referensi & inspirasi terbukti. Pola storytelling dan hook-nya otomatis diadopsi oleh Geng Punakawan Setrum.</span>
+            <span>Tersimpan <strong>{{ filteredReferences.length }}</strong> konten referensi & inspirasi terbukti. Pola analisis teknis dan hook-nya otomatis diadopsi oleh {{ squadGangName }}.</span>
           </div>
           <span class="text-[10px] text-slate-400 shrink-0 hidden sm:inline">Formula Siap Tiru</span>
         </div>

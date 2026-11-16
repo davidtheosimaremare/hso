@@ -2,6 +2,7 @@
 import { onMounted, ref, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
+import { getListSq } from '@/lib/accurateProxy'
 import { 
   Loader2, AlertCircle, Search, FileText, Calendar, Eye, Pin, RefreshCw, 
   ChevronLeft, ChevronRight, Trophy, XCircle, Handshake, CheckCircle2, TrendingUp 
@@ -43,17 +44,34 @@ const availableStatuses = computed(() => {
 
 // --- FETCH HSQ LIST ---
 const fetchHsqList = async () => {
-  isLoading.value = true
+  // Coba load dari cache dulu agar tampilan instan
+  try {
+    const cached = localStorage.getItem('hir_sales_quotations_cache')
+    if (cached) {
+      const parsed = JSON.parse(cached)
+      if (Array.isArray(parsed) && parsed.length > 0 && hsqList.value.length === 0) {
+        hsqList.value = parsed
+        isLoading.value = false
+      }
+    }
+  } catch {}
+
+  isLoading.value = hsqList.value.length === 0
   fetchError.value = null
   try {
-    const { data, error } = await supabase.functions.invoke('accurate-list-sq', {
-      body: { fields: 'id,number,transDate,customer,totalAmount,statusName,description,detailItem' }
+    // Panggil langsung ke HSO Sync Server (VPS Indonesia)
+    const res = await getListSq({
+      fields: 'id,number,transDate,customer,totalAmount,statusName,description,detailItem'
     })
     
-    if (error) throw new Error(error.message || 'Gagal mengambil data dari Edge Function')
-    if (!data?.s) throw new Error(data?.error || 'Gagal mengambil data list HSQ')
+    if (res.error) throw new Error(res.error)
+    if (!res.data?.s) throw new Error(res.data?.error || 'Gagal mengambil data list HSQ dari HSO Sync')
     
-    hsqList.value = data.d || []
+    hsqList.value = res.data.d || []
+    try {
+      localStorage.setItem('hir_sales_quotations_cache', JSON.stringify(res.data.d || []))
+    } catch {}
+
     await fetchProgressDataMap()
   } catch (err) {
     console.error('Fetch HSQ error:', err)

@@ -1,5 +1,13 @@
 [
   {
+    "hash": "8d6671149badcec9e5ae0561da3853ff2c6764f6",
+    "shortHash": "8d66711",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Mon Nov 16 16:07:05 2026 +0700",
+    "message": "feat(accurate-proxy): route all Accurate API calls via hso-sync VPS proxy"
+  },
+  {
     "hash": "9343c7ccf24b813c0299a19a98c7330c3634b616",
     "shortHash": "9343c7c",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Mon Aug 31 10:51:44 2026 +0700",
     "message": "feat(tools): refine Product Usage & Allocation Tracker UI and HSO validation"
-  },
-  {
-    "hash": "2f88d94c0d027cbba3c00416df7642867da85cc1",
-    "shortHash": "2f88d94",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Sat Aug 29 11:03:17 2026 +0700",
-    "message": "feat(tools): add Product Usage Tracker (Pelacak Penggunaan Produk HSO & HPO)"
   }
 ]

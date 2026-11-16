@@ -335,6 +335,7 @@ const menuGroups = [
     items: [
       { type: 'item', name: 'Penawaran', path: '/hsq', icon: FileText, moduleKey: 'hsq' },
       { type: 'item', name: 'Penjualan', path: '/sales-orders', icon: FileText, moduleKey: 'sales-orders' },
+      { type: 'item', name: 'HSB to HSO', path: '/hsb-to-hso', icon: ArrowRightLeft, moduleKey: 'sales-orders' },
       { type: 'item', name: 'Database Leads', path: '/sales-leads', icon: Building2, moduleKey: 'hsq' },
       { type: 'item', name: 'Marketing Hub', path: '/marketing-hub', icon: Megaphone, moduleKey: 'marketing-hub' },
       { type: 'item', name: 'Penyesuaian Harga', path: '/penyesuaian-harga', icon: BadgePercent, moduleKey: 'hsq' }
@@ -593,25 +594,27 @@ const fetchNotifications = async () => {
       }
 
       if (currentEmail) {
-        const { data: nData, error: nErr } = await supabase
-          .from('notifications')
-          .select('id, title, message, type, link, is_read, created_at, recipient_email, user_email')
-          .or(`recipient_email.ilike.${currentEmail},user_email.ilike.${currentEmail}`)
-          .order('created_at', { ascending: false })
-          .limit(50)
+        try {
+          const { data: nData, error: nErr } = await supabase
+            .from('notifications')
+            .select('id, title, message, type, link, is_read, created_at, recipient_email, user_email')
+            .or(`recipient_email.ilike.${currentEmail},user_email.ilike.${currentEmail}`)
+            .order('created_at', { ascending: false })
+            .limit(50)
 
-        if (!nErr && nData) {
-          userNotifs = nData.map(n => ({
-            id: n.id,
-            title: n.title || 'Notifikasi HSO',
-            message: n.message || '',
-            status: n.message ? (n.message.length > 50 ? n.message.slice(0, 50) + '...' : n.message) : (n.type || 'INFO'),
-            type: n.type || 'HSO_MENTION',
-            created_at: n.created_at,
-            path: n.link || '/sales-orders',
-            read: n.is_read || localStorage.getItem(`notif_read_${n.id}`) === 'true'
-          }))
-        }
+          if (!nErr && nData) {
+            userNotifs = nData.map(n => ({
+              id: n.id,
+              title: n.title || 'Notifikasi HSO',
+              message: n.message || '',
+              status: n.message ? (n.message.length > 50 ? n.message.slice(0, 50) + '...' : n.message) : (n.type || 'INFO'),
+              type: n.type || 'HSO_MENTION',
+              created_at: n.created_at,
+              path: n.link || '/sales-orders',
+              read: n.is_read || localStorage.getItem(`notif_read_${n.id}`) === 'true'
+            }))
+          }
+        } catch {}
       }
     } catch (e) {
       console.warn('Notifications user fetch note:', e)
