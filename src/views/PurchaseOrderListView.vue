@@ -129,7 +129,7 @@ const triggerSync = async () => {
 
   try {
     const { data: { session } } = await supabase.auth.getSession()
-    const endpoint = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sync-accurate-pos'
+    const endpoint = `${import.meta.env.VITE_ACCURATE_SYNC_URL || 'https://hso-sync.hokiindo.co.id'}/accurate/sync-accurate-pos`
     
     while (hasMore) {
         // Update Loading Text if possible (or just console)
@@ -193,7 +193,7 @@ const triggerSyncReceiveItem = async () => {
 
   try {
     const { data: { session } } = await supabase.auth.getSession()
-    const endpoint = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sync-accurate-receive-items'
+    const endpoint = `${import.meta.env.VITE_ACCURATE_SYNC_URL || 'https://hso-sync.hokiindo.co.id'}/accurate/sync-accurate-receive-items`
     
     while (hasMore) {
         console.log(`Syncing RI Page ${page}...`)
@@ -267,7 +267,7 @@ const runBackgroundSync = async () => {
     
     try {
         const { data: { session } } = await supabase.auth.getSession()
-        const endpoint = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sync-accurate-pos'
+        const endpoint = `${import.meta.env.VITE_ACCURATE_SYNC_URL || 'https://hso-sync.hokiindo.co.id'}/accurate/sync-accurate-pos`
 
         while (hasMore) {
              try {

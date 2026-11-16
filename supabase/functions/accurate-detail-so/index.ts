@@ -49,15 +49,16 @@ serve(async (req) => {
       }
       candidateParams.push(`id=${encodeURIComponent(reqId)}`)
     } else {
+      // Jika sudah numeric ID murni (e.g. 24450), langsung query via id
       candidateParams.push(`id=${encodeURIComponent(reqId)}`)
-      candidateParams.push(`number=${encodeURIComponent(reqId)}`)
     }
 
     let jsonDoc: any = null
     for (const paramStr of candidateParams) {
       try {
+        // Berikan waktu timeout hingga 60 detik agar Accurate Online sempat mengompilasi relasi item & ledger
         const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 10000)
+        const timeoutId = setTimeout(() => controller.abort(), 60000)
 
         const res = await fetch(`${BASE_API}/${moduleType}/detail.do?${paramStr}`, {
           headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json', ...signatureHeader },
@@ -83,56 +84,11 @@ serve(async (req) => {
 
     const docData = jsonDoc.d
 
-    // 2. CEK STOK REAL (Chunked Batch Fetch to prevent rate limit & socket resets)
-    if (moduleType === 'sales-order' && docData.detailItem && Array.isArray(docData.detailItem)) {
-      const uniqueItems = [...new Set(docData.detailItem
-        .filter((d: any) => d.item && d.item.id)
-        .map((d: any) => d.item.id)
-      )]
-
-      const stockMap: Record<string, number> = {}
-
-      // Process in batches of 5 to avoid overwhelming Accurate API
-      const BATCH_SIZE = 5
-      for (let i = 0; i < uniqueItems.length; i += BATCH_SIZE) {
-        const batch = uniqueItems.slice(i, i + BATCH_SIZE)
-        await Promise.all(batch.map(async (itemId: any) => {
-          try {
-            const controller = new AbortController()
-            const tId = setTimeout(() => controller.abort(), 6000)
-
-            const urlItem = `${BASE_API}/item/detail.do?id=${itemId}`
-            const resItem = await fetch(urlItem, {
-              headers: { 'Authorization': `Bearer ${accessToken}`, ...signatureHeader },
-              signal: controller.signal
-            })
-            clearTimeout(tId)
-
-            if (resItem.ok) {
-              const itemData = await resItem.json()
-              if (itemData?.d) {
-                const avail = itemData.d.availableToSell !== undefined ? itemData.d.availableToSell : (itemData.d.quantity || 0)
-                stockMap[itemId] = avail
-              }
-            }
-          } catch (itemErr: any) {
-            console.warn(`Stock fetch notice for item ${itemId}:`, itemErr.message)
-            stockMap[itemId] = 0
-          }
-        }))
-      }
-
-      docData.detailItem = docData.detailItem.map((d: any) => ({
-        ...d,
-        realStock: d.item?.id ? (stockMap[d.item.id] || 0) : 0
-      }))
-    }
-
-    // 3. FETCH ATTACHMENTS
+    // 2. FETCH ATTACHMENTS (Ringan & Cepat)
     if (docData.id) {
       try {
         const controller = new AbortController()
-        const tId = setTimeout(() => controller.abort(), 6000)
+        const tId = setTimeout(() => controller.abort(), 4000)
 
         const url = `${BASE_API}/attachment/list.do?transactionId=${docData.id}&transactionType=SO`
         const attRes = await fetch(url, {

@@ -126,7 +126,7 @@ const checkSingleDeviceSession = async (email) => {
   try {
     const { data, error } = await supabase
       .from('user_access')
-      .select('active_session_id, last_login_ip')
+      .select('active_session_id')
       .eq('email', email)
       .maybeSingle()
 

@@ -118,7 +118,7 @@ const triggerSync = async () => {
 
   try {
     const { data: { session } } = await supabase.auth.getSession()
-    const endpoint = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sync-accurate-dos'
+    const endpoint = `${import.meta.env.VITE_ACCURATE_SYNC_URL || 'https://hso-sync.hokiindo.co.id'}/accurate/sync-accurate-dos`
     
     while (hasMore) {
         try {
@@ -188,7 +188,7 @@ const runBackgroundSync = async () => {
     
     try {
         const { data: { session } } = await supabase.auth.getSession()
-        const endpoint = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sync-accurate-dos'
+        const endpoint = `${import.meta.env.VITE_ACCURATE_SYNC_URL || 'https://hso-sync.hokiindo.co.id'}/accurate/sync-accurate-dos`
 
         while (hasMore) {
              try {

@@ -5,9 +5,10 @@ import {
   Lightbulb, Send, Heart, MessageCircle, Loader2, X, Image,
   RefreshCw, Sparkles, AlertCircle, ChevronDown, Globe,
   MoreHorizontal, Bookmark, Share2, ThumbsUp, Calendar, ChevronLeft, ChevronRight, List, ExternalLink, Pin,
-  Upload, FileText, Edit3, History, Bold, Italic, Heading, Quote, ListOrdered, Eye, RotateCcw, Check, Clock, User, CornerDownLeft, Edit
+  Upload, FileText, Edit3, History, Bold, Italic, Heading, Quote, ListOrdered, Eye, RotateCcw, Check, Clock, User, CornerDownLeft, Edit, Bot
 } from 'lucide-vue-next'
 import RichTextEditor from '@/components/RichTextEditor.vue'
+import MarketingAiSquad from '@/components/MarketingAiSquad.vue'
 
 // --- State ---
 const isLoading = ref(true)
@@ -211,7 +212,23 @@ const removeCommentAttachment = () => {
 }
 
 // Tabs
-const activeTab = ref('digital') // 'digital' | 'event'
+const activeTab = ref('digital') // 'digital' | 'ai_squad' | 'event'
+
+const onIdeaCreatedFromAi = (idea) => {
+  fetchIdeas()
+}
+
+const navigateToFeed = () => {
+  activeTab.value = 'digital'
+  digitalViewMode.value = 'feed'
+  fetchIdeas()
+}
+
+const navigateToCalendar = () => {
+  activeTab.value = 'digital'
+  digitalViewMode.value = 'calendar'
+  fetchIdeas()
+}
 
 // Events state
 const events = ref([])
@@ -1577,7 +1594,7 @@ watch(selectedEventDetail, () => {
         </div>
         <h1 class="text-xl font-semibold tracking-tight text-slate-900 dark:text-white">Kolaborasi Tim</h1>
       </div>
-      <button @click="activeTab === 'digital' ? fetchIdeas() : fetchEvents()" class="p-2 rounded-xl bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors shadow-sm">
+      <button @click="activeTab === 'digital' || activeTab === 'ai_squad' ? fetchIdeas() : fetchEvents()" class="p-2 rounded-xl bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors shadow-sm" title="Refresh Data">
         <RefreshCw class="w-4 h-4" />
       </button>
     </div>
@@ -1590,6 +1607,13 @@ watch(selectedEventDetail, () => {
           class="flex-1 py-2 text-sm font-semibold rounded-lg transition-all"
           :class="activeTab === 'digital' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'">
           Digital Marketing
+        </button>
+        <button @click="activeTab = 'ai_squad'"
+          class="flex-1 py-2 text-sm font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5"
+          :class="activeTab === 'ai_squad' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'">
+          <Sparkles class="w-4 h-4 text-amber-500" />
+          <span>Geng Punakawan Setrum</span>
+          <span class="hidden sm:inline-flex px-1.5 py-0.5 text-[10px] bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 font-bold rounded-full">4 Agen</span>
         </button>
         <button @click="activeTab = 'event'"
           class="flex-1 py-2 text-sm font-semibold rounded-lg transition-all"
@@ -2158,6 +2182,17 @@ watch(selectedEventDetail, () => {
     </div>
     </div> <!-- END MAIN CONTENT -->
     </div> <!-- END DIGITAL MARKETING TAB -->
+
+    <!-- TAB: TIM AI JAWA (SQUAD) -->
+    <div v-if="activeTab === 'ai_squad'" class="space-y-4">
+      <MarketingAiSquad
+        :current-user="currentUser"
+        :current-user-name="currentUserName"
+        @idea-created="onIdeaCreatedFromAi"
+        @navigate-to-feed="navigateToFeed"
+        @navigate-to-calendar="navigateToCalendar"
+      />
+    </div>
 
     <!-- TAB: EVENT & ACTIVATION -->
     <div v-if="activeTab === 'event'" class="space-y-4">

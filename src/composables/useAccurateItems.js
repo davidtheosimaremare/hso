@@ -698,7 +698,8 @@ export function useAccurateItems() {
       syncProgress.value = 30
       // Call edge function if available
       try {
-        const res = await fetch(`${supabaseUrl}/functions/v1/sync-accurate-items`, {
+        const syncUrl = `${import.meta.env.VITE_ACCURATE_SYNC_URL || 'https://hso-sync.hokiindo.co.id'}/accurate/sync-accurate-items`
+        const res = await fetch(syncUrl, {
           method: 'POST',
           headers,
           body: JSON.stringify({ page: 1 })

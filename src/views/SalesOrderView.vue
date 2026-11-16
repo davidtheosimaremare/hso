@@ -3,6 +3,7 @@ defineOptions({ name: 'SalesOrderView' })
 import { onMounted, onActivated, ref, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { supabase } from '@/lib/supabase'
+import { getListSo, getListSq } from '@/lib/accurateProxy'
 import * as XLSX from 'xlsx'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -189,11 +190,11 @@ const fetchOrders = async (isBackground = false) => {
   }
   try {
     const [soRes, sqRes] = await Promise.all([
-      invokeEdgeFunctionWithRetry('accurate-list-so', {
-        body: { fields: 'id,number,transDate,customer,totalAmount,statusName,percentShipped,description,detailItem,poNumber' }
+      getListSo({
+        fields: 'id,number,transDate,customer,totalAmount,statusName,percentShipped,description,detailItem,poNumber'
       }),
-      invokeEdgeFunctionWithRetry('accurate-list-sq', {
-        body: { fields: 'id,number,transDate,customer,totalAmount,statusName,description,detailItem' }
+      getListSq({
+        fields: 'id,number,transDate,customer,totalAmount,statusName,description,detailItem'
       }).catch(err => {
         console.warn('SQ list fetch error:', err)
         return null

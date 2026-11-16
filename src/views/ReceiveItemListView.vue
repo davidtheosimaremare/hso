@@ -123,7 +123,7 @@ const triggerSyncRI = async () => {
 
   try {
     const { data: { session } } = await supabase.auth.getSession()
-    const endpoint = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sync-accurate-receive-items'
+    const endpoint = `${import.meta.env.VITE_ACCURATE_SYNC_URL || 'https://hso-sync.hokiindo.co.id'}/accurate/sync-accurate-receive-items`
     
     while (hasMore) {
         try {
@@ -193,7 +193,7 @@ const runBackgroundSync = async () => {
     
     try {
         const { data: { session } } = await supabase.auth.getSession()
-        const endpoint = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sync-accurate-receive-items'
+        const endpoint = `${import.meta.env.VITE_ACCURATE_SYNC_URL || 'https://hso-sync.hokiindo.co.id'}/accurate/sync-accurate-receive-items`
 
         while (hasMore) {
              try {

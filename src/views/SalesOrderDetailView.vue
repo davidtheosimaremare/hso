@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref, computed, watch, inject, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
+import { getDetailSo } from '@/lib/accurateProxy'
 
 // UI Components
 import {
@@ -80,6 +81,7 @@ const linkedHpbs = ref([])
 const isLinkCopied = ref(false)
 const isSoNumberCopied = ref(false)
 const errorMessage = ref(null)
+const isAccurateDegraded = ref(false)
 
 const cartItems = ref([])
 
@@ -106,6 +108,57 @@ const isItemMatch = (dbItem, excelItem) => {
 const normalizeHso = (val) => {
   if (!val) return ''
   return String(val).toUpperCase().replace(/[^A-Z0-9]/g, '')
+}
+
+// Helper to extract prefix, year, month, and sequence number (e.g. 'HSB/26/11/01' -> { prefix: 'HSB', year: 26, month: 11, num: 1 })
+const parseOrderComponents = (str) => {
+  if (!str) return null
+  const m = String(str).match(/^([A-Za-z]+)[\/\-](\d{2})[\/\-](\d{1,2})[\/\-](\d+)$/)
+  if (!m) return null
+  return {
+    prefix: m[1].toUpperCase(),
+    year: parseInt(m[2], 10),
+    month: parseInt(m[3], 10),
+    num: parseInt(m[4], 10)
+  }
+}
+
+// Helper to generate candidate SO numbers with standard Accurate zero-padding (e.g. HSB-26-11-01 -> HSB/26/11/0001)
+const generateOrderNumberCandidates = (str) => {
+  const parsed = parseOrderComponents(str)
+  if (!parsed) return [str.replace(/-/g, '/')]
+  
+  const { prefix, year, month, num } = parsed
+  const yStr = String(year).padStart(2, '0')
+  const mStr = String(month).padStart(2, '0')
+  
+  const prefixes = [prefix]
+  if (prefix === 'HSB') prefixes.push('HSO')
+  else if (prefix === 'HSO') prefixes.push('HSB')
+  
+  const candidates = []
+  prefixes.forEach(p => {
+    // 4-digit padding (Accurate standard: e.g. 0001)
+    candidates.push(`${p}/${yStr}/${mStr}/${String(num).padStart(4, '0')}`)
+    // 3-digit padding (e.g. 001)
+    candidates.push(`${p}/${yStr}/${mStr}/${String(num).padStart(3, '0')}`)
+    // 2-digit padding (as input: 01)
+    candidates.push(`${p}/${yStr}/${mStr}/${String(num).padStart(2, '0')}`)
+    // Raw digit (e.g. 1)
+    candidates.push(`${p}/${yStr}/${mStr}/${num}`)
+  })
+  
+  return Array.from(new Set(candidates))
+}
+
+// Helper to extract clean numeric ID
+const extractNumericId = (obj) => {
+  if (!obj) return null
+  const raw = obj.id_database ?? obj.id ?? obj.so_id
+  if (raw !== undefined && raw !== null && !isNaN(Number(raw)) && Number(raw) > 0) {
+    return parseInt(raw, 10)
+  }
+  return null
 }
 
 // Helper: Extract sequence numbers for natural FIFO comparison of HSO numbers
@@ -1862,55 +1915,179 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
   }
   
   try {
-    let targetId = resolvedSoId.value
+    const activeRouteParam = decodeURIComponent(String(route.params.soNumber || routeId || '')).trim()
     
-    if (!targetId) {
-      const isNumeric = /^\d+$/.test(routeId)
-      if (isNumeric) {
-        targetId = parseInt(routeId)
-      } else {
-        // Ini adalah nomor HSO (misal: HSO-25-01-001)
-        // Ubah kembali "-" menjadi "/"
-        const targetNumber = routeId.replace(/-/g, '/')
-        loadingMessage.value = `Mencari ID untuk ${targetNumber}...`
-        
+    // Pastikan resolvedSoId di-reset jika berpindah ke nomor SO yang berbeda
+    if (soDetail.value?.number && normalizeHso(soDetail.value.number) !== normalizeHso(activeRouteParam)) {
+      resolvedSoId.value = null
+    }
+
+    const isNumeric = /^\d+$/.test(activeRouteParam)
+    let targetNumber = isNumeric ? '' : activeRouteParam.replace(/-/g, '/')
+    let matchedSo = null
+    let targetId = (typeof resolvedSoId.value === 'number' && resolvedSoId.value > 0) ? resolvedSoId.value : (isNumeric ? parseInt(activeRouteParam, 10) : null)
+
+    // 1. Coba cari di local cache (hir_sales_orders_cache_v1)
+    try {
+      const rawCache = localStorage.getItem('hir_sales_orders_cache_v1')
+      if (rawCache) {
+        const cachedOrders = JSON.parse(rawCache)
+        if (Array.isArray(cachedOrders) && cachedOrders.length > 0) {
+          if (targetId) {
+            matchedSo = cachedOrders.find(o => extractNumericId(o) === targetId)
+          }
+          if (!matchedSo && targetNumber) {
+            matchedSo = cachedOrders.find(o => (o.no_so || o.number) === targetNumber || (o.no_so || o.number)?.toLowerCase() === targetNumber.toLowerCase()) ||
+                        cachedOrders.find(o => normalizeHso(o.no_so || o.number) === normalizeHso(targetNumber))
+            if (!matchedSo) {
+              const targetParsed = parseOrderComponents(targetNumber)
+              if (targetParsed) {
+                matchedSo = cachedOrders.find(o => {
+                  const p = parseOrderComponents(o.no_so || o.number)
+                  return p && p.prefix === targetParsed.prefix && p.year === targetParsed.year && p.month === targetParsed.month && p.num === targetParsed.num
+                }) || cachedOrders.find(o => {
+                  const p = parseOrderComponents(o.no_so || o.number)
+                  return p && p.year === targetParsed.year && p.month === targetParsed.month && p.num === targetParsed.num
+                })
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Gagal membaca cache lokal SO:', e)
+    }
+
+    if (!targetId && matchedSo) {
+      targetId = extractNumericId(matchedSo)
+    }
+
+    // 2. Jika belum dapat targetId, query ke Accurate API via accurate-list-so
+    if (!targetId && targetNumber) {
+      loadingMessage.value = `Mencari ID untuk ${targetNumber}...`
+      try {
         const { data: listData, error: listError } = await invokeEdgeFunctionWithRetry('accurate-list-so', {
           body: { 
             filterNumber: targetNumber,
-            fields: 'id,number'
+            fields: 'id,number,transDate,customer,totalAmount,statusName,percentShipped,poNumber,description'
           }
-        })
+        }, 0)
         
         if (listError) throw listError
         
-        const matchedSo = listData?.d?.find(so => so.number === targetNumber) ||
-                          listData?.d?.find(so => so.number?.toLowerCase() === targetNumber.toLowerCase()) ||
-                          listData?.d?.find(so => normalizeHso(so.number) === normalizeHso(targetNumber))
-        if (!matchedSo) {
-          throw new Error(`Sales Order dengan nomor ${targetNumber} tidak ditemukan di Accurate.`)
+        const found = listData?.d?.find(so => so.number === targetNumber) ||
+                      listData?.d?.find(so => so.number?.toLowerCase() === targetNumber.toLowerCase()) ||
+                      listData?.d?.find(so => normalizeHso(so.number) === normalizeHso(targetNumber))
+        
+        if (found) {
+          targetId = extractNumericId(found)
+          matchedSo = found
         }
-        targetId = matchedSo.id
+      } catch (errList) {
+        console.warn('Gagal lookup via accurate-list-so:', errList)
       }
-      resolvedSoId.value = targetId
     }
+
+    // 3. Fallback: Jika Accurate mengembalikan kosong (karena perbedaan digit sequence 01 vs 0001 atau HSB vs HSO), coba kandidat format standar
+    if (!targetId && targetNumber) {
+      const candidates = generateOrderNumberCandidates(targetNumber)
+      if (candidates.length > 1) {
+        for (const cand of candidates) {
+          if (cand === targetNumber) continue
+          loadingMessage.value = `Mencoba format alternatif ${cand}...`
+          try {
+            const { data: candData } = await invokeEdgeFunctionWithRetry('accurate-list-so', {
+              body: { 
+                filterNumber: cand, 
+                fields: 'id,number,transDate,customer,totalAmount,statusName,percentShipped,poNumber,description' 
+              }
+            }, 0)
+            const found = candData?.d?.find(so => so.number === cand || normalizeHso(so.number) === normalizeHso(cand))
+            if (found) {
+              targetId = extractNumericId(found)
+              matchedSo = found
+              // Sinkronkan URL rute di browser agar sesuai dengan nomor resmi di Accurate
+              if (matchedSo.number && router.currentRoute.value.params.soNumber !== matchedSo.number.replace(/\//g, '-')) {
+                router.replace(`/sales-orders/${matchedSo.number.replace(/\//g, '-')}`)
+              }
+              break
+            }
+          } catch (errCand) {
+            console.warn(`Pencarian format alternatif ${cand} gagal:`, errCand)
+          }
+        }
+      }
+    }
+
+    if (!targetId) {
+      throw new Error(`Sales Order dengan nomor "${targetNumber || activeRouteParam}" tidak ditemukan di Accurate Online. Pastikan nomor sudah tersimpan di Accurate.`)
+    }
+    resolvedSoId.value = targetId
 
     loadingProgress.value = 20
     loadingMessage.value = 'Mengambil data HSO...'
     
-    const { data: accData, error: accError } = await invokeEdgeFunctionWithRetry('accurate-detail-so', {
-      body: { id: targetId, type: 'sales-order' }
-    })
+    let accData = null
+    let accError = null
+
+    console.log('[AccurateProxy] Fetching detail-so for ID:', targetId)
+    try {
+      // ✅ Pakai VPS proxy (hso-sync.hokiindo.co.id) — jauh lebih cepat dari Supabase Cloud
+      const res = await getDetailSo(targetId, 'sales-order')
+      accData = res?.data
+      accError = res?.error
+      console.log('[AccurateProxy] detail-so response:', accData?.s, '| error:', accError || 'none')
+    } catch (errCall) {
+      accError = errCall?.message || errCall
+      console.error('[AccurateProxy] detail-so error:', errCall)
+    }
     
     loadingProgress.value = 50
-    
-    // Check specific error structure from Edge Function
-    if (accError) throw accError
-    
-    if (!accData || !accData.s) {
-        throw new Error(accData?.message || "Gagal mengambil data dari Accurate (Response Invalid).")
-    }
 
-    const d = accData.d
+    let d = null
+    if (accData && accData.s && accData.d) {
+      d = accData.d
+      isAccurateDegraded.value = false
+    } else {
+      console.warn('Accurate detail.do failed/timed out. Attempting graceful fallback:', accError || accData?.error || 'Invalid response')
+      
+      // Ensure we have matchedSo with full header info
+      if (!matchedSo || (!matchedSo.customer && !matchedSo.client)) {
+        try {
+          const filterParam = targetNumber || (matchedSo?.number) || (matchedSo?.no_so) || String(targetId)
+          const { data: listData } = await invokeEdgeFunctionWithRetry('accurate-list-so', {
+            body: { 
+              filterNumber: filterParam,
+              fields: 'id,number,transDate,customer,totalAmount,statusName,percentShipped,poNumber,description'
+            }
+          }, 0)
+          const found = listData?.d?.find(so => extractNumericId(so) === targetId || so.number === targetNumber || normalizeHso(so.number) === normalizeHso(targetNumber)) || listData?.d?.[0]
+          if (found) {
+            matchedSo = { ...(matchedSo || {}), ...found }
+          }
+        } catch (errListFallback) {
+          console.warn('Fallback list fetch notice:', errListFallback)
+        }
+      }
+
+      if (matchedSo) {
+        isAccurateDegraded.value = true
+        d = {
+          id: extractNumericId(matchedSo) || targetId,
+          number: matchedSo.number || matchedSo.no_so || targetNumber || `SO-${targetId}`,
+          transDate: matchedSo.transDate || matchedSo.transDateView || matchedSo.tgl || matchedSo.date || '',
+          customer: matchedSo.customer || { name: matchedSo.client || matchedSo.customer_name || 'Pelanggan' },
+          poNumber: matchedSo.poNumber || matchedSo.po_number || '-',
+          totalAmount: matchedSo.totalAmount || matchedSo.amount || matchedSo.total_amount || 0,
+          statusName: matchedSo.statusName || matchedSo.status || matchedSo.status_name || 'Menunggu diproses',
+          description: matchedSo.description || '',
+          processHistory: [],
+          detailItem: []
+        }
+      } else {
+        throw new Error(accData?.error || accData?.message || accError?.message || "Gagal mengambil data dari Accurate (Response Invalid).")
+      }
+    }
     const history = d?.processHistory || []
     const rawItems = d?.detailItem || []
     const sortedItems = rawItems.sort((a, b) => (a.seq || 0) - (b.seq || 0))
@@ -2079,7 +2256,7 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
       notes: d.description,
       attachments: d.attachments || d.documents || d.files || d.fileList || [],
       raw_accurate_data: d,
-      items: sortedItems.map(item => {
+      items: (sortedItems.length > 0 ? sortedItems.map(item => {
         const code = item.item?.no || '-'
         const seq = item.seq || 0
         // Find by code AND sequence to avoid split row overlap (ignore invalid/draft/unlinked PO shipments)
@@ -2176,7 +2353,34 @@ const fetchDetail = async (skipHpoSync = false, showLoader = true) => {
           ready_date: myShipment.ready_date || null,
           exwork_waiting: myShipment.exwork_waiting || false
         }
-      }).map(item => {
+      }) : (hpoDetails.value || []).map((poItem, idx) => ({
+        code: poItem.itemCode || '-',
+        seq: idx + 1,
+        name: poItem.itemName || poItem.itemCode || '-',
+        unit: 'Pcs',
+        qty_order: poItem.quantity || 0,
+        qty_shipped: 0,
+        qty_remaining: poItem.quantity || 0,
+        parsed_stock_qty: 0,
+        qty_to_order: 0,
+        admin_note: poItem.description || '',
+        parsed_has_info: false,
+        order_suggestion: 0,
+        is_fully_shipped: false,
+        shipments_data: [],
+        logistics_status: 'On Order',
+        logistics_hpo: poItem.poNumber || null,
+        logistics_date: poItem.poDate || null,
+        logistics_id: null,
+        logistics_hdo: null,
+        logistics_note: poItem.vendorName ? `PO: ${poItem.poNumber} (${poItem.vendorName})` : `PO: ${poItem.poNumber}`,
+        exwork_date: null,
+        eta_date: null,
+        dunex_date: null,
+        hokiindo_date: null,
+        ready_date: null,
+        exwork_waiting: false
+      }))).map(item => {
         // Debug log for Hold by Customer items
         if (item.logistics_status === 'Hold by Customer') {
           console.log('🔍 Found Hold item:', item.code, 'Status:', item.logistics_status, 'Notes:', item.logistics_note)
@@ -3199,6 +3403,14 @@ onMounted(() => {
   fetchDetail()
   fetchTeamUsers()
   window.addEventListener('click', handleClickOutsideDiscussion)
+})
+
+// Auto-refetch when user navigates to another SO without leaving the component
+watch(() => route.params.soNumber, (newVal, oldVal) => {
+  if (newVal && newVal !== oldVal) {
+    resolvedSoId.value = null
+    fetchDetail()
+  }
 })
 
 onUnmounted(() => {
@@ -5509,6 +5721,31 @@ const downloadAttachment = async (att) => {
 
       <div v-else-if="soDetail" class="space-y-5 font-sans">
 
+        <!-- DEGRADED ACCURATE NOTICE BANNER -->
+        <div v-if="isAccurateDegraded" class="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-amber-900 dark:text-amber-200 shadow-sm animate-in fade-in duration-300">
+          <div class="flex items-start sm:items-center gap-3">
+            <div class="p-2 bg-amber-100 dark:bg-amber-900/50 rounded-lg text-amber-700 dark:text-amber-400 shrink-0">
+              <AlertTriangle class="w-5 h-5" />
+            </div>
+            <div class="text-xs space-y-0.5">
+              <div class="font-bold text-amber-900 dark:text-amber-100 flex items-center gap-1.5">
+                <span>Mode Siaga (Server Detail Accurate Sedang Lambat / Timeout)</span>
+                <span class="px-1.5 py-0.5 text-[10px] font-semibold bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100 rounded">Ringkasan Aktif</span>
+              </div>
+              <p class="text-amber-800/90 dark:text-amber-300/90">
+                Server detail Accurate Online sedang antre atau lambat merespons (&gt; 20s). Data transaksi resmi (Customer: <strong>{{ soDetail.client }}</strong>, PO: <strong>{{ soDetail.po_number }}</strong>, Nilai: <strong>{{ formatRupiah(soDetail.total_amount) }}</strong>, Status: <strong>{{ soDetail.status_global }}</strong>) berhasil dimuat.
+              </p>
+            </div>
+          </div>
+          <button 
+            @click="fetchDetail(false, true)" 
+            class="px-3.5 py-2 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors shrink-0 cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
+          >
+            <RefreshCw class="w-3.5 h-3.5" />
+            <span>Muat Ulang Detail</span>
+          </button>
+        </div>
+
         <!-- TOP BAR: BREADCRUMB & COMPACT ACTIONS -->
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div class="flex items-center gap-2 text-xs">
@@ -6125,9 +6362,20 @@ const downloadAttachment = async (att) => {
                 <TableRow v-if="filteredItems.length === 0">
                   <TableCell colspan="8" class="text-center py-12 text-slate-500">
                     <div class="flex flex-col items-center justify-center">
-                      <Search class="w-8 h-8 text-slate-300 dark:text-slate-600 mb-2" />
-                      <p class="text-sm font-semibold">Produk tidak ditemukan</p>
-                      <p class="text-xs text-slate-400 mt-1">Coba gunakan kata kunci pencarian lain atau ubah filter status.</p>
+                      <template v-if="isAccurateDegraded">
+                        <AlertTriangle class="w-8 h-8 text-amber-500 mb-2" />
+                        <p class="text-sm font-semibold text-slate-800 dark:text-slate-200">Detail baris barang sedang menunggu respons Accurate</p>
+                        <p class="text-xs text-slate-400 mt-1 max-w-md">Server detail Accurate Online sedang lambat (&gt; 20s). Data transaksi utama (Customer, PO, Nilai & Status) berhasil dimuat. Silakan klik tombol di bawah untuk memuat ulang rincian barang.</p>
+                        <button @click="fetchDetail(false, true)" class="mt-3 px-3.5 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs">
+                          <RefreshCw class="w-3.5 h-3.5" />
+                          <span>Coba Muat Ulang Detail Item</span>
+                        </button>
+                      </template>
+                      <template v-else>
+                        <Search class="w-8 h-8 text-slate-300 dark:text-slate-600 mb-2" />
+                        <p class="text-sm font-semibold">Produk tidak ditemukan</p>
+                        <p class="text-xs text-slate-400 mt-1">Coba gunakan kata kunci pencarian lain atau ubah filter status.</p>
+                      </template>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -6139,9 +6387,20 @@ const downloadAttachment = async (att) => {
           <!-- Mobile View (Card Layout) -->
           <div class="md:hidden overflow-y-auto flex-1 p-4 space-y-4 bg-slate-50/50 dark:bg-slate-900/30">
             <div v-if="filteredItems.length === 0" class="text-center py-12 text-slate-500 bg-white dark:bg-slate-900 rounded-xl border border-slate-200/60 dark:border-slate-800 p-6">
-              <Search class="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
-              <p class="text-sm font-semibold">Produk tidak ditemukan</p>
-              <p class="text-xs text-slate-400 mt-1">Coba gunakan kata kunci pencarian lain atau ubah filter status.</p>
+              <template v-if="isAccurateDegraded">
+                <AlertTriangle class="w-8 h-8 text-amber-500 mx-auto mb-2" />
+                <p class="text-sm font-semibold text-slate-800 dark:text-slate-200">Detail rincian barang sedang dimuat dari Accurate</p>
+                <p class="text-xs text-slate-400 mt-1 max-w-xs mx-auto">Server detail Accurate sedang lambat (&gt; 20s). Data transaksi utama berhasil dimuat.</p>
+                <button @click="fetchDetail(false, true)" class="mt-3 mx-auto px-3.5 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs">
+                  <RefreshCw class="w-3.5 h-3.5" />
+                  <span>Coba Muat Ulang</span>
+                </button>
+              </template>
+              <template v-else>
+                <Search class="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                <p class="text-sm font-semibold">Produk tidak ditemukan</p>
+                <p class="text-xs text-slate-400 mt-1">Coba gunakan kata kunci pencarian lain atau ubah filter status.</p>
+              </template>
             </div>
             
             <div v-else 

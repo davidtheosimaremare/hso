@@ -62,7 +62,7 @@ const refreshSinglePO = async () => {
 
     try {
         const { data: { session } } = await supabase.auth.getSession()
-        const endpoint = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/sync-accurate-po-single'
+        const endpoint = `${import.meta.env.VITE_ACCURATE_SYNC_URL || 'https://hso-sync.hokiindo.co.id'}/accurate/sync-accurate-po-single`
 
         const res = await fetch(endpoint, {
             method: 'POST',

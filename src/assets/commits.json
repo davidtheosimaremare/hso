@@ -1,5 +1,13 @@
 [
   {
+    "hash": "9343c7ccf24b813c0299a19a98c7330c3634b616",
+    "shortHash": "9343c7c",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Fri Nov 13 10:21:41 2026 +0700",
+    "message": "feat: add weekly task recap, redesign notifications, improve HSO discussions, and optimize performance"
+  },
+  {
     "hash": "79d2a45c2fe0ef225114ce8e415e1b3aa4c235ef",
     "shortHash": "79d2a45",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Sat Aug 29 11:03:17 2026 +0700",
     "message": "feat(tools): add Product Usage Tracker (Pelacak Penggunaan Produk HSO & HPO)"
-  },
-  {
-    "hash": "d5df173ea0cbd9c21876385377b469c05fa11a50",
-    "shortHash": "d5df173",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Sat Aug 29 10:48:26 2026 +0700",
-    "message": "feat(receive-items): add detailed received items breakdown, admin notes, official Accurate PDF printing, and attachment documents preview"
   }
 ]
