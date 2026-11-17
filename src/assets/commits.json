@@ -1,5 +1,13 @@
 [
   {
+    "hash": "353fce44244e1a8e66ef94a27ac7ab2cdb98ec15",
+    "shortHash": "353fce4",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Nov 17 09:18:51 2026 +0700",
+    "message": "feat(saran-order): route Saran Order & Tracking SO directly via HSO sync webhook"
+  },
+  {
     "hash": "db094cddc23863a407bc05642ed0dec5512ba028",
     "shortHash": "db094cd",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Wed Sep 2 11:13:45 2026 +0700",
     "message": "fix: getHpoSubSchedules prioritaskan shipments_data (scan HRI) di atas raw_forwarder_tracking"
-  },
-  {
-    "hash": "c4d26f5597312956f56d64d66b68ac59b920be1a",
-    "shortHash": "c4d26f5",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Sep 2 10:26:35 2026 +0700",
-    "message": "fix: fallback HPO status di keterangan pakai getVisualStatus bukan logistics_status"
   }
 ]

@@ -56,7 +56,7 @@ const isBulkDownloading = ref(false)
 const bulkProgress = ref(0)
 const bulkStatus = ref('')
 const isBulkMode = ref(false) // Show checkbox column
-const bulkModeType = ref('saran') // 'saran' | 'reminder'
+const bulkModeType = ref('saran') // 'saran' | 'reminder' | 'rekap'
 const showSaranTooltip = ref(false)
 const showReminderTooltip = ref(false)
 
@@ -72,10 +72,15 @@ const toggleBulkMode = (type = 'saran') => {
   }
 }
 
+const selectAllFiltered = () => {
+  selectedOrders.value = filteredAndSortedOrders.value.map(so => so.id_database)
+}
+
 const executeBulkAction = () => {
   if (selectedOrders.value.length === 0) return
   if (bulkModeType.value === 'saran') bulkDownloadSaranOrder()
   else if (bulkModeType.value === 'reminder') bulkDownloadReminderPO()
+  else if (bulkModeType.value === 'rekap') bulkDownloadRekapHso()
 }
 
 const cancelBulkMode = () => {
@@ -500,14 +505,16 @@ const prevPage = () => { if (currentPage.value > 1) currentPage.value-- }
 
 // --- MULTI SELECT LOGIC ---
 const isAllSelected = computed(() => {
-    return paginatedOrders.value.length > 0 && selectedOrders.value.length === paginatedOrders.value.length
+    return paginatedOrders.value.length > 0 && paginatedOrders.value.every(so => selectedOrders.value.includes(so.id_database))
 })
 
 const toggleSelectAll = () => {
+    const pageIds = paginatedOrders.value.map(so => so.id_database)
     if (isAllSelected.value) {
-        selectedOrders.value = []
+        selectedOrders.value = selectedOrders.value.filter(id => !pageIds.includes(id))
     } else {
-        selectedOrders.value = paginatedOrders.value.map(so => so.id_database)
+        const newSet = new Set([...selectedOrders.value, ...pageIds])
+        selectedOrders.value = Array.from(newSet)
     }
 }
 
@@ -518,10 +525,6 @@ const toggleSelect = (id, isChecked) => {
         selectedOrders.value.push(id)
     }
 }
-// Clear selection when page changes
-watch(currentPage, () => {
-  selectedOrders.value = []
-})
 
 // --- FILTER TANGGAL ---
 const dateFilterOption = ref('')
@@ -1139,6 +1142,279 @@ const bulkDownloadReminderPO = async () => {
     }
 }
 
+// --- HELPER FORMAT REKAP HSO PER SHEET & KESIMPULAN NOMINAL ---
+const sanitizeSheetName = (rawName, usedNames = new Set()) => {
+  let clean = String(rawName || 'HSO')
+    .replace(/[\/\\?*:[\]]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (clean.length > 28) clean = clean.substring(0, 28)
+
+  let finalName = clean
+  let counter = 1
+  while (usedNames.has(finalName.toLowerCase())) {
+    finalName = `${clean.substring(0, 25)}_${counter}`
+    counter++
+  }
+  usedNames.add(finalName.toLowerCase())
+  return finalName
+}
+
+const makeHsoSheet = (d, summary) => {
+  const num = d.number || summary.no_so || 'HSO'
+  const cust = d.customer?.name || summary.client || '-'
+  const date = d.transDate || d.transDateView || summary.date || '-'
+  const po = d.poNumber || '-'
+  const desc = d.description || '-'
+  const status = d.statusName || summary.status || '-'
+  const total = Number(d.totalAmount !== undefined ? d.totalAmount : (summary.amount || 0))
+  const subtotal = Number(d.subTotal || 0)
+  const tax = Number(d.tax1Amount || 0)
+
+  const rows = [
+    ['INFORMASI SALES ORDER (HSO)'],
+    ['Nomor HSO', num],
+    ['Customer / PT', cust],
+    ['Tanggal HSO', date],
+    ['No. PO Customer', po],
+    ['Status Dokumen', status],
+    ['Proyek / Keterangan', desc],
+    [],
+    [
+      'No',
+      'Kode Barang (SKU)',
+      'Nama Barang / Deskripsi',
+      'Qty',
+      'Satuan',
+      'Harga Satuan (Rp)',
+      'Diskon (%)',
+      'Total Nilai (Rp)',
+      'Catatan / Notes'
+    ]
+  ]
+
+  const items = d.detailItem || []
+  if (items.length > 0) {
+    items.forEach((it, idx) => {
+      rows.push([
+        idx + 1,
+        it.item?.no || it.itemNo || '-',
+        it.item?.name || it.detailName || '-',
+        Number(it.quantity || 0),
+        it.itemUnit?.name || 'Pcs',
+        Number(it.unitPrice || 0),
+        Number(it.itemDiscPercent || it.discPercent || 0),
+        Number(it.totalPrice || (Number(it.quantity || 0) * Number(it.unitPrice || 0))),
+        it.detailNotes || '-'
+      ])
+    })
+  } else {
+    rows.push(['-', 'Data item tidak tersedia atau belum tersinkronisasi', '', '', '', '', '', '', ''])
+  }
+
+  rows.push([])
+  if (subtotal > 0 || tax > 0) {
+    rows.push(['', '', '', '', '', '', 'Subtotal (Rp):', subtotal])
+    rows.push(['', '', '', '', '', '', 'PPN / Pajak (Rp):', tax])
+  }
+  rows.push(['', '', '', '', '', '', 'TOTAL NOMINAL (Rp):', total])
+
+  const ws = XLSX.utils.aoa_to_sheet(rows)
+  ws['!cols'] = [
+    { wch: 6 },  // No
+    { wch: 24 }, // Kode Produk
+    { wch: 48 }, // Nama Barang
+    { wch: 10 }, // Qty
+    { wch: 10 }, // Satuan
+    { wch: 18 }, // Harga Satuan
+    { wch: 12 }, // Diskon (%)
+    { wch: 22 }, // Total Nilai
+    { wch: 35 }, // Catatan
+  ]
+  return ws
+}
+
+const makeSummarySheet = (recapList) => {
+  const rows = [
+    ['REKAPITULASI SALES ORDER & KESIMPULAN NOMINAL'],
+    ['Waktu Ekspor', new Date().toLocaleString('id-ID')],
+    ['Jumlah Dokumen Terpilih', `${recapList.length} Dokumen HSO`],
+    [],
+    [
+      'No',
+      'Nomor HSO',
+      'Tanggal Transaksi',
+      'Customer / Nama PT',
+      'Nomor PO Customer',
+      'Proyek / Keterangan',
+      'Status Accurate',
+      'Jumlah Item',
+      'Subtotal (Rp)',
+      'PPN (Rp)',
+      'Total Nominal (Rp)'
+    ]
+  ]
+
+  let grandSubtotal = 0
+  let grandTax = 0
+  let grandTotal = 0
+  let grandItems = 0
+
+  recapList.forEach((r, idx) => {
+    grandSubtotal += Number(r.subtotal || 0)
+    grandTax += Number(r.tax || 0)
+    grandTotal += Number(r.total || 0)
+    grandItems += Number(r.itemCount || 0)
+
+    rows.push([
+      idx + 1,
+      r.number,
+      r.date,
+      r.customer,
+      r.poNumber,
+      r.description,
+      r.status,
+      r.itemCount,
+      Number(r.subtotal || 0),
+      Number(r.tax || 0),
+      Number(r.total || 0)
+    ])
+  })
+
+  rows.push([])
+  rows.push([
+    'TOTAL KESELURUHAN',
+    '',
+    '',
+    '',
+    '',
+    '',
+    '',
+    grandItems,
+    grandSubtotal,
+    grandTax,
+    grandTotal
+  ])
+
+  const ws = XLSX.utils.aoa_to_sheet(rows)
+  ws['!cols'] = [
+    { wch: 6 },  // No
+    { wch: 22 }, // Nomor HSO
+    { wch: 16 }, // Tanggal
+    { wch: 35 }, // Customer
+    { wch: 22 }, // No PO
+    { wch: 32 }, // Proyek
+    { wch: 20 }, // Status
+    { wch: 12 }, // Jumlah Item
+    { wch: 18 }, // Subtotal
+    { wch: 16 }, // PPN
+    { wch: 24 }, // Total Nominal
+  ]
+  return ws
+}
+
+// --- BULK DOWNLOAD REKAP HSO (1 SHEET PER HSO + KESIMPULAN DI AKHIR) ---
+const bulkDownloadRekapHso = async () => {
+  if (selectedOrders.value.length === 0) return
+
+  isBulkDownloading.value = true
+  bulkProgress.value = 0
+  bulkStatus.value = 'Mempersiapkan workbook rekap HSO...'
+
+  const wb = XLSX.utils.book_new()
+  const totalSelected = selectedOrders.value.length
+  const recapList = []
+  const usedSheetNames = new Set()
+
+  try {
+    for (let i = 0; i < totalSelected; i++) {
+      const soId = selectedOrders.value[i]
+      const soSummary = salesOrders.value.find(s => s.id_database === soId)
+      const soNumber = soSummary ? soSummary.no_so : 'UNKNOWN'
+      const customerName = soSummary ? soSummary.client : 'UNKNOWN'
+
+      bulkStatus.value = `Mengambil detail HSO ${soNumber} (${i + 1}/${totalSelected})...`
+      bulkProgress.value = Math.round(((i) / (totalSelected + 1)) * 100)
+
+      // 1. Fetch Detail SO via HSO Sync Webhook (VPS)
+      let detailData = null
+      try {
+        const res = await getDetailSo(soId || soNumber, 'sales-order')
+        if (res.data?.s && res.data?.d) {
+          detailData = res.data.d
+        }
+      } catch (err) {
+        console.warn(`[bulkDownloadRekapHso] Lookup by ID error for ${soNumber}:`, err)
+      }
+
+      // Fallback via soNumber
+      if (!detailData && soNumber && soNumber !== 'UNKNOWN') {
+        try {
+          const resNum = await getDetailSo(soNumber, 'sales-order')
+          if (resNum.data?.s && resNum.data?.d) {
+            detailData = resNum.data.d
+          }
+        } catch {}
+      }
+
+      const d = detailData || {
+        number: soNumber,
+        customer: { name: customerName },
+        transDate: soSummary?.date || '-',
+        totalAmount: typeof soSummary?.amount === 'number' ? soSummary.amount : 0,
+        subTotal: 0,
+        tax1Amount: 0,
+        detailItem: []
+      }
+
+      // 2. Buat sheet individual untuk HSO ini
+      const wsHso = makeHsoSheet(d, soSummary || {})
+      const sheetName = sanitizeSheetName(d.number || soNumber, usedSheetNames)
+      XLSX.utils.book_append_sheet(wb, wsHso, sheetName)
+
+      // 3. Masukkan ke rekap kesimpulan
+      const totalNum = Number(d.totalAmount !== undefined ? d.totalAmount : (soSummary?.amount || 0))
+      const subTotalNum = Number(d.subTotal || 0)
+      const taxNum = Number(d.tax1Amount || 0)
+
+      recapList.push({
+        number: d.number || soNumber,
+        date: d.transDate || d.transDateView || soSummary?.date || '-',
+        customer: d.customer?.name || customerName,
+        poNumber: d.poNumber || '-',
+        description: d.description || '-',
+        status: d.statusName || soSummary?.status || '-',
+        itemCount: Array.isArray(d.detailItem) ? d.detailItem.length : 0,
+        subtotal: subTotalNum,
+        tax: taxNum,
+        total: totalNum
+      })
+    }
+
+    // 4. Buat Lembar Kesimpulan di Akhir
+    bulkStatus.value = 'Menyusun lembar kesimpulan & total nominal...'
+    bulkProgress.value = 95
+
+    const wsSummary = makeSummarySheet(recapList)
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'KESIMPULAN NOMINAL')
+
+    bulkProgress.value = 100
+    bulkStatus.value = 'Menyimpan file Excel...'
+
+    // 5. Download File
+    const dateStr = new Date().toISOString().split('T')[0]
+    XLSX.writeFile(wb, `Rekap_HSO_${totalSelected}_Dokumen_${dateStr}.xlsx`)
+
+  } catch (err) {
+    console.error('Rekap HSO Excel Error:', err)
+    alert('Terjadi kesalahan saat membuat file rekap HSO: ' + (err.message || err))
+  } finally {
+    isBulkDownloading.value = false
+    bulkProgress.value = 0
+    bulkStatus.value = ''
+  }
+}
+
 const exportToPDF = () => {
   const doc = new jsPDF()
   doc.text("Laporan Sales Order", 14, 15)
@@ -1220,6 +1496,14 @@ const getStatusColor = (status) => {
               </div>
               <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">Generate list item PO Siemens yang sedang dalam proses pengiriman.</p>
             </DropdownMenuItem>
+            <DropdownMenuSeparator class="my-1 bg-slate-100 dark:bg-slate-800" />
+            <DropdownMenuItem @click="toggleBulkMode('rekap')" class="flex flex-col items-start gap-1 p-2.5 rounded-lg cursor-pointer dark:hover:bg-slate-800 focus:bg-slate-100 dark:focus:bg-slate-800">
+              <div class="flex items-center gap-2 font-bold text-xs text-blue-600 dark:text-blue-400">
+                <FileSpreadsheet class="w-4 h-4" />
+                <span>Rekap HSO (Excel Multi-Sheet)</span>
+              </div>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-snug">Unduh detail HSO per sheet + sheet kesimpulan nomor & total nominal.</p>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -1229,12 +1513,12 @@ const getStatusColor = (status) => {
             @click="executeBulkAction"
             variant="outline"
             size="sm"
-            :class="bulkModeType === 'saran' ? 'border-emerald-300 dark:border-emerald-800 bg-emerald-600 text-white hover:bg-emerald-700' : 'border-purple-300 dark:border-purple-800 bg-purple-600 text-white hover:bg-purple-700'"
+            :class="bulkModeType === 'saran' ? 'border-emerald-300 dark:border-emerald-800 bg-emerald-600 text-white hover:bg-emerald-700' : (bulkModeType === 'reminder' ? 'border-purple-300 dark:border-purple-800 bg-purple-600 text-white hover:bg-purple-700' : 'border-blue-300 dark:border-blue-800 bg-blue-600 text-white hover:bg-blue-700')"
             class="h-9 px-3.5 text-xs font-bold gap-2 rounded-xl shadow-2xs cursor-pointer"
           >
-            <component :is="bulkModeType === 'saran' ? ShoppingCart : Bell" class="w-4 h-4" />
-            <span v-if="selectedOrders.length === 0">Pilih SO pada tabel...</span>
-            <span v-else>{{ bulkModeType === 'saran' ? 'Download' : 'Reminder' }} ({{ selectedOrders.length }} SO)</span>
+            <component :is="bulkModeType === 'saran' ? ShoppingCart : (bulkModeType === 'reminder' ? Bell : FileSpreadsheet)" class="w-4 h-4" />
+            <span v-if="selectedOrders.length === 0">Pilih HSO pada tabel...</span>
+            <span v-else>{{ bulkModeType === 'saran' ? 'Download Saran' : (bulkModeType === 'reminder' ? 'Reminder PO' : 'Download Rekap Excel') }} ({{ selectedOrders.length }} HSO)</span>
           </Button>
 
           <Button 
@@ -1321,6 +1605,35 @@ const getStatusColor = (status) => {
           </template>
           <button v-if="hasActiveFilters" @click="resetFilter" class="px-3 py-2 rounded-xl text-xs font-semibold bg-red-50 text-red-600 dark:bg-red-950/30 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-950/50 transition-colors shrink-0 cursor-pointer">Reset</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Bulk Selection Info Bar -->
+    <div v-if="isBulkMode" class="bg-blue-50/90 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-900/50 p-3 px-4 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs font-sans shadow-2xs">
+      <div class="flex items-center gap-2 text-blue-950 dark:text-blue-200 font-medium">
+        <span class="inline-flex items-center justify-center bg-blue-600 text-white font-bold px-2 py-0.5 rounded-full text-[11px]">{{ selectedOrders.length }}</span>
+        <span>HSO dipilih</span>
+        <span v-if="selectedOrders.length < filteredAndSortedOrders.length" class="text-blue-600 dark:text-blue-400">
+          (dari total {{ filteredAndSortedOrders.length }} HSO hasil filter)
+        </span>
+      </div>
+      <div class="flex items-center gap-3">
+        <button 
+          v-if="selectedOrders.length < filteredAndSortedOrders.length"
+          @click="selectAllFiltered"
+          type="button"
+          class="font-bold text-blue-700 hover:text-blue-800 dark:text-blue-300 underline cursor-pointer"
+        >
+          Pilih Seluruh {{ filteredAndSortedOrders.length }} HSO Hasil Filter
+        </button>
+        <button 
+          v-if="selectedOrders.length > 0"
+          @click="selectedOrders = []"
+          type="button"
+          class="text-slate-500 hover:text-red-600 dark:text-slate-400 cursor-pointer font-medium"
+        >
+          Bersihkan Pilihan
+        </button>
       </div>
     </div>
 
