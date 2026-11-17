@@ -1,5 +1,13 @@
 [
   {
+    "hash": "67fa56e912210cc4b5317f843f972034935cfcec",
+    "shortHash": "67fa56e",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Nov 17 10:57:41 2026 +0700",
+    "message": "feat(sales-orders): add Rekap HSO multi-sheet Excel export with final summary nominal sheet"
+  },
+  {
     "hash": "353fce44244e1a8e66ef94a27ac7ab2cdb98ec15",
     "shortHash": "353fce4",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Wed Sep 2 11:56:46 2026 +0700",
     "message": "feat: tambah indikator centang HRI diterima di setiap HPO card"
-  },
-  {
-    "hash": "eeaf4e10e9454a3677ab2fc3d3080f13636625be",
-    "shortHash": "eeaf4e1",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Sep 2 11:13:45 2026 +0700",
-    "message": "fix: getHpoSubSchedules prioritaskan shipments_data (scan HRI) di atas raw_forwarder_tracking"
   }
 ]

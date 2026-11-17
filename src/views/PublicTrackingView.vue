@@ -2,6 +2,7 @@
 import { onMounted, ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { supabase } from '@/lib/supabase'
+import { getDetailSo, resolveTrackingLink } from '@/lib/accurateProxy'
 import { 
     Loader2, AlertCircle, ChevronDown, ChevronUp, 
     Truck, Package, Clock, MessageCircle, Send, Download,
@@ -219,17 +220,30 @@ const isHsoMatch = (hsoA, hsoB) => {
 const fetchTrackingData = async () => {
     isLoading.value = true
     try {
-        const { data: linkData, error: linkError } = await supabase
-            .from('so_tracking_links').select('so_id').eq('unique_code', uniqueCode).maybeSingle()
-        if (linkError || !linkData) throw new Error("Link tracking tidak valid atau sudah kadaluarsa.")
-        
-        const soId = linkData.so_id
+        // 1. Resolve tracking link (coba via HSO Sync Webhook dulu, fallback ke Supabase)
+        let soId = null
+        try {
+            const linkRes = await resolveTrackingLink(uniqueCode)
+            if (linkRes.data?.s && linkRes.data?.d?.so_id) {
+                soId = linkRes.data.d.so_id
+            }
+        } catch (e) {
+            console.warn('[PublicTracking] Webhook link resolve notice:', e)
+        }
 
-        const { data: accData, error: accError } = await supabase.functions.invoke('accurate-detail-so', {
-            body: { id: parseInt(soId), type: 'sales-order' }
-        })
-        if (accError || !accData?.s) throw new Error("Gagal mengambil data pesanan dari Accurate.")
-        const d = accData.d
+        if (!soId) {
+            const { data: linkData, error: linkError } = await supabase
+                .from('so_tracking_links').select('so_id').eq('unique_code', uniqueCode).maybeSingle()
+            if (linkError || !linkData) throw new Error("Link tracking tidak valid atau sudah kadaluarsa.")
+            soId = linkData.so_id
+        }
+
+        // 2. Ambil detail pesanan langsung via HSO Sync Webhook (VPS Indonesia)
+        const res = await getDetailSo(soId, 'sales-order')
+        if (res.error || !res.data?.s || !res.data?.d) {
+            throw new Error(res.error || res.data?.error || "Gagal mengambil data pesanan dari Accurate.")
+        }
+        const d = res.data.d
 
         const itemCodes = (d.detailItem || []).map(i => i.item?.no || i.detailName).filter(Boolean)
 

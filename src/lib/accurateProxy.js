@@ -112,4 +112,11 @@ export async function convertHsbToHso(payload) {
   return callAccurateProxy('convert-hsb-to-hso', payload)
 }
 
+/**
+ * Shortcut: resolve public tracking link (unique_code -> so_id)
+ */
+export async function resolveTrackingLink(code) {
+  return callAccurateProxy('resolve-tracking-link', { code })
+}
+
 
