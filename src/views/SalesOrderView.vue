@@ -3,7 +3,7 @@ defineOptions({ name: 'SalesOrderView' })
 import { onMounted, onActivated, ref, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { supabase } from '@/lib/supabase'
-import { getListSo, getListSq } from '@/lib/accurateProxy'
+import { getDetailSo, getListSo, getListSq } from '@/lib/accurateProxy'
 import * as XLSX from 'xlsx'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
@@ -633,21 +633,45 @@ const bulkDownloadSaranOrder = async () => {
             bulkStatus.value = `Mengambil data SO ${soNumber} (${i+1}/${totalSelected})...`
             bulkProgress.value = Math.round(((i) / totalSelected) * 100)
             
-            // 1. Fetch Detail SO
-            const { data: detailData, error: detailError } = await supabase.functions.invoke('accurate-detail-so', {
-                body: { id: soId }
-            })
+            // 1. Fetch Detail SO via HSO Sync Webhook (VPS)
+            let detailData = null
+            try {
+                const res = await getDetailSo(soId || soNumber, 'sales-order')
+                if (res.data?.s && res.data?.d?.detailItem) {
+                    detailData = res.data
+                }
+            } catch (err) {
+                console.warn(`[bulkDownloadSaranOrder] Gagal ambil detail SO ${soNumber} by ID:`, err)
+            }
+
+            if (!detailData?.d?.detailItem && soNumber && soNumber !== 'UNKNOWN') {
+                try {
+                    const resNum = await getDetailSo(soNumber, 'sales-order')
+                    if (resNum.data?.s && resNum.data?.d?.detailItem) {
+                        detailData = resNum.data
+                    }
+                } catch {}
+            }
             
-            if (detailError || !detailData?.d?.detailItem) continue
+            if (!detailData?.d?.detailItem) continue
             
             const detailItems = detailData.d.detailItem
             
-            // 2. Fetch HPO dari Accurate (Sama dengan detail view)
+            // 2. Fetch HPO dari Database dengan variant format nomor SO
             let dbItems = []
             let page = 0
             const pageSize = 1000
             let hasMore = true
             let poError = null
+
+            const cleanSoNum = String(soNumber || '').trim()
+            const searchVariants = [cleanSoNum, cleanSoNum.replace(/\//g, '-'), cleanSoNum.replace(/-/g, '/')]
+            const orClauses = []
+            searchVariants.filter(Boolean).forEach(v => {
+                orClauses.push(`detail_notes.ilike.%${v}%`)
+                orClauses.push(`hso_number.ilike.%${v}%`)
+            })
+            const orFilter = orClauses.length > 0 ? orClauses.join(',') : `detail_notes.ilike.%${cleanSoNum}%`
 
             while (hasMore) {
                 const { data, error: fetchErr } = await supabase
@@ -658,7 +682,7 @@ const bulkDownloadSaranOrder = async () => {
                             id, number, trans_date, status_name, vendor_name
                         )
                     `)
-                    .ilike('detail_notes', `%${soNumber}%`)
+                    .or(orFilter)
                     .range(page * pageSize, (page + 1) * pageSize - 1)
                     .order('created_at', { ascending: false })
                     .order('id', { ascending: false })
@@ -853,19 +877,44 @@ const bulkDownloadReminderPO = async () => {
             bulkStatus.value = `Mengambil data SO ${soNumber} (${i+1}/${totalSelected})...`
             bulkProgress.value = Math.round(((i) / totalSelected) * 100)
             
-            // 1. Fetch Detail SO
-            const { data: detailData, error: detailError } = await supabase.functions.invoke('accurate-detail-so', {
-                body: { id: soId }
-            })
-            if (detailError || !detailData?.d?.detailItem) continue
+            // 1. Fetch Detail SO via HSO Sync Webhook (VPS)
+            let detailData = null
+            try {
+                const res = await getDetailSo(soId || soNumber, 'sales-order')
+                if (res.data?.s && res.data?.d?.detailItem) {
+                    detailData = res.data
+                }
+            } catch (err) {
+                console.warn(`[bulkDownloadReminderPO] Gagal ambil detail SO ${soNumber} by ID:`, err)
+            }
+
+            if (!detailData?.d?.detailItem && soNumber && soNumber !== 'UNKNOWN') {
+                try {
+                    const resNum = await getDetailSo(soNumber, 'sales-order')
+                    if (resNum.data?.s && resNum.data?.d?.detailItem) {
+                        detailData = resNum.data
+                    }
+                } catch {}
+            }
+
+            if (!detailData?.d?.detailItem) continue
             const detailItems = detailData.d.detailItem
             
-            // 2. Fetch HPO dari Accurate (Sama dengan detail view)
+            // 2. Fetch HPO dari Database dengan variant format nomor SO
             let dbItems = []
             let page = 0
             const pageSize = 1000
             let hasMore = true
             let poError = null
+
+            const cleanSoNum = String(soNumber || '').trim()
+            const searchVariants = [cleanSoNum, cleanSoNum.replace(/\//g, '-'), cleanSoNum.replace(/-/g, '/')]
+            const orClauses = []
+            searchVariants.filter(Boolean).forEach(v => {
+                orClauses.push(`detail_notes.ilike.%${v}%`)
+                orClauses.push(`hso_number.ilike.%${v}%`)
+            })
+            const orFilter = orClauses.length > 0 ? orClauses.join(',') : `detail_notes.ilike.%${cleanSoNum}%`
 
             while (hasMore) {
                 const { data, error: fetchErr } = await supabase
@@ -876,7 +925,7 @@ const bulkDownloadReminderPO = async () => {
                             id, number, trans_date, status_name, vendor_name
                         )
                     `)
-                    .ilike('detail_notes', `%${soNumber}%`)
+                    .or(orFilter)
                     .range(page * pageSize, (page + 1) * pageSize - 1)
                     .order('created_at', { ascending: false })
                     .order('id', { ascending: false })

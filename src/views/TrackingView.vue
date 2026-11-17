@@ -8,6 +8,7 @@ export default {
 import { onMounted, ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { supabase } from '@/lib/supabase'
+import { getListTrackingSo } from '@/lib/accurateProxy'
 import * as XLSX from 'xlsx'
 
 // UI Components
@@ -99,15 +100,13 @@ const fetchProcurementData = async () => {
     let totalPages = 1
     const pageSize = 50
 
-    // Fetch all pages with progress
+    // Fetch all pages with progress via HSO Sync Webhook (VPS)
     while (currentPage <= totalPages) {
       loadingMessage.value = `Mengambil halaman ${currentPage}...`
       
-      const { data: accData, error } = await supabase.functions.invoke('accurate-list-tracking-so', {
-        body: { page: currentPage, pageSize: pageSize }
-      })
-
-      if (error) throw error
+      const res = await getListTrackingSo({ page: currentPage, pageSize: pageSize })
+      if (res.error) throw new Error(res.error)
+      const accData = res.data
 
       if (accData?.pagination) {
         totalPages = accData.pagination.totalPages

@@ -1,5 +1,13 @@
 [
   {
+    "hash": "db094cddc23863a407bc05642ed0dec5512ba028",
+    "shortHash": "db094cd",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Mon Nov 16 21:17:43 2026 +0700",
+    "message": "feat(hsq): set fetch limit to 3000 documents for complete historical data"
+  },
+  {
     "hash": "edef5138c4e9e2d20e8072d5ed2012f393879085",
     "shortHash": "edef513",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Wed Sep 2 10:26:35 2026 +0700",
     "message": "fix: fallback HPO status di keterangan pakai getVisualStatus bukan logistics_status"
-  },
-  {
-    "hash": "469b84c267ee5f82a022f5c4fcde4e1b2dae535d",
-    "shortHash": "469b84c",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Mon Aug 31 16:09:55 2026 +0700",
-    "message": "feat(tools): integrate deep Accurate Online stock & HSO/HPO scan in Product Tracker"
   }
 ]
