@@ -9364,12 +9364,12 @@ const downloadAttachment = async (att) => {
                 <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">
                   Keterangan
                 </label>
-                <input 
-                  type="text" 
+                <textarea 
                   v-model="pickingPlan.notes"
+                  rows="3"
                   placeholder="Keterangan untuk tim gudang (misal: packing khusus, cek kelengkapan, barang fragile, dsb.)..."
-                  class="w-full px-3 py-1.5 h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-blue-500"
-                />
+                  class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-blue-500 resize-y min-h-[50px]"
+                ></textarea>
               </div>
             </div>
           </div>
@@ -9586,8 +9586,6 @@ const downloadAttachment = async (att) => {
         <div class="border-b-2 border-slate-900 pb-3 mb-4 flex justify-between items-start">
           <div>
             <h1 class="text-xl font-extrabold tracking-tight text-slate-900 uppercase">PT. HOKIINDO RAYA</h1>
-            <p class="text-xs text-slate-600 mt-0.5">Industrial Electrical &amp; Automation Distribution</p>
-            <p class="text-[10px] text-slate-500">Authorized Distributor Siemens &amp; ABB Low Voltage Switchgear</p>
           </div>
           <div class="text-right">
             <div class="inline-block bg-slate-900 text-white font-mono font-bold text-xs px-2.5 py-1 rounded">
@@ -9608,7 +9606,7 @@ const downloadAttachment = async (att) => {
           </div>
           <div class="space-y-1">
             <p><span class="font-bold w-28 inline-block">Tgl Rencana Kirim:</span> {{ formatDateSimple(pickingPlan.planDate) }}</p>
-            <p v-if="pickingPlan.notes"><span class="font-bold w-28 inline-block">Keterangan:</span> {{ pickingPlan.notes }}</p>
+            <p v-if="pickingPlan.notes" class="whitespace-pre-wrap"><span class="font-bold w-28 inline-block">Keterangan:</span> {{ pickingPlan.notes }}</p>
           </div>
         </div>
 
