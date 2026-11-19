@@ -1,5 +1,13 @@
 [
   {
+    "hash": "b01d5de2fcd568d1bd09dd89b9e3ba10ad794067",
+    "shortHash": "b01d5de",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Thu Nov 19 13:28:03 2026 +0700",
+    "message": "feat(sales-orders): tambahkan fitur centang barang siap kirim & rencana pengiriman / picking list gudang"
+  },
+  {
     "hash": "7c6c5bd911be77551665109a2f2b55c67d72dbd2",
     "shortHash": "7c6c5bd",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Wed Sep 2 14:33:53 2026 +0700",
     "message": "fix: hapus double status Hokiindo — badge tersembunyi saat status Hokiindo, hanya indikator HRI yang tampil"
-  },
-  {
-    "hash": "cfb424b81fd67a76955a8be9d7847464f9dccc96",
-    "shortHash": "cfb424b",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Sep 2 12:22:26 2026 +0700",
-    "message": "feat: indikator HRI 3 kondisi — belum Hokiindo / dikirim / tiba dikonfirmasi HRI"
   }
 ]

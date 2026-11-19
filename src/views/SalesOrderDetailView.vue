@@ -368,31 +368,15 @@ const isBulkMode = ref(false)
 const selectedItem = ref(null)    
 const selectedTargetStatus = ref('') 
 
-// --- STATE: RENCANA PENGIRIMAN & PICKING LIST (SPK GUDANG) ---
+// --- STATE: RENCANA PENGIRIMAN (PENYIAPAN GUDANG) ---
 const isPickingModalOpen = ref(false)
 const isCopiedWaText = ref(false)
 const isSavingPickingPlan = ref(false)
 const pickingPlan = ref({
   planDate: new Date().toISOString().slice(0, 10),
-  expedition: 'Kurir Internal Hokiindo',
-  customExpedition: '',
-  driverName: '',
-  driverPhone: '',
-  vehiclePlate: '',
-  deliveryAddress: '',
   notes: '',
   items: []
 })
-
-const expeditionOptions = [
-  'Kurir Internal Hokiindo',
-  'Driver Pick-up Sendiri (Customer)',
-  'Lalamove / Deliveree',
-  'JNE / J&T / SiCepat Cargo',
-  'Dakota / Baraka / Indah Cargo',
-  'Ekspedisi Rekanan Pelanggan',
-  'Lainnya (Kustom)'
-]
 
 const totalPickingQty = computed(() => {
   return (pickingPlan.value.items || []).reduce((sum, it) => sum + (Number(it.qty_pick) || 0), 0)
@@ -4016,53 +4000,6 @@ const getLogisticsBadgeClass = (statusStr) => {
   return 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
 }
 
-const isItemArrivedAtHokiindo = (item) => {
-  if (isDisplayedFullyShipped(item)) return false
-  if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) === 0) return false
-
-  // For items needing PO (qty_to_order > 0 / NO STOCK):
-  // It MUST have active HPOs, and the total arrived quantity across all HPOs MUST meet or exceed qty_to_order!
-  const hpos = getHpoEntries(item)
-  if (hpos.length > 0) {
-    const hasArrived = hpos.some(hpo => {
-      const shipment = getHpoShipment(item, hpo.poNumber)
-      return shipment && getVisualStatus(shipment) === 'Already in Hokiindo Raya'
-    })
-    if (!hasArrived) return false
-
-    // If quantities are known from Accurate:
-    const accurateEntries = hpos.filter(h => h.isFromAccurate)
-    if (accurateEntries.length > 0) {
-      const arrivedQty = accurateEntries.reduce((sum, hpo) => {
-        const shipment = getHpoShipment(item, hpo.poNumber)
-        if (shipment && getVisualStatus(shipment) === 'Already in Hokiindo Raya') {
-          return sum + (hpo.quantity || 0)
-        }
-        return sum
-      }, 0)
-      return arrivedQty >= item.qty_to_order
-    }
-
-    // If from shipments fallback: all linked HPO shipments must be arrived
-    return hpos.every(hpo => {
-      const shipment = getHpoShipment(item, hpo.poNumber)
-      return shipment && getVisualStatus(shipment) === 'Already in Hokiindo Raya'
-    })
-  }
-
-  // If item requires ordering (qty_to_order > 0) or note is NOT pure stock, and has NO active HPO:
-  // It CAN NEVER be considered arrived at Hokiindo!
-  if (item.qty_to_order > 0 || getNoteType(item.admin_note) !== 'stock') {
-    return false
-  }
-
-  // Pure Stock items (qty_to_order === 0 and note is STOCK):
-  if (item.hokiindo_date) return true
-  if (item.logistics_status === 'Already in Hokiindo Raya') return true
-
-  return false
-}
-
 const getItemPoDiscrepancy = (item) => {
   if (item.qty_to_order <= 0) return null
   if (getDisplayedQtyRemaining(item) <= 0 || isDisplayedFullyShipped(item) || getDisplayedQtyShipped(item) >= (item.qty_order || 0)) return null
@@ -4089,112 +4026,6 @@ const getItemPoDiscrepancy = (item) => {
     }
   }
   return null
-}
-
-const getRowStatus = (item) => {
-  // PRIORITAS TERTINGGI: Jika item di-hold oleh customer
-  if (item.logistics_status === 'Hold by Customer') {
-    return { text: 'HOLD BY CUSTOMER', class: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800', icon: Clock }
-  }
-  
-  // Jika fully shipped (semua terkirim dan dikonfirmasi selesai) -> HIJAU
-  if (isDisplayedFullyShipped(item)) return { text: 'TERKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
-  
-  // Jika sudah dikirim semua (tidak ada sisa tapi belum dikonfirmasi fully_shipped) -> HIJAU
-  if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) === 0) {
-    return { text: 'TERKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
-  }
-
-  // Jika sudah ada pengiriman sebagian (masih ada sisa) -> Status utama = DIKIRIM SEBAGIAN (Global Main Status)
-  if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) > 0) {
-    return { text: `DIKIRIM SEBAGIAN (SISA ${getDisplayedQtyRemaining(item)} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: Truck }
-  }
-
-  // Cek HPO aktif dari Accurate PO
-  const hpoEntries = getHpoEntries(item)
-
-  // Jika item sudah tiba di Gudang Hokiindo (hanya valid jika HPO aktif ada atau item murni stok) -> HIJAU
-  if (isItemArrivedAtHokiindo(item)) {
-    return { text: 'SIAP DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: Package }
-  }
-  
-  // Item STOCK (qty_to_order === 0): tidak perlu dipesan, cek status pengiriman saja -> HIJAU
-  if (item.qty_to_order === 0) {
-    return { text: 'SIAP DIKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: Package }
-  }
-
-  // JIKA ITEM PERLU DIPESAN (qty_to_order > 0 / NO STOCK):
-  if (item.qty_to_order > 0) {
-    if (hpoEntries.length > 0) {
-      const totalPo = hpoEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
-      if (totalPo < item.qty_to_order) {
-        const shortage = item.qty_to_order - totalPo
-        const matchedHpb = linkedHpbs.value.find(h => h.itemCode === item.code)
-        if (matchedHpb) {
-          return { text: `HPB: ${matchedHpb.hpbNumber}`, class: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-850', icon: FileText, hpbId: matchedHpb.hpbId }
-        }
-        if (isInCart(item.code)) {
-          return { text: `DI KERANJANG (KURANG ${shortage} ${item.unit})`, class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: ShoppingCart }
-        }
-        return { text: `KURANG DIPESAN (${shortage} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: AlertTriangle }
-      } else if (totalPo > item.qty_to_order) {
-        return { text: 'KELEBIHAN DIPESAN', class: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800', icon: AlertTriangle }
-      } else {
-        return { text: 'SUDAH DIPESAN', class: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800', icon: CheckCircle2 }
-      }
-    } else {
-      // Tidak ada HPO aktif sama sekali (atau HPO telah dihapus dan disync) -> WAJIB PERLU DIPESAN
-      const matchedHpb = linkedHpbs.value.find(h => h.itemCode === item.code)
-      if (matchedHpb) {
-        return { 
-          text: `HPB: ${matchedHpb.hpbNumber}`, 
-          class: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-850', 
-          icon: FileText,
-          hpbId: matchedHpb.hpbId 
-        }
-      }
-      if (isInCart(item.code)) {
-        return { text: `DI KERANJANG (PERLU ${item.qty_to_order} ${item.unit})`, class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: ShoppingCart }
-      }
-      return { text: `PERLU DIPESAN (${item.qty_to_order} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: AlertCircle }
-    }
-  }
-
-  return { text: 'PENDING', class: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700', icon: Clock }
-}
-
-// Helper: Check if item has a specific shipment status (Exwork, ETA, Dunex, Hokiindo)
-const hasAnyShipmentStatus = (item, targetStatus) => {
-  // If product is already fully shipped to customer, it no longer belongs to in-transit or warehouse arrival tracking filters
-  if (isDisplayedFullyShipped(item)) return false
-  
-  const hpos = getHpoEntries(item)
-  if (hpos.length === 0) {
-    const hasTracking = !!(
-      item.exwork_date ||
-      item.exwork_waiting ||
-      item.eta_date ||
-      item.dunex_date ||
-      item.hokiindo_date ||
-      (item.logistics_status && item.logistics_status !== 'Pending Process')
-    )
-    if (!hasTracking) return false
-
-    const status = getVisualStatus({
-      current_status: item.logistics_status,
-      exwork_date: item.exwork_date,
-      exwork_waiting: item.exwork_waiting,
-      eta_date: item.eta_date,
-      dunex_date: item.dunex_date,
-      hokiindo_date: item.hokiindo_date
-    })
-    return status === targetStatus
-  }
-  return hpos.some(hpo => {
-    const shipment = getHpoShipment(item, hpo.poNumber)
-    if (!shipment || Object.keys(shipment).length === 0) return false
-    return getVisualStatus(shipment) === targetStatus
-  })
 }
 
 // Helper: Hitung berapa hari sejak tanggal order
@@ -4706,6 +4537,325 @@ const getHriInfo = (item, hpoNumber) => {
   return matchedHriForTarget
 }
 
+// Helper: Get comprehensive arrival info for an item across stock, HRI receipts, shipments, and forwarder batches
+const getItemArrivalInfo = (item) => {
+  const result = {
+    isArrived: false,
+    isPartial: false,
+    arrivedQty: 0,
+    neededQty: 0,
+    remainingToArrive: 0,
+    arrivalDate: null,
+    hriList: [],
+    arrivedBatches: [],
+    pendingBatches: [],
+    hpos: []
+  }
+
+  if (!item) return result
+
+  // If item is fully shipped to customer via DO, no longer pending arrival
+  if (isDisplayedFullyShipped(item)) return result
+
+  const remainingNeeded = getDisplayedQtyRemaining(item)
+  const neededQty = item.qty_to_order > 0 ? item.qty_to_order : (remainingNeeded > 0 ? remainingNeeded : (item.qty_order || 0))
+  result.neededQty = neededQty
+
+  // 1. PURE STOCK items (barang dari stok internal gudang Hokiindo)
+  const isPureStock = item.qty_to_order === 0 || getNoteType(item.admin_note) === 'stock'
+  if (isPureStock) {
+    result.isArrived = true
+    result.isPartial = false
+    result.arrivedQty = neededQty
+    result.remainingToArrive = 0
+    result.arrivalDate = item.hokiindo_date ? formatDateSimple(item.hokiindo_date) : null
+    return result
+  }
+
+  // 2. CHECK HPOs & SHIPMENTS
+  const hpos = getHpoEntries(item)
+  result.hpos = hpos
+
+  let totalArrived = 0
+  let latestArrivalDate = item.hokiindo_date || null
+
+  if (hpos.length > 0) {
+    hpos.forEach(hpo => {
+      const hpoNum = hpo.poNumber
+      const shipment = getHpoShipment(item, hpoNum)
+      const hri = getHriInfo(item, hpoNum)
+      const subSchedules = getHpoSubSchedules(item, hpoNum)
+      const hpoQty = Number(hpo.quantity) || 0
+
+      let hpoArrivedQty = 0
+      let hpoArrivalDate = null
+
+      // Check HRI (Penerimaan barang fisik di gudang Hokiindo via scan/input HRI)
+      if (hri) {
+        result.hriList.push(hri)
+        const qtyFromHri = Number(hri.quantity) || hpoQty || neededQty || 1
+        hpoArrivedQty = Math.max(hpoArrivedQty, qtyFromHri)
+        hpoArrivalDate = hri.trans_date || hpoArrivalDate
+      }
+
+      // Check sub-schedules / forwarder batches
+      if (subSchedules && subSchedules.length > 0) {
+        subSchedules.forEach(sub => {
+          const sText = String(sub.status || '').toLowerCase()
+          const rText = String(sub.rawStatus || '').toLowerCase()
+          const isBatchArrived = rText.includes('hokiindo') || sText.includes('hokiindo') || (sText.includes('tiba') && !sText.includes('dunex'))
+          if (isBatchArrived) {
+            result.arrivedBatches.push({ poNumber: hpoNum, ...sub })
+            const bQty = Number(sub.qty) || hpoQty || neededQty || 1
+            hpoArrivedQty = Math.max(hpoArrivedQty, bQty)
+            hpoArrivalDate = sub.date && sub.date !== '-' ? sub.date : hpoArrivalDate
+          } else {
+            result.pendingBatches.push({ poNumber: hpoNum, ...sub })
+          }
+        })
+      }
+
+      // Check shipment current_status or hokiindo_date
+      const isShipmentArrived = getVisualStatus(shipment) === 'Already in Hokiindo Raya' || !!shipment.hokiindo_date
+      if (isShipmentArrived) {
+        const qtyFromShip = hpoQty || neededQty || 1
+        hpoArrivedQty = Math.max(hpoArrivedQty, qtyFromShip)
+        hpoArrivalDate = shipment.hokiindo_date || shipment.status_date || hpoArrivalDate
+      }
+
+      if (hpoArrivedQty > 0) {
+        totalArrived += hpoArrivedQty
+        if (hpoArrivalDate) {
+          latestArrivalDate = hpoArrivalDate
+        }
+      }
+    })
+  }
+
+  // Fallback 1: Item-level status directly from Supabase / webhook
+  if (totalArrived === 0) {
+    if (item.logistics_status === 'Already in Hokiindo Raya' || item.hokiindo_date) {
+      totalArrived = neededQty
+      latestArrivalDate = item.hokiindo_date || item.logistics_date || null
+    } else {
+      // Fallback 2: Check any generic HRI matching item code
+      const generalHri = getHriInfo(item, '')
+      if (generalHri) {
+        result.hriList.push(generalHri)
+        totalArrived = Number(generalHri.quantity) || neededQty || 1
+        latestArrivalDate = generalHri.trans_date || latestArrivalDate
+      }
+    }
+  }
+
+  result.arrivedQty = totalArrived
+  result.arrivalDate = latestArrivalDate ? formatDateSimple(latestArrivalDate) : null
+
+  if (totalArrived > 0) {
+    if (neededQty > 0 && totalArrived >= neededQty) {
+      result.isArrived = true
+      result.isPartial = false
+      result.remainingToArrive = 0
+    } else if (neededQty > 0 && totalArrived < neededQty) {
+      result.isArrived = true
+      result.isPartial = true
+      result.remainingToArrive = neededQty - totalArrived
+    } else {
+      result.isArrived = true
+      result.isPartial = false
+      result.remainingToArrive = 0
+    }
+  } else {
+    result.isArrived = false
+    result.isPartial = false
+    result.remainingToArrive = neededQty
+  }
+
+  return result
+}
+
+const isItemArrivedAtHokiindo = (item) => {
+  if (isDisplayedFullyShipped(item)) return false
+  if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) === 0) return false
+
+  const info = getItemArrivalInfo(item)
+  return info.isArrived && !info.isPartial
+}
+
+const isItemPartiallyArrivedAtHokiindo = (item) => {
+  if (isDisplayedFullyShipped(item)) return false
+  if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) === 0) return false
+
+  const info = getItemArrivalInfo(item)
+  return info.isArrived && info.isPartial
+}
+
+const getRowStatus = (item) => {
+  // PRIORITAS TERTINGGI: Jika item di-hold oleh customer
+  if (item.logistics_status === 'Hold by Customer') {
+    return { text: 'HOLD BY CUSTOMER', class: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800', icon: Clock }
+  }
+  
+  // Jika fully shipped (semua terkirim dan dikonfirmasi selesai) -> HIJAU
+  if (isDisplayedFullyShipped(item)) return { text: 'TERKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
+  
+  // Jika sudah dikirim semua (tidak ada sisa tapi belum dikonfirmasi fully_shipped) -> HIJAU
+  if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) === 0) {
+    return { text: 'TERKIRIM', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: CheckCircle2 }
+  }
+
+  // Jika sudah ada pengiriman sebagian ke customer (masih ada sisa) -> DIKIRIM SEBAGIAN
+  if (getDisplayedQtyShipped(item) > 0 && getDisplayedQtyRemaining(item) > 0) {
+    return { text: `DIKIRIM SEBAGIAN (SISA ${getDisplayedQtyRemaining(item)} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: Truck }
+  }
+
+  // Item STOCK (qty_to_order === 0): tidak perlu dipesan, cek status pengiriman saja -> HIJAU
+  if (item.qty_to_order === 0 || getNoteType(item.admin_note) === 'stock') {
+    return { text: 'SIAP DIKIRIM (STOK)', class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: Package }
+  }
+
+  const arrivalInfo = getItemArrivalInfo(item)
+
+  // Jika item sudah tiba PENUH di Gudang Hokiindo -> TIBA DI HOKIINDO (SIAP KIRIM)
+  if (arrivalInfo.isArrived && !arrivalInfo.isPartial) {
+    return { 
+      text: 'TIBA DI HOKIINDO (SIAP KIRIM)', 
+      class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', 
+      icon: PackageCheck,
+      arrivalDate: arrivalInfo.arrivalDate
+    }
+  }
+
+  // Jika item sudah tiba SEBAGIAN di Gudang Hokiindo -> TIBA SEBAGIAN (SIAP KIRIM SEBAGIAN)
+  if (arrivalInfo.isArrived && arrivalInfo.isPartial) {
+    return { 
+      text: `TIBA SEBAGIAN (SIAP KIRIM ${arrivalInfo.arrivedQty} ${item.unit})`, 
+      class: 'bg-teal-50 text-teal-800 border-teal-300 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800', 
+      icon: PackageCheck,
+      arrivalDate: arrivalInfo.arrivalDate,
+      isPartialArrival: true,
+      arrivedQty: arrivalInfo.arrivedQty,
+      remainingToArrive: arrivalInfo.remainingToArrive
+    }
+  }
+
+  // Cek HPO aktif dari Accurate PO
+  const hpoEntries = getHpoEntries(item)
+
+  // JIKA ITEM PERLU DIPESAN (qty_to_order > 0 / NO STOCK):
+  if (item.qty_to_order > 0) {
+    if (hpoEntries.length > 0) {
+      const totalPo = hpoEntries.reduce((sum, hpo) => sum + (hpo.quantity || 0), 0)
+      if (totalPo < item.qty_to_order && totalPo > 0) {
+        const shortage = item.qty_to_order - totalPo
+        const matchedHpb = linkedHpbs.value.find(h => h.itemCode === item.code)
+        if (matchedHpb) {
+          return { text: `HPB: ${matchedHpb.hpbNumber}`, class: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-850', icon: FileText, hpbId: matchedHpb.hpbId }
+        }
+        if (isInCart(item.code)) {
+          return { text: `DI KERANJANG (KURANG ${shortage} ${item.unit})`, class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: ShoppingCart }
+        }
+        return { text: `KURANG DIPESAN (${shortage} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: AlertTriangle }
+      } else if (totalPo > item.qty_to_order) {
+        return { text: 'KELEBIHAN DIPESAN', class: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800', icon: AlertTriangle }
+      } else {
+        // Cek apakah ada status forwarder batch yang sedang transit
+        if (arrivalInfo.pendingBatches && arrivalInfo.pendingBatches.length > 0) {
+          const topBatch = arrivalInfo.pendingBatches[0]
+          return { 
+            text: `SUDAH DIPESAN (${topBatch.status})`, 
+            class: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800', 
+            icon: Truck,
+            batchStatus: topBatch.status,
+            batchDate: topBatch.date
+          }
+        }
+        return { text: 'SUDAH DIPESAN', class: 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800', icon: CheckCircle2 }
+      }
+    } else {
+      // Tidak ada HPO aktif sama sekali (atau HPO telah dihapus dan disync) -> WAJIB PERLU DIPESAN
+      const matchedHpb = linkedHpbs.value.find(h => h.itemCode === item.code)
+      if (matchedHpb) {
+        return { 
+          text: `HPB: ${matchedHpb.hpbNumber}`, 
+          class: 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-850', 
+          icon: FileText,
+          hpbId: matchedHpb.hpbId 
+        }
+      }
+      if (isInCart(item.code)) {
+        return { text: `DI KERANJANG (PERLU ${item.qty_to_order} ${item.unit})`, class: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800', icon: ShoppingCart }
+      }
+      return { text: `PERLU DIPESAN (${item.qty_to_order} ${item.unit})`, class: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800', icon: AlertCircle }
+    }
+  }
+
+  return { text: 'PENDING', class: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700', icon: Clock }
+}
+
+const hasAnyShipmentStatus = (item, targetStatus) => {
+  // If product is already fully shipped to customer, it no longer belongs to in-transit or warehouse arrival tracking filters
+  if (isDisplayedFullyShipped(item)) return false
+  
+  if (targetStatus === 'Already in Hokiindo Raya') {
+    return isItemArrivedAtHokiindo(item) || isItemPartiallyArrivedAtHokiindo(item) || item.logistics_status === 'Already in Hokiindo Raya'
+  }
+
+  const hpos = getHpoEntries(item)
+  if (hpos.length === 0) {
+    const hasTracking = !!(
+      item.exwork_date ||
+      item.exwork_waiting ||
+      item.eta_date ||
+      item.dunex_date ||
+      item.hokiindo_date ||
+      (item.logistics_status && item.logistics_status !== 'Pending Process')
+    )
+    if (!hasTracking) return false
+
+    const status = getVisualStatus({
+      current_status: item.logistics_status,
+      exwork_date: item.exwork_date,
+      exwork_waiting: item.exwork_waiting,
+      eta_date: item.eta_date,
+      dunex_date: item.dunex_date,
+      hokiindo_date: item.hokiindo_date
+    })
+    return status === targetStatus
+  }
+  return hpos.some(hpo => {
+    const shipment = getHpoShipment(item, hpo.poNumber)
+    if (!shipment || Object.keys(shipment).length === 0) return false
+    return getVisualStatus(shipment) === targetStatus
+  })
+}
+
+// Helper: Cek apakah item benar-benar SIAP KIRIM (stok gudang atau barang PO yang sudah tiba di Hokiindo)
+const isItemReadyToShip = (item) => {
+  if (!item) return false
+  if (isDisplayedFullyShipped(item)) return false
+  if (getDisplayedQtyRemaining(item) <= 0) return false
+
+  // 1. Barang stok internal gudang Hokiindo (selalu siap kirim jika ada sisa)
+  if (item.qty_to_order === 0 || getNoteType(item.admin_note) === 'stock') {
+    return true
+  }
+
+  // 2. Barang pesanan (PO) yang status logistiknya SUDAH TIBA di Hokiindo (penuh atau sebagian)
+  const arrival = getItemArrivalInfo(item)
+  if (arrival.isArrived && arrival.arrivedQty > 0) {
+    return true
+  }
+
+  return false
+}
+
+// Computed: Jumlah item yang siap kirim dalam pesanan ini
+const readyToShipCount = computed(() => {
+  if (!soDetail.value || !soDetail.value.items) return 0
+  return soDetail.value.items.filter(i => isItemReadyToShip(i)).length
+})
+
 // Helper: Calculate HPO discrepancy
 const getHpoShortage = (item) => {
   const entries = getHpoEntries(item)
@@ -4839,19 +4989,39 @@ const toggleSelection = (code) => { if (selectedItemCodes.value.includes(code)) 
 const openPickingListModal = () => {
   if (!soDetail.value || !soDetail.value.items) return
 
+  // 1. Jika belum ada barang yang dipilih, otomatis pilih HANYA barang yang SIAP KIRIM (stok atau tiba di Hokiindo)
   if (selectedItemCodes.value.length === 0) {
-    const unshipped = soDetail.value.items.filter(i => !isDisplayedFullyShipped(i) && getDisplayedQtyRemaining(i) > 0)
-    if (unshipped.length === 0) {
-      alert("Semua produk dalam pesanan ini sudah berstatus terkirim (DO).")
+    const readyItems = soDetail.value.items.filter(i => isItemReadyToShip(i))
+    if (readyItems.length === 0) {
+      alert("Tidak ada barang yang siap dikirim.\n\nBarang dalam pesanan ini masih berstatus 'Belum Tiba di Hokiindo' (menunggu kedatangan logistik dari supplier/forwarder) dan tidak ada barang dari persediaan/stok.")
       return
     }
-    selectedItemCodes.value = unshipped.map(i => i.code)
+    selectedItemCodes.value = readyItems.map(i => i.code)
+  } else {
+    // 2. Jika user mencentang manual, periksa apakah ada barang yang belum tiba di Hokiindo
+    const unreadyItems = soDetail.value.items.filter(i => selectedItemCodes.value.includes(i.code) && !isItemReadyToShip(i))
+    if (unreadyItems.length > 0) {
+      const codeList = unreadyItems.map(i => i.code).join(', ')
+      const confirmInclude = confirm(
+        `Perhatian:\nBarang berikut belum tiba di Hokiindo (belum ada data logistik kedatangan):\n${codeList}\n\nApakah Anda tetap ingin memasukkan barang ini ke rencana penyiapan gudang?`
+      )
+      if (!confirmInclude) {
+        selectedItemCodes.value = selectedItemCodes.value.filter(c => !unreadyItems.some(u => u.code === c))
+        if (selectedItemCodes.value.length === 0) return
+      }
+    }
   }
 
   const selectedItemsData = soDetail.value.items
     .filter(i => selectedItemCodes.value.includes(i.code))
     .map(item => {
       const remaining = getDisplayedQtyRemaining(item)
+      const arrivalInfo = getItemArrivalInfo(item)
+      const isPartial = arrivalInfo.isArrived && arrivalInfo.isPartial
+      const defaultQty = isPartial && arrivalInfo.arrivedQty > 0
+        ? Math.min(remaining, arrivalInfo.arrivedQty)
+        : (remaining > 0 ? remaining : (item.qty_order || 1))
+
       return {
         code: item.code,
         name: item.name,
@@ -4859,21 +5029,19 @@ const openPickingListModal = () => {
         qty_order: item.qty_order || 0,
         qty_shipped: getDisplayedQtyShipped(item),
         qty_remaining: remaining,
-        qty_pick: remaining > 0 ? remaining : (item.qty_order || 1),
+        qty_pick: defaultQty,
         admin_note: item.admin_note || '',
         logistics_note: item.logistics_note || '',
-        stock_qty: item.parsed_stock_qty || 0
+        stock_qty: item.parsed_stock_qty || 0,
+        status: getRowStatus(item),
+        arrivalInfo: arrivalInfo,
+        hpoEntries: getHpoEntries(item),
+        rawItem: item
       }
     })
 
   pickingPlan.value = {
     planDate: new Date().toISOString().slice(0, 10),
-    expedition: 'Kurir Internal Hokiindo',
-    customExpedition: '',
-    driverName: '',
-    driverPhone: '',
-    vehiclePlate: '',
-    deliveryAddress: soDetail.value?.to_address || soDetail.value?.raw_accurate_data?.toAddress || '',
     notes: '',
     items: selectedItemsData
   }
@@ -4882,17 +5050,17 @@ const openPickingListModal = () => {
 }
 
 const selectReadyToShipItems = () => {
-  const unshipped = (filteredItems.value || []).filter(i => !isDisplayedFullyShipped(i) && getDisplayedQtyRemaining(i) > 0)
-  if (unshipped.length === 0) {
-    alert("Semua produk yang tampil sudah berstatus terkirim (DO) atau tidak ada sisa pengiriman.")
+  const readyItems = (filteredItems.value || []).filter(i => isItemReadyToShip(i))
+  if (readyItems.length === 0) {
+    alert("Belum ada barang yang siap dikirim.\n\nSemua barang pesanan (PO) dalam tampilan ini belum memiliki status kedatangan (belum tiba di Hokiindo) dan tidak ada barang dari persediaan/stok.")
     return
   }
 
-  const allSelected = unshipped.every(i => selectedItemCodes.value.includes(i.code))
+  const allSelected = readyItems.every(i => selectedItemCodes.value.includes(i.code))
   if (allSelected) {
-    selectedItemCodes.value = selectedItemCodes.value.filter(c => !unshipped.some(i => i.code === c))
+    selectedItemCodes.value = selectedItemCodes.value.filter(c => !readyItems.some(i => i.code === c))
   } else {
-    const newSet = new Set([...selectedItemCodes.value, ...unshipped.map(i => i.code)])
+    const newSet = new Set([...selectedItemCodes.value, ...readyItems.map(i => i.code)])
     selectedItemCodes.value = Array.from(newSet)
   }
 }
@@ -4908,7 +5076,11 @@ const removePickingItem = (index) => {
 }
 
 const setMaxPickQty = (item) => {
-  item.qty_pick = item.qty_remaining > 0 ? item.qty_remaining : item.qty_order
+  if (item.arrivalInfo?.isPartial && item.arrivalInfo.arrivedQty > 0) {
+    item.qty_pick = Math.min(item.qty_remaining, item.arrivalInfo.arrivedQty)
+  } else {
+    item.qty_pick = item.qty_remaining > 0 ? item.qty_remaining : (item.qty_order || 1)
+  }
 }
 
 const printPickingSlip = () => {
@@ -4917,11 +5089,8 @@ const printPickingSlip = () => {
 
 const copyWaFormat = async () => {
   if (!pickingPlan.value.items || pickingPlan.value.items.length === 0) return
-  const expeditionName = pickingPlan.value.expedition === 'Lainnya (Kustom)' 
-    ? (pickingPlan.value.customExpedition || 'Kustom') 
-    : pickingPlan.value.expedition
 
-  let text = `*RENCANA PENGIRIMAN & SPK GUDANG*\n`
+  let text = `*RENCANA PENGIRIMAN BARANG GUDANG*\n`
   text += `📦 *No. HSO*: ${soDetail.value?.number || '-'}\n`
   text += `🏢 *Customer*: ${soDetail.value?.client || '-'}\n`
   text += `📑 *PO Customer*: ${soDetail.value?.po_number || '-'}\n`
@@ -4929,21 +5098,15 @@ const copyWaFormat = async () => {
     text += `🏗️ *Proyek*: ${soDetail.value.project}\n`
   }
   text += `📅 *Rencana Kirim*: ${formatDateSimple(pickingPlan.value.planDate)}\n`
-  text += `🚚 *Ekspedisi*: ${expeditionName}\n`
-  if (pickingPlan.value.driverName) {
-    text += `👤 *Driver / Armada*: ${pickingPlan.value.driverName} (${pickingPlan.value.vehiclePlate || '-'})\n`
-  }
-  if (pickingPlan.value.deliveryAddress) {
-    text += `📍 *Alamat Kirim*: ${pickingPlan.value.deliveryAddress}\n`
-  }
-  text += `\n*DAFTAR BARANG YANG DISIAPKAN (PICKING LIST):*\n`
-  pickingPlan.value.items.forEach((it, idx) => {
-    text += `${idx + 1}. [${it.code}] ${it.name} ➔ *${it.qty_pick} ${it.unit}* (Sisa SO: ${it.qty_remaining})\n`
-  })
   if (pickingPlan.value.notes) {
-    text += `\n*Catatan Khusus Gudang:*\n${pickingPlan.value.notes}\n`
+    text += `📝 *Catatan Gudang*: ${pickingPlan.value.notes}\n`
   }
-  text += `\n_Catatan: Mohon tim gudang memeriksa kesesuaian fisik barang & packaging sebelum Surat Jalan resmi (HDO) diterbitkan._`
+  text += `\n*DAFTAR BARANG YANG DISIAPKAN:*\n`
+  pickingPlan.value.items.forEach((it, idx) => {
+    const statusNote = it.status?.text ? ` [${it.status.text}]` : ''
+    text += `${idx + 1}. [${it.code}] ${it.name} ➔ *${it.qty_pick} ${it.unit}*${statusNote} (Order: ${it.qty_order}, Sisa: ${it.qty_remaining})\n`
+  })
+  text += `\n_Catatan: Mohon tim gudang menyiapkan fisik barang sesuai daftar di atas. Surat Jalan resmi akan diterbitkan langsung dari Accurate Online._`
 
   try {
     await navigator.clipboard.writeText(text)
@@ -4957,20 +5120,14 @@ const copyWaFormat = async () => {
 
 const exportPickingExcel = () => {
   if (!pickingPlan.value.items || pickingPlan.value.items.length === 0) return
-  const expeditionName = pickingPlan.value.expedition === 'Lainnya (Kustom)' 
-    ? (pickingPlan.value.customExpedition || 'Kustom') 
-    : pickingPlan.value.expedition
   const hsoNumber = soDetail.value?.number || '-'
 
   const metaRows = [
-    { "INFORMASI": "DOKUMEN", "DETAIL": "PICKING LIST & SPK PENYIAPAN BARANG" },
+    { "INFORMASI": "DOKUMEN", "DETAIL": "RENCANA PENGIRIMAN & PENYIAPAN BARANG GUDANG" },
     { "INFORMASI": "NO HSO", "DETAIL": hsoNumber },
     { "INFORMASI": "CUSTOMER", "DETAIL": soDetail.value?.client || '-' },
     { "INFORMASI": "PO CUSTOMER", "DETAIL": soDetail.value?.po_number || '-' },
     { "INFORMASI": "TGL RENCANA KIRIM", "DETAIL": formatDateSimple(pickingPlan.value.planDate) },
-    { "INFORMASI": "EKSPEDISI / ARMADA", "DETAIL": expeditionName },
-    { "INFORMASI": "DRIVER / PLAT", "DETAIL": `${pickingPlan.value.driverName || '-'} (${pickingPlan.value.vehiclePlate || '-'})` },
-    { "INFORMASI": "ALAMAT PENGIRIMAN", "DETAIL": pickingPlan.value.deliveryAddress || '-' },
     { "INFORMASI": "CATATAN GUDANG", "DETAIL": pickingPlan.value.notes || '-' }
   ]
 
@@ -4978,14 +5135,14 @@ const exportPickingExcel = () => {
     "No": idx + 1,
     "Kode Produk (MLFB)": it.code,
     "Nama / Deskripsi": it.name,
+    "Status Logistik": it.status?.text || "-",
     "Qty Order SO": it.qty_order,
     "Qty Terkirim": it.qty_shipped,
     "Qty Sisa SO": it.qty_remaining,
-    "Qty Siap Kirim (Picking)": it.qty_pick,
+    "Qty Disiapkan": it.qty_pick,
     "Satuan": it.unit,
-    "Cek Fisik [OK/NOK]": "",
-    "Kondisi / Bin Rak": "",
-    "Catatan Admin": it.admin_note || it.logistics_note || ""
+    "Cek Fisik": "",
+    "Catatan": it.admin_note || it.logistics_note || ""
   }))
 
   const wb = XLSX.utils.book_new()
@@ -4999,18 +5156,17 @@ const exportPickingExcel = () => {
     { wch: 14 },
     { wch: 14 },
     { wch: 14 },
-    { wch: 22 },
+    { wch: 16 },
     { wch: 10 },
-    { wch: 18 },
-    { wch: 18 },
+    { wch: 14 },
     { wch: 30 }
   ]
 
-  XLSX.utils.book_append_sheet(wb, wsItems, "Picking List")
-  XLSX.utils.book_append_sheet(wb, wsMeta, "Info Pengiriman")
+  XLSX.utils.book_append_sheet(wb, wsItems, "Barang Disiapkan")
+  XLSX.utils.book_append_sheet(wb, wsMeta, "Info Rencana")
 
   const safeNo = hsoNumber.replace(/[\/\\?%*:|"<>]/g, '_')
-  XLSX.writeFile(wb, `PICKING_LIST_${safeNo}_${pickingPlan.value.planDate}.xlsx`)
+  XLSX.writeFile(wb, `RENCANA_PENGIRIMAN_${safeNo}_${pickingPlan.value.planDate}.xlsx`)
 }
 
 const savePickingPlan = () => {
@@ -5021,12 +5177,6 @@ const savePickingPlan = () => {
       soNumber: soDetail.value?.number,
       savedAt: new Date().toISOString(),
       planDate: pickingPlan.value.planDate,
-      expedition: pickingPlan.value.expedition,
-      customExpedition: pickingPlan.value.customExpedition,
-      driverName: pickingPlan.value.driverName,
-      driverPhone: pickingPlan.value.driverPhone,
-      vehiclePlate: pickingPlan.value.vehiclePlate,
-      deliveryAddress: pickingPlan.value.deliveryAddress,
       notes: pickingPlan.value.notes,
       items: pickingPlan.value.items.map(i => ({
         code: i.code,
@@ -5036,7 +5186,7 @@ const savePickingPlan = () => {
       }))
     }
     localStorage.setItem(planKey, JSON.stringify(dataToSave))
-    alert(`Rencana Pengiriman & Picking List berhasil disimpan!\n\n${pickingPlan.value.items.length} item siap disiapkan oleh tim gudang. Anda dapat mencetak lembar picking atau membagikan ringkasan melalui WhatsApp.`)
+    alert(`Rencana Pengiriman berhasil disimpan!\n\n${pickingPlan.value.items.length} item siap disiapkan oleh tim gudang. Surat Jalan resmi akan diterbitkan langsung dari Accurate Online.`)
   } catch (err) {
     console.warn('Save picking plan error:', err)
     alert('Gagal menyimpan rencana pengiriman: ' + err.message)
@@ -6004,15 +6154,15 @@ const downloadAttachment = async (att) => {
 
           <!-- ACTION BUTTONS -->
           <div class="flex flex-wrap items-center gap-2">
-            <!-- Tombol Picking List / Rencana Pengiriman (Gudang) -->
+            <!-- Tombol Rencana Pengiriman (Penyiapan Gudang) -->
             <Button 
               size="sm" 
               class="h-8 px-3 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 transition-all cursor-pointer shadow-xs flex items-center gap-1.5" 
               @click="openPickingListModal"
-              title="Buat rencana penyiapan barang gudang (Picking List) sebelum surat jalan diterbitkan"
+              title="Buat rencana penyiapan barang gudang sebelum surat jalan resmi diterbitkan dari Accurate"
             >
               <ClipboardCheck class="w-3.5 h-3.5"/>
-              <span>{{ selectedItemCodes.length > 0 ? `Rencana Kirim / Picking (${selectedItemCodes.length})` : 'Rencana Kirim / Picking List' }}</span>
+              <span>{{ selectedItemCodes.length > 0 ? `Rencana Kirim (${selectedItemCodes.length})` : 'Rencana Pengiriman' }}</span>
             </Button>
 
             <Button v-if="selectedItemCodes.length > 0 && canWrite" size="sm" class="h-8 px-3 text-xs bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 transition-all font-semibold cursor-pointer" @click="openBulkEditModal">
@@ -6208,10 +6358,13 @@ const downloadAttachment = async (att) => {
                 <button 
                   @click="selectReadyToShipItems" 
                   class="h-8 px-2.5 text-xs font-semibold rounded-lg border border-blue-200 dark:border-blue-800/80 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
-                  title="Centang otomatis semua barang yang sisa kirimnya > 0"
+                  :title="readyToShipCount > 0 ? `Centang otomatis ${readyToShipCount} barang siap kirim (stok atau tiba di Hokiindo)` : 'Belum ada barang yang siap kirim (belum tiba di Hokiindo)'"
                 >
                   <PackageCheck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                   <span>Pilih Siap Kirim</span>
+                  <span v-if="readyToShipCount > 0" class="px-1.5 py-0.2 rounded-full bg-blue-600 text-white text-[10px] font-bold">
+                    {{ readyToShipCount }}
+                  </span>
                 </button>
                 <div class="relative w-full sm:w-60">
                   <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
@@ -6276,7 +6429,15 @@ const downloadAttachment = async (att) => {
                     :id="`item-${item.code}`"
                 >
                   <TableCell class="text-center align-top py-2.5 px-1.5">
-                    <input v-if="!isDisplayedFullyShipped(item)" type="checkbox" class="w-4 h-4 rounded accent-red-600 cursor-pointer" :checked="selectedItemCodes.includes(item.code)" @change="toggleSelection(item.code)"/>
+                    <input 
+                      v-if="!isDisplayedFullyShipped(item)" 
+                      type="checkbox" 
+                      class="w-4 h-4 rounded cursor-pointer transition-transform hover:scale-110" 
+                      :class="isItemReadyToShip(item) ? 'accent-blue-600' : 'accent-slate-400 opacity-60'"
+                      :checked="selectedItemCodes.includes(item.code)" 
+                      @change="toggleSelection(item.code)"
+                      :title="isItemReadyToShip(item) ? 'Siap Kirim: Barang sudah tiba di Hokiindo / tersedia dari stok' : 'Belum Siap Kirim: Barang belum memiliki data logistik tiba di Hokiindo'"
+                    />
                   </TableCell>
                   
                   <TableCell class="py-2.5 px-2.5 align-top">
@@ -6685,9 +6846,11 @@ const downloadAttachment = async (att) => {
                 <div class="flex items-center gap-3">
                   <input v-if="!isDisplayedFullyShipped(item)" 
                          type="checkbox" 
-                         class="w-5 h-5 rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer" 
+                         class="w-5 h-5 rounded cursor-pointer" 
+                         :class="isItemReadyToShip(item) ? 'accent-blue-600' : 'accent-slate-400 opacity-60'"
                          :checked="selectedItemCodes.includes(item.code)" 
-                         @change="toggleSelection(item.code)" />
+                         @change="toggleSelection(item.code)"
+                         :title="isItemReadyToShip(item) ? 'Siap Kirim: Barang sudah tiba di Hokiindo / tersedia dari stok' : 'Belum Siap Kirim: Barang belum memiliki data logistik tiba di Hokiindo'" />
                   <div class="flex items-center gap-1.5">
                     <span class="font-bold text-gray-900 dark:text-slate-200 text-sm font-mono tracking-tight">{{ item.code }}</span>
                     <button @click="copySku(item.code)" class="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors" title="Copy SKU">
@@ -9123,7 +9286,7 @@ const downloadAttachment = async (att) => {
             class="h-8 px-3 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-1.5 transition-all shadow-md hover:shadow-blue-500/25 cursor-pointer"
           >
             <ClipboardCheck class="w-3.5 h-3.5" />
-            <span>Rencana Kirim / Picking List</span>
+            <span>Rencana Pengiriman</span>
           </button>
 
           <button 
@@ -9146,7 +9309,7 @@ const downloadAttachment = async (att) => {
       </div>
     </transition>
 
-    <!-- MODAL: RENCANA PENGIRIMAN & PICKING LIST (SPK GUDANG) -->
+    <!-- MODAL: RENCANA PENGIRIMAN (PENYIAPAN GUDANG) -->
     <div v-if="isPickingModalOpen" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto font-sans">
       <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
@@ -9157,14 +9320,9 @@ const downloadAttachment = async (att) => {
               <ClipboardCheck class="w-5 h-5" />
             </div>
             <div>
-              <div class="flex items-center gap-2">
-                <h3 class="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
-                  Rencana Pengiriman &amp; Picking List
-                </h3>
-                <span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                  SPK Gudang
-                </span>
-              </div>
+              <h3 class="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                Rencana Pengiriman Barang
+              </h3>
               <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 {{ soDetail?.number }} &bull; {{ soDetail?.client }} <span v-if="soDetail?.po_number">&bull; PO: {{ soDetail.po_number }}</span>
               </p>
@@ -9181,14 +9339,14 @@ const downloadAttachment = async (att) => {
         <!-- Modal Body -->
         <div class="overflow-y-auto p-5 sm:p-6 space-y-5 custom-scrollbar flex-1 bg-slate-50/50 dark:bg-slate-950/20">
           
-          <!-- SECTION 1: INFORMASI RENCANA PENGIRIMAN -->
-          <div class="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
+          <!-- SECTION 1: TANGGAL & KETERANGAN PENGIRIMAN -->
+          <div class="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3">
             <div class="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-              <Truck class="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <Calendar class="w-4 h-4 text-blue-600 dark:text-blue-400" />
               <span>Detail Penyiapan &amp; Logistik</span>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 text-xs">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5 text-xs">
               <!-- Tanggal Rencana Kirim -->
               <div>
                 <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">
@@ -9201,79 +9359,27 @@ const downloadAttachment = async (att) => {
                 />
               </div>
 
-              <!-- Ekspedisi / Armada -->
-              <div>
-                <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Ekspedisi / Armada
-                </label>
-                <select 
-                  v-model="pickingPlan.expedition"
-                  class="w-full px-3 py-1.5 h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-blue-500 cursor-pointer"
-                >
-                  <option v-for="opt in expeditionOptions" :key="opt" :value="opt">{{ opt }}</option>
-                </select>
-              </div>
-
-              <!-- Custom Ekspedisi (Jika Pilih Lainnya) -->
-              <div v-if="pickingPlan.expedition === 'Lainnya (Kustom)'">
-                <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Nama Ekspedisi Kustom
-                </label>
-                <input 
-                  type="text" 
-                  v-model="pickingPlan.customExpedition"
-                  placeholder="Contoh: Baraka / Titipan Bus..."
-                  class="w-full px-3 py-1.5 h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-
-              <!-- Nama Driver / Armada -->
-              <div>
-                <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Nama Driver / Plat Nomor
-                </label>
-                <input 
-                  type="text" 
-                  v-model="pickingPlan.driverName"
-                  placeholder="Contoh: Budi (B 1234 XYZ)"
-                  class="w-full px-3 py-1.5 h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-
-              <!-- Alamat Pengiriman -->
+              <!-- Keterangan -->
               <div class="sm:col-span-2">
                 <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Alamat Tujuan Pengiriman
-                </label>
-                <textarea 
-                  rows="2"
-                  v-model="pickingPlan.deliveryAddress"
-                  placeholder="Alamat penerima / site proyek..."
-                  class="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-blue-500"
-                ></textarea>
-              </div>
-
-              <!-- Catatan Khusus Gudang -->
-              <div class="sm:col-span-2 lg:col-span-3">
-                <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Instruksi Khusus Gudang &amp; Packing
+                  Keterangan
                 </label>
                 <input 
                   type="text" 
                   v-model="pickingPlan.notes"
-                  placeholder="Contoh: Wajib packing kayu, cek kelengkapan kartu garansi / manual book, tempel stiker Fragile..."
+                  placeholder="Keterangan untuk tim gudang (misal: packing khusus, cek kelengkapan, barang fragile, dsb.)..."
                   class="w-full px-3 py-1.5 h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-blue-500"
                 />
               </div>
             </div>
           </div>
 
-          <!-- SECTION 2: DAFTAR BARANG YANG DISIAPKAN (PICKING TABLE) -->
+          <!-- SECTION 2: DAFTAR BARANG YANG DISIAPKAN -->
           <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs overflow-hidden">
             <div class="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between flex-wrap gap-2">
               <div class="flex items-center gap-2">
                 <span class="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-                  Barang yang Disiapkan (Picking Items)
+                  Daftar Barang yang Disiapkan
                 </span>
                 <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900">
                   {{ pickingPlan.items.length }} Item &bull; Total {{ totalPickingQty }} Unit
@@ -9290,25 +9396,94 @@ const downloadAttachment = async (att) => {
                   <tr>
                     <th class="py-2.5 px-3 text-center w-10">No</th>
                     <th class="py-2.5 px-3">Produk &amp; Deskripsi</th>
-                    <th class="py-2.5 px-2 text-center w-16">Order</th>
-                    <th class="py-2.5 px-2 text-center w-16">Terkirim</th>
-                    <th class="py-2.5 px-2 text-center w-16">Sisa SO</th>
-                    <th class="py-2.5 px-3 text-center w-36">Qty Siap Kirim</th>
-                    <th class="py-2.5 px-2 text-center w-12"></th>
+                    <th class="py-2.5 px-3 min-w-[200px]">Status &amp; Keterangan Logistik</th>
+                    <th class="py-2.5 px-2 text-center w-14">Order</th>
+                    <th class="py-2.5 px-2 text-center w-14">Terkirim</th>
+                    <th class="py-2.5 px-2 text-center w-14">Sisa</th>
+                    <th class="py-2.5 px-3 text-center w-36">Qty Disiapkan</th>
+                    <th class="py-2.5 px-2 text-center w-10"></th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                   <tr v-for="(it, idx) in pickingPlan.items" :key="it.code" class="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
-                    <td class="py-2.5 px-3 text-center text-slate-400 font-mono">{{ idx + 1 }}</td>
-                    <td class="py-2.5 px-3">
+                    <td class="py-2.5 px-3 text-center text-slate-400 font-mono align-top pt-3">{{ idx + 1 }}</td>
+                    <td class="py-2.5 px-3 align-top">
                       <div class="font-mono font-bold text-slate-900 dark:text-slate-100 text-xs">{{ it.code }}</div>
-                      <div class="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">{{ it.name }}</div>
-                      <div v-if="it.admin_note" class="text-[10px] text-slate-400 italic">Note: {{ it.admin_note }}</div>
+                      <div class="text-[11px] text-slate-600 dark:text-slate-400 font-medium mt-0.5">{{ it.name }}</div>
+                      <div v-if="it.admin_note" class="text-[10px] text-slate-400 italic mt-0.5">Note: {{ it.admin_note }}</div>
                     </td>
-                    <td class="py-2.5 px-2 text-center font-medium text-slate-600 dark:text-slate-400">{{ it.qty_order }}</td>
-                    <td class="py-2.5 px-2 text-center font-medium text-slate-600 dark:text-slate-400">{{ it.qty_shipped }}</td>
-                    <td class="py-2.5 px-2 text-center font-bold text-red-600 dark:text-red-400">{{ it.qty_remaining }}</td>
-                    <td class="py-2.5 px-3 text-center">
+
+                    <!-- Status & Keterangan Logistik -->
+                    <td class="py-2.5 px-3 align-top space-y-1.5">
+                      <!-- Badge Status Utama Logistik -->
+                      <div v-if="it.status" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[11px] font-bold shadow-2xs" :class="it.status.class">
+                        <component :is="it.status.icon" class="w-3.5 h-3.5 shrink-0" />
+                        <span>{{ it.status.text }}</span>
+                        <span v-if="it.status.arrivalDate" class="text-[10px] opacity-85 font-normal">({{ it.status.arrivalDate }})</span>
+                      </div>
+
+                      <!-- Alert Partial Arrival (Barang baru tiba sebagian dari PO) -->
+                      <div v-if="it.arrivalInfo?.isPartial" class="flex items-center gap-1.5 text-[10px] font-bold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-2 py-1 rounded">
+                        <AlertTriangle class="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span>Tiba Sebagian: Baru tiba {{ it.arrivalInfo.arrivedQty }} {{ it.unit }} (Sisa {{ it.arrivalInfo.remainingToArrive }} {{ it.unit }} masih proses kirim)</span>
+                      </div>
+
+                      <!-- Breakdown HPO & Forwarder Sub-Schedules / HRI -->
+                      <div v-if="it.hpoEntries && it.hpoEntries.length > 0" class="space-y-1 pt-1 border-t border-slate-100 dark:border-slate-800 text-[10px]">
+                        <div v-for="hpo in it.hpoEntries" :key="hpo.poNumber" class="p-1.5 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/60 space-y-1">
+                          <div class="flex items-center justify-between gap-1 flex-wrap">
+                            <span class="font-bold text-blue-700 dark:text-blue-300 font-mono">{{ hpo.poNumber }}</span>
+                            <span v-if="hpo.quantity" class="text-[9.5px] font-bold text-slate-600 dark:text-slate-400">Order: {{ hpo.quantity }} {{ it.unit }}</span>
+                          </div>
+                          <div v-if="hpo.vendorName" class="text-[9px] text-slate-500 dark:text-slate-400 truncate">🏢 {{ hpo.vendorName }}</div>
+
+                          <!-- HRI Received info -->
+                          <div v-if="getHriInfo(it.rawItem, hpo.poNumber)" class="flex items-center gap-1 text-emerald-700 dark:text-emerald-300 font-semibold text-[9.5px]">
+                            <CheckCircle2 class="w-3 h-3 text-emerald-500 shrink-0" />
+                            <span>Tiba di Hokiindo ({{ formatDateSimple(getHriInfo(it.rawItem, hpo.poNumber)?.trans_date) }}): {{ getHriInfo(it.rawItem, hpo.poNumber)?.quantity }} {{ it.unit }}</span>
+                            <span class="font-mono text-[9px] text-emerald-600 dark:text-emerald-400">[{{ getHriInfo(it.rawItem, hpo.poNumber)?.number }}]</span>
+                          </div>
+
+                          <!-- Forwarder Sub-Schedules -->
+                          <div v-if="getPendingHpoSubSchedules(it.rawItem, hpo.poNumber).length > 0" class="space-y-0.5 pt-0.5">
+                            <div v-for="(sub, sIdx) in getPendingHpoSubSchedules(it.rawItem, hpo.poNumber)" :key="sIdx" class="flex items-center justify-between gap-1 text-[9px]">
+                              <span class="font-medium text-slate-600 dark:text-slate-400 flex items-center gap-1">
+                                <span class="w-1 h-1 rounded-full bg-slate-400"></span>
+                                {{ sub.qty ? `${sub.qty} ${it.unit}` : '' }}
+                              </span>
+                              <span class="px-1.5 py-0.2 rounded font-semibold border text-[9px]" :class="getLogisticsBadgeClass(sub.status)">
+                                {{ sub.status }} <span v-if="sub.date && sub.date !== '-'">({{ sub.date }})</span>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Pure Stock Info -->
+                      <div v-else-if="it.qty_to_order === 0 || getNoteType(it.admin_note) === 'stock'" class="flex items-center gap-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
+                        <Package class="w-3 h-3 text-emerald-600 shrink-0" />
+                        <span>Barang dari persediaan/stok gudang Hokiindo</span>
+                      </div>
+
+                      <!-- Indikator Partial Pengiriman jika sudah terkirim sebagian ke customer -->
+                      <div v-if="it.qty_shipped > 0" class="flex items-center gap-1.5 text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-2 py-0.5 rounded">
+                        <Truck class="w-3 h-3 text-amber-600 shrink-0" />
+                        <span>Sebagian Terkirim ke Customer: Sudah terkirim {{ it.qty_shipped }} {{ it.unit }}</span>
+                      </div>
+
+                      <!-- Catatan Logistik Admin -->
+                      <div v-if="it.logistics_note && !it.logistics_note.includes('[UNLINKED]') && !it.logistics_note.includes('Auto-synced')" class="p-1.5 rounded bg-slate-100 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 text-[10px] text-slate-700 dark:text-slate-300 leading-tight">
+                        <span class="font-bold text-slate-500 uppercase tracking-wider text-[9px] block mb-0.5">Ket. Logistik:</span>
+                        <span class="whitespace-pre-line">{{ it.logistics_note }}</span>
+                      </div>
+                    </td>
+
+                    <td class="py-2.5 px-2 text-center align-top font-medium text-slate-600 dark:text-slate-400 pt-3">{{ it.qty_order }}</td>
+                    <td class="py-2.5 px-2 text-center align-top font-bold text-slate-700 dark:text-slate-300 pt-3">
+                      <span :class="it.qty_shipped > 0 ? 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800' : ''">{{ it.qty_shipped }}</span>
+                    </td>
+                    <td class="py-2.5 px-2 text-center align-top font-bold text-red-600 dark:text-red-400 pt-3">{{ it.qty_remaining }}</td>
+                    <td class="py-2.5 px-3 text-center align-top pt-2.5">
                       <div class="flex items-center justify-center gap-1.5">
                         <input 
                           type="number" 
@@ -9327,7 +9502,7 @@ const downloadAttachment = async (att) => {
                         </button>
                       </div>
                     </td>
-                    <td class="py-2.5 px-2 text-center">
+                    <td class="py-2.5 px-2 text-center align-top pt-3">
                       <button 
                         @click="removePickingItem(idx)" 
                         class="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
@@ -9346,7 +9521,7 @@ const downloadAttachment = async (att) => {
           <div class="p-3.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-900/60 text-xs text-blue-900 dark:text-blue-300 flex items-start gap-2.5">
             <Info class="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
             <div class="leading-relaxed">
-              <span class="font-bold">Alur Efektif Warehouse:</span> Lembar Picking List ini dicetak &amp; diserahkan ke staf gudang untuk mengambil fisik barang di rak dan melakukan pengecekan visual. Setelah fisik 100% siap di staging area, Surat Jalan resmi (HDO Accurate) dapat dibuat tanpa risiko pembatalan (void) atau revisi nomor.
+              <span class="font-bold">Penyiapan Barang Gudang:</span> Fitur ini digunakan untuk mempermudah tim gudang menyiapkan fisik barang sesuai daftar dan catatan. Surat Jalan resmi akan diterbitkan langsung dari Accurate Online nantinya.
             </div>
           </div>
 
@@ -9361,7 +9536,7 @@ const downloadAttachment = async (att) => {
               class="h-9 px-3 text-xs font-semibold rounded-xl bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
             >
               <Printer class="w-3.5 h-3.5" />
-              <span>Cetak Lembar Picking</span>
+              <span>Cetak Rencana Kirim</span>
             </button>
 
             <!-- Salin WA Format -->
@@ -9370,7 +9545,7 @@ const downloadAttachment = async (att) => {
               class="h-9 px-3 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <component :is="isCopiedWaText ? CheckCircle2 : MessageSquare" class="w-3.5 h-3.5" :class="isCopiedWaText ? 'text-emerald-600' : 'text-slate-500'" />
-              <span>{{ isCopiedWaText ? 'Format WA Tersalin!' : 'Salin Format WA' }}</span>
+              <span>{{ isCopiedWaText ? 'Format WA Tersalin!' : 'Salin Ringkasan WA' }}</span>
             </button>
 
             <!-- Export Excel -->
@@ -9404,121 +9579,147 @@ const downloadAttachment = async (att) => {
       </div>
     </div>
 
-    <!-- PRINTABLE PICKING SLIP (A4 Print layout, only visible when printing) -->
-    <div id="printable-picking-slip" class="hidden font-sans text-black bg-white p-6 max-w-4xl mx-auto">
-      <!-- Kop Dokumen Resmi PT Hokiindo Raya -->
-      <div class="border-b-2 border-slate-900 pb-3 mb-4 flex justify-between items-start">
-        <div>
-          <h1 class="text-xl font-extrabold tracking-tight text-slate-900 uppercase">PT. HOKIINDO RAYA</h1>
-          <p class="text-xs text-slate-600 mt-0.5">Industrial Electrical &amp; Automation Distribution</p>
-          <p class="text-[10px] text-slate-500">Authorized Distributor Siemens &amp; ABB Low Voltage Switchgear</p>
-        </div>
-        <div class="text-right">
-          <div class="inline-block bg-slate-900 text-white font-mono font-bold text-xs px-2.5 py-1 rounded">
-            PICKING LIST &amp; SPK GUDANG
+    <!-- PRINTABLE RENCANA PENGIRIMAN (Teleported directly to <body> so #app can be display:none during print) -->
+    <Teleport to="body">
+      <div id="printable-picking-slip" class="hidden font-sans text-black bg-white p-6 max-w-4xl mx-auto">
+        <!-- Kop Dokumen Resmi PT Hokiindo Raya -->
+        <div class="border-b-2 border-slate-900 pb-3 mb-4 flex justify-between items-start">
+          <div>
+            <h1 class="text-xl font-extrabold tracking-tight text-slate-900 uppercase">PT. HOKIINDO RAYA</h1>
+            <p class="text-xs text-slate-600 mt-0.5">Industrial Electrical &amp; Automation Distribution</p>
+            <p class="text-[10px] text-slate-500">Authorized Distributor Siemens &amp; ABB Low Voltage Switchgear</p>
           </div>
-          <p class="text-[11px] font-mono font-bold mt-1 text-slate-800">PL-{{ soDetail?.number }}-{{ (pickingPlan.planDate || '').replace(/-/g, '') }}</p>
-          <p class="text-[10px] text-slate-500">Tgl Cetak: {{ new Date().toLocaleDateString('id-ID') }}</p>
+          <div class="text-right">
+            <div class="inline-block bg-slate-900 text-white font-mono font-bold text-xs px-2.5 py-1 rounded">
+              RENCANA PENGIRIMAN BARANG
+            </div>
+            <p class="text-[11px] font-mono font-bold mt-1 text-slate-800">RP-{{ soDetail?.number }}-{{ (pickingPlan.planDate || '').replace(/-/g, '') }}</p>
+            <p class="text-[10px] text-slate-500">Tgl Cetak: {{ new Date().toLocaleDateString('id-ID') }}</p>
+          </div>
+        </div>
+
+        <!-- Info Pesanan -->
+        <div class="grid grid-cols-2 gap-4 text-xs mb-4 border border-slate-400 rounded p-3">
+          <div class="space-y-1">
+            <p><span class="font-bold w-28 inline-block">No. HSO:</span> {{ soDetail?.number }}</p>
+            <p><span class="font-bold w-28 inline-block">Customer:</span> {{ soDetail?.client }}</p>
+            <p><span class="font-bold w-28 inline-block">PO Customer:</span> {{ soDetail?.po_number || '-' }}</p>
+            <p><span class="font-bold w-28 inline-block">Proyek:</span> {{ soDetail?.project || '-' }}</p>
+          </div>
+          <div class="space-y-1">
+            <p><span class="font-bold w-28 inline-block">Tgl Rencana Kirim:</span> {{ formatDateSimple(pickingPlan.planDate) }}</p>
+            <p v-if="pickingPlan.notes"><span class="font-bold w-28 inline-block">Keterangan:</span> {{ pickingPlan.notes }}</p>
+          </div>
+        </div>
+
+        <!-- Tabel Item yang Disiapkan -->
+        <table class="w-full text-xs border-collapse border border-slate-400 mb-6">
+          <thead>
+            <tr class="bg-slate-100 text-slate-900 border-b border-slate-400">
+              <th class="border border-slate-400 p-2 text-center w-8">No</th>
+              <th class="border border-slate-400 p-2 text-left w-36">Kode Produk (MLFB)</th>
+              <th class="border border-slate-400 p-2 text-left">Nama / Deskripsi Barang</th>
+              <th class="border border-slate-400 p-2 text-left w-44">Status &amp; Ket. Logistik</th>
+              <th class="border border-slate-400 p-2 text-center w-14">Order</th>
+              <th class="border border-slate-400 p-2 text-center w-14">Terkirim</th>
+              <th class="border border-slate-400 p-2 text-center w-14">Sisa</th>
+              <th class="border border-slate-400 p-2 text-center w-16">Qty Disiapkan</th>
+              <th class="border border-slate-400 p-2 text-center w-12">Satuan</th>
+              <th class="border border-slate-400 p-2 text-center w-16">Cek Fisik</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(it, idx) in pickingPlan.items" :key="idx" class="border-b border-slate-300">
+              <td class="border border-slate-400 p-2 text-center">{{ idx + 1 }}</td>
+              <td class="border border-slate-400 p-2 font-mono font-bold">{{ it.code }}</td>
+              <td class="border border-slate-400 p-2">
+                <div>{{ it.name }}</div>
+                <div v-if="it.admin_note" class="text-[9px] italic text-slate-500">Note: {{ it.admin_note }}</div>
+              </td>
+              <td class="border border-slate-400 p-2 text-[10px]">
+                <div class="font-bold text-slate-900">
+                  {{ it.status?.text || (it.qty_shipped > 0 ? 'DIKIRIM SEBAGIAN' : 'SIAP DIKIRIM') }}
+                </div>
+                <div v-if="it.arrivalInfo?.isPartial" class="text-amber-800 font-semibold mt-0.5">
+                  * Tiba Parsial: {{ it.arrivalInfo.arrivedQty }} dr {{ it.qty_remaining }} {{ it.unit }}
+                </div>
+                <div v-if="it.hpoEntries && it.hpoEntries.length > 0" class="text-slate-600 font-mono text-[9px] mt-0.5">
+                  PO: {{ it.hpoEntries.map(h => h.poNumber).join(', ') }}
+                </div>
+                <div v-if="it.qty_shipped > 0" class="text-amber-700 font-semibold mt-0.5">
+                  (Terkirim: {{ it.qty_shipped }} {{ it.unit }}, Sisa: {{ it.qty_remaining }} {{ it.unit }})
+                </div>
+                <div v-if="it.logistics_note" class="text-slate-600 italic mt-0.5">
+                  Ket: {{ it.logistics_note }}
+                </div>
+              </td>
+              <td class="border border-slate-400 p-2 text-center">{{ it.qty_order }}</td>
+              <td class="border border-slate-400 p-2 text-center font-semibold">{{ it.qty_shipped }}</td>
+              <td class="border border-slate-400 p-2 text-center font-bold text-red-700">{{ it.qty_remaining }}</td>
+              <td class="border border-slate-400 p-2 text-center font-bold text-sm bg-slate-50">{{ it.qty_pick }}</td>
+              <td class="border border-slate-400 p-2 text-center">{{ it.unit }}</td>
+              <td class="border border-slate-400 p-2 text-center">
+                <span class="inline-block w-4 h-4 border border-slate-700"></span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="text-[9px] text-slate-500 mt-4 text-center italic border-t border-dashed border-slate-300 pt-2">
+          * Dokumen internal penyiapan barang gudang. Surat Jalan resmi akan diterbitkan langsung dari Accurate Online.
         </div>
       </div>
-
-      <!-- Info Pesanan & Pengiriman -->
-      <div class="grid grid-cols-2 gap-4 text-xs mb-4 border border-slate-400 rounded p-3">
-        <div class="space-y-1">
-          <p><span class="font-bold w-28 inline-block">No. HSO:</span> {{ soDetail?.number }}</p>
-          <p><span class="font-bold w-28 inline-block">Customer:</span> {{ soDetail?.client }}</p>
-          <p><span class="font-bold w-28 inline-block">PO Customer:</span> {{ soDetail?.po_number || '-' }}</p>
-          <p><span class="font-bold w-28 inline-block">Proyek:</span> {{ soDetail?.project || '-' }}</p>
-        </div>
-        <div class="space-y-1">
-          <p><span class="font-bold w-28 inline-block">Tgl Rencana Kirim:</span> {{ formatDateSimple(pickingPlan.planDate) }}</p>
-          <p><span class="font-bold w-28 inline-block">Ekspedisi / Armada:</span> {{ pickingPlan.expedition === 'Lainnya (Kustom)' ? pickingPlan.customExpedition : pickingPlan.expedition }}</p>
-          <p v-if="pickingPlan.driverName"><span class="font-bold w-28 inline-block">Driver / Plat:</span> {{ pickingPlan.driverName }} ({{ pickingPlan.vehiclePlate || '-' }})</p>
-          <p><span class="font-bold w-28 inline-block">Alamat Tujuan:</span> {{ pickingPlan.deliveryAddress || '-' }}</p>
-        </div>
-      </div>
-
-      <div v-if="pickingPlan.notes" class="text-xs mb-4 p-2 bg-slate-100 border border-slate-300 rounded">
-        <span class="font-bold">Instruksi Khusus Gudang:</span> {{ pickingPlan.notes }}
-      </div>
-
-      <!-- Tabel Item Picking -->
-      <table class="w-full text-xs border-collapse border border-slate-400 mb-6">
-        <thead>
-          <tr class="bg-slate-100 text-slate-900 border-b border-slate-400">
-            <th class="border border-slate-400 p-2 text-center w-8">No</th>
-            <th class="border border-slate-400 p-2 text-left w-40">Kode Produk (MLFB)</th>
-            <th class="border border-slate-400 p-2 text-left">Nama / Deskripsi Barang</th>
-            <th class="border border-slate-400 p-2 text-center w-16">Qty SO</th>
-            <th class="border border-slate-400 p-2 text-center w-20">Qty Ambil</th>
-            <th class="border border-slate-400 p-2 text-center w-14">Satuan</th>
-            <th class="border border-slate-400 p-2 text-center w-20">Cek Fisik</th>
-            <th class="border border-slate-400 p-2 text-center w-28">Lokasi Rak / Bin</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(it, idx) in pickingPlan.items" :key="idx" class="border-b border-slate-300">
-            <td class="border border-slate-400 p-2 text-center">{{ idx + 1 }}</td>
-            <td class="border border-slate-400 p-2 font-mono font-bold">{{ it.code }}</td>
-            <td class="border border-slate-400 p-2">{{ it.name }}</td>
-            <td class="border border-slate-400 p-2 text-center">{{ it.qty_order }}</td>
-            <td class="border border-slate-400 p-2 text-center font-bold text-sm bg-slate-50">{{ it.qty_pick }}</td>
-            <td class="border border-slate-400 p-2 text-center">{{ it.unit }}</td>
-            <td class="border border-slate-400 p-2 text-center">
-              <span class="inline-block w-4 h-4 border border-slate-700"></span>
-            </td>
-            <td class="border border-slate-400 p-2 text-center text-slate-400 text-[10px]">
-              [ &nbsp; ] Baik &nbsp; [ &nbsp; ] Cacat
-            </td>
-          </tr>
-        </tbody>
-      </table>
-
-      <!-- Tanda Tangan Serah Terima & Verifikasi -->
-      <div class="grid grid-cols-3 gap-6 text-center text-xs pt-4 border-t border-slate-300">
-        <div>
-          <p class="font-bold text-slate-800">Dibuat Oleh (Admin/Sales)</p>
-          <div class="h-14"></div>
-          <p class="border-t border-slate-400 pt-1 font-medium">( ............................................ )</p>
-        </div>
-        <div>
-          <p class="font-bold text-slate-800">Disiapkan Oleh (Staf Gudang)</p>
-          <div class="h-14"></div>
-          <p class="border-t border-slate-400 pt-1 font-medium">( ............................................ )</p>
-        </div>
-        <div>
-          <p class="font-bold text-slate-800">Diperiksa (QC / Kepala Gudang)</p>
-          <div class="h-14"></div>
-          <p class="border-t border-slate-400 pt-1 font-medium">( ............................................ )</p>
-        </div>
-      </div>
-
-      <div class="text-[9px] text-slate-500 mt-6 text-center italic border-t border-dashed border-slate-300 pt-2">
-        * Dokumen ini adalah instruksi internal penyiapan barang (Picking List). Surat Jalan resmi (HDO Accurate) diterbitkan setelah fisik selesai dicek &amp; dikemas.
-      </div>
-    </div>
+    </Teleport>
 </template>
 
 <style>
 @media print {
-  body * {
-    visibility: hidden !important;
+  /* 1. Sembunyikan seluruh container aplikasi utama (#app) agar tidak menyisakan tinggi atau halaman kosong */
+  #app {
+    display: none !important;
   }
-  #printable-picking-slip,
-  #printable-picking-slip * {
-    visibility: visible !important;
+
+  /* 2. Format halaman cetak A4 */
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
   }
-  #printable-picking-slip {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
-    width: 100% !important;
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
     margin: 0 !important;
-    padding: 24px !important;
-    background: white !important;
-    color: black !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* 3. Tampilkan slip penyiapan barang secara presisi */
+  #printable-picking-slip {
     display: block !important;
-    z-index: 999999 !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 2mm !important;
+    box-sizing: border-box !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* Cegah pemotongan halaman di tengah baris */
+  #printable-picking-slip table {
+    page-break-inside: auto;
+  }
+  #printable-picking-slip tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  #printable-picking-slip thead {
+    display: table-header-group;
   }
 }
 
