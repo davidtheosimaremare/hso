@@ -1,5 +1,13 @@
 [
   {
+    "hash": "7c6c5bd911be77551665109a2f2b55c67d72dbd2",
+    "shortHash": "7c6c5bd",
+    "author": "davidtheosimaremare",
+    "email": "davidtheosimaremare@gmail.com",
+    "date": "Tue Nov 17 13:48:52 2026 +0700",
+    "message": "feat(public-tracking): route public tracking detail and link resolution via HSO sync webhook"
+  },
+  {
     "hash": "67fa56e912210cc4b5317f843f972034935cfcec",
     "shortHash": "67fa56e",
     "author": "davidtheosimaremare",
@@ -390,13 +398,5 @@
     "email": "davidtheosimaremare@gmail.com",
     "date": "Wed Sep 2 12:22:26 2026 +0700",
     "message": "feat: indikator HRI 3 kondisi — belum Hokiindo / dikirim / tiba dikonfirmasi HRI"
-  },
-  {
-    "hash": "4c0d4c81824bec662d6386409b22c925312b6d1e",
-    "shortHash": "4c0d4c8",
-    "author": "davidtheosimaremare",
-    "email": "davidtheosimaremare@gmail.com",
-    "date": "Wed Sep 2 11:56:46 2026 +0700",
-    "message": "feat: tambah indikator centang HRI diterima di setiap HPO card"
   }
 ]

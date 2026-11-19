@@ -29,7 +29,7 @@ import {
   PackageCheck, Share2, Info, ExternalLink, Package, Hourglass, 
   Layers, AlertCircle, Download, AlertTriangle, ShoppingCart, Paperclip,
   ChevronDown, ChevronUp, Plane, Box, Copy, Search, UploadCloud, FileSpreadsheet, Mail, Bell, RefreshCw, Eye, X, Maximize2,
-  Film, Music, FileCode, Check, Trash2,
+  Film, Music, FileCode, Check, Trash2, ClipboardCheck, Printer,
   MessageSquare, MessageCircle, Send, AtSign, Tag, CornerDownRight, Reply,
   PackageSearch, Sparkles, Boxes, Globe, ArrowRightLeft,
   Bold, Italic, Underline, Strikethrough, Highlighter, List, ListOrdered, Quote, Code, Link as LinkIcon, Eraser
@@ -367,6 +367,36 @@ const selectedItemCodes = ref([])
 const isBulkMode = ref(false)    
 const selectedItem = ref(null)    
 const selectedTargetStatus = ref('') 
+
+// --- STATE: RENCANA PENGIRIMAN & PICKING LIST (SPK GUDANG) ---
+const isPickingModalOpen = ref(false)
+const isCopiedWaText = ref(false)
+const isSavingPickingPlan = ref(false)
+const pickingPlan = ref({
+  planDate: new Date().toISOString().slice(0, 10),
+  expedition: 'Kurir Internal Hokiindo',
+  customExpedition: '',
+  driverName: '',
+  driverPhone: '',
+  vehiclePlate: '',
+  deliveryAddress: '',
+  notes: '',
+  items: []
+})
+
+const expeditionOptions = [
+  'Kurir Internal Hokiindo',
+  'Driver Pick-up Sendiri (Customer)',
+  'Lalamove / Deliveree',
+  'JNE / J&T / SiCepat Cargo',
+  'Dakota / Baraka / Indah Cargo',
+  'Ekspedisi Rekanan Pelanggan',
+  'Lainnya (Kustom)'
+]
+
+const totalPickingQty = computed(() => {
+  return (pickingPlan.value.items || []).reduce((sum, it) => sum + (Number(it.qty_pick) || 0), 0)
+})
 
 // State Toggle
 const isPurchaseExpanded = ref(false) 
@@ -4804,6 +4834,216 @@ const toggleSelectAll = () => {
     }
 }
 const toggleSelection = (code) => { if (selectedItemCodes.value.includes(code)) selectedItemCodes.value = selectedItemCodes.value.filter(id => id !== code); else selectedItemCodes.value.push(code) }
+
+// --- PICKING LIST & RENCANA PENGIRIMAN METHODS ---
+const openPickingListModal = () => {
+  if (!soDetail.value || !soDetail.value.items) return
+
+  if (selectedItemCodes.value.length === 0) {
+    const unshipped = soDetail.value.items.filter(i => !isDisplayedFullyShipped(i) && getDisplayedQtyRemaining(i) > 0)
+    if (unshipped.length === 0) {
+      alert("Semua produk dalam pesanan ini sudah berstatus terkirim (DO).")
+      return
+    }
+    selectedItemCodes.value = unshipped.map(i => i.code)
+  }
+
+  const selectedItemsData = soDetail.value.items
+    .filter(i => selectedItemCodes.value.includes(i.code))
+    .map(item => {
+      const remaining = getDisplayedQtyRemaining(item)
+      return {
+        code: item.code,
+        name: item.name,
+        unit: item.unit || 'Pcs',
+        qty_order: item.qty_order || 0,
+        qty_shipped: getDisplayedQtyShipped(item),
+        qty_remaining: remaining,
+        qty_pick: remaining > 0 ? remaining : (item.qty_order || 1),
+        admin_note: item.admin_note || '',
+        logistics_note: item.logistics_note || '',
+        stock_qty: item.parsed_stock_qty || 0
+      }
+    })
+
+  pickingPlan.value = {
+    planDate: new Date().toISOString().slice(0, 10),
+    expedition: 'Kurir Internal Hokiindo',
+    customExpedition: '',
+    driverName: '',
+    driverPhone: '',
+    vehiclePlate: '',
+    deliveryAddress: soDetail.value?.to_address || soDetail.value?.raw_accurate_data?.toAddress || '',
+    notes: '',
+    items: selectedItemsData
+  }
+
+  isPickingModalOpen.value = true
+}
+
+const selectReadyToShipItems = () => {
+  const unshipped = (filteredItems.value || []).filter(i => !isDisplayedFullyShipped(i) && getDisplayedQtyRemaining(i) > 0)
+  if (unshipped.length === 0) {
+    alert("Semua produk yang tampil sudah berstatus terkirim (DO) atau tidak ada sisa pengiriman.")
+    return
+  }
+
+  const allSelected = unshipped.every(i => selectedItemCodes.value.includes(i.code))
+  if (allSelected) {
+    selectedItemCodes.value = selectedItemCodes.value.filter(c => !unshipped.some(i => i.code === c))
+  } else {
+    const newSet = new Set([...selectedItemCodes.value, ...unshipped.map(i => i.code)])
+    selectedItemCodes.value = Array.from(newSet)
+  }
+}
+
+const removePickingItem = (index) => {
+  const removed = pickingPlan.value.items.splice(index, 1)[0]
+  if (removed) {
+    selectedItemCodes.value = selectedItemCodes.value.filter(c => c !== removed.code)
+  }
+  if (pickingPlan.value.items.length === 0) {
+    isPickingModalOpen.value = false
+  }
+}
+
+const setMaxPickQty = (item) => {
+  item.qty_pick = item.qty_remaining > 0 ? item.qty_remaining : item.qty_order
+}
+
+const printPickingSlip = () => {
+  window.print()
+}
+
+const copyWaFormat = async () => {
+  if (!pickingPlan.value.items || pickingPlan.value.items.length === 0) return
+  const expeditionName = pickingPlan.value.expedition === 'Lainnya (Kustom)' 
+    ? (pickingPlan.value.customExpedition || 'Kustom') 
+    : pickingPlan.value.expedition
+
+  let text = `*RENCANA PENGIRIMAN & SPK GUDANG*\n`
+  text += `📦 *No. HSO*: ${soDetail.value?.number || '-'}\n`
+  text += `🏢 *Customer*: ${soDetail.value?.client || '-'}\n`
+  text += `📑 *PO Customer*: ${soDetail.value?.po_number || '-'}\n`
+  if (soDetail.value?.project && soDetail.value.project !== '-') {
+    text += `🏗️ *Proyek*: ${soDetail.value.project}\n`
+  }
+  text += `📅 *Rencana Kirim*: ${formatDateSimple(pickingPlan.value.planDate)}\n`
+  text += `🚚 *Ekspedisi*: ${expeditionName}\n`
+  if (pickingPlan.value.driverName) {
+    text += `👤 *Driver / Armada*: ${pickingPlan.value.driverName} (${pickingPlan.value.vehiclePlate || '-'})\n`
+  }
+  if (pickingPlan.value.deliveryAddress) {
+    text += `📍 *Alamat Kirim*: ${pickingPlan.value.deliveryAddress}\n`
+  }
+  text += `\n*DAFTAR BARANG YANG DISIAPKAN (PICKING LIST):*\n`
+  pickingPlan.value.items.forEach((it, idx) => {
+    text += `${idx + 1}. [${it.code}] ${it.name} ➔ *${it.qty_pick} ${it.unit}* (Sisa SO: ${it.qty_remaining})\n`
+  })
+  if (pickingPlan.value.notes) {
+    text += `\n*Catatan Khusus Gudang:*\n${pickingPlan.value.notes}\n`
+  }
+  text += `\n_Catatan: Mohon tim gudang memeriksa kesesuaian fisik barang & packaging sebelum Surat Jalan resmi (HDO) diterbitkan._`
+
+  try {
+    await navigator.clipboard.writeText(text)
+    isCopiedWaText.value = true
+    setTimeout(() => { isCopiedWaText.value = false }, 3000)
+  } catch (err) {
+    console.warn('Clipboard error:', err)
+    alert('Gagal menyalin ke clipboard. Silakan salin teks manual.')
+  }
+}
+
+const exportPickingExcel = () => {
+  if (!pickingPlan.value.items || pickingPlan.value.items.length === 0) return
+  const expeditionName = pickingPlan.value.expedition === 'Lainnya (Kustom)' 
+    ? (pickingPlan.value.customExpedition || 'Kustom') 
+    : pickingPlan.value.expedition
+  const hsoNumber = soDetail.value?.number || '-'
+
+  const metaRows = [
+    { "INFORMASI": "DOKUMEN", "DETAIL": "PICKING LIST & SPK PENYIAPAN BARANG" },
+    { "INFORMASI": "NO HSO", "DETAIL": hsoNumber },
+    { "INFORMASI": "CUSTOMER", "DETAIL": soDetail.value?.client || '-' },
+    { "INFORMASI": "PO CUSTOMER", "DETAIL": soDetail.value?.po_number || '-' },
+    { "INFORMASI": "TGL RENCANA KIRIM", "DETAIL": formatDateSimple(pickingPlan.value.planDate) },
+    { "INFORMASI": "EKSPEDISI / ARMADA", "DETAIL": expeditionName },
+    { "INFORMASI": "DRIVER / PLAT", "DETAIL": `${pickingPlan.value.driverName || '-'} (${pickingPlan.value.vehiclePlate || '-'})` },
+    { "INFORMASI": "ALAMAT PENGIRIMAN", "DETAIL": pickingPlan.value.deliveryAddress || '-' },
+    { "INFORMASI": "CATATAN GUDANG", "DETAIL": pickingPlan.value.notes || '-' }
+  ]
+
+  const itemRows = pickingPlan.value.items.map((it, idx) => ({
+    "No": idx + 1,
+    "Kode Produk (MLFB)": it.code,
+    "Nama / Deskripsi": it.name,
+    "Qty Order SO": it.qty_order,
+    "Qty Terkirim": it.qty_shipped,
+    "Qty Sisa SO": it.qty_remaining,
+    "Qty Siap Kirim (Picking)": it.qty_pick,
+    "Satuan": it.unit,
+    "Cek Fisik [OK/NOK]": "",
+    "Kondisi / Bin Rak": "",
+    "Catatan Admin": it.admin_note || it.logistics_note || ""
+  }))
+
+  const wb = XLSX.utils.book_new()
+  const wsMeta = XLSX.utils.json_to_sheet(metaRows)
+  const wsItems = XLSX.utils.json_to_sheet(itemRows)
+
+  wsItems['!cols'] = [
+    { wch: 6 },
+    { wch: 22 },
+    { wch: 45 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 22 },
+    { wch: 10 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 30 }
+  ]
+
+  XLSX.utils.book_append_sheet(wb, wsItems, "Picking List")
+  XLSX.utils.book_append_sheet(wb, wsMeta, "Info Pengiriman")
+
+  const safeNo = hsoNumber.replace(/[\/\\?%*:|"<>]/g, '_')
+  XLSX.writeFile(wb, `PICKING_LIST_${safeNo}_${pickingPlan.value.planDate}.xlsx`)
+}
+
+const savePickingPlan = () => {
+  isSavingPickingPlan.value = true
+  try {
+    const planKey = `hso_picking_${soDetail.value?.number || resolvedSoId.value}`
+    const dataToSave = {
+      soNumber: soDetail.value?.number,
+      savedAt: new Date().toISOString(),
+      planDate: pickingPlan.value.planDate,
+      expedition: pickingPlan.value.expedition,
+      customExpedition: pickingPlan.value.customExpedition,
+      driverName: pickingPlan.value.driverName,
+      driverPhone: pickingPlan.value.driverPhone,
+      vehiclePlate: pickingPlan.value.vehiclePlate,
+      deliveryAddress: pickingPlan.value.deliveryAddress,
+      notes: pickingPlan.value.notes,
+      items: pickingPlan.value.items.map(i => ({
+        code: i.code,
+        name: i.name,
+        qty_pick: i.qty_pick,
+        unit: i.unit
+      }))
+    }
+    localStorage.setItem(planKey, JSON.stringify(dataToSave))
+    alert(`Rencana Pengiriman & Picking List berhasil disimpan!\n\n${pickingPlan.value.items.length} item siap disiapkan oleh tim gudang. Anda dapat mencetak lembar picking atau membagikan ringkasan melalui WhatsApp.`)
+  } catch (err) {
+    console.warn('Save picking plan error:', err)
+    alert('Gagal menyimpan rencana pengiriman: ' + err.message)
+  } finally {
+    isSavingPickingPlan.value = false
+  }
+}
 const openActionModal = (item) => { 
   isBulkMode.value = false
   selectedItem.value = item
@@ -5764,6 +6004,17 @@ const downloadAttachment = async (att) => {
 
           <!-- ACTION BUTTONS -->
           <div class="flex flex-wrap items-center gap-2">
+            <!-- Tombol Picking List / Rencana Pengiriman (Gudang) -->
+            <Button 
+              size="sm" 
+              class="h-8 px-3 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 transition-all cursor-pointer shadow-xs flex items-center gap-1.5" 
+              @click="openPickingListModal"
+              title="Buat rencana penyiapan barang gudang (Picking List) sebelum surat jalan diterbitkan"
+            >
+              <ClipboardCheck class="w-3.5 h-3.5"/>
+              <span>{{ selectedItemCodes.length > 0 ? `Rencana Kirim / Picking (${selectedItemCodes.length})` : 'Rencana Kirim / Picking List' }}</span>
+            </Button>
+
             <Button v-if="selectedItemCodes.length > 0 && canWrite" size="sm" class="h-8 px-3 text-xs bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 transition-all font-semibold cursor-pointer" @click="openBulkEditModal">
               <Layers class="w-3.5 h-3.5 mr-1.5"/> Update ({{ selectedItemCodes.length }})
             </Button>
@@ -5954,6 +6205,14 @@ const downloadAttachment = async (att) => {
                 </span>
               </div>
               <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
+                <button 
+                  @click="selectReadyToShipItems" 
+                  class="h-8 px-2.5 text-xs font-semibold rounded-lg border border-blue-200 dark:border-blue-800/80 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                  title="Centang otomatis semua barang yang sisa kirimnya > 0"
+                >
+                  <PackageCheck class="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  <span>Pilih Siap Kirim</span>
+                </button>
                 <div class="relative w-full sm:w-60">
                   <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
                   <input 
@@ -8845,9 +9104,424 @@ const downloadAttachment = async (att) => {
     </div>
   </div>
 </div>
+
+    <!-- Floating Bottom Action Bar (When items are checked) -->
+    <transition enter-active-class="transform transition ease-out duration-300" enter-from-class="translate-y-full opacity-0" enter-to-class="translate-y-0 opacity-100" leave-active-class="transform transition ease-in duration-200" leave-from-class="translate-y-0 opacity-100" leave-to-class="translate-y-full opacity-0">
+      <div v-if="selectedItemCodes.length > 0" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 dark:bg-slate-800/95 backdrop-blur-md text-white px-4 sm:px-5 py-2.5 sm:py-3 rounded-2xl shadow-2xl border border-slate-700/80 flex items-center gap-3 sm:gap-4 max-w-[95vw] sm:max-w-2xl font-sans">
+        <div class="flex items-center gap-2">
+          <div class="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center font-bold text-xs text-white">
+            {{ selectedItemCodes.length }}
+          </div>
+          <span class="text-xs font-semibold text-slate-200 hidden sm:inline">item dipilih</span>
+        </div>
+
+        <div class="h-4 w-px bg-slate-700"></div>
+
+        <div class="flex items-center gap-2">
+          <button 
+            @click="openPickingListModal" 
+            class="h-8 px-3 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-1.5 transition-all shadow-md hover:shadow-blue-500/25 cursor-pointer"
+          >
+            <ClipboardCheck class="w-3.5 h-3.5" />
+            <span>Rencana Kirim / Picking List</span>
+          </button>
+
+          <button 
+            v-if="canWrite"
+            @click="openBulkEditModal" 
+            class="h-8 px-3 text-xs font-semibold rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 flex items-center gap-1.5 transition-all cursor-pointer"
+          >
+            <Layers class="w-3.5 h-3.5" />
+            <span class="hidden sm:inline">Update Status</span>
+          </button>
+
+          <button 
+            @click="selectedItemCodes = []" 
+            class="p-1.5 text-slate-400 hover:text-white rounded-lg transition-colors cursor-pointer"
+            title="Batal Pilih"
+          >
+            <X class="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </transition>
+
+    <!-- MODAL: RENCANA PENGIRIMAN & PICKING LIST (SPK GUDANG) -->
+    <div v-if="isPickingModalOpen" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto font-sans">
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-4xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        
+        <!-- Modal Header -->
+        <div class="px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-between shrink-0">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 flex items-center justify-center text-blue-600 dark:text-blue-400 shrink-0">
+              <ClipboardCheck class="w-5 h-5" />
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <h3 class="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                  Rencana Pengiriman &amp; Picking List
+                </h3>
+                <span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                  SPK Gudang
+                </span>
+              </div>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                {{ soDetail?.number }} &bull; {{ soDetail?.client }} <span v-if="soDetail?.po_number">&bull; PO: {{ soDetail.po_number }}</span>
+              </p>
+            </div>
+          </div>
+          <button 
+            @click="isPickingModalOpen = false" 
+            class="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+          >
+            <X class="w-5 h-5" />
+          </button>
+        </div>
+
+        <!-- Modal Body -->
+        <div class="overflow-y-auto p-5 sm:p-6 space-y-5 custom-scrollbar flex-1 bg-slate-50/50 dark:bg-slate-950/20">
+          
+          <!-- SECTION 1: INFORMASI RENCANA PENGIRIMAN -->
+          <div class="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs space-y-4">
+            <div class="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+              <Truck class="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <span>Detail Penyiapan &amp; Logistik</span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 text-xs">
+              <!-- Tanggal Rencana Kirim -->
+              <div>
+                <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Tanggal Rencana Kirim <span class="text-red-500">*</span>
+                </label>
+                <input 
+                  type="date" 
+                  v-model="pickingPlan.planDate"
+                  class="w-full px-3 py-1.5 h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <!-- Ekspedisi / Armada -->
+              <div>
+                <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Ekspedisi / Armada
+                </label>
+                <select 
+                  v-model="pickingPlan.expedition"
+                  class="w-full px-3 py-1.5 h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                >
+                  <option v-for="opt in expeditionOptions" :key="opt" :value="opt">{{ opt }}</option>
+                </select>
+              </div>
+
+              <!-- Custom Ekspedisi (Jika Pilih Lainnya) -->
+              <div v-if="pickingPlan.expedition === 'Lainnya (Kustom)'">
+                <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Nama Ekspedisi Kustom
+                </label>
+                <input 
+                  type="text" 
+                  v-model="pickingPlan.customExpedition"
+                  placeholder="Contoh: Baraka / Titipan Bus..."
+                  class="w-full px-3 py-1.5 h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <!-- Nama Driver / Armada -->
+              <div>
+                <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Nama Driver / Plat Nomor
+                </label>
+                <input 
+                  type="text" 
+                  v-model="pickingPlan.driverName"
+                  placeholder="Contoh: Budi (B 1234 XYZ)"
+                  class="w-full px-3 py-1.5 h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <!-- Alamat Pengiriman -->
+              <div class="sm:col-span-2">
+                <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Alamat Tujuan Pengiriman
+                </label>
+                <textarea 
+                  rows="2"
+                  v-model="pickingPlan.deliveryAddress"
+                  placeholder="Alamat penerima / site proyek..."
+                  class="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-blue-500"
+                ></textarea>
+              </div>
+
+              <!-- Catatan Khusus Gudang -->
+              <div class="sm:col-span-2 lg:col-span-3">
+                <label class="block font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Instruksi Khusus Gudang &amp; Packing
+                </label>
+                <input 
+                  type="text" 
+                  v-model="pickingPlan.notes"
+                  placeholder="Contoh: Wajib packing kayu, cek kelengkapan kartu garansi / manual book, tempel stiker Fragile..."
+                  class="w-full px-3 py-1.5 h-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-xs focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          <!-- SECTION 2: DAFTAR BARANG YANG DISIAPKAN (PICKING TABLE) -->
+          <div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xs overflow-hidden">
+            <div class="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between flex-wrap gap-2">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                  Barang yang Disiapkan (Picking Items)
+                </span>
+                <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900">
+                  {{ pickingPlan.items.length }} Item &bull; Total {{ totalPickingQty }} Unit
+                </span>
+              </div>
+              <span class="text-[11px] text-slate-400">
+                Atur kuantitas jika pengiriman dilakukan parsial (sebagian).
+              </span>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="w-full text-xs text-left">
+                <thead class="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 font-bold border-b border-slate-200 dark:border-slate-800">
+                  <tr>
+                    <th class="py-2.5 px-3 text-center w-10">No</th>
+                    <th class="py-2.5 px-3">Produk &amp; Deskripsi</th>
+                    <th class="py-2.5 px-2 text-center w-16">Order</th>
+                    <th class="py-2.5 px-2 text-center w-16">Terkirim</th>
+                    <th class="py-2.5 px-2 text-center w-16">Sisa SO</th>
+                    <th class="py-2.5 px-3 text-center w-36">Qty Siap Kirim</th>
+                    <th class="py-2.5 px-2 text-center w-12"></th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+                  <tr v-for="(it, idx) in pickingPlan.items" :key="it.code" class="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
+                    <td class="py-2.5 px-3 text-center text-slate-400 font-mono">{{ idx + 1 }}</td>
+                    <td class="py-2.5 px-3">
+                      <div class="font-mono font-bold text-slate-900 dark:text-slate-100 text-xs">{{ it.code }}</div>
+                      <div class="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">{{ it.name }}</div>
+                      <div v-if="it.admin_note" class="text-[10px] text-slate-400 italic">Note: {{ it.admin_note }}</div>
+                    </td>
+                    <td class="py-2.5 px-2 text-center font-medium text-slate-600 dark:text-slate-400">{{ it.qty_order }}</td>
+                    <td class="py-2.5 px-2 text-center font-medium text-slate-600 dark:text-slate-400">{{ it.qty_shipped }}</td>
+                    <td class="py-2.5 px-2 text-center font-bold text-red-600 dark:text-red-400">{{ it.qty_remaining }}</td>
+                    <td class="py-2.5 px-3 text-center">
+                      <div class="flex items-center justify-center gap-1.5">
+                        <input 
+                          type="number" 
+                          min="1"
+                          :max="it.qty_remaining > 0 ? it.qty_remaining : undefined"
+                          v-model.number="it.qty_pick"
+                          class="w-16 h-8 text-center text-xs font-bold rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-1 focus:ring-blue-500"
+                        />
+                        <span class="text-xs text-slate-500">{{ it.unit }}</span>
+                        <button 
+                          @click="setMaxPickQty(it)" 
+                          class="text-[10px] px-1.5 py-1 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 font-medium cursor-pointer"
+                          title="Set ke sisa maksimal"
+                        >
+                          Max
+                        </button>
+                      </div>
+                    </td>
+                    <td class="py-2.5 px-2 text-center">
+                      <button 
+                        @click="removePickingItem(idx)" 
+                        class="p-1 text-slate-400 hover:text-red-600 rounded hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors cursor-pointer"
+                        title="Keluarkan dari rencana kirim ini"
+                      >
+                        <Trash2 class="w-3.5 h-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- SECTION 3: OPERATIONAL INSIGHT -->
+          <div class="p-3.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-900/60 text-xs text-blue-900 dark:text-blue-300 flex items-start gap-2.5">
+            <Info class="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+            <div class="leading-relaxed">
+              <span class="font-bold">Alur Efektif Warehouse:</span> Lembar Picking List ini dicetak &amp; diserahkan ke staf gudang untuk mengambil fisik barang di rak dan melakukan pengecekan visual. Setelah fisik 100% siap di staging area, Surat Jalan resmi (HDO Accurate) dapat dibuat tanpa risiko pembatalan (void) atau revisi nomor.
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Modal Footer -->
+        <div class="px-6 py-3.5 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-wrap items-center justify-between gap-2 shrink-0">
+          <div class="flex items-center gap-2">
+            <!-- Cetak Print / PDF -->
+            <button 
+              @click="printPickingSlip" 
+              class="h-9 px-3 text-xs font-semibold rounded-xl bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100 flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+            >
+              <Printer class="w-3.5 h-3.5" />
+              <span>Cetak Lembar Picking</span>
+            </button>
+
+            <!-- Salin WA Format -->
+            <button 
+              @click="copyWaFormat" 
+              class="h-9 px-3 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <component :is="isCopiedWaText ? CheckCircle2 : MessageSquare" class="w-3.5 h-3.5" :class="isCopiedWaText ? 'text-emerald-600' : 'text-slate-500'" />
+              <span>{{ isCopiedWaText ? 'Format WA Tersalin!' : 'Salin Format WA' }}</span>
+            </button>
+
+            <!-- Export Excel -->
+            <button 
+              @click="exportPickingExcel" 
+              class="h-9 px-3 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <FileSpreadsheet class="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Export Excel</span>
+            </button>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button 
+              @click="isPickingModalOpen = false" 
+              class="h-9 px-3 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+            >
+              Tutup
+            </button>
+            <button 
+              @click="savePickingPlan" 
+              class="h-9 px-4 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+              :disabled="isSavingPickingPlan"
+            >
+              <Check class="w-3.5 h-3.5" />
+              <span>Simpan Rencana Kirim</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- PRINTABLE PICKING SLIP (A4 Print layout, only visible when printing) -->
+    <div id="printable-picking-slip" class="hidden font-sans text-black bg-white p-6 max-w-4xl mx-auto">
+      <!-- Kop Dokumen Resmi PT Hokiindo Raya -->
+      <div class="border-b-2 border-slate-900 pb-3 mb-4 flex justify-between items-start">
+        <div>
+          <h1 class="text-xl font-extrabold tracking-tight text-slate-900 uppercase">PT. HOKIINDO RAYA</h1>
+          <p class="text-xs text-slate-600 mt-0.5">Industrial Electrical &amp; Automation Distribution</p>
+          <p class="text-[10px] text-slate-500">Authorized Distributor Siemens &amp; ABB Low Voltage Switchgear</p>
+        </div>
+        <div class="text-right">
+          <div class="inline-block bg-slate-900 text-white font-mono font-bold text-xs px-2.5 py-1 rounded">
+            PICKING LIST &amp; SPK GUDANG
+          </div>
+          <p class="text-[11px] font-mono font-bold mt-1 text-slate-800">PL-{{ soDetail?.number }}-{{ (pickingPlan.planDate || '').replace(/-/g, '') }}</p>
+          <p class="text-[10px] text-slate-500">Tgl Cetak: {{ new Date().toLocaleDateString('id-ID') }}</p>
+        </div>
+      </div>
+
+      <!-- Info Pesanan & Pengiriman -->
+      <div class="grid grid-cols-2 gap-4 text-xs mb-4 border border-slate-400 rounded p-3">
+        <div class="space-y-1">
+          <p><span class="font-bold w-28 inline-block">No. HSO:</span> {{ soDetail?.number }}</p>
+          <p><span class="font-bold w-28 inline-block">Customer:</span> {{ soDetail?.client }}</p>
+          <p><span class="font-bold w-28 inline-block">PO Customer:</span> {{ soDetail?.po_number || '-' }}</p>
+          <p><span class="font-bold w-28 inline-block">Proyek:</span> {{ soDetail?.project || '-' }}</p>
+        </div>
+        <div class="space-y-1">
+          <p><span class="font-bold w-28 inline-block">Tgl Rencana Kirim:</span> {{ formatDateSimple(pickingPlan.planDate) }}</p>
+          <p><span class="font-bold w-28 inline-block">Ekspedisi / Armada:</span> {{ pickingPlan.expedition === 'Lainnya (Kustom)' ? pickingPlan.customExpedition : pickingPlan.expedition }}</p>
+          <p v-if="pickingPlan.driverName"><span class="font-bold w-28 inline-block">Driver / Plat:</span> {{ pickingPlan.driverName }} ({{ pickingPlan.vehiclePlate || '-' }})</p>
+          <p><span class="font-bold w-28 inline-block">Alamat Tujuan:</span> {{ pickingPlan.deliveryAddress || '-' }}</p>
+        </div>
+      </div>
+
+      <div v-if="pickingPlan.notes" class="text-xs mb-4 p-2 bg-slate-100 border border-slate-300 rounded">
+        <span class="font-bold">Instruksi Khusus Gudang:</span> {{ pickingPlan.notes }}
+      </div>
+
+      <!-- Tabel Item Picking -->
+      <table class="w-full text-xs border-collapse border border-slate-400 mb-6">
+        <thead>
+          <tr class="bg-slate-100 text-slate-900 border-b border-slate-400">
+            <th class="border border-slate-400 p-2 text-center w-8">No</th>
+            <th class="border border-slate-400 p-2 text-left w-40">Kode Produk (MLFB)</th>
+            <th class="border border-slate-400 p-2 text-left">Nama / Deskripsi Barang</th>
+            <th class="border border-slate-400 p-2 text-center w-16">Qty SO</th>
+            <th class="border border-slate-400 p-2 text-center w-20">Qty Ambil</th>
+            <th class="border border-slate-400 p-2 text-center w-14">Satuan</th>
+            <th class="border border-slate-400 p-2 text-center w-20">Cek Fisik</th>
+            <th class="border border-slate-400 p-2 text-center w-28">Lokasi Rak / Bin</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(it, idx) in pickingPlan.items" :key="idx" class="border-b border-slate-300">
+            <td class="border border-slate-400 p-2 text-center">{{ idx + 1 }}</td>
+            <td class="border border-slate-400 p-2 font-mono font-bold">{{ it.code }}</td>
+            <td class="border border-slate-400 p-2">{{ it.name }}</td>
+            <td class="border border-slate-400 p-2 text-center">{{ it.qty_order }}</td>
+            <td class="border border-slate-400 p-2 text-center font-bold text-sm bg-slate-50">{{ it.qty_pick }}</td>
+            <td class="border border-slate-400 p-2 text-center">{{ it.unit }}</td>
+            <td class="border border-slate-400 p-2 text-center">
+              <span class="inline-block w-4 h-4 border border-slate-700"></span>
+            </td>
+            <td class="border border-slate-400 p-2 text-center text-slate-400 text-[10px]">
+              [ &nbsp; ] Baik &nbsp; [ &nbsp; ] Cacat
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Tanda Tangan Serah Terima & Verifikasi -->
+      <div class="grid grid-cols-3 gap-6 text-center text-xs pt-4 border-t border-slate-300">
+        <div>
+          <p class="font-bold text-slate-800">Dibuat Oleh (Admin/Sales)</p>
+          <div class="h-14"></div>
+          <p class="border-t border-slate-400 pt-1 font-medium">( ............................................ )</p>
+        </div>
+        <div>
+          <p class="font-bold text-slate-800">Disiapkan Oleh (Staf Gudang)</p>
+          <div class="h-14"></div>
+          <p class="border-t border-slate-400 pt-1 font-medium">( ............................................ )</p>
+        </div>
+        <div>
+          <p class="font-bold text-slate-800">Diperiksa (QC / Kepala Gudang)</p>
+          <div class="h-14"></div>
+          <p class="border-t border-slate-400 pt-1 font-medium">( ............................................ )</p>
+        </div>
+      </div>
+
+      <div class="text-[9px] text-slate-500 mt-6 text-center italic border-t border-dashed border-slate-300 pt-2">
+        * Dokumen ini adalah instruksi internal penyiapan barang (Picking List). Surat Jalan resmi (HDO Accurate) diterbitkan setelah fisik selesai dicek &amp; dikemas.
+      </div>
+    </div>
 </template>
 
 <style>
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  #printable-picking-slip,
+  #printable-picking-slip * {
+    visibility: visible !important;
+  }
+  #printable-picking-slip {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 24px !important;
+    background: white !important;
+    color: black !important;
+    display: block !important;
+    z-index: 999999 !important;
+  }
+}
+
 .custom-scrollbar::-webkit-scrollbar { width: 6px; }
 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 20px; }
